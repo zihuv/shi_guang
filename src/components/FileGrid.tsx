@@ -23,7 +23,7 @@ export default function FileGrid() {
   const { files, selectedFile, setSelectedFile, isLoading } = useFileStore()
   const { selectedTagId } = useTagStore()
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'adaptive'>('grid')
 
   useEffect(() => {
     if (selectedTagId) {
@@ -61,8 +61,18 @@ export default function FileGrid() {
         </span>
         <div className="flex gap-1">
           <button
+            onClick={() => setViewMode('adaptive')}
+            className={`p-1.5 rounded ${viewMode === 'adaptive' ? 'bg-gray-200 dark:bg-dark-border' : 'hover:bg-gray-100 dark:hover:bg-dark-border'}`}
+            title="自适应大小"
+          >
+            <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+          <button
             onClick={() => setViewMode('grid')}
             className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-gray-200 dark:bg-dark-border' : 'hover:bg-gray-100 dark:hover:bg-dark-border'}`}
+            title="网格视图"
           >
             <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
@@ -71,6 +81,7 @@ export default function FileGrid() {
           <button
             onClick={() => setViewMode('list')}
             className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-gray-200 dark:bg-dark-border' : 'hover:bg-gray-100 dark:hover:bg-dark-border'}`}
+            title="列表视图"
           >
             <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -80,7 +91,18 @@ export default function FileGrid() {
       </div>
 
       <div className="flex-1 overflow-auto p-4">
-        {viewMode === 'grid' ? (
+        {viewMode === 'adaptive' ? (
+          <div className="flex flex-wrap gap-4">
+            {filteredFiles.map((file) => (
+              <AdaptiveFileCard
+                key={file.id}
+                file={file}
+                isSelected={selectedFile?.id === file.id}
+                onClick={() => setSelectedFile(file)}
+              />
+            ))}
+          </div>
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
             {filteredFiles.map((file) => (
               <FileCard
@@ -133,6 +155,15 @@ function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: b
     return () => { mounted = false }
   }, [file.path, fileExists])
 
+  // 根据原始宽高比计算容器高度
+  const getContainerStyle = () => {
+    if (!file.width || !file.height) {
+      return { paddingBottom: '100%' }
+    }
+    const aspectRatio = (file.height / file.width) * 100
+    return { paddingBottom: `${Math.min(Math.max(aspectRatio, 50), 150)}%` }
+  }
+
   return (
     <div
       onClick={onClick}
@@ -142,9 +173,9 @@ function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: b
           : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
       }`}
     >
-      <div className="aspect-square bg-gray-100 dark:bg-dark-bg">
+      <div className="relative bg-gray-100 dark:bg-dark-bg" style={getContainerStyle()}>
         {imageSrc === null ? (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center">
             <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -153,12 +184,12 @@ function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: b
           <img
             src={imageSrc}
             alt={file.name}
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-contain"
             onError={() => setImageError(true)}
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center">
             <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -184,6 +215,100 @@ function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: b
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function AdaptiveFileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: boolean; onClick: () => void }) {
+  const { files } = useFileStore()
+  const [imageError, setImageError] = useState(false)
+  const [imageSrc, setImageSrc] = useState<string | null>(null)
+
+  const fileExists = files.some(f => f.id === file.id)
+
+  useEffect(() => {
+    if (!fileExists) return
+    let mounted = true
+    setImageSrc(null)
+    getImageSrc(file.path).then(src => {
+      if (mounted) setImageSrc(src)
+    })
+    return () => { mounted = false }
+  }, [file.path, fileExists])
+
+  // 自适应尺寸：基于原始图片尺寸，最大限制在 400x400 容器内
+  const getAdaptiveSize = () => {
+    if (!file.width || !file.height) {
+      return { width: 200, height: 200 }
+    }
+    const maxSize = 400
+    const minSize = 150
+    let width = file.width
+    let height = file.height
+
+    // 如果超过最大尺寸，按比例缩放
+    if (width > maxSize || height > maxSize) {
+      if (width > height) {
+        height = (height / width) * maxSize
+        width = maxSize
+      } else {
+        width = (width / height) * maxSize
+        height = maxSize
+      }
+    }
+
+    // 如果太小，按比例放大
+    if (width < minSize && height < minSize) {
+      if (width > height) {
+        height = (height / width) * minSize
+        width = minSize
+      } else {
+        width = (width / height) * minSize
+        height = minSize
+      }
+    }
+
+    return { width: Math.round(width), height: Math.round(height) }
+  }
+
+  const { width, height } = getAdaptiveSize()
+
+  return (
+    <div
+      onClick={onClick}
+      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all ${
+        isSelected
+          ? 'ring-2 ring-primary-500 shadow-lg'
+          : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
+      }`}
+    >
+      <div
+        className="bg-gray-100 dark:bg-dark-bg flex items-center justify-center"
+        style={{ width, height }}
+      >
+        {imageSrc === null ? (
+          <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        ) : imageSrc && !imageError ? (
+          <img
+            src={imageSrc}
+            alt={file.name}
+            className="max-w-full max-h-full object-contain"
+            onError={() => setImageError(true)}
+            loading="lazy"
+            style={{ width, height, objectFit: 'contain' }}
+          />
+        ) : (
+          <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        )}
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        <p className="text-xs text-white truncate">{file.name}</p>
+        <p className="text-[10px] text-white/70">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
       </div>
     </div>
   )
@@ -216,26 +341,25 @@ function FileRow({ file, isSelected, onClick }: { file: FileItem; isSelected: bo
           : 'hover:bg-gray-100 dark:hover:bg-dark-border'
       }`}
     >
-      <div className="w-10 h-10 rounded bg-gray-100 dark:bg-dark-bg flex-shrink-0 overflow-hidden">
+      <div
+        className="rounded bg-gray-100 dark:bg-dark-bg flex-shrink-0 overflow-hidden flex items-center justify-center"
+        style={{ width: 40, height: 40 }}
+      >
         {imageSrc === null ? (
-          <div className="w-full h-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
+          <svg className="w-5 h-5 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
         ) : imageSrc && !imageError ? (
           <img
             src={imageSrc}
             alt={file.name}
-            className="w-full h-full object-cover"
+            className="max-w-full max-h-full object-contain"
             onError={() => setImageError(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
+          <svg className="w-5 h-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
         )}
       </div>
       <div className="flex-1 min-w-0">
