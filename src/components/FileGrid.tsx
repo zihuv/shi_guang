@@ -213,15 +213,16 @@ export default function FileGrid() {
         onMouseLeave={handleSelectionEnd}
       >
         {viewMode === 'adaptive' ? (
-          <div className="flex flex-wrap gap-4">
+          <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
             {filteredFiles.map((file) => (
-              <AdaptiveFileCard
-                key={file.id}
-                file={file}
-                isSelected={selectedFile?.id === file.id}
-                isMultiSelected={selectedFiles.includes(file.id)}
-                onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
-              />
+              <div key={file.id} className="break-inside-avoid">
+                <AdaptiveFileCard
+                  file={file}
+                  isSelected={selectedFile?.id === file.id}
+                  isMultiSelected={selectedFiles.includes(file.id)}
+                  onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
+                />
+              </div>
             ))}
           </div>
         ) : viewMode === 'grid' ? (
@@ -330,13 +331,9 @@ function FileCard({ file, isSelected, isMultiSelected, onClick }: {
     return () => { mounted = false }
   }, [file.path, fileExists])
 
-  // 根据原始宽高比计算容器高度
+  // 强制正方形格子
   const getContainerStyle = () => {
-    if (!file.width || !file.height) {
-      return { paddingBottom: '100%' }
-    }
-    const aspectRatio = (file.height / file.width) * 100
-    return { paddingBottom: `${Math.min(Math.max(aspectRatio, 50), 150)}%` }
+    return { paddingBottom: '100%' }
   }
 
   return (
@@ -418,42 +415,14 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
     return () => { mounted = false }
   }, [file.path, fileExists])
 
-  // 自适应尺寸：基于原始图片尺寸，最大限制在 400x400 容器内
-  const getAdaptiveSize = () => {
-    if (!file.width || !file.height) {
-      return { width: 200, height: 200 }
+  // 瀑布流布局：使用 aspect-ratio 让高度按原始比例自动计算
+  // 宽度由 CSS columns 控制（100% 适应列宽）
+  const getAspectRatio = () => {
+    if (!file.width || !file.height || file.width === 0) {
+      return '100%'
     }
-    const maxSize = 400
-    const minSize = 150
-    let width = file.width
-    let height = file.height
-
-    // 如果超过最大尺寸，按比例缩放
-    if (width > maxSize || height > maxSize) {
-      if (width > height) {
-        height = (height / width) * maxSize
-        width = maxSize
-      } else {
-        width = (width / height) * maxSize
-        height = maxSize
-      }
-    }
-
-    // 如果太小，按比例放大
-    if (width < minSize && height < minSize) {
-      if (width > height) {
-        height = (height / width) * minSize
-        width = minSize
-      } else {
-        width = (width / height) * minSize
-        height = minSize
-      }
-    }
-
-    return { width: Math.round(width), height: Math.round(height) }
+    return `${(file.height / file.width) * 100}%`
   }
-
-  const { width, height } = getAdaptiveSize()
 
   return (
     <div
@@ -466,8 +435,8 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
       }`}
     >
       <div
-        className="bg-gray-100 dark:bg-dark-bg flex items-center justify-center"
-        style={{ width, height }}
+        className="relative bg-gray-100 dark:bg-dark-bg"
+        style={{ paddingBottom: getAspectRatio() }}
       >
         {imageSrc === null ? (
           <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -477,10 +446,9 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
           <img
             src={imageSrc}
             alt={file.name}
-            className="max-w-full max-h-full object-contain"
+            className="absolute inset-0 w-full h-full object-contain"
             onError={() => setImageError(true)}
             loading="lazy"
-            style={{ width, height, objectFit: 'contain' }}
           />
         ) : (
           <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -488,9 +456,10 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
           </svg>
         )}
       </div>
-      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-        <p className="text-xs text-white truncate">{file.name}</p>
-        <p className="text-[10px] text-white/70">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
+      {/* 始终显示文件名 */}
+      <div className="p-2 bg-white dark:bg-dark-surface">
+        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{file.name}</p>
+        <p className="text-[10px] text-gray-400">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
       </div>
     </div>
   )
