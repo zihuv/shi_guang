@@ -63,6 +63,14 @@ pub fn run() {
             commands::reindex_all,
             commands::import_file,
             commands::import_image_from_base64,
+            commands::get_folder_tree,
+            commands::get_files_in_folder,
+            commands::create_folder,
+            commands::move_file,
+            commands::scan_folders,
+            commands::init_default_folder,
+            commands::delete_folder,
+            commands::rename_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

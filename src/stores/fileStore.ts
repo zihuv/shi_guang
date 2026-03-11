@@ -9,6 +9,7 @@ export interface FileItem {
   size: number
   width: number
   height: number
+  folderId: number | null
   createdAt: string
   modifiedAt: string
   tags: Tag[]
@@ -23,11 +24,14 @@ export interface Tag {
 interface FileStore {
   files: FileItem[]
   selectedFile: FileItem | null
+  selectedFolderId: number | null
   searchQuery: string
   isLoading: boolean
   setSearchQuery: (query: string) => void
   setSelectedFile: (file: FileItem | null) => void
+  setSelectedFolderId: (folderId: number | null) => void
   loadFiles: () => Promise<void>
+  loadFilesInFolder: (folderId: number | null) => Promise<void>
   searchFiles: (query: string) => Promise<void>
   addTagToFile: (fileId: number, tagId: number) => Promise<void>
   removeTagFromFile: (fileId: number, tagId: number) => Promise<void>
@@ -39,6 +43,7 @@ interface FileStore {
 export const useFileStore = create<FileStore>((set, get) => ({
   files: [],
   selectedFile: null,
+  selectedFolderId: null,
   searchQuery: '',
   isLoading: false,
 
@@ -49,6 +54,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   setSelectedFile: (file) => set({ selectedFile: file }),
 
+  setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
+
   loadFiles: async () => {
     set({ isLoading: true })
     try {
@@ -56,6 +63,19 @@ export const useFileStore = create<FileStore>((set, get) => ({
       set({ files, isLoading: false })
     } catch (e) {
       console.error('Failed to load files:', e)
+      set({ isLoading: false })
+    }
+  },
+
+  loadFilesInFolder: async (folderId) => {
+    console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
+    set({ isLoading: true })
+    try {
+      const files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
+      console.log('[fileStore] Loaded files:', files.length)
+      set({ files, isLoading: false })
+    } catch (e) {
+      console.error('[fileStore] Failed to load files in folder:', e)
       set({ isLoading: false })
     }
   },
@@ -91,10 +111,11 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   importFile: async (sourcePath: string) => {
     console.log('[FileStore] importFile called, path:', sourcePath)
+    const { selectedFolderId } = get()
     try {
-      const file = await invoke<FileItem>('import_file', { sourcePath })
+      const file = await invoke<FileItem>('import_file', { sourcePath, folderId: selectedFolderId })
       console.log('[FileStore] importFile result:', file)
-      await get().loadFiles()
+      await get().loadFilesInFolder(selectedFolderId)
       console.log('[FileStore] loadFiles completed')
       return file
     } catch (e) {
@@ -105,10 +126,11 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   importImageFromBase64: async (base64Data: string, ext: string) => {
     console.log('[FileStore] importImageFromBase64 called, ext:', ext)
+    const { selectedFolderId } = get()
     try {
-      const file = await invoke<FileItem>('import_image_from_base64', { base64Data, ext })
+      const file = await invoke<FileItem>('import_image_from_base64', { base64Data, ext, folderId: selectedFolderId })
       console.log('[FileStore] importImageFromBase64 result:', file)
-      await get().loadFiles()
+      await get().loadFilesInFolder(selectedFolderId)
       return file
     } catch (e) {
       console.error('[FileStore] Failed to import image from clipboard:', e)

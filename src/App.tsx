@@ -2,8 +2,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSettingsStore } from './stores/settingsStore'
 import { useFileStore } from './stores/fileStore'
 import { useTagStore } from './stores/tagStore'
+import { useFolderStore } from './stores/folderStore'
 import Header from './components/Header'
-import TagPanel from './components/TagPanel'
+import SidePanel from './components/SidePanel'
 import FileGrid from './components/FileGrid'
 import SettingsModal from './components/SettingsModal'
 
@@ -11,13 +12,15 @@ function App() {
   const { theme, loadSettings } = useSettingsStore()
   const { loadFiles, importImageFromBase64 } = useFileStore()
   const { loadTags } = useTagStore()
+  const { loadFolders } = useFolderStore()
   const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     loadSettings()
     loadFiles()
     loadTags()
-  }, [loadSettings, loadFiles, loadTags])
+    loadFolders()
+  }, [loadSettings, loadFiles, loadTags, loadFolders])
 
   // Handle Ctrl+V paste to import images from clipboard
   const handlePaste = useCallback(async (e: ClipboardEvent) => {
@@ -66,7 +69,7 @@ function App() {
       <Header onOpenSettings={() => setShowSettings(true)} />
 
       <div className="flex flex-1 overflow-hidden">
-        <TagPanel />
+        <SidePanel />
 
         <main className="flex-1 overflow-auto">
           <FileGrid />

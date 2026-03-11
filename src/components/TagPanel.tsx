@@ -22,7 +22,7 @@ export default function TagPanel() {
   }
 
   return (
-    <aside className="w-56 flex-shrink-0 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border flex flex-col">
+    <div className="flex flex-col">
       <div className="p-3 border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">标签</h2>
@@ -39,20 +39,6 @@ export default function TagPanel() {
 
       <div className="flex-1 overflow-auto p-2">
         <div className="space-y-1">
-          <button
-            onClick={() => setSelectedTagId(null)}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
-              selectedTagId === null
-                ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-border'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            <span>全部文件</span>
-          </button>
-
           {tags.map((tag) => (
             <div
               key={tag.id}
@@ -123,6 +109,6 @@ export default function TagPanel() {
           </div>
         </div>
       )}
-    </aside>
+    </div>
   )
 }

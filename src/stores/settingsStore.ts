@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { useFolderStore } from './folderStore'
+import { useFileStore } from './fileStore'
 
 interface Settings {
   theme: 'light' | 'dark'
@@ -26,8 +28,12 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     await invoke('add_index_path', { path })
     const paths = await invoke<string[]>('get_index_paths')
     set({ indexPaths: paths })
-    // Trigger file reindex
+    // Trigger file reindex and folder scan
     await invoke('reindex_all')
+    await invoke('scan_folders')
+    // Reload folders and files in UI
+    useFolderStore.getState().loadFolders()
+    useFileStore.getState().loadFiles()
   },
 
   removeIndexPath: async (path) => {
@@ -45,7 +51,12 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
         indexPaths: indexPaths || []
       })
     } catch (e) {
-      console.error('Failed to load settings:', e)
+      // Silently handle "Setting not found" - first run has no settings
+      // Only log if it's a different error
+      const errorMsg = String(e)
+      if (!errorMsg.includes('Setting not found')) {
+        console.error('Failed to load settings:', e)
+      }
     }
   },
 }))

@@ -19,6 +19,9 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
         return Err(format!("Directory does not exist: {}", dir_path));
     }
 
+    // Get index paths for folder creation
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+
     for entry in WalkDir::new(path)
         .follow_links(true)
         .into_iter()
@@ -40,7 +43,15 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             continue;
         }
 
-        match process_file(file_path, &ext) {
+        // Get or create folder for this file
+        let folder_id = if let Some(parent) = file_path.parent() {
+            let parent_path = parent.to_string_lossy().to_string();
+            db.get_or_create_folder(&parent_path, &index_paths).map_err(|e| e.to_string())?
+        } else {
+            None
+        };
+
+        match process_file(file_path, &ext, folder_id) {
             Ok(file_record) => {
                 if let Err(e) = db.insert_file(&file_record) {
                     log::warn!("Failed to insert file {}: {}", file_path.display(), e);
@@ -57,7 +68,36 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
     Ok(count)
 }
 
-fn process_file(path: &Path, ext: &str) -> Result<FileRecord, String> {
+pub fn scan_folders(db: &Database, dir_path: &str) -> Result<usize, String> {
+    let path = Path::new(dir_path);
+
+    if !path.exists() {
+        return Err(format!("Directory does not exist: {}", dir_path));
+    }
+
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    let mut count = 0;
+
+    // Scan all directories under the path
+    for entry in WalkDir::new(path)
+        .follow_links(true)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let dir_path = entry.path();
+        if dir_path.is_dir() {
+            let dir_str = dir_path.to_string_lossy().to_string();
+            if let Ok(Some(_)) = db.get_or_create_folder(&dir_str, &index_paths) {
+                count += 1;
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+fn process_file(path: &Path, ext: &str, folder_id: Option<i64>) -> Result<FileRecord, String> {
     let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
 
     let name = path
@@ -94,6 +134,7 @@ fn process_file(path: &Path, ext: &str) -> Result<FileRecord, String> {
         size: metadata.len() as i64,
         width: width as i32,
         height: height as i32,
+        folder_id,
         created_at,
         modified_at,
     })
