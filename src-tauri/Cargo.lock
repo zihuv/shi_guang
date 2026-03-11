@@ -4547,7 +4547,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "shi-guang"
+name = "shiguang"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",

@@ -59,7 +59,7 @@ pub fn run() {
         let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
         std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
 
-        let db_path = app_data_dir.join("shi_guang.db");
+        let db_path = app_data_dir.join("shiguang.db");
         let database = db::Database::new(&db_path).expect("Failed to initialize database");
 
         app.manage(AppState {

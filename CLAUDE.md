@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-时光 (shi-guang) is a desktop material/asset management tool similar to PixCall or BillFish. It indexes design files (images, PSD, AI, etc.) from user-selected folders and provides browsing, tagging, and search functionality.
+拾光 (shiguang) is a desktop material/asset management tool similar to PixCall or BillFish. It indexes design files (images, PSD, AI, etc.) from user-selected folders and provides browsing, tagging, and search functionality.
 
 ## Tech Stack
 

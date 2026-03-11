@@ -1,5 +1,5 @@
 [package]
-name = "shi-guang"
+name = "shiguang"
 version = "0.1.0"
 description = "A material management tool"
 authors = ["you"]
@@ -8,7 +8,7 @@ repository = ""
 edition = "2021"
 
 [lib]
-name = "shi_guang_lib"
+name = "shiguang_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

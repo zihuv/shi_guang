@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "shi-guang",
+  "productName": "shiguang",
   "version": "0.1.0",
   "identifier": "com.shiguang.app",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "时光素材管理",
+        "title": "拾光",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
