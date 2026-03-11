@@ -14,14 +14,22 @@ interface FolderStore {
   selectedFolderId: number | null
   expandedFolderIds: number[]
   isLoading: boolean
+  newFolderName: string
+  addingSubfolder: FolderNode | null
+  editingFolder: FolderNode | null
+  deleteConfirm: FolderNode | null
   loadFolders: () => Promise<void>
-  initDefaultFolder: () => Promise<void>
+  initDefaultFolder: () => Promise<{ id: number; name: string; path: string; parent_id: number | null; created_at: string } | null>
   selectFolder: (folderId: number | null) => void
   toggleFolder: (folderId: number) => void
   createFolder: (name: string, parentId: number | null) => Promise<void>
   deleteFolder: (id: number) => Promise<void>
   renameFolder: (id: number, name: string) => Promise<void>
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
+  setNewFolderName: (name: string) => void
+  setAddingSubfolder: (folder: FolderNode | null) => void
+  setEditingFolder: (folder: FolderNode | null) => void
+  setDeleteConfirm: (folder: FolderNode | null) => void
 }
 
 export const useFolderStore = create<FolderStore>((set, get) => ({
@@ -29,6 +37,10 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
   selectedFolderId: null,
   expandedFolderIds: [],
   isLoading: false,
+  newFolderName: '',
+  addingSubfolder: null,
+  editingFolder: null,
+  deleteConfirm: null,
 
   loadFolders: async () => {
     set({ isLoading: true })
@@ -101,4 +113,12 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
       console.error('Failed to move file:', e)
     }
   },
+
+  setNewFolderName: (name) => set({ newFolderName: name }),
+
+  setAddingSubfolder: (folder) => set({ addingSubfolder: folder }),
+
+  setEditingFolder: (folder) => set({ editingFolder: folder, newFolderName: folder?.name || '' }),
+
+  setDeleteConfirm: (folder) => set({ deleteConfirm: folder }),
 }))

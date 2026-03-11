@@ -76,9 +76,10 @@ function App() {
         </main>
       </div>
 
-      {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} />
-      )}
+      <SettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   )
 }

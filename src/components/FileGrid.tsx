@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react'
-import { useFileStore, FileItem } from '../stores/fileStore'
-import { useTagStore } from '../stores/tagStore'
+import { useEffect, useState } from 'react'
+import { useFileStore, FileItem } from '@/stores/fileStore'
+import { useTagStore } from '@/stores/tagStore'
 import { readFile } from '@tauri-apps/plugin-fs'
 
 // Helper to get image URL from file path using fs plugin

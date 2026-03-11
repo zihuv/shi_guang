@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { useTagStore } from '../stores/tagStore'
+import { useTagStore } from '@/stores/tagStore'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/Dialog'
+import { Plus, X } from 'lucide-react'
 
 const TAG_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#84cc16',
@@ -18,6 +27,7 @@ export default function TagPanel() {
       await addTag(newTagName.trim(), selectedColor)
       setNewTagName('')
       setIsAdding(false)
+      setSelectedColor(TAG_COLORS[0])
     }
   }
 
@@ -26,14 +36,13 @@ export default function TagPanel() {
       <div className="p-3 border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">标签</h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setIsAdding(true)}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-border text-gray-500 dark:text-gray-400"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+            <Plus className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
@@ -54,61 +63,67 @@ export default function TagPanel() {
                 style={{ backgroundColor: tag.color }}
               />
               <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{tag.name}</span>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation()
                   deleteTag(tag.id)
                 }}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 transition-all"
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+                <X className="w-3 h-3 text-gray-400 hover:text-red-500" />
+              </Button>
             </div>
           ))}
         </div>
       </div>
 
-      {isAdding && (
-        <div className="p-3 border-t border-gray-200 dark:border-dark-border">
-          <input
-            type="text"
-            value={newTagName}
-            onChange={(e) => setNewTagName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
-            placeholder="标签名称"
-            className="w-full px-2 py-1.5 mb-2 text-sm bg-gray-100 dark:bg-dark-bg border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-            autoFocus
-          />
-          <div className="flex flex-wrap gap-1 mb-2">
-            {TAG_COLORS.map((color) => (
-              <button
-                key={color}
-                onClick={() => setSelectedColor(color)}
-                className={`w-5 h-5 rounded-full transition-transform ${
-                  selectedColor === color ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
-                }`}
-                style={{ backgroundColor: color }}
-              />
-            ))}
+      {/* Add Tag Dialog */}
+      <Dialog open={isAdding} onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          setIsAdding(false)
+          setNewTagName('')
+          setSelectedColor(TAG_COLORS[0])
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>创建标签</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Input
+              value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+              placeholder="标签名称"
+              autoFocus
+            />
+            <div className="flex flex-wrap gap-2">
+              {TAG_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setSelectedColor(color)}
+                  className={`w-6 h-6 rounded-full transition-transform ${
+                    selectedColor === color ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleAddTag}
-              className="flex-1 px-2 py-1.5 text-sm bg-primary-600 text-white rounded-md hover:bg-primary-700"
-            >
-              添加
-            </button>
-            <button
-              onClick={() => setIsAdding(false)}
-              className="flex-1 px-2 py-1.5 text-sm bg-gray-100 dark:bg-dark-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-            >
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => {
+              setIsAdding(false)
+              setNewTagName('')
+              setSelectedColor(TAG_COLORS[0])
+            }}>
               取消
-            </button>
+            </Button>
+            <Button onClick={handleAddTag}>添加</Button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

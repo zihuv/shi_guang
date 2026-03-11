@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import FolderTree from './FolderTree'
 import TagPanel from './TagPanel'
-import { useFileStore } from '../stores/fileStore'
-import { useFolderStore } from '../stores/folderStore'
+import { useFileStore } from '@/stores/fileStore'
+import { useFolderStore } from '@/stores/folderStore'
 
 export default function SidePanel() {
   const { loadFiles, loadFilesInFolder, setSelectedFolderId } = useFileStore()

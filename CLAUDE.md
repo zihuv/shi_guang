@@ -66,3 +66,53 @@ Frontend calls Rust via `invoke()`:
 - `get_setting`, `set_setting`
 - `get_index_paths`, `add_index_path`, `remove_index_path`
 - `reindex_all`
+
+## UI Components
+
+The project uses [Shadcn/ui](https://ui.shadcn.com/) (built on Radix UI) for UI components. All UI components are located in `src/components/ui/`.
+
+### Available Components
+- `Button` - Button with variants (default, destructive, outline, secondary, ghost, link)
+- `Input` - Text input field
+- `Dialog` - Modal dialog
+- `ContextMenu` - Right-click context menu
+- `AlertDialog` - Confirmation dialog
+
+### Using Components
+
+```tsx
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/Dialog'
+
+// Button with variants
+<Button variant="default">Default</Button>
+<Button variant="destructive">Delete</Button>
+<Button variant="outline">Cancel</Button>
+<Button variant="ghost">Ghost</Button>
+<Button size="sm">Small</Button>
+<Button size="icon">Icon</Button>
+
+// Input
+<Input placeholder="Search..." />
+
+// Dialog
+<Dialog open={isOpen} onOpenChange={setOpen}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Title</DialogTitle>
+    </DialogHeader>
+    {/* Content */}
+  </DialogContent>
+</Dialog>
+```
+
+### Path Aliases
+The project uses `@/` as an alias for `src/`. Use `@/stores/xxx` instead of `../stores/xxx` for imports.
+
+**Rule**: Always prefer `@/` alias over relative paths (`../`) for imports. This makes code more maintainable and easier to refactor.
