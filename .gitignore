@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+dist
+build
+
+# Tauri
+src-tauri/target
+src-tauri/dist
+src-tauri/release
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cache
+.cache
+.parcel-cache
+.vite
