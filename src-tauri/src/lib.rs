@@ -3,11 +3,36 @@ mod indexer;
 mod commands;
 
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::Manager;
+
+// Track recent imports to prevent duplicate imports within a short time
+pub struct RecentImports {
+    entries: Vec<(String, Instant)>,
+}
+
+impl RecentImports {
+    fn new() -> Self {
+        RecentImports { entries: Vec::new() }
+    }
+
+    fn is_recent(&mut self, source_path: &str, max_age: Duration) -> bool {
+        let now = Instant::now();
+        // Clean old entries
+        self.entries.retain(|(_, time)| now.duration_since(*time) < max_age);
+        // Check if this path was recently imported
+        self.entries.iter().any(|(path, _)| path == source_path)
+    }
+
+    fn add(&mut self, source_path: String) {
+        self.entries.push((source_path, Instant::now()));
+    }
+}
 
 pub struct AppState {
     pub db: Mutex<db::Database>,
     pub app_data_dir: Mutex<std::path::PathBuf>,
+    pub recent_imports: Mutex<RecentImports>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -40,6 +65,7 @@ pub fn run() {
         app.manage(AppState {
             db: Mutex::new(database),
             app_data_dir: Mutex::new(app_data_dir),
+            recent_imports: Mutex::new(RecentImports::new()),
         });
 
         log::info!("Application started successfully");

@@ -37,6 +37,16 @@ fn get_import_dir() -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 pub fn import_file(state: State<AppState>, source_path: String, folder_id: Option<i64>) -> Result<FileWithTags, String> {
+    // Check if this source file was recently imported (within 3 seconds)
+    {
+        let mut recent = state.recent_imports.lock().map_err(|e| e.to_string())?;
+        if recent.is_recent(&source_path, std::time::Duration::from_secs(3)) {
+            log::info!("Skipping duplicate import for: {}", source_path);
+            return Err("Duplicate import skipped".to_string());
+        }
+        recent.add(source_path.clone());
+    }
+
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     let source = Path::new(&source_path);
@@ -535,6 +545,37 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
 #[tauri::command]
 pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // First, delete all files in this folder (and subfolders)
+    // Get folder path to find all matching files
+    if let Some(folder) = db.get_folder_by_id(id).map_err(|e| e.to_string())? {
+        let folder_path = folder.path.clone();
+
+        // Get all files
+        let files = db.get_all_files().map_err(|e| e.to_string())?;
+
+        // Delete all files whose path starts with this folder's path
+        for file in &files {
+            if file.path.starts_with(&folder_path) {
+                db.delete_file(&file.path).map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Also handle subfolder files - get all folders and delete files in subfolders
+        let all_folders = db.get_all_folders().map_err(|e| e.to_string())?;
+        for subfolder in &all_folders {
+            if subfolder.path.starts_with(&folder_path) && subfolder.id != id {
+                let subfolder_path = subfolder.path.clone();
+                for file in &files {
+                    if file.path.starts_with(&subfolder_path) {
+                        let _ = db.delete_file(&file.path);
+                    }
+                }
+            }
+        }
+    }
+
+    // Then delete the folder itself
     db.delete_folder(id).map_err(|e| e.to_string())
 }
 
