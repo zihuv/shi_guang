@@ -85,6 +85,7 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::get_index_paths,
+            commands::get_default_index_path,
             commands::add_index_path,
             commands::remove_index_path,
             commands::reindex_all,

@@ -306,6 +306,19 @@ pub fn get_index_paths(state: State<AppState>) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+pub fn get_default_index_path() -> Result<String, String> {
+    // Use Pictures/shiguang directory as default
+    let pictures_dir = dirs::picture_dir()
+        .ok_or_else(|| "Could not find Pictures directory".to_string())?;
+    let shiguang_dir = pictures_dir.join("shiguang");
+    // Create the directory if it doesn't exist
+    if !shiguang_dir.exists() {
+        fs::create_dir_all(&shiguang_dir).map_err(|e| e.to_string())?;
+    }
+    Ok(shiguang_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub fn add_index_path(state: State<AppState>, path: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.add_index_path(&path).map_err(|e| e.to_string())

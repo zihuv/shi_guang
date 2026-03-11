@@ -43,20 +43,47 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   },
 
   loadSettings: async () => {
+    let theme: "light" | "dark" = "light";
+    let indexPaths: string[] = [];
+
+    // Get theme
     try {
-      const theme = await invoke<string>("get_setting", { key: "theme" });
-      const indexPaths = await invoke<string[]>("get_index_paths");
-      set({
-        theme: (theme as "light" | "dark") || "light",
-        indexPaths: indexPaths || [],
-      });
+      const themeValue = await invoke<string>("get_setting", { key: "theme" });
+      theme = (themeValue as "light" | "dark") || "light";
     } catch (e) {
       // Silently handle "Setting not found" - first run has no settings
-      // Only log if it's a different error
       const errorMsg = String(e);
       if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load settings:", e);
+        console.error("Failed to load theme:", e);
       }
     }
+
+    // Get index paths
+    try {
+      indexPaths = await invoke<string[]>("get_index_paths");
+    } catch (e) {
+      console.error("Failed to load index paths:", e);
+    }
+
+    // If no index paths configured, add default path (user's Pictures/shiguang folder)
+    if (!indexPaths || indexPaths.length === 0) {
+      try {
+        const defaultPath = await invoke<string>("get_default_index_path");
+        await invoke("add_index_path", { path: defaultPath });
+        indexPaths = [defaultPath];
+        // Trigger file scan for the new path
+        await invoke("scan_folders");
+        // Reload folders and files in UI
+        useFolderStore.getState().loadFolders();
+        useFileStore.getState().loadFiles();
+      } catch (e) {
+        console.error("Failed to add default index path:", e);
+      }
+    }
+
+    set({
+      theme,
+      indexPaths: indexPaths || [],
+    });
   },
 }));

@@ -26,7 +26,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: "选择索引目录",
+        title: "选择素材目录",
       });
       if (selected && typeof selected === "string") {
         await addIndexPath(selected);
@@ -47,12 +47,12 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         <div className="space-y-6 py-4">
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              索引目录
+              素材目录
             </h3>
             <div className="space-y-2">
               {indexPaths.length === 0 ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  暂无索引目录
+                  暂无素材目录
                 </p>
               ) : (
                 indexPaths.map((path) => (
