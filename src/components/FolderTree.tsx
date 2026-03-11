@@ -36,7 +36,7 @@ interface FolderItemProps {
 
 function FolderItem({ folder, depth }: FolderItemProps) {
   const { selectedFolderId, expandedFolderIds, selectFolder, toggleFolder } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
   const isSelected = selectedFolderId === folder.id
   const hasChildren = folder.children && folder.children.length > 0
@@ -44,6 +44,8 @@ function FolderItem({ folder, depth }: FolderItemProps) {
   const handleClick = async () => {
     selectFolder(folder.id)
     setSelectedFolderId(folder.id)
+    // Clear selected file when switching folders
+    setSelectedFile(null)
     await loadFilesInFolder(folder.id)
   }
 
@@ -149,7 +151,7 @@ export default function FolderTree() {
     setNewFolderName,
     newFolderName,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
 
   const handleAddFolder = async () => {

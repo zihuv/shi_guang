@@ -1,173 +1,189 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { listen } from '@tauri-apps/api/event'
-import { useSettingsStore } from './stores/settingsStore'
-import { useFileStore } from './stores/fileStore'
-import { useTagStore } from './stores/tagStore'
-import { useFolderStore } from './stores/folderStore'
-import Header from './components/Header'
-import SidePanel from './components/SidePanel'
-import FileGrid from './components/FileGrid'
-import SettingsModal from './components/SettingsModal'
+import { useEffect, useState, useCallback, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useFileStore } from "@/stores/fileStore";
+import { useTagStore } from "@/stores/tagStore";
+import { useFolderStore } from "@/stores/folderStore";
+import Header from "@/components/Header";
+import SidePanel from "@/components/SidePanel";
+import FileGrid from "@/components/FileGrid";
+import DetailPanel from "@/components/DetailPanel";
+import SettingsModal from "@/components/SettingsModal";
 
 // Module-level deduplication state - persists across component re-renders
 const dragDropState = {
   processedPaths: new Set<string>(),
   isProcessing: false,
   listenersReady: false,
-}
+};
 
 function App() {
-  const { theme, loadSettings } = useSettingsStore()
-  const { loadFiles, importImageFromBase64, importFile: importFileFn } = useFileStore()
-  const { loadTags } = useTagStore()
-  const { loadFolders } = useFolderStore()
-  const [showSettings, setShowSettings] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
+  const { theme, loadSettings } = useSettingsStore();
+  const {
+    loadFiles,
+    importImageFromBase64,
+    importFile: importFileFn,
+  } = useFileStore();
+  const { loadTags } = useTagStore();
+  const { loadFolders } = useFolderStore();
+  const [showSettings, setShowSettings] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Use ref to store importFile function to prevent effect re-runs
-  const importFileRef = useRef(importFileFn)
-  importFileRef.current = importFileFn
+  const importFileRef = useRef(importFileFn);
+  importFileRef.current = importFileFn;
 
   useEffect(() => {
-    loadSettings()
-    loadFiles()
-    loadTags()
-    loadFolders()
-  }, [loadSettings, loadFiles, loadTags, loadFolders])
+    loadSettings();
+    loadFiles();
+    loadTags();
+    loadFolders();
+  }, [loadSettings, loadFiles, loadTags, loadFolders]);
 
   // Listen for Tauri drag and drop events
   useEffect(() => {
     // Skip if listeners already set up
     if (dragDropState.listenersReady) {
-      return
+      return;
     }
 
-    let unlistenDragEnter: (() => void) | undefined
-    let unlistenDragDrop: (() => void) | undefined
-    let unlistenDragLeave: (() => void) | undefined
+    let unlistenDragEnter: (() => void) | undefined;
+    let unlistenDragDrop: (() => void) | undefined;
+    let unlistenDragLeave: (() => void) | undefined;
 
     const setupListeners = async () => {
-      unlistenDragEnter = await listen('tauri://drag-enter', () => {
-        setIsDragging(true)
-      })
+      unlistenDragEnter = await listen("tauri://drag-enter", () => {
+        setIsDragging(true);
+      });
 
-      unlistenDragLeave = await listen('tauri://drag-leave', () => {
-        setIsDragging(false)
-      })
+      unlistenDragLeave = await listen("tauri://drag-leave", () => {
+        setIsDragging(false);
+      });
 
-      unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
-        // Prevent concurrent processing
-        if (dragDropState.isProcessing) {
-          console.log('[Tauri DragDrop] Skipping - already processing')
-          return
-        }
-
-        setIsDragging(false)
-        console.log('[Tauri DragDrop] paths:', event.payload.paths, 'count:', event.payload.paths.length)
-
-        dragDropState.isProcessing = true
-
-        try {
-          // Import each dropped file using ref, skip duplicates
-          for (const path of event.payload.paths) {
-            // Use source path as the key for deduplication
-            if (!dragDropState.processedPaths.has(path)) {
-              dragDropState.processedPaths.add(path)
-              console.log('[Tauri DragDrop] importing:', path)
-
-              try {
-                await importFileRef.current(path)
-              } catch (error) {
-                console.error('[Tauri DragDrop] Import error:', error)
-                // Remove from processed on error so user can retry
-                dragDropState.processedPaths.delete(path)
-              }
-            } else {
-              console.log('[Tauri DragDrop] Skipping duplicate:', path)
-            }
+      unlistenDragDrop = await listen<{ paths: string[] }>(
+        "tauri://drag-drop",
+        async (event) => {
+          // Prevent concurrent processing
+          if (dragDropState.isProcessing) {
+            console.log("[Tauri DragDrop] Skipping - already processing");
+            return;
           }
-        } finally {
-          dragDropState.isProcessing = false
-          // Clean up processed paths after a delay
-          setTimeout(() => {
+
+          setIsDragging(false);
+          console.log(
+            "[Tauri DragDrop] paths:",
+            event.payload.paths,
+            "count:",
+            event.payload.paths.length,
+          );
+
+          dragDropState.isProcessing = true;
+
+          try {
+            // Import each dropped file using ref, skip duplicates
             for (const path of event.payload.paths) {
-              dragDropState.processedPaths.delete(path)
+              // Use source path as the key for deduplication
+              if (!dragDropState.processedPaths.has(path)) {
+                dragDropState.processedPaths.add(path);
+                console.log("[Tauri DragDrop] importing:", path);
+
+                try {
+                  await importFileRef.current(path);
+                } catch (error) {
+                  console.error("[Tauri DragDrop] Import error:", error);
+                  // Remove from processed on error so user can retry
+                  dragDropState.processedPaths.delete(path);
+                }
+              } else {
+                console.log("[Tauri DragDrop] Skipping duplicate:", path);
+              }
             }
-          }, 2000)
-        }
-      })
+          } finally {
+            dragDropState.isProcessing = false;
+            // Clean up processed paths after a delay
+            setTimeout(() => {
+              for (const path of event.payload.paths) {
+                dragDropState.processedPaths.delete(path);
+              }
+            }, 2000);
+          }
+        },
+      );
 
-      dragDropState.listenersReady = true
-    }
+      dragDropState.listenersReady = true;
+    };
 
-    setupListeners()
+    setupListeners();
 
     return () => {
-      unlistenDragEnter?.()
-      unlistenDragDrop?.()
-      unlistenDragLeave?.()
-      dragDropState.listenersReady = false
-    }
-  }, [])
+      unlistenDragEnter?.();
+      unlistenDragDrop?.();
+      unlistenDragLeave?.();
+      dragDropState.listenersReady = false;
+    };
+  }, []);
 
   // Handle Ctrl+V paste to import images from clipboard
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    const items = e.clipboardData?.items
-    if (!items) return
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
 
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault()
-        const blob = item.getAsFile()
-        if (!blob) continue
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (!blob) continue;
 
-        // Convert blob to base64
-        const reader = new FileReader()
-        reader.onload = async () => {
-          const base64 = (reader.result as string).split(',')[1]
-          // Determine file extension from MIME type
-          const mimeType = blob.type
-          const ext = mimeType.split('/')[1] || 'png'
+          // Convert blob to base64
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64 = (reader.result as string).split(",")[1];
+            // Determine file extension from MIME type
+            const mimeType = blob.type;
+            const ext = mimeType.split("/")[1] || "png";
 
-          await importImageFromBase64(base64, ext)
+            await importImageFromBase64(base64, ext);
+          };
+          reader.readAsDataURL(blob);
+          break;
         }
-        reader.readAsDataURL(blob)
-        break
       }
-    }
-  }, [importImageFromBase64])
+    },
+    [importImageFromBase64],
+  );
 
   // Handle drag and drop to import files (prevent default behavior)
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }, [])
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }, [])
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault();
+    e.stopPropagation();
     // Drop handling is done via Tauri events now
-  }, [])
+  }, []);
 
   useEffect(() => {
-    document.addEventListener('paste', handlePaste)
+    document.addEventListener("paste", handlePaste);
     return () => {
-      document.removeEventListener('paste', handlePaste)
-    }
-  }, [handlePaste])
+      document.removeEventListener("paste", handlePaste);
+    };
+  }, [handlePaste]);
 
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
     } else {
-      document.documentElement.classList.remove('dark')
+      document.documentElement.classList.remove("dark");
     }
-  }, [theme])
+  }, [theme]);
 
   return (
     <div
@@ -207,6 +223,8 @@ function App() {
         <main className="flex-1 overflow-auto">
           <FileGrid />
         </main>
+
+        <DetailPanel />
       </div>
 
       <SettingsModal
@@ -214,7 +232,7 @@ function App() {
         onClose={() => setShowSettings(false)}
       />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

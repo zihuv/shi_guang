@@ -68,6 +68,10 @@ export default function FileGrid() {
     if (selectedFiles.length > 0) {
       clearSelection()
     }
+    // Also clear the selected file
+    if (selectedFile) {
+      setSelectedFile(null)
+    }
 
     setIsSelecting(true)
     const rect = selectionRef.current?.getBoundingClientRect()
@@ -298,13 +302,6 @@ export default function FileGrid() {
             )}
           </div>
         </div>
-      )}
-
-      {selectedFile && (
-        <FileDetailPanel
-          file={selectedFile}
-          onClose={() => setSelectedFile(null)}
-        />
       )}
     </div>
   )
@@ -560,158 +557,6 @@ function FileRow({ file, isSelected, isMultiSelected, onClick }: {
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
         <span className="text-xs text-gray-400">{file.ext.toUpperCase()}</span>
-      </div>
-    </div>
-  )
-}
-
-function FileDetailPanel({ file, onClose }: { file: FileItem; onClose: () => void }) {
-  const { addTagToFile, removeTagFromFile, deleteFile } = useFileStore()
-  const { tags } = useTagStore()
-  const [showTagPicker, setShowTagPicker] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [imageSrc, setImageSrc] = useState<string>('')
-
-  useEffect(() => {
-    let mounted = true
-    getImageSrc(file.path).then(src => {
-      if (mounted) setImageSrc(src)
-    })
-    return () => { mounted = false }
-  }, [file.path])
-
-  const fileTags = file.tags
-  const availableTags = tags.filter(t => !fileTags.some(ft => ft.id === t.id))
-
-  const handleDelete = async () => {
-    await deleteFile(file.id)
-  }
-
-  return (
-    <div className="fixed right-0 top-0 h-full w-72 bg-white dark:bg-dark-surface border-l border-gray-200 dark:border-dark-border shadow-xl flex flex-col">
-      <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-dark-border">
-        <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">详情</h3>
-        <div className="flex items-center gap-1">
-          {showDeleteConfirm ? (
-            <>
-              <button
-                onClick={handleDelete}
-                className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
-              >
-                确认删除
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
-              >
-                取消
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500"
-                title="删除文件"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-              <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-border">
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto p-3 space-y-4">
-        <div className="aspect-video bg-gray-100 dark:bg-dark-bg rounded-lg overflow-hidden">
-          <img
-            src={imageSrc}
-            alt={file.name}
-            className="w-full h-full object-contain"
-          />
-        </div>
-
-        <div>
-          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">文件名</h4>
-          <p className="text-sm text-gray-800 dark:text-gray-200 break-all">{file.name}</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">尺寸</h4>
-            <p className="text-sm text-gray-800 dark:text-gray-200">{file.width} x {file.height}</p>
-          </div>
-          <div>
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">大小</h4>
-            <p className="text-sm text-gray-800 dark:text-gray-200">{formatSize(file.size)}</p>
-          </div>
-          <div>
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">格式</h4>
-            <p className="text-sm text-gray-800 dark:text-gray-200">{file.ext.toUpperCase()}</p>
-          </div>
-          <div>
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">修改时间</h4>
-            <p className="text-sm text-gray-800 dark:text-gray-200">{file.modifiedAt}</p>
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">标签</h4>
-            <button
-              onClick={() => setShowTagPicker(!showTagPicker)}
-              className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
-            >
-              添加标签
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {fileTags.map(tag => (
-              <span
-                key={tag.id}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full text-white"
-                style={{ backgroundColor: tag.color }}
-              >
-                {tag.name}
-                <button
-                  onClick={() => removeTagFromFile(file.id, tag.id)}
-                  className="hover:opacity-70"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </span>
-            ))}
-            {fileTags.length === 0 && (
-              <p className="text-xs text-gray-400">暂无标签</p>
-            )}
-          </div>
-
-          {showTagPicker && availableTags.length > 0 && (
-            <div className="mt-2 p-2 bg-gray-50 dark:bg-dark-bg rounded-lg space-y-1">
-              {availableTags.map(tag => (
-                <button
-                  key={tag.id}
-                  onClick={() => {
-                    addTagToFile(file.id, tag.id)
-                    setShowTagPicker(false)
-                  }}
-                  className="w-full flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-dark-border"
-                >
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                  <span className="text-gray-700 dark:text-gray-300">{tag.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )
