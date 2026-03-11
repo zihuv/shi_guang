@@ -263,6 +263,29 @@ pub fn delete_file(state: State<AppState>, file_id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn delete_files(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get all files first
+    let files = db.get_all_files().map_err(|e| e.to_string())?;
+
+    for file_id in file_ids {
+        if let Some(file) = files.iter().find(|f| f.id == file_id) {
+            // Delete from database
+            let _ = db.delete_file(&file.path);
+
+            // Delete the actual file
+            let path = std::path::Path::new(&file.path);
+            if path.exists() {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_setting(state: State<AppState>, key: String) -> Result<String, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_setting(&key)

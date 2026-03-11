@@ -81,6 +81,7 @@ pub fn run() {
             commands::add_tag_to_file,
             commands::remove_tag_from_file,
             commands::delete_file,
+            commands::delete_files,
             commands::get_setting,
             commands::set_setting,
             commands::get_index_paths,

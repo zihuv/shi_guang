@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useTagStore } from '@/stores/tagStore'
 import { readFile, exists } from '@tauri-apps/plugin-fs'
@@ -25,10 +25,16 @@ async function getImageSrc(path: string): Promise<string> {
 }
 
 export default function FileGrid() {
-  const { files, selectedFile, setSelectedFile, isLoading } = useFileStore()
+  const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, selectAll, deleteFiles } = useFileStore()
   const { selectedTagId } = useTagStore()
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'adaptive'>('grid')
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
+
+  // Box selection state
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
+  const selectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (selectedTagId) {
@@ -37,6 +43,103 @@ export default function FileGrid() {
       setFilteredFiles(files)
     }
   }, [files, selectedTagId])
+
+  // Handle Ctrl+click for multi-selection
+  const handleFileClick = (file: FileItem, event: React.MouseEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl+click toggles selection
+      toggleFileSelection(file.id)
+    } else {
+      // Normal click selects single file
+      setSelectedFile(file)
+    }
+  }
+
+  // Handle box selection start
+  const handleSelectionStart = (event: React.MouseEvent) => {
+    // Only start box selection when clicking on the background, not on files
+    const target = event.target as HTMLElement
+    if (target.closest('.file-card')) {
+      // Clicking on a file card - don't clear selection
+      return
+    }
+
+    // Click on empty space - clear selection first, then start selection
+    if (selectedFiles.length > 0) {
+      clearSelection()
+    }
+
+    setIsSelecting(true)
+    const rect = selectionRef.current?.getBoundingClientRect()
+    if (rect) {
+      setSelectionBox({
+        startX: event.clientX - rect.left,
+        startY: event.clientY - rect.top,
+        endX: event.clientX - rect.left,
+        endY: event.clientY - rect.top,
+      })
+    }
+  }
+
+  // Handle box selection move
+  const handleSelectionMove = (event: React.MouseEvent) => {
+    if (!isSelecting || !selectionBox || !selectionRef.current) return
+
+    const rect = selectionRef.current.getBoundingClientRect()
+    setSelectionBox({
+      ...selectionBox,
+      endX: event.clientX - rect.left,
+      endY: event.clientY - rect.top,
+    })
+  }
+
+  // Handle box selection end
+  const handleSelectionEnd = () => {
+    if (!isSelecting || !selectionBox || !selectionRef.current) {
+      setIsSelecting(false)
+      return
+    }
+
+    // Calculate the selection rectangle
+    const minX = Math.min(selectionBox.startX, selectionBox.endX)
+    const maxX = Math.max(selectionBox.startX, selectionBox.endX)
+    const minY = Math.min(selectionBox.startY, selectionBox.endY)
+    const maxY = Math.max(selectionBox.startY, selectionBox.endY)
+
+    // Only select if the box is large enough (at least 10px)
+    if (maxX - minX > 10 && maxY - minY > 10) {
+      // Get all file card elements and check which ones intersect with the selection box
+      const cards = selectionRef.current.querySelectorAll('.file-card')
+      cards.forEach((card) => {
+        const rect = card.getBoundingClientRect()
+        const containerRect = selectionRef.current!.getBoundingClientRect()
+
+        // Calculate card position relative to container
+        const cardX = rect.left - containerRect.left + rect.width / 2
+        const cardY = rect.top - containerRect.top + rect.height / 2
+
+        // Check if card center is within selection box
+        if (cardX >= minX && cardX <= maxX && cardY >= minY && cardY <= maxY) {
+          const fileId = parseInt(card.getAttribute('data-file-id') || '0')
+          if (fileId && !selectedFiles.includes(fileId)) {
+            toggleFileSelection(fileId)
+          }
+        }
+      })
+    }
+
+    setIsSelecting(false)
+    setSelectionBox(null)
+  }
+
+  // Check if all files are selected
+  const allSelected = filteredFiles.length > 0 && selectedFiles.length === filteredFiles.length
+
+  // Handle batch delete
+  const handleBatchDelete = async () => {
+    await deleteFiles(selectedFiles)
+    setShowBatchDeleteConfirm(false)
+  }
 
   if (isLoading) {
     return (
@@ -61,9 +164,11 @@ export default function FileGrid() {
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-dark-border">
-        <span className="text-sm text-gray-500 dark:text-gray-400">
-          {filteredFiles.length} 个文件
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {selectedFiles.length > 0 ? `已选择 ${selectedFiles.length} / ` : ''}{filteredFiles.length} 个文件
+          </span>
+        </div>
         <div className="flex gap-1">
           <button
             onClick={() => setViewMode('adaptive')}
@@ -95,7 +200,14 @@ export default function FileGrid() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div
+        ref={selectionRef}
+        className="flex-1 overflow-auto p-4 relative select-none"
+        onMouseDown={handleSelectionStart}
+        onMouseMove={handleSelectionMove}
+        onMouseUp={handleSelectionEnd}
+        onMouseLeave={handleSelectionEnd}
+      >
         {viewMode === 'adaptive' ? (
           <div className="flex flex-wrap gap-4">
             {filteredFiles.map((file) => (
@@ -103,7 +215,8 @@ export default function FileGrid() {
                 key={file.id}
                 file={file}
                 isSelected={selectedFile?.id === file.id}
-                onClick={() => setSelectedFile(file)}
+                isMultiSelected={selectedFiles.includes(file.id)}
+                onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
               />
             ))}
           </div>
@@ -114,7 +227,8 @@ export default function FileGrid() {
                 key={file.id}
                 file={file}
                 isSelected={selectedFile?.id === file.id}
-                onClick={() => setSelectedFile(file)}
+                isMultiSelected={selectedFiles.includes(file.id)}
+                onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
               />
             ))}
           </div>
@@ -125,12 +239,66 @@ export default function FileGrid() {
                 key={file.id}
                 file={file}
                 isSelected={selectedFile?.id === file.id}
-                onClick={() => setSelectedFile(file)}
+                isMultiSelected={selectedFiles.includes(file.id)}
+                onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
               />
             ))}
           </div>
         )}
+
+        {/* Selection box overlay */}
+        {selectionBox && (
+          <div
+            className="absolute border-2 border-primary-500 bg-primary-500/10 pointer-events-none"
+            style={{
+              left: Math.min(selectionBox.startX, selectionBox.endX),
+              top: Math.min(selectionBox.startY, selectionBox.endY),
+              width: Math.abs(selectionBox.endX - selectionBox.startX),
+              height: Math.abs(selectionBox.endY - selectionBox.startY),
+            }}
+          />
+        )}
       </div>
+
+      {/* Batch action bar */}
+      {selectedFiles.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg shadow-lg px-4 py-2 flex items-center gap-4 z-50">
+          <span className="text-sm text-gray-700 dark:text-gray-200">
+            已选择 {selectedFiles.length} 个文件
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => clearSelection()}
+              className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded"
+            >
+              取消选择
+            </button>
+            {showBatchDeleteConfirm ? (
+              <>
+                <button
+                  onClick={handleBatchDelete}
+                  className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded"
+                >
+                  确认删除
+                </button>
+                <button
+                  onClick={() => setShowBatchDeleteConfirm(false)}
+                  className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded"
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowBatchDeleteConfirm(true)}
+                className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded"
+              >
+                批量删除
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {selectedFile && (
         <FileDetailPanel
@@ -142,7 +310,12 @@ export default function FileGrid() {
   )
 }
 
-function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: boolean; onClick: () => void }) {
+function FileCard({ file, isSelected, isMultiSelected, onClick }: {
+  file: FileItem
+  isSelected: boolean
+  isMultiSelected: boolean
+  onClick: (e: React.MouseEvent) => void
+}) {
   const { files } = useFileStore()
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
@@ -171,9 +344,10 @@ function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: b
 
   return (
     <div
+      data-file-id={file.id}
       onClick={onClick}
-      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all ${
-        isSelected
+      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all file-card ${
+        isMultiSelected
           ? 'ring-2 ring-primary-500 shadow-lg'
           : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
       }`}
@@ -225,7 +399,12 @@ function FileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: b
   )
 }
 
-function AdaptiveFileCard({ file, isSelected, onClick }: { file: FileItem; isSelected: boolean; onClick: () => void }) {
+function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
+  file: FileItem
+  isSelected: boolean
+  isMultiSelected: boolean
+  onClick: (e: React.MouseEvent) => void
+}) {
   const { files } = useFileStore()
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
@@ -281,9 +460,10 @@ function AdaptiveFileCard({ file, isSelected, onClick }: { file: FileItem; isSel
 
   return (
     <div
+      data-file-id={file.id}
       onClick={onClick}
-      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all ${
-        isSelected
+      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all file-card ${
+        isMultiSelected
           ? 'ring-2 ring-primary-500 shadow-lg'
           : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
       }`}
@@ -319,7 +499,12 @@ function AdaptiveFileCard({ file, isSelected, onClick }: { file: FileItem; isSel
   )
 }
 
-function FileRow({ file, isSelected, onClick }: { file: FileItem; isSelected: boolean; onClick: () => void }) {
+function FileRow({ file, isSelected, isMultiSelected, onClick }: {
+  file: FileItem
+  isSelected: boolean
+  isMultiSelected: boolean
+  onClick: (e: React.MouseEvent) => void
+}) {
   const { files } = useFileStore()
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
@@ -339,9 +524,10 @@ function FileRow({ file, isSelected, onClick }: { file: FileItem; isSelected: bo
 
   return (
     <div
+      data-file-id={file.id}
       onClick={onClick}
-      className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-        isSelected
+      className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors file-card ${
+        isMultiSelected
           ? 'bg-primary-50 dark:bg-primary-900/20'
           : 'hover:bg-gray-100 dark:hover:bg-dark-border'
       }`}

@@ -25,17 +25,22 @@ interface FileStore {
   files: FileItem[]
   selectedFile: FileItem | null
   selectedFolderId: number | null
+  selectedFiles: number[]
   searchQuery: string
   isLoading: boolean
   setSearchQuery: (query: string) => void
   setSelectedFile: (file: FileItem | null) => void
   setSelectedFolderId: (folderId: number | null) => void
+  toggleFileSelection: (fileId: number) => void
+  clearSelection: () => void
+  selectAll: () => void
   loadFiles: () => Promise<void>
   loadFilesInFolder: (folderId: number | null) => Promise<void>
   searchFiles: (query: string) => Promise<void>
   addTagToFile: (fileId: number, tagId: number) => Promise<void>
   removeTagFromFile: (fileId: number, tagId: number) => Promise<void>
   deleteFile: (fileId: number) => Promise<void>
+  deleteFiles: (fileIds: number[]) => Promise<void>
   importFile: (sourcePath: string) => Promise<FileItem | null>
   importImageFromBase64: (base64Data: string, ext: string) => Promise<FileItem | null>
 }
@@ -44,6 +49,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
   files: [],
   selectedFile: null,
   selectedFolderId: null,
+  selectedFiles: [],
   searchQuery: '',
   isLoading: false,
 
@@ -55,6 +61,22 @@ export const useFileStore = create<FileStore>((set, get) => ({
   setSelectedFile: (file) => set({ selectedFile: file }),
 
   setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
+
+  toggleFileSelection: (fileId) => {
+    const { selectedFiles } = get()
+    if (selectedFiles.includes(fileId)) {
+      set({ selectedFiles: selectedFiles.filter(id => id !== fileId) })
+    } else {
+      set({ selectedFiles: [...selectedFiles, fileId] })
+    }
+  },
+
+  clearSelection: () => set({ selectedFiles: [] }),
+
+  selectAll: () => {
+    const { files } = get()
+    set({ selectedFiles: files.map(f => f.id) })
+  },
 
   loadFiles: async () => {
     set({ isLoading: true })
@@ -107,6 +129,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
     set({ selectedFile: null })
     get().loadFiles()
     console.log('[FileStore] deleteFile completed')
+  },
+
+  deleteFiles: async (fileIds: number[]) => {
+    console.log('[FileStore] deleteFiles called, fileIds:', fileIds)
+    await invoke('delete_files', { fileIds })
+    set({ selectedFiles: [], selectedFile: null })
+    get().loadFiles()
+    console.log('[FileStore] deleteFiles completed')
   },
 
   importFile: async (sourcePath: string) => {
