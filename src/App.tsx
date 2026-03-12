@@ -28,7 +28,8 @@ function App() {
     previewMode,
   } = useFileStore();
   const { loadTags } = useTagStore();
-  const { loadFolders } = useFolderStore();
+  const { loadFolders, selectedFolderId } = useFolderStore();
+  const { loadFilesInFolder } = useFileStore();
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -53,6 +54,7 @@ function App() {
     let unlistenDragEnter: (() => void) | undefined;
     let unlistenDragDrop: (() => void) | undefined;
     let unlistenDragLeave: (() => void) | undefined;
+    let unlistenFileImported: (() => void) | undefined;
 
     const setupListeners = async () => {
       unlistenDragEnter = await listen("tauri://drag-enter", () => {
@@ -113,6 +115,17 @@ function App() {
         },
       );
 
+      // Listen for file imported from browser extension
+      unlistenFileImported = await listen<{ file_id: number; path: string }>(
+        "file-imported",
+        async () => {
+          console.log("[FileImported] Refreshing file list...");
+          // Refresh current folder's files
+          const folderId = useFolderStore.getState().selectedFolderId;
+          await useFileStore.getState().loadFilesInFolder(folderId);
+        },
+      );
+
       dragDropState.listenersReady = true;
     };
 
@@ -122,6 +135,7 @@ function App() {
       unlistenDragEnter?.();
       unlistenDragDrop?.();
       unlistenDragLeave?.();
+      unlistenFileImported?.();
       dragDropState.listenersReady = false;
     };
   }, []);

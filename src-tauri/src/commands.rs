@@ -7,7 +7,6 @@ use std::fs;
 use std::path::Path;
 use chrono::{DateTime, Local};
 use image::GenericImageView;
-use image::GenericImage;
 use image::Pixel;
 use base64::Engine;
 use std::collections::HashMap;
@@ -429,7 +428,7 @@ pub fn get_files_in_folder(state: State<AppState>, folder_id: Option<i64>) -> Re
 }
 
 #[tauri::command]
-pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64>) -> Result<Folder, String> {
+pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64>, is_system: Option<bool>) -> Result<Folder, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get index paths to determine where to create the folder
@@ -457,7 +456,8 @@ pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64
     }
 
     // Create folder in database
-    let id = db.create_folder(&full_path, &name, parent_id).map_err(|e| e.to_string())?;
+    let system = is_system.unwrap_or(false);
+    let id = db.create_folder(&full_path, &name, parent_id, system).map_err(|e| e.to_string())?;
 
     Ok(Folder {
         id,
@@ -465,6 +465,7 @@ pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64
         name,
         parent_id,
         created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        is_system: system,
     })
 }
 
@@ -582,7 +583,7 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
         }
 
         // Create folder in database
-        let id = db.create_folder(&folder_path, default_folder_name, None)
+        let id = db.create_folder(&folder_path, default_folder_name, None, false)
             .map_err(|e| e.to_string())?;
 
         Ok(Folder {
@@ -591,6 +592,7 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
             name: default_folder_name.to_string(),
             parent_id: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            is_system: false,
         })
     } else {
         Err("No index path configured".to_string())
@@ -600,6 +602,11 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
 #[tauri::command]
 pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Check if this is a system folder
+    if db.is_folder_system(id).map_err(|e| e.to_string())? {
+        return Err("Cannot delete system folder".to_string());
+    }
 
     // First, delete all files in this folder (and subfolders)
     // Get folder path to find all matching files
@@ -799,4 +806,49 @@ pub fn update_file_name(state: State<AppState>, file_id: i64, new_name: String) 
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Check if browser collection folder already exists
+    if let Some(folder) = db.get_browser_collection_folder().map_err(|e| e.to_string())? {
+        return Ok(folder);
+    }
+
+    // Get index paths to determine where to create the folder
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+
+    if let Some(index_path) = index_paths.first() {
+        let folder_name = "浏览器采集";
+        let folder_path = format!("{}/{}", index_path, folder_name);
+
+        // Create directory in file system
+        let path = Path::new(&folder_path);
+        if !path.exists() {
+            fs::create_dir_all(path).map_err(|e| e.to_string())?;
+        }
+
+        // Create folder in database as system folder
+        let id = db.create_folder(&folder_path, folder_name, None, true)
+            .map_err(|e| e.to_string())?;
+
+        Ok(Folder {
+            id,
+            path: folder_path,
+            name: folder_name.to_string(),
+            parent_id: None,
+            created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            is_system: true,
+        })
+    } else {
+        Err("No index path configured".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn get_browser_collection_folder(state: State<AppState>) -> Result<Option<Folder>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.get_browser_collection_folder().map_err(|e| e.to_string())
 }

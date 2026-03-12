@@ -1,10 +1,43 @@
 mod db;
 mod indexer;
 mod commands;
+mod http_server;
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::Manager;
+use std::path::Path;
+use std::fs;
+
+fn init_browser_collection_folder_internal(db: &db::Database) -> Result<(), String> {
+    // Check if browser collection folder already exists
+    if db.get_browser_collection_folder().map_err(|e| e.to_string())?.is_some() {
+        return Ok(());
+    }
+
+    // Get index paths
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+
+    if let Some(index_path) = index_paths.first() {
+        let folder_name = "浏览器采集";
+        let folder_path = format!("{}/{}", index_path, folder_name);
+
+        // Create directory in file system
+        let path = Path::new(&folder_path);
+        if !path.exists() {
+            fs::create_dir_all(path).map_err(|e| e.to_string())?;
+        }
+
+        // Create folder in database as system folder
+        db.create_folder(&folder_path, folder_name, None, true)
+            .map_err(|e| e.to_string())?;
+
+        log::info!("Created browser collection folder: {}", folder_path);
+        Ok(())
+    } else {
+        Err("No index path configured".to_string())
+    }
+}
 
 // Track recent imports to prevent duplicate imports within a short time
 pub struct RecentImports {
@@ -31,8 +64,9 @@ impl RecentImports {
 
 pub struct AppState {
     pub db: Mutex<db::Database>,
-    pub app_data_dir: Mutex<std::path::PathBuf>,
+    pub app_data_dir: std::path::PathBuf,
     pub recent_imports: Mutex<RecentImports>,
+    pub db_path: std::path::PathBuf, // Add db_path for HTTP server to create its own connection
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -62,10 +96,23 @@ pub fn run() {
         let db_path = app_data_dir.join("shiguang.db");
         let database = db::Database::new(&db_path).expect("Failed to initialize database");
 
+        // Initialize browser collection folder (system folder) first
+        if let Err(e) = init_browser_collection_folder_internal(&database) {
+            log::warn!("Failed to initialize browser collection folder: {}", e);
+        }
+
         app.manage(AppState {
             db: Mutex::new(database),
-            app_data_dir: Mutex::new(app_data_dir),
+            app_data_dir: app_data_dir.clone(),
             recent_imports: Mutex::new(RecentImports::new()),
+            db_path: db_path.clone(),
+        });
+
+        // Start HTTP server in background
+        let app_handle = app.handle().clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(http_server::start_http_server(db_path, app_handle));
         });
 
         log::info!("Application started successfully");
@@ -103,6 +150,8 @@ pub fn run() {
             commands::extract_color,
             commands::export_file,
             commands::update_file_name,
+            commands::init_browser_collection_folder,
+            commands::get_browser_collection_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

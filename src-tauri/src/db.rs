@@ -9,6 +9,8 @@ pub struct Folder {
     pub name: String,
     pub parent_id: Option<i64>,
     pub created_at: String,
+    #[serde(rename = "isSystem")]
+    pub is_system: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -84,6 +86,7 @@ impl Database {
                 name TEXT NOT NULL,
                 parent_id INTEGER,
                 created_at TEXT NOT NULL,
+                is_system INTEGER DEFAULT 0,
                 FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
             );
 
@@ -646,7 +649,7 @@ impl Database {
 
     pub fn get_all_folders(&self) -> Result<Vec<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at FROM folders ORDER BY created_at"
+            "SELECT id, path, name, parent_id, created_at, is_system FROM folders ORDER BY created_at"
         )?;
         let folders = stmt.query_map([], |row| {
             Ok(Folder {
@@ -655,6 +658,7 @@ impl Database {
                 name: row.get(2)?,
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
+                is_system: row.get::<_, i32>(5)? == 1,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(folders)
@@ -662,7 +666,7 @@ impl Database {
 
     pub fn get_folder_by_path(&self, path: &str) -> Result<Option<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at FROM folders WHERE path = ?1"
+            "SELECT id, path, name, parent_id, created_at, is_system FROM folders WHERE path = ?1"
         )?;
         let mut rows = stmt.query([path])?;
         if let Some(row) = rows.next()? {
@@ -672,16 +676,17 @@ impl Database {
                 name: row.get(2)?,
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
+                is_system: row.get::<_, i32>(5)? == 1,
             }))
         } else {
             Ok(None)
         }
     }
 
-    pub fn create_folder(&self, path: &str, name: &str, parent_id: Option<i64>) -> Result<i64> {
+    pub fn create_folder(&self, path: &str, name: &str, parent_id: Option<i64>, is_system: bool) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO folders (path, name, parent_id, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![path, name, parent_id, chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()],
+            "INSERT INTO folders (path, name, parent_id, created_at, is_system) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![path, name, parent_id, chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(), is_system as i32],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -718,7 +723,7 @@ impl Database {
                 }
 
                 // Create folder
-                let id = self.create_folder(folder_path, &folder_name, parent_id)?;
+                let id = self.create_folder(folder_path, &folder_name, parent_id, false)?;
                 return Ok(Some(id));
             }
         }
@@ -789,7 +794,7 @@ impl Database {
 
     pub fn get_folder_by_id(&self, id: i64) -> Result<Option<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at FROM folders WHERE id = ?1"
+            "SELECT id, path, name, parent_id, created_at, is_system FROM folders WHERE id = ?1"
         )?;
         let mut rows = stmt.query([id])?;
         if let Some(row) = rows.next()? {
@@ -799,6 +804,7 @@ impl Database {
                 name: row.get(2)?,
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
+                is_system: row.get::<_, i32>(5)? == 1,
             }))
         } else {
             Ok(None)
@@ -808,5 +814,34 @@ impl Database {
     pub fn clear_folders(&self) -> Result<()> {
         self.conn.execute("DELETE FROM folders", [])?;
         Ok(())
+    }
+
+    pub fn get_browser_collection_folder(&self) -> Result<Option<Folder>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, path, name, parent_id, created_at, is_system FROM folders WHERE is_system = 1 LIMIT 1"
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Folder {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                parent_id: row.get(3)?,
+                created_at: row.get(4)?,
+                is_system: row.get::<_, i32>(5)? == 1,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn is_folder_system(&self, id: i64) -> Result<bool> {
+        let mut stmt = self.conn.prepare("SELECT is_system FROM folders WHERE id = ?1")?;
+        let mut rows = stmt.query([id])?;
+        if let Some(row) = rows.next()? {
+            Ok(row.get::<_, i32>(0)? == 1)
+        } else {
+            Ok(false)
+        }
     }
 }

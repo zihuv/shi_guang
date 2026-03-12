@@ -184,18 +184,20 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   deleteFile: async (fileId: number) => {
     console.log('[FileStore] deleteFile called, fileId:', fileId)
+    const { selectedFolderId } = get()
     await invoke('delete_file', { fileId })
     set({ selectedFile: null })
-    get().loadFiles()
+    await get().loadFilesInFolder(selectedFolderId)
     useFolderStore.getState().loadFolders()
     console.log('[FileStore] deleteFile completed')
   },
 
   deleteFiles: async (fileIds: number[]) => {
     console.log('[FileStore] deleteFiles called, fileIds:', fileIds)
+    const { selectedFolderId } = get()
     await invoke('delete_files', { fileIds })
     set({ selectedFiles: [], selectedFile: null })
-    get().loadFiles()
+    await get().loadFilesInFolder(selectedFolderId)
     useFolderStore.getState().loadFolders()
     console.log('[FileStore] deleteFiles completed')
   },

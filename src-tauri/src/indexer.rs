@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 use image::GenericImageView;
-use image::GenericImage;
 use image::Pixel;
 use chrono::{DateTime, Local};
 
