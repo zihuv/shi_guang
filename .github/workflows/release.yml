@@ -57,11 +57,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev
 
+      - name: Update version
+        shell: bash
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+
+          # 更新 package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+
+          # 更新 tauri.conf.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-${{ github.event.inputs.version }}  # 使用输入的版本
-          releaseName: 'App ${{ github.event.inputs.version }}'
-          releaseBody: 'See the assets to download this version and install.'
+          tagName: ${{ github.event.inputs.version }} # 使用输入的版本
+          releaseName: "${{ github.event.inputs.version }}"
+          releaseBody: "更新内容待补充"
