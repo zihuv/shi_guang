@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important Rules
+
+- **Never commit code yourself** - Only generate fixes, let the user commit themselves
+
 ## Project Overview
 
 拾光 (shiguang) is a desktop material/asset management tool similar to PixCall or BillFish. It indexes design files (images, PSD, AI, etc.) from user-selected folders and provides browsing, tagging, and search functionality.
