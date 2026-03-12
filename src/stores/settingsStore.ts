@@ -71,13 +71,24 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
         const defaultPath = await invoke<string>("get_default_index_path");
         await invoke("add_index_path", { path: defaultPath });
         indexPaths = [defaultPath];
-        // Trigger file scan for the new path
+        // Trigger file scan and folder scan
+        await invoke("reindex_all");
         await invoke("scan_folders");
         // Reload folders and files in UI
         useFolderStore.getState().loadFolders();
         useFileStore.getState().loadFiles();
       } catch (e) {
         console.error("Failed to add default index path:", e);
+      }
+    } else {
+      // Even if index paths exist, trigger reindex to ensure files are indexed
+      try {
+        await invoke("reindex_all");
+        await invoke("scan_folders");
+        useFolderStore.getState().loadFolders();
+        useFileStore.getState().loadFiles();
+      } catch (e) {
+        console.error("Failed to reindex:", e);
       }
     }
 

@@ -13,9 +13,12 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        "$PICTURE/**",
-        "$APPDATA/**",
-        "$HOME/**"
+        { "path": "$PICTURE/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$HOME/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" }
       ]
     }
   ]
