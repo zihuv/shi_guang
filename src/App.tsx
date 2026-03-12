@@ -22,14 +22,12 @@ function App() {
   const { theme, loadSettings } = useSettingsStore();
   const {
     loadFiles,
-    importImageFromBase64,
     importImagesFromBase64,
     importFile: importFileFn,
     previewMode,
   } = useFileStore();
   const { loadTags } = useTagStore();
-  const { loadFolders, selectedFolderId } = useFolderStore();
-  const { loadFilesInFolder } = useFileStore();
+  const { loadFolders } = useFolderStore();
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 

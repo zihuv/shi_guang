@@ -25,7 +25,7 @@ async function getImageSrc(path: string): Promise<string> {
 }
 
 export default function FileGrid() {
-  const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, selectAll, deleteFiles, openPreview } = useFileStore()
+  const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, deleteFiles, openPreview } = useFileStore()
   const { selectedTagId } = useTagStore()
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'adaptive'>('grid')
@@ -140,9 +140,6 @@ export default function FileGrid() {
     setIsSelecting(false)
     setSelectionBox(null)
   }
-
-  // Check if all files are selected
-  const allSelected = filteredFiles.length > 0 && selectedFiles.length === filteredFiles.length
 
   // Handle batch delete
   const handleBatchDelete = async () => {
@@ -316,7 +313,7 @@ export default function FileGrid() {
   )
 }
 
-function FileCard({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: {
+function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onDoubleClick }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
@@ -403,7 +400,7 @@ function FileCard({ file, isSelected, isMultiSelected, onClick, onDoubleClick }:
   )
 }
 
-function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: {
+function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onDoubleClick }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
@@ -477,7 +474,7 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick, onDouble
   )
 }
 
-function FileRow({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: {
+function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDoubleClick }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean

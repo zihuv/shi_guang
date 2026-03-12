@@ -11,7 +11,7 @@ interface HeaderProps {
 }
 
 export default function Header({ onOpenSettings }: HeaderProps) {
-  const { searchQuery, setSearchQuery, files, importFiles } = useFileStore();
+  const { searchQuery, setSearchQuery, importFiles } = useFileStore();
   const { theme, setTheme } = useSettingsStore();
   const [isImporting, setIsImporting] = useState(false);
 

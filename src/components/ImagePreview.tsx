@@ -115,14 +115,15 @@ export default function ImagePreview() {
   useEffect(() => {
     if (!previewMode) return
 
-    const handleWheel = (e: WheelEvent) => {
+    const handleWheel = (e: Event) => {
+      const wheelEvent = e as WheelEvent
       // 检测 ctrlKey 或 metaKey（macOS），判断是否为双指缩放手势
-      if (!e.ctrlKey && !e.metaKey) return
+      if (!wheelEvent.ctrlKey && !wheelEvent.metaKey) return
 
-      e.preventDefault()
+      wheelEvent.preventDefault()
 
       // deltaY < 0 表示放大，deltaY > 0 表示缩小
-      const delta = e.deltaY < 0 ? 10 : -10
+      const delta = wheelEvent.deltaY < 0 ? 10 : -10
 
       setZoom(prevZoom => {
         if (prevZoom === 'auto') {

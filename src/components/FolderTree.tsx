@@ -151,7 +151,7 @@ export default function FolderTree() {
     setNewFolderName,
     newFolderName,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
 
   const handleAddFolder = async () => {
