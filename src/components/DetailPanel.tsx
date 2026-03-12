@@ -548,25 +548,21 @@ function FileDetailPanel({ file }: { file: FileItem }) {
               {file.importedAt}
             </span>
           </div>
-        </div>
-
-        {/* Dominant Color - moved to bottom */}
-        {file.dominantColor && (
-          <div>
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-              主色调
-            </h4>
-            <div className="flex items-center gap-2">
-              <div
-                className="w-6 h-6 rounded border border-gray-200 dark:border-dark-border"
-                style={{ backgroundColor: file.dominantColor }}
-              />
-              <span className="text-sm text-gray-800 dark:text-gray-200">
-                {file.dominantColor}
-              </span>
+          {file.dominantColor && (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-500 dark:text-gray-400">主色调</span>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="w-3.5 h-3.5 rounded border border-gray-200 dark:border-dark-border"
+                  style={{ backgroundColor: file.dominantColor }}
+                />
+                <span className="text-xs text-gray-800 dark:text-gray-200">
+                  {file.dominantColor}
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
