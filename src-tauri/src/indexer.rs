@@ -137,6 +137,7 @@ fn process_file(path: &Path, ext: &str, folder_id: Option<i64>) -> Result<FileRe
         folder_id,
         created_at,
         modified_at,
+        imported_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     })
 }
 

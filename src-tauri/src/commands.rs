@@ -99,6 +99,8 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         })
         .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
 
+    let imported_at = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
     let file_record = FileRecord {
         id: 0,
         path: dest_path.to_string_lossy().to_string(),
@@ -110,6 +112,7 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         folder_id,
         created_at,
         modified_at,
+        imported_at,
     };
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
@@ -163,7 +166,8 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
         height: height as i32,
         folder_id,
         created_at: now.clone(),
-        modified_at: now,
+        modified_at: now.clone(),
+        imported_at: now,
     };
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
@@ -509,6 +513,7 @@ pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
             folder_id: target_folder_id,
             created_at: file.created_at,
             modified_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            imported_at: file.imported_at,
         };
         db.insert_file(&updated_record).map_err(|e| e.to_string())?;
     }

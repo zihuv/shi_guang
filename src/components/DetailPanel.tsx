@@ -233,8 +233,16 @@ function FileDetailPanel({ file }: { file: FileItem }) {
             <p className="text-sm text-gray-800 dark:text-gray-200">{file.ext.toUpperCase()}</p>
           </div>
           <div>
+            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">创建时间</h4>
+            <p className="text-sm text-gray-800 dark:text-gray-200">{file.createdAt}</p>
+          </div>
+          <div>
             <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">修改时间</h4>
             <p className="text-sm text-gray-800 dark:text-gray-200">{file.modifiedAt}</p>
+          </div>
+          <div>
+            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">导入时间</h4>
+            <p className="text-sm text-gray-800 dark:text-gray-200">{file.importedAt}</p>
           </div>
         </div>
 

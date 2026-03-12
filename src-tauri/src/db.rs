@@ -23,6 +23,7 @@ pub struct FileRecord {
     pub folder_id: Option<i64>,
     pub created_at: String,
     pub modified_at: String,
+    pub imported_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -47,6 +48,8 @@ pub struct FileWithTags {
     pub created_at: String,
     #[serde(rename = "modifiedAt")]
     pub modified_at: String,
+    #[serde(rename = "importedAt")]
+    pub imported_at: String,
     pub tags: Vec<Tag>,
 }
 
@@ -83,7 +86,8 @@ impl Database {
                 width INTEGER NOT NULL,
                 height INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
-                modified_at TEXT NOT NULL
+                modified_at TEXT NOT NULL,
+                imported_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS tags (
@@ -125,6 +129,20 @@ impl Database {
             self.conn.execute("ALTER TABLE files ADD COLUMN folder_id INTEGER REFERENCES folders(id)", [])?;
         }
 
+        // Add imported_at column if it doesn't exist (for migration)
+        let has_imported_at: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'imported_at'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_imported_at == 0 {
+            // SQLite doesn't support adding a column with non-constant default
+            // Add it as nullable first, then update with modified_at as fallback
+            self.conn.execute("ALTER TABLE files ADD COLUMN imported_at TEXT", [])?;
+            // Update existing records with modified_at value
+            self.conn.execute("UPDATE files SET imported_at = modified_at WHERE imported_at IS NULL", [])?;
+        }
+
         // Create indexes after migration
         self.conn.execute_batch(
             "
@@ -138,7 +156,7 @@ impl Database {
 
     pub fn get_all_files(&self) -> Result<Vec<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at FROM files ORDER BY modified_at DESC"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at FROM files ORDER BY imported_at ASC, id ASC"
         )?;
 
         let files: Vec<FileRecord> = stmt.query_map([], |row| {
@@ -153,6 +171,7 @@ impl Database {
                 folder_id: row.get(7)?,
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
+                imported_at: row.get(10)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -170,6 +189,7 @@ impl Database {
                 folder_id: file.folder_id,
                 created_at: file.created_at,
                 modified_at: file.modified_at,
+                imported_at: file.imported_at,
                 tags,
             });
         }
@@ -180,10 +200,10 @@ impl Database {
     pub fn search_files(&self, query: &str) -> Result<Vec<FileWithTags>> {
         let search_pattern = format!("%{}%", query);
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at
              FROM files
              WHERE name LIKE ?1
-             ORDER BY modified_at DESC"
+             ORDER BY imported_at ASC, id ASC"
         )?;
 
         let files: Vec<FileRecord> = stmt.query_map([&search_pattern], |row| {
@@ -198,6 +218,7 @@ impl Database {
                 folder_id: row.get(7)?,
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
+                imported_at: row.get(10)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -215,6 +236,7 @@ impl Database {
                 folder_id: file.folder_id,
                 created_at: file.created_at,
                 modified_at: file.modified_at,
+                imported_at: file.imported_at,
                 tags,
             });
         }
@@ -225,17 +247,17 @@ impl Database {
     pub fn get_files_in_folder(&self, folder_id: Option<i64>) -> Result<Vec<FileWithTags>> {
         let mut stmt = if folder_id.is_some() {
             self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at
                  FROM files
                  WHERE folder_id = ?1
-                 ORDER BY modified_at DESC"
+                 ORDER BY imported_at ASC, id ASC"
             )?
         } else {
             self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at
                  FROM files
                  WHERE folder_id IS NULL
-                 ORDER BY modified_at DESC"
+                 ORDER BY imported_at ASC, id ASC"
             )?
         };
 
@@ -252,6 +274,7 @@ impl Database {
                     folder_id: row.get(7)?,
                     created_at: row.get(8)?,
                     modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
                 })
             })?.filter_map(|r| r.ok()).collect()
         } else {
@@ -267,6 +290,7 @@ impl Database {
                     folder_id: row.get(7)?,
                     created_at: row.get(8)?,
                     modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
                 })
             })?.filter_map(|r| r.ok()).collect()
         };
@@ -285,6 +309,7 @@ impl Database {
                 folder_id: file.folder_id,
                 created_at: file.created_at,
                 modified_at: file.modified_at,
+                imported_at: file.imported_at,
                 tags,
             });
         }
@@ -294,7 +319,7 @@ impl Database {
 
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at FROM files WHERE id = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at FROM files WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query([id])?;
@@ -310,6 +335,7 @@ impl Database {
                 folder_id: row.get(7)?,
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
+                imported_at: row.get(10)?,
             };
             let tags = self.get_file_tags(file.id)?;
             Ok(Some(FileWithTags {
@@ -323,6 +349,7 @@ impl Database {
                 folder_id: file.folder_id,
                 created_at: file.created_at,
                 modified_at: file.modified_at,
+                imported_at: file.imported_at,
                 tags,
             }))
         } else {
@@ -332,15 +359,15 @@ impl Database {
 
     pub fn insert_file(&self, file: &FileRecord) -> Result<i64> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at],
+            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn get_file_by_path(&self, path: &str) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at FROM files WHERE path = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at FROM files WHERE path = ?1"
         )?;
 
         let file_result = stmt.query_row([path], |row| {
@@ -355,6 +382,7 @@ impl Database {
                 folder_id: row.get(7)?,
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
+                imported_at: row.get(10)?,
             })
         });
 
@@ -372,6 +400,7 @@ impl Database {
                     folder_id: file.folder_id,
                     created_at: file.created_at,
                     modified_at: file.modified_at,
+                    imported_at: file.imported_at,
                     tags,
                 }))
             }

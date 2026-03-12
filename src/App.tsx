@@ -22,6 +22,7 @@ function App() {
   const {
     loadFiles,
     importImageFromBase64,
+    importImagesFromBase64,
     importFile: importFileFn,
   } = useFileStore();
   const { loadTags } = useTagStore();
@@ -129,28 +130,38 @@ function App() {
       const items = e.clipboardData?.items;
       if (!items) return;
 
+      // Collect all images first
+      const imageItems: { base64Data: string; ext: string }[] = [];
+
       for (const item of items) {
         if (item.type.startsWith("image/")) {
           e.preventDefault();
           const blob = item.getAsFile();
           if (!blob) continue;
 
-          // Convert blob to base64
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const base64 = (reader.result as string).split(",")[1];
-            // Determine file extension from MIME type
-            const mimeType = blob.type;
-            const ext = mimeType.split("/")[1] || "png";
+          // Convert blob to base64 synchronously
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              resolve((reader.result as string).split(",")[1]);
+            };
+            reader.readAsDataURL(blob);
+          });
 
-            await importImageFromBase64(base64, ext);
-          };
-          reader.readAsDataURL(blob);
-          break;
+          // Determine file extension from MIME type
+          const mimeType = blob.type;
+          const ext = mimeType.split("/")[1] || "png";
+
+          imageItems.push({ base64Data: base64, ext });
         }
       }
+
+      // Batch import all images
+      if (imageItems.length > 0) {
+        await importImagesFromBase64(imageItems);
+      }
     },
-    [importImageFromBase64],
+    [importImagesFromBase64],
   );
 
   // Handle drag and drop to import files (prevent default behavior)

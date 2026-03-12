@@ -11,7 +11,7 @@ interface HeaderProps {
 }
 
 export default function Header({ onOpenSettings }: HeaderProps) {
-  const { searchQuery, setSearchQuery, files, importFile } = useFileStore();
+  const { searchQuery, setSearchQuery, files, importFiles } = useFileStore();
   const { theme, setTheme } = useSettingsStore();
   const [isImporting, setIsImporting] = useState(false);
 
@@ -56,9 +56,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
 
       if (selected) {
         const paths = Array.isArray(selected) ? selected : [selected];
-        for (const path of paths) {
-          await importFile(path);
-        }
+        await importFiles(paths);
       }
     } catch (e) {
       console.error("Failed to import files:", e);

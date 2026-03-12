@@ -12,6 +12,7 @@ export interface FileItem {
   folderId: number | null
   createdAt: string
   modifiedAt: string
+  importedAt: string
   tags: Tag[]
 }
 
@@ -41,8 +42,10 @@ interface FileStore {
   removeTagFromFile: (fileId: number, tagId: number) => Promise<void>
   deleteFile: (fileId: number) => Promise<void>
   deleteFiles: (fileIds: number[]) => Promise<void>
-  importFile: (sourcePath: string) => Promise<FileItem | null>
-  importImageFromBase64: (base64Data: string, ext: string) => Promise<FileItem | null>
+  importFile: (sourcePath: string, refresh?: boolean) => Promise<FileItem | null>
+  importFiles: (sourcePaths: string[]) => Promise<FileItem[]>
+  importImageFromBase64: (base64Data: string, ext: string, refresh?: boolean) => Promise<FileItem | null>
+  importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<FileItem[]>
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
@@ -139,13 +142,15 @@ export const useFileStore = create<FileStore>((set, get) => ({
     console.log('[FileStore] deleteFiles completed')
   },
 
-  importFile: async (sourcePath: string) => {
-    console.log('[FileStore] importFile called, path:', sourcePath)
+  importFile: async (sourcePath: string, refresh = true) => {
+    console.log('[FileStore] importFile called, path:', sourcePath, 'refresh:', refresh)
     const { selectedFolderId } = get()
     try {
       const file = await invoke<FileItem>('import_file', { sourcePath, folderId: selectedFolderId })
       console.log('[FileStore] importFile result:', file)
-      await get().loadFilesInFolder(selectedFolderId)
+      if (refresh) {
+        await get().loadFilesInFolder(selectedFolderId)
+      }
       console.log('[FileStore] loadFiles completed')
       return file
     } catch (e) {
@@ -154,17 +159,73 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }
   },
 
-  importImageFromBase64: async (base64Data: string, ext: string) => {
-    console.log('[FileStore] importImageFromBase64 called, ext:', ext)
+  importFiles: async (sourcePaths: string[]) => {
+    console.log('[FileStore] importFiles called, count:', sourcePaths.length)
+    const { selectedFolderId } = get()
+    const results: FileItem[] = []
+    try {
+      for (const path of sourcePaths) {
+        try {
+          const file = await invoke<FileItem>('import_file', { sourcePath: path, folderId: selectedFolderId })
+          if (file) {
+            results.push(file)
+          }
+        } catch (e) {
+          console.error('[FileStore] Failed to import file:', path, e)
+        }
+      }
+      // Only refresh once after all imports
+      await get().loadFilesInFolder(selectedFolderId)
+      console.log('[FileStore] importFiles completed, imported:', results.length)
+      return results
+    } catch (e) {
+      console.error('[FileStore] Failed to import files:', e)
+      return results
+    }
+  },
+
+  importImageFromBase64: async (base64Data: string, ext: string, refresh = true) => {
+    console.log('[FileStore] importImageFromBase64 called, ext:', ext, 'refresh:', refresh)
     const { selectedFolderId } = get()
     try {
       const file = await invoke<FileItem>('import_image_from_base64', { base64Data, ext, folderId: selectedFolderId })
       console.log('[FileStore] importImageFromBase64 result:', file)
-      await get().loadFilesInFolder(selectedFolderId)
+      if (refresh) {
+        await get().loadFilesInFolder(selectedFolderId)
+      }
       return file
     } catch (e) {
       console.error('[FileStore] Failed to import image from clipboard:', e)
       return null
+    }
+  },
+
+  importImagesFromBase64: async (items: { base64Data: string; ext: string }[]) => {
+    console.log('[FileStore] importImagesFromBase64 called, count:', items.length)
+    const { selectedFolderId } = get()
+    const results: FileItem[] = []
+    try {
+      for (const item of items) {
+        try {
+          const file = await invoke<FileItem>('import_image_from_base64', {
+            base64Data: item.base64Data,
+            ext: item.ext,
+            folderId: selectedFolderId
+          })
+          if (file) {
+            results.push(file)
+          }
+        } catch (e) {
+          console.error('[FileStore] Failed to import image from base64:', e)
+        }
+      }
+      // Only refresh once after all imports
+      await get().loadFilesInFolder(selectedFolderId)
+      console.log('[FileStore] importImagesFromBase64 completed, imported:', results.length)
+      return results
+    } catch (e) {
+      console.error('[FileStore] Failed to import images:', e)
+      return results
     }
   },
 }))
