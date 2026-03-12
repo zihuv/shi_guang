@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { useFileStore, FileItem } from '@/stores/fileStore'
+import { useFileStore, FileItem, getNameWithoutExt } from '@/stores/fileStore'
 import { useTagStore } from '@/stores/tagStore'
 import { readFile, exists } from '@tauri-apps/plugin-fs'
 
@@ -380,7 +380,7 @@ function FileCard({ file, isSelected, isMultiSelected, onClick, onDoubleClick }:
         )}
       </div>
       <div className="p-2 bg-white dark:bg-dark-surface">
-        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{file.name}</p>
+        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
         <p className="text-xs text-gray-400 mt-0.5">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
         {file.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
@@ -470,7 +470,7 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick, onDouble
       </div>
       {/* 始终显示文件名 */}
       <div className="p-2 bg-white dark:bg-dark-surface">
-        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{file.name}</p>
+        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
         <p className="text-[10px] text-gray-400">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
       </div>
     </div>
@@ -534,7 +534,7 @@ function FileRow({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: 
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-700 dark:text-gray-200 truncate">{file.name}</p>
+        <p className="text-sm text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
         <p className="text-xs text-gray-400">{file.width} x {file.height}</p>
       </div>
       <div className="flex items-center gap-2">

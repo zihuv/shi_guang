@@ -24,6 +24,10 @@ pub struct FileRecord {
     pub created_at: String,
     pub modified_at: String,
     pub imported_at: String,
+    pub rating: i32,
+    pub description: String,
+    pub source_url: String,
+    pub dominant_color: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,6 +54,12 @@ pub struct FileWithTags {
     pub modified_at: String,
     #[serde(rename = "importedAt")]
     pub imported_at: String,
+    pub rating: i32,
+    pub description: String,
+    #[serde(rename = "sourceUrl")]
+    pub source_url: String,
+    #[serde(rename = "dominantColor")]
+    pub dominant_color: String,
     pub tags: Vec<Tag>,
 }
 
@@ -143,6 +153,46 @@ impl Database {
             self.conn.execute("UPDATE files SET imported_at = modified_at WHERE imported_at IS NULL", [])?;
         }
 
+        // Add rating column if it doesn't exist (for migration)
+        let has_rating: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'rating'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_rating == 0 {
+            self.conn.execute("ALTER TABLE files ADD COLUMN rating INTEGER DEFAULT 0", [])?;
+        }
+
+        // Add description column if it doesn't exist (for migration)
+        let has_description: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'description'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_description == 0 {
+            self.conn.execute("ALTER TABLE files ADD COLUMN description TEXT DEFAULT ''", [])?;
+        }
+
+        // Add source_url column if it doesn't exist (for migration)
+        let has_source_url: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'source_url'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_source_url == 0 {
+            self.conn.execute("ALTER TABLE files ADD COLUMN source_url TEXT DEFAULT ''", [])?;
+        }
+
+        // Add dominant_color column if it doesn't exist (for migration)
+        let has_dominant_color: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'dominant_color'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_dominant_color == 0 {
+            self.conn.execute("ALTER TABLE files ADD COLUMN dominant_color TEXT DEFAULT ''", [])?;
+        }
+
         // Create indexes after migration
         self.conn.execute_batch(
             "
@@ -156,7 +206,7 @@ impl Database {
 
     pub fn get_all_files(&self) -> Result<Vec<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at FROM files ORDER BY imported_at ASC, id ASC"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color FROM files ORDER BY imported_at ASC, id ASC"
         )?;
 
         let files: Vec<FileRecord> = stmt.query_map([], |row| {
@@ -172,6 +222,10 @@ impl Database {
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
                 imported_at: row.get(10)?,
+                rating: row.get(11)?,
+                description: row.get(12)?,
+                source_url: row.get(13)?,
+                dominant_color: row.get(14)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -190,6 +244,10 @@ impl Database {
                 created_at: file.created_at,
                 modified_at: file.modified_at,
                 imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
                 tags,
             });
         }
@@ -200,7 +258,7 @@ impl Database {
     pub fn search_files(&self, query: &str) -> Result<Vec<FileWithTags>> {
         let search_pattern = format!("%{}%", query);
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color
              FROM files
              WHERE name LIKE ?1
              ORDER BY imported_at ASC, id ASC"
@@ -219,6 +277,10 @@ impl Database {
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
                 imported_at: row.get(10)?,
+                rating: row.get(11)?,
+                description: row.get(12)?,
+                source_url: row.get(13)?,
+                dominant_color: row.get(14)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -237,6 +299,10 @@ impl Database {
                 created_at: file.created_at,
                 modified_at: file.modified_at,
                 imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
                 tags,
             });
         }
@@ -247,14 +313,14 @@ impl Database {
     pub fn get_files_in_folder(&self, folder_id: Option<i64>) -> Result<Vec<FileWithTags>> {
         let mut stmt = if folder_id.is_some() {
             self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color
                  FROM files
                  WHERE folder_id = ?1
                  ORDER BY imported_at ASC, id ASC"
             )?
         } else {
             self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color
                  FROM files
                  WHERE folder_id IS NULL
                  ORDER BY imported_at ASC, id ASC"
@@ -275,6 +341,10 @@ impl Database {
                     created_at: row.get(8)?,
                     modified_at: row.get(9)?,
                     imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
                 })
             })?.filter_map(|r| r.ok()).collect()
         } else {
@@ -291,6 +361,10 @@ impl Database {
                     created_at: row.get(8)?,
                     modified_at: row.get(9)?,
                     imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
                 })
             })?.filter_map(|r| r.ok()).collect()
         };
@@ -310,6 +384,10 @@ impl Database {
                 created_at: file.created_at,
                 modified_at: file.modified_at,
                 imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
                 tags,
             });
         }
@@ -319,7 +397,7 @@ impl Database {
 
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at FROM files WHERE id = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color FROM files WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query([id])?;
@@ -336,6 +414,10 @@ impl Database {
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
                 imported_at: row.get(10)?,
+                rating: row.get(11)?,
+                description: row.get(12)?,
+                source_url: row.get(13)?,
+                dominant_color: row.get(14)?,
             };
             let tags = self.get_file_tags(file.id)?;
             Ok(Some(FileWithTags {
@@ -350,6 +432,10 @@ impl Database {
                 created_at: file.created_at,
                 modified_at: file.modified_at,
                 imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
                 tags,
             }))
         } else {
@@ -359,15 +445,15 @@ impl Database {
 
     pub fn insert_file(&self, file: &FileRecord) -> Result<i64> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at],
+            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at, file.rating, file.description, file.source_url, file.dominant_color],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn get_file_by_path(&self, path: &str) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at FROM files WHERE path = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color FROM files WHERE path = ?1"
         )?;
 
         let file_result = stmt.query_row([path], |row| {
@@ -383,6 +469,10 @@ impl Database {
                 created_at: row.get(8)?,
                 modified_at: row.get(9)?,
                 imported_at: row.get(10)?,
+                rating: row.get(11)?,
+                description: row.get(12)?,
+                source_url: row.get(13)?,
+                dominant_color: row.get(14)?,
             })
         });
 
@@ -401,6 +491,10 @@ impl Database {
                     created_at: file.created_at,
                     modified_at: file.modified_at,
                     imported_at: file.imported_at,
+                    rating: file.rating,
+                    description: file.description,
+                    source_url: file.source_url,
+                    dominant_color: file.dominant_color,
                     tags,
                 }))
             }
@@ -413,6 +507,30 @@ impl Database {
         self.conn.execute(
             "UPDATE files SET folder_id = ?1 WHERE id = ?2",
             params![folder_id, file_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_file_metadata(&self, file_id: i64, rating: i32, description: &str, source_url: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET rating = ?1, description = ?2, source_url = ?3 WHERE id = ?4",
+            params![rating, description, source_url, file_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_file_dominant_color(&self, file_id: i64, dominant_color: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET dominant_color = ?1 WHERE id = ?2",
+            params![dominant_color, file_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_file_name(&self, file_id: i64, name: &str, path: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET name = ?1, path = ?2 WHERE id = ?3",
+            params![name, path, file_id],
         )?;
         Ok(())
     }

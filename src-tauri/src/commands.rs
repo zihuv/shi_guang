@@ -7,6 +7,8 @@ use std::fs;
 use std::path::Path;
 use chrono::{DateTime, Local};
 use image::GenericImageView;
+use image::GenericImage;
+use image::Pixel;
 use base64::Engine;
 use std::collections::HashMap;
 
@@ -113,6 +115,10 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         created_at,
         modified_at,
         imported_at,
+        rating: 0,
+        description: String::new(),
+        source_url: String::new(),
+        dominant_color: String::new(),
     };
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
@@ -168,6 +174,10 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
         created_at: now.clone(),
         modified_at: now.clone(),
         imported_at: now,
+        rating: 0,
+        description: String::new(),
+        source_url: String::new(),
+        dominant_color: String::new(),
     };
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
@@ -514,6 +524,10 @@ pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
             created_at: file.created_at,
             modified_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             imported_at: file.imported_at,
+            rating: file.rating,
+            description: file.description,
+            source_url: file.source_url,
+            dominant_color: file.dominant_color,
         };
         db.insert_file(&updated_record).map_err(|e| e.to_string())?;
     }
@@ -624,4 +638,165 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
 pub fn rename_folder(state: State<AppState>, id: i64, name: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.rename_folder(id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_file_metadata(
+    state: State<AppState>,
+    file_id: i64,
+    rating: i32,
+    description: String,
+    source_url: String,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.update_file_metadata(file_id, rating, &description, &source_url)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn extract_color(state: State<AppState>, file_id: i64) -> Result<String, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get file info
+    let file = db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    let path = Path::new(&file.path);
+
+    // Extract color using the same logic as indexer
+    let color = extract_dominant_color_from_file(path)?;
+
+    // Update the file with the extracted color
+    db.update_file_dominant_color(file_id, &color)
+        .map_err(|e| e.to_string())?;
+
+    Ok(color)
+}
+
+fn extract_dominant_color_from_file(path: &Path) -> Result<String, String> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    // Skip non-image formats
+    if ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("psd")
+        || ext.eq_ignore_ascii_case("ai") || ext.eq_ignore_ascii_case("eps")
+        || ext.eq_ignore_ascii_case("raw") || ext.eq_ignore_ascii_case("cr2")
+        || ext.eq_ignore_ascii_case("nef") || ext.eq_ignore_ascii_case("arw")
+        || ext.eq_ignore_ascii_case("dng") || ext.eq_ignore_ascii_case("heic")
+        || ext.eq_ignore_ascii_case("heif") {
+        return Ok(String::new());
+    }
+
+    match image::open(path) {
+        Ok(img) => {
+            // Resize image to small size for faster processing
+            let img = img.resize(50, 50, image::imageops::FilterType::Nearest);
+            let pixels: Vec<_> = img.pixels().collect();
+
+            // Simple average color calculation
+            let mut r_sum: u64 = 0;
+            let mut g_sum: u64 = 0;
+            let mut b_sum: u64 = 0;
+            let count = pixels.len() as u64;
+
+            for pixel in pixels {
+                let rgb = pixel.2.to_rgb();
+                r_sum += rgb[0] as u64;
+                g_sum += rgb[1] as u64;
+                b_sum += rgb[2] as u64;
+            }
+
+            if count > 0 {
+                let r = (r_sum / count) as u8;
+                let g = (g_sum / count) as u8;
+                let b = (b_sum / count) as u8;
+                Ok(format!("#{:02X}{:02X}{:02X}", r, g, b))
+            } else {
+                Ok(String::new())
+            }
+        }
+        Err(_) => Ok(String::new()),
+    }
+}
+
+#[tauri::command]
+pub fn export_file(state: State<AppState>, file_id: i64) -> Result<String, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get file info
+    let file = db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // Get export directory (user's Documents/shiguang_exports)
+    let docs_dir = dirs::document_dir()
+        .ok_or_else(|| "Could not find Documents directory".to_string())?;
+    let export_dir = docs_dir.join("shiguang_exports");
+
+    // Create export directory if it doesn't exist
+    if !export_dir.exists() {
+        fs::create_dir_all(&export_dir).map_err(|e| e.to_string())?;
+    }
+
+    // Create metadata JSON
+    let metadata = serde_json::json!({
+        "id": file.id,
+        "name": file.name,
+        "path": file.path,
+        "ext": file.ext,
+        "size": file.size,
+        "width": file.width,
+        "height": file.height,
+        "createdAt": file.created_at,
+        "modifiedAt": file.modified_at,
+        "importedAt": file.imported_at,
+        "rating": file.rating,
+        "description": file.description,
+        "sourceUrl": file.source_url,
+        "dominantColor": file.dominant_color,
+        "tags": file.tags,
+    });
+
+    // Write metadata JSON file
+    let json_filename = format!("{}_metadata.json", file.name.split('.').next().unwrap_or(&file.name));
+    let json_path = export_dir.join(&json_filename);
+    fs::write(&json_path, serde_json::to_string_pretty(&metadata).unwrap())
+        .map_err(|e| e.to_string())?;
+
+    // Copy original file
+    let source_path = Path::new(&file.path);
+    if source_path.exists() {
+        let dest_path = export_dir.join(&file.name);
+        fs::copy(source_path, &dest_path).map_err(|e| e.to_string())?;
+    }
+
+    Ok(export_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn update_file_name(state: State<AppState>, file_id: i64, new_name: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get file info
+    let file = db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // Get directory path
+    let old_path = Path::new(&file.path);
+    let parent = old_path.parent().ok_or_else(|| "Invalid file path".to_string())?;
+
+    // Build new path
+    let new_path = parent.join(&new_name).to_string_lossy().to_string();
+
+    // Rename file in file system
+    if old_path.exists() {
+        fs::rename(old_path, &new_path).map_err(|e| e.to_string())?;
+    }
+
+    // Update database
+    db.update_file_name(file_id, &new_name, &new_path)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }

@@ -2,6 +2,15 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { useFolderStore } from '@/stores/folderStore'
 
+// Helper to get name without extension
+export const getNameWithoutExt = (name: string): string => {
+  const lastDot = name.lastIndexOf('.');
+  if (lastDot > 0) {
+    return name.substring(0, lastDot);
+  }
+  return name;
+};
+
 export interface FileItem {
   id: number
   path: string
@@ -14,6 +23,10 @@ export interface FileItem {
   createdAt: string
   modifiedAt: string
   importedAt: string
+  rating: number
+  description: string
+  sourceUrl: string
+  dominantColor: string
   tags: Tag[]
 }
 
@@ -56,6 +69,11 @@ interface FileStore {
   importFiles: (sourcePaths: string[]) => Promise<FileItem[]>
   importImageFromBase64: (base64Data: string, ext: string, refresh?: boolean) => Promise<FileItem | null>
   importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<FileItem[]>
+  updateFileMetadata: (fileId: number, rating: number, description: string, sourceUrl: string) => Promise<void>
+  moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
+  extractColor: (fileId: number) => Promise<string>
+  exportFile: (fileId: number) => Promise<string>
+  updateFileName: (fileId: number, newName: string) => Promise<void>
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
@@ -114,10 +132,16 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   loadFiles: async () => {
+    const { selectedFile } = get()
     set({ isLoading: true })
     try {
       const files = await invoke<FileItem[]>('get_all_files')
-      set({ files, isLoading: false })
+      // Update selectedFile if it exists in the new files list
+      let newSelectedFile = selectedFile
+      if (selectedFile) {
+        newSelectedFile = files.find(f => f.id === selectedFile.id) || null
+      }
+      set({ files, isLoading: false, selectedFile: newSelectedFile })
     } catch (e) {
       console.error('Failed to load files:', e)
       set({ isLoading: false })
@@ -265,5 +289,38 @@ export const useFileStore = create<FileStore>((set, get) => ({
       console.error('[FileStore] Failed to import images:', e)
       return results
     }
+  },
+
+  updateFileMetadata: async (fileId: number, rating: number, description: string, sourceUrl: string) => {
+    console.log('[FileStore] updateFileMetadata called, fileId:', fileId, 'rating:', rating)
+    await invoke('update_file_metadata', { fileId, rating, description, sourceUrl })
+    // Reload files to reflect changes
+    await get().loadFiles()
+  },
+
+  moveFile: async (fileId: number, targetFolderId: number | null) => {
+    console.log('[FileStore] moveFile called, fileId:', fileId, 'targetFolderId:', targetFolderId)
+    await invoke('move_file', { fileId, targetFolderId })
+    await get().loadFiles()
+  },
+
+  extractColor: async (fileId: number) => {
+    console.log('[FileStore] extractColor called, fileId:', fileId)
+    const color = await invoke<string>('extract_color', { fileId })
+    await get().loadFiles()
+    return color
+  },
+
+  exportFile: async (fileId: number) => {
+    console.log('[FileStore] exportFile called, fileId:', fileId)
+    const exportPath = await invoke<string>('export_file', { fileId })
+    console.log('[FileStore] exportFile completed, path:', exportPath)
+    return exportPath
+  },
+
+  updateFileName: async (fileId: number, newName: string) => {
+    console.log('[FileStore] updateFileName called, fileId:', fileId, 'newName:', newName)
+    await invoke('update_file_name', { fileId, newName })
+    await get().loadFiles()
   },
 }))

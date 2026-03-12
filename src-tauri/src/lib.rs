@@ -99,6 +99,10 @@ pub fn run() {
             commands::init_default_folder,
             commands::delete_folder,
             commands::rename_folder,
+            commands::update_file_metadata,
+            commands::extract_color,
+            commands::export_file,
+            commands::update_file_name,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
