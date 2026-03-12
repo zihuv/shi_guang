@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import FolderTree from "./FolderTree";
-import TagPanel from "./TagPanel";
+import FolderTree from "@/components/FolderTree"
+import TagPanel from "@/components/TagPanel"
 import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
 

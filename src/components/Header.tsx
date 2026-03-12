@@ -104,10 +104,6 @@ export default function Header({ onOpenSettings }: HeaderProps) {
           {isImporting ? "导入中..." : "导入"}
         </Button>
 
-        <span className="text-sm text-gray-500 dark:text-gray-400">
-          {files.length} 个文件
-        </span>
-
         <Button
           variant="ghost"
           size="icon"

@@ -151,9 +151,9 @@ import {
 ```
 
 ### Path Aliases
-The project uses `@/` as an alias for `src/`. Use `@/stores/xxx` instead of `../stores/xxx` for imports.
+The project uses `@/` as an alias for `src/`. Use `@/stores/xxx` instead of `../stores/xxx` or `./folderStore` for imports.
 
-**Rule**: Always prefer `@/` alias over relative paths (`../`) for imports. This makes code more maintainable and easier to refactor.
+**Rule**: Always prefer `@/` alias over any relative paths (`../`, `./`) for imports. This makes code more maintainable and easier to refactor.
 
 ## Debugging Tips
 

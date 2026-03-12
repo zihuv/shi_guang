@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { useFolderStore } from "./folderStore";
-import { useFileStore } from "./fileStore";
+import { useFolderStore } from "@/stores/folderStore";
+import { useFileStore } from "@/stores/fileStore";
 
 interface Settings {
   theme: "light" | "dark";

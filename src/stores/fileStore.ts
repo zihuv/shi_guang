@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { useFolderStore } from '@/stores/folderStore'
 
 export interface FileItem {
   id: number
@@ -131,6 +132,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     await invoke('delete_file', { fileId })
     set({ selectedFile: null })
     get().loadFiles()
+    useFolderStore.getState().loadFolders()
     console.log('[FileStore] deleteFile completed')
   },
 
@@ -139,6 +141,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     await invoke('delete_files', { fileIds })
     set({ selectedFiles: [], selectedFile: null })
     get().loadFiles()
+    useFolderStore.getState().loadFolders()
     console.log('[FileStore] deleteFiles completed')
   },
 
@@ -150,6 +153,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
       console.log('[FileStore] importFile result:', file)
       if (refresh) {
         await get().loadFilesInFolder(selectedFolderId)
+        useFolderStore.getState().loadFolders()
       }
       console.log('[FileStore] loadFiles completed')
       return file
@@ -176,6 +180,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
       // Only refresh once after all imports
       await get().loadFilesInFolder(selectedFolderId)
+      useFolderStore.getState().loadFolders()
       console.log('[FileStore] importFiles completed, imported:', results.length)
       return results
     } catch (e) {
@@ -192,6 +197,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
       console.log('[FileStore] importImageFromBase64 result:', file)
       if (refresh) {
         await get().loadFilesInFolder(selectedFolderId)
+        useFolderStore.getState().loadFolders()
       }
       return file
     } catch (e) {
@@ -221,6 +227,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
       // Only refresh once after all imports
       await get().loadFilesInFolder(selectedFolderId)
+      useFolderStore.getState().loadFolders()
       console.log('[FileStore] importImagesFromBase64 completed, imported:', results.length)
       return results
     } catch (e) {
