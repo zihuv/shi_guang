@@ -57,28 +57,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev
 
-      - name: Update version (Unix)
-        if: matrix.platform != 'windows-latest'
-        shell: bash
-        run: |
-          VERSION=${{ github.event.inputs.version }}
-
-          # 更新 package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-
-          # 更新 tauri.conf.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-
-      - name: Update version (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          $VERSION = "${{ github.event.inputs.version }}"
-
-          # 更新 package.json
-          (Get-Content package.json) -replace '"version": "[^"]+"', "`"version`": `"$VERSION`"" | Set-Content package.json -Encoding UTF8
-
-          # 更新 tauri.conf.json
-          (Get-Content src-tauri/tauri.conf.json) -replace '"version": "[^"]+"', "`"version`": `"$VERSION`"" | Set-Content src-tauri/tauri.conf.json -Encoding UTF8
+      - name: Update version
+        run: node scripts/update-version.cjs ${{ github.event.inputs.version }}
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.1
