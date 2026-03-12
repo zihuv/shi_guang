@@ -30,6 +30,15 @@ interface FileStore {
   selectedFiles: number[]
   searchQuery: string
   isLoading: boolean
+  // Preview mode state
+  previewMode: boolean
+  previewIndex: number
+  previewFiles: FileItem[]
+  setPreviewMode: (mode: boolean) => void
+  setPreviewIndex: (index: number) => void
+  setPreviewFiles: (files: FileItem[]) => void
+  openPreview: (index: number, files: FileItem[]) => void
+  closePreview: () => void
   setSearchQuery: (query: string) => void
   setSelectedFile: (file: FileItem | null) => void
   setSelectedFolderId: (folderId: number | null) => void
@@ -56,6 +65,28 @@ export const useFileStore = create<FileStore>((set, get) => ({
   selectedFiles: [],
   searchQuery: '',
   isLoading: false,
+  // Preview mode defaults
+  previewMode: false,
+  previewIndex: 0,
+  previewFiles: [],
+
+  setPreviewMode: (mode) => set({ previewMode: mode }),
+
+  setPreviewIndex: (index) => set({ previewIndex: index }),
+
+  setPreviewFiles: (files) => set({ previewFiles: files }),
+
+  openPreview: (index, files) => set({
+    previewMode: true,
+    previewIndex: index,
+    previewFiles: files
+  }),
+
+  closePreview: () => set({
+    previewMode: false,
+    previewIndex: 0,
+    previewFiles: []
+  }),
 
   setSearchQuery: (query) => {
     set({ searchQuery: query })

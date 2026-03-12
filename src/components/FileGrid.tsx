@@ -25,7 +25,7 @@ async function getImageSrc(path: string): Promise<string> {
 }
 
 export default function FileGrid() {
-  const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, selectAll, deleteFiles } = useFileStore()
+  const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, selectAll, deleteFiles, openPreview } = useFileStore()
   const { selectedTagId } = useTagStore()
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'adaptive'>('grid')
@@ -53,6 +53,11 @@ export default function FileGrid() {
       // Normal click selects single file
       setSelectedFile(file)
     }
+  }
+
+  // Handle double-click to open preview
+  const handleFileDoubleClick = (index: number) => {
+    openPreview(index, filteredFiles)
   }
 
   // Handle box selection start
@@ -214,38 +219,41 @@ export default function FileGrid() {
       >
         {viewMode === 'adaptive' ? (
           <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
-            {filteredFiles.map((file) => (
+            {filteredFiles.map((file, index) => (
               <div key={file.id} className="break-inside-avoid">
                 <AdaptiveFileCard
                   file={file}
                   isSelected={selectedFile?.id === file.id}
                   isMultiSelected={selectedFiles.includes(file.id)}
                   onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
+                  onDoubleClick={() => handleFileDoubleClick(index)}
                 />
               </div>
             ))}
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
-            {filteredFiles.map((file) => (
+            {filteredFiles.map((file, index) => (
               <FileCard
                 key={file.id}
                 file={file}
                 isSelected={selectedFile?.id === file.id}
                 isMultiSelected={selectedFiles.includes(file.id)}
                 onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
+                onDoubleClick={() => handleFileDoubleClick(index)}
               />
             ))}
           </div>
         ) : (
           <div className="space-y-1">
-            {filteredFiles.map((file) => (
+            {filteredFiles.map((file, index) => (
               <FileRow
                 key={file.id}
                 file={file}
                 isSelected={selectedFile?.id === file.id}
                 isMultiSelected={selectedFiles.includes(file.id)}
                 onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
+                onDoubleClick={() => handleFileDoubleClick(index)}
               />
             ))}
           </div>
@@ -308,11 +316,12 @@ export default function FileGrid() {
   )
 }
 
-function FileCard({ file, isSelected, isMultiSelected, onClick }: {
+function FileCard({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
   onClick: (e: React.MouseEvent) => void
+  onDoubleClick?: () => void
 }) {
   const { files } = useFileStore()
   const [imageError, setImageError] = useState(false)
@@ -340,6 +349,7 @@ function FileCard({ file, isSelected, isMultiSelected, onClick }: {
     <div
       data-file-id={file.id}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all file-card ${
         isMultiSelected
           ? 'ring-2 ring-primary-500 shadow-lg'
@@ -393,11 +403,12 @@ function FileCard({ file, isSelected, isMultiSelected, onClick }: {
   )
 }
 
-function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
+function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
   onClick: (e: React.MouseEvent) => void
+  onDoubleClick?: () => void
 }) {
   const { files } = useFileStore()
   const [imageError, setImageError] = useState(false)
@@ -428,6 +439,7 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
     <div
       data-file-id={file.id}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all file-card ${
         isMultiSelected
           ? 'ring-2 ring-primary-500 shadow-lg'
@@ -465,11 +477,12 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, onClick }: {
   )
 }
 
-function FileRow({ file, isSelected, isMultiSelected, onClick }: {
+function FileRow({ file, isSelected, isMultiSelected, onClick, onDoubleClick }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
   onClick: (e: React.MouseEvent) => void
+  onDoubleClick?: () => void
 }) {
   const { files } = useFileStore()
   const [imageError, setImageError] = useState(false)
@@ -492,6 +505,7 @@ function FileRow({ file, isSelected, isMultiSelected, onClick }: {
     <div
       data-file-id={file.id}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors file-card ${
         isMultiSelected
           ? 'bg-primary-50 dark:bg-primary-900/20'

@@ -9,6 +9,7 @@ import SidePanel from "@/components/SidePanel";
 import FileGrid from "@/components/FileGrid";
 import DetailPanel from "@/components/DetailPanel";
 import SettingsModal from "@/components/SettingsModal";
+import ImagePreview from "@/components/ImagePreview";
 
 // Module-level deduplication state - persists across component re-renders
 const dragDropState = {
@@ -24,6 +25,7 @@ function App() {
     importImageFromBase64,
     importImagesFromBase64,
     importFile: importFileFn,
+    previewMode,
   } = useFileStore();
   const { loadTags } = useTagStore();
   const { loadFolders } = useFolderStore();
@@ -231,8 +233,8 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         <SidePanel />
 
-        <main className="flex-1 overflow-auto">
-          <FileGrid />
+        <main className="flex-1 overflow-hidden">
+          {previewMode ? <ImagePreview /> : <FileGrid />}
         </main>
 
         <DetailPanel />
