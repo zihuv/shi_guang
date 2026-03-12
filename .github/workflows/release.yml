@@ -64,10 +64,10 @@ jobs:
           VERSION=${{ github.event.inputs.version }}
 
           # 更新 package.json
-          sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
 
           # 更新 tauri.conf.json
-          sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
 
       - name: Update version (Windows)
         if: matrix.platform == 'windows-latest'
