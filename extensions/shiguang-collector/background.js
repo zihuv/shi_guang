@@ -4,16 +4,35 @@ const SHIGUANG_SERVER_URL = 'http://127.0.0.1:7845';
 
 // Create context menu when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
+  // 使用 'page' context 然后在 content script 中检查点击的是否是图片
+  // 这样可以处理更多网站（如 SPA、懒加载等）
   chrome.contextMenus.create({
     id: 'sendToShiguang',
-    title: '发送到拾光',
-    contexts: ['image']
+    title: '发送给拾光',
+    contexts: ['page', 'image']
   });
 });
 
 // Listen for context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'sendToShiguang' && info.srcUrl) {
+  // 优先使用 srcUrl
+  let imageUrl = info.srcUrl;
+
+  // 如果没有 srcUrl，从 content script 获取最后一次右键点击的图片
+  if (!imageUrl) {
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'getLastImageUrl'
+      });
+      if (response && response.imageUrl) {
+        imageUrl = response.imageUrl;
+      }
+    } catch (error) {
+      console.error('Failed to get image from content script:', error);
+    }
+  }
+
+  if (imageUrl) {
     try {
       // Show notification that we're processing
       chrome.notifications.create({
@@ -30,7 +49,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          image_url: info.srcUrl,
+          image_url: imageUrl,
           referer: tab.url
         })
       });
@@ -89,7 +108,7 @@ async function checkServerConnection() {
 }
 
 // Export for popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === 'checkConnection') {
     checkServerConnection().then(connected => {
       sendResponse({ connected });
