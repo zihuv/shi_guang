@@ -3,7 +3,7 @@ use axum::{
     extract::{Query, State, Json},
     http::{HeaderMap, StatusCode, header},
     response::Response,
-    routing::{get, post},
+    routing::{get, post, options},
     Router,
 };
 use serde::Deserialize;
@@ -689,7 +689,24 @@ pub async fn start_http_server(db_path: std::path::PathBuf, app_handle: AppHandl
         .route("/api/health", get(health_check))
         .route("/api/import", post(import_image))
         .route("/api/import-from-url", post(import_image_from_url))
+        // 处理 CORS 预检请求
+        .route("/api/import-from-url", options(import_image_from_url_options))
+        .route("/api/import", options(import_image_options))
+        .route("/api/health", options(health_check_options))
         .with_state(state);
+
+    // CORS 预检请求处理
+    async fn import_image_from_url_options() -> Response<Body> {
+        with_cors(Response::builder().body(Body::empty()).unwrap())
+    }
+
+    async fn import_image_options() -> Response<Body> {
+        with_cors(Response::builder().body(Body::empty()).unwrap())
+    }
+
+    async fn health_check_options() -> Response<Body> {
+        with_cors(Response::builder().body(Body::empty()).unwrap())
+    }
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 7845));
     log::info!("Starting HTTP server on http://{}", addr);
