@@ -38,6 +38,7 @@ pub struct Tag {
     pub id: i64,
     pub name: String,
     pub color: String,
+    pub count: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -81,6 +82,8 @@ impl Database {
     }
 
     fn init_tables(&self) -> Result<()> {
+        // Enable foreign keys
+        let _ = self.conn.execute_batch("PRAGMA foreign_keys = ON;");
         self.conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS folders (
@@ -469,9 +472,34 @@ impl Database {
     }
 
     pub fn insert_file(&self, file: &FileRecord) -> Result<i64> {
+        // First check if file already exists to preserve metadata
+        let existing = self.get_file_by_path(&file.path).ok().flatten();
+
+        // Use existing metadata if available, otherwise use new values
+        let rating = existing.as_ref().map(|e| e.rating).unwrap_or(file.rating);
+        let description = existing.as_ref().map(|e| e.description.as_str()).unwrap_or(&file.description).to_string();
+        let source_url = existing.as_ref().map(|e| e.source_url.as_str()).unwrap_or(&file.source_url).to_string();
+        let dominant_color = existing.as_ref().map(|e| e.dominant_color.as_str()).unwrap_or(&file.dominant_color).to_string();
+        let color_distribution = existing.as_ref().map(|e| e.color_distribution.as_str()).unwrap_or(&file.color_distribution).to_string();
+
         self.conn.execute(
-            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at, file.rating, file.description, file.source_url, file.dominant_color, file.color_distribution],
+            "INSERT INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT(path) DO UPDATE SET
+                name = excluded.name,
+                ext = excluded.ext,
+                size = excluded.size,
+                width = excluded.width,
+                height = excluded.height,
+                folder_id = excluded.folder_id,
+                created_at = excluded.created_at,
+                modified_at = excluded.modified_at,
+                imported_at = excluded.imported_at,
+                rating = excluded.rating,
+                description = excluded.description,
+                source_url = excluded.source_url,
+                dominant_color = excluded.dominant_color,
+                color_distribution = excluded.color_distribution",
+            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at, rating, description, source_url, dominant_color, color_distribution],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -540,7 +568,7 @@ impl Database {
 
     pub fn update_file_metadata(&self, file_id: i64, rating: i32, description: &str, source_url: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET rating = ?1, description = ?2, source_url = ?3 WHERE id = ?4",
+            "UPDATE files SET rating = ?1, description = ?2, source_url = ?3, modified_at = datetime('now', 'localtime') WHERE id = ?4",
             params![rating, description, source_url, file_id],
         )?;
         Ok(())
@@ -548,7 +576,7 @@ impl Database {
 
     pub fn update_file_dominant_color(&self, file_id: i64, dominant_color: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET dominant_color = ?1 WHERE id = ?2",
+            "UPDATE files SET dominant_color = ?1, modified_at = datetime('now', 'localtime') WHERE id = ?2",
             params![dominant_color, file_id],
         )?;
         Ok(())
@@ -556,7 +584,7 @@ impl Database {
 
     pub fn update_file_name(&self, file_id: i64, name: &str, path: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET name = ?1, path = ?2 WHERE id = ?3",
+            "UPDATE files SET name = ?1, path = ?2, modified_at = datetime('now', 'localtime') WHERE id = ?3",
             params![name, path, file_id],
         )?;
         Ok(())
@@ -568,12 +596,19 @@ impl Database {
     }
 
     pub fn get_all_tags(&self) -> Result<Vec<Tag>> {
-        let mut stmt = self.conn.prepare("SELECT id, name, color FROM tags ORDER BY name")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.name, t.color, COUNT(ft.file_id) as count
+             FROM tags t
+             LEFT JOIN file_tags ft ON t.id = ft.tag_id
+             GROUP BY t.id
+             ORDER BY t.name"
+        )?;
         let tags = stmt.query_map([], |row| {
             Ok(Tag {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 color: row.get(2)?,
+                count: row.get(3)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(tags)
@@ -611,6 +646,7 @@ impl Database {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 color: row.get(2)?,
+                count: 1,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(tags)
@@ -621,6 +657,10 @@ impl Database {
             "INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?1, ?2)",
             params![file_id, tag_id],
         )?;
+        self.conn.execute(
+            "UPDATE files SET modified_at = datetime('now', 'localtime') WHERE id = ?1",
+            [file_id],
+        )?;
         Ok(())
     }
 
@@ -628,6 +668,10 @@ impl Database {
         self.conn.execute(
             "DELETE FROM file_tags WHERE file_id = ?1 AND tag_id = ?2",
             params![file_id, tag_id],
+        )?;
+        self.conn.execute(
+            "UPDATE files SET modified_at = datetime('now', 'localtime') WHERE id = ?1",
+            [file_id],
         )?;
         Ok(())
     }

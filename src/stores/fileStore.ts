@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { useFolderStore } from '@/stores/folderStore'
+import { useTagStore } from '@/stores/tagStore'
 
 // Helper to get name without extension
 export const getNameWithoutExt = (name: string): string => {
@@ -191,11 +192,13 @@ export const useFileStore = create<FileStore>((set, get) => ({
   addTagToFile: async (fileId, tagId) => {
     await invoke('add_tag_to_file', { fileId, tagId })
     get().loadFiles()
+    useTagStore.getState().loadTags()
   },
 
   removeTagFromFile: async (fileId, tagId) => {
     await invoke('remove_tag_from_file', { fileId, tagId })
     get().loadFiles()
+    useTagStore.getState().loadTags()
   },
 
   deleteFile: async (fileId: number) => {

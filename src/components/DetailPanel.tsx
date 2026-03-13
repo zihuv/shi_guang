@@ -469,8 +469,41 @@ function FileDetailPanel({ file }: { file: FileItem }) {
           />
         </div>
 
-        {/* 2. Tags input with autocomplete */}
+        {/* 2. Tags input with tags displayed inside */}
         <div className="relative">
+          {/* 已添加的标签芯片（显示在输入框内） */}
+          {fileTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {fileTags.map((tag) => (
+                <span
+                  key={tag.id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full text-white"
+                  style={{ backgroundColor: tag.color }}
+                >
+                  {tag.name}
+                  <button
+                    onClick={() => removeTagFromFile(file.id, tag.id)}
+                    className="hover:opacity-70"
+                  >
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* 标签输入框 */}
           <Input
             type="text"
             value={tagInput}
@@ -480,6 +513,18 @@ function FileDetailPanel({ file }: { file: FileItem }) {
             }}
             onFocus={() => setShowTagSuggestions(true)}
             onBlur={() => setTimeout(() => setShowTagSuggestions(false), 200)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (filteredTags.length > 0) {
+                  // 复用第一个匹配的标签
+                  handleAddTag(filteredTags[0].id);
+                } else if (tagInput.trim()) {
+                  // 创建新标签
+                  handleCreateAndAddTag();
+                }
+              }
+            }}
             placeholder="添加标签"
           />
           {showTagSuggestions && tagInput && (
@@ -524,39 +569,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
             </div>
           )}
         </div>
-
-        {/* Existing tags - only show when there are tags */}
-        {fileTags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {fileTags.map((tag) => (
-              <span
-                key={tag.id}
-                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full text-white"
-                style={{ backgroundColor: tag.color }}
-              >
-                {tag.name}
-                <button
-                  onClick={() => removeTagFromFile(file.id, tag.id)}
-                  className="hover:opacity-70"
-                >
-                  <svg
-                    className="w-3 h-3"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* 3. Description */}
         <div>
