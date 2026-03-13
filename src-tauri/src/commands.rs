@@ -77,13 +77,11 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
     let new_name = format!("{}_{}.{}", timestamp, uuid_simple(), ext);
     let dest_path = target_dir.join(&new_name);
 
-    // Copy file to imports directory
-    fs::copy(source, &dest_path).map_err(|e| e.to_string())?;
+    // Read source file data
+    let image_data = fs::read(source).map_err(|e| e.to_string())?;
 
-    // Get file metadata
-    let metadata = fs::metadata(&dest_path).map_err(|e| e.to_string())?;
-    let (width, height) = get_image_dimensions(&dest_path).unwrap_or((0, 0));
-
+    // Get original file timestamps before copying
+    let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
     let created_at = metadata.created()
         .ok()
         .map(|t| {
@@ -100,26 +98,14 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         })
         .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
 
-    let imported_at = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-    let file_record = FileRecord {
-        id: 0,
-        path: dest_path.to_string_lossy().to_string(),
-        name: new_name.clone(),
-        ext: ext.clone(),
-        size: metadata.len() as i64,
-        width: width as i32,
-        height: height as i32,
+    // Use shared function to save and process image
+    let file_record = crate::db::save_and_import_image(
+        &image_data,
+        &dest_path,
         folder_id,
         created_at,
         modified_at,
-        imported_at,
-        rating: 0,
-        description: String::new(),
-        source_url: String::new(),
-        dominant_color: String::new(),
-        color_distribution: String::from("[]"),
-    };
+    )?;
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
 
@@ -151,35 +137,20 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
     let new_name = format!("paste_{}.{}", timestamp, final_ext);
     let dest_path = target_dir.join(&new_name);
 
-    // Decode base64 and save file
+    // Decode base64
     let engine = base64::engine::general_purpose::STANDARD;
     let image_data = engine.decode(&base64_data).map_err(|e| e.to_string())?;
-    fs::write(&dest_path, &image_data).map_err(|e| e.to_string())?;
 
-    // Get file metadata
-    let metadata = fs::metadata(&dest_path).map_err(|e| e.to_string())?;
-    let (width, height) = get_image_dimensions(&dest_path).unwrap_or((0, 0));
-
+    // Use shared function to save and process image
+    // For pasted images, created_at and modified_at are the same (current time)
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-    let file_record = FileRecord {
-        id: 0,
-        path: dest_path.to_string_lossy().to_string(),
-        name: new_name.clone(),
-        ext: final_ext,
-        size: metadata.len() as i64,
-        width: width as i32,
-        height: height as i32,
+    let file_record = crate::db::save_and_import_image(
+        &image_data,
+        &dest_path,
         folder_id,
-        created_at: now.clone(),
-        modified_at: now.clone(),
-        imported_at: now,
-        rating: 0,
-        description: String::new(),
-        source_url: String::new(),
-        dominant_color: String::new(),
-        color_distribution: String::from("[]"),
-    };
+        now.clone(),
+        now,
+    )?;
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
 
@@ -187,18 +158,6 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
     db.get_file_by_path(&dest_path.to_string_lossy())
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Failed to retrieve imported file".to_string())
-}
-
-fn get_image_dimensions(path: &std::path::Path) -> Result<(u32, u32), String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if ext.eq_ignore_ascii_case("svg") {
-        return Ok((0, 0));
-    }
-
-    match image::open(path) {
-        Ok(img) => Ok(img.dimensions()),
-        Err(_) => Ok((0, 0)),
-    }
 }
 
 fn uuid_simple() -> String {
