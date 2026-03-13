@@ -27,6 +27,7 @@ export interface FileItem {
   description: string
   sourceUrl: string
   dominantColor: string
+  colorDistribution: Array<{ color: string; percentage: number }>
   tags: Tag[]
 }
 
@@ -136,12 +137,17 @@ export const useFileStore = create<FileStore>((set, get) => ({
     set({ isLoading: true })
     try {
       const files = await invoke<FileItem[]>('get_all_files')
+      // Parse colorDistribution from JSON string
+      const parsedFiles = files.map(f => ({
+        ...f,
+        colorDistribution: f.colorDistribution ? JSON.parse(f.colorDistribution as unknown as string) : []
+      }))
       // Update selectedFile if it exists in the new files list
       let newSelectedFile = selectedFile
       if (selectedFile) {
-        newSelectedFile = files.find(f => f.id === selectedFile.id) || null
+        newSelectedFile = parsedFiles.find(f => f.id === selectedFile.id) || null
       }
-      set({ files, isLoading: false, selectedFile: newSelectedFile })
+      set({ files: parsedFiles, isLoading: false, selectedFile: newSelectedFile })
     } catch (e) {
       console.error('Failed to load files:', e)
       set({ isLoading: false })
@@ -153,8 +159,13 @@ export const useFileStore = create<FileStore>((set, get) => ({
     set({ isLoading: true })
     try {
       const files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
-      console.log('[fileStore] Loaded files:', files.length)
-      set({ files, isLoading: false })
+      // Parse colorDistribution from JSON string
+      const parsedFiles = files.map(f => ({
+        ...f,
+        colorDistribution: f.colorDistribution ? JSON.parse(f.colorDistribution as unknown as string) : []
+      }))
+      console.log('[fileStore] Loaded files:', parsedFiles.length)
+      set({ files: parsedFiles, isLoading: false })
     } catch (e) {
       console.error('[fileStore] Failed to load files in folder:', e)
       set({ isLoading: false })
@@ -165,7 +176,12 @@ export const useFileStore = create<FileStore>((set, get) => ({
     set({ isLoading: true })
     try {
       const files = await invoke<FileItem[]>('search_files', { query })
-      set({ files, isLoading: false })
+      // Parse colorDistribution from JSON string
+      const parsedFiles = files.map(f => ({
+        ...f,
+        colorDistribution: f.colorDistribution ? JSON.parse(f.colorDistribution as unknown as string) : []
+      }))
+      set({ files: parsedFiles, isLoading: false })
     } catch (e) {
       console.error('Failed to search files:', e)
       set({ isLoading: false })

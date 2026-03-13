@@ -30,6 +30,7 @@ pub struct FileRecord {
     pub description: String,
     pub source_url: String,
     pub dominant_color: String,
+    pub color_distribution: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -62,6 +63,8 @@ pub struct FileWithTags {
     pub source_url: String,
     #[serde(rename = "dominantColor")]
     pub dominant_color: String,
+    #[serde(rename = "colorDistribution")]
+    pub color_distribution: String,
     pub tags: Vec<Tag>,
 }
 
@@ -196,6 +199,16 @@ impl Database {
             self.conn.execute("ALTER TABLE files ADD COLUMN dominant_color TEXT DEFAULT ''", [])?;
         }
 
+        // Add color_distribution column if it doesn't exist (for migration)
+        let has_color_distribution: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'color_distribution'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_color_distribution == 0 {
+            self.conn.execute("ALTER TABLE files ADD COLUMN color_distribution TEXT DEFAULT '[]'", [])?;
+        }
+
         // Create indexes after migration
         self.conn.execute_batch(
             "
@@ -209,7 +222,7 @@ impl Database {
 
     pub fn get_all_files(&self) -> Result<Vec<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color FROM files ORDER BY imported_at ASC, id ASC"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution FROM files ORDER BY imported_at ASC, id ASC"
         )?;
 
         let files: Vec<FileRecord> = stmt.query_map([], |row| {
@@ -229,6 +242,7 @@ impl Database {
                 description: row.get(12)?,
                 source_url: row.get(13)?,
                 dominant_color: row.get(14)?,
+                color_distribution: row.get(15)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -251,6 +265,7 @@ impl Database {
                 description: file.description,
                 source_url: file.source_url,
                 dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
                 tags,
             });
         }
@@ -261,7 +276,7 @@ impl Database {
     pub fn search_files(&self, query: &str) -> Result<Vec<FileWithTags>> {
         let search_pattern = format!("%{}%", query);
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
              FROM files
              WHERE name LIKE ?1
              ORDER BY imported_at ASC, id ASC"
@@ -284,6 +299,7 @@ impl Database {
                 description: row.get(12)?,
                 source_url: row.get(13)?,
                 dominant_color: row.get(14)?,
+                color_distribution: row.get(15)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -306,6 +322,7 @@ impl Database {
                 description: file.description,
                 source_url: file.source_url,
                 dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
                 tags,
             });
         }
@@ -316,14 +333,14 @@ impl Database {
     pub fn get_files_in_folder(&self, folder_id: Option<i64>) -> Result<Vec<FileWithTags>> {
         let mut stmt = if folder_id.is_some() {
             self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id = ?1
                  ORDER BY imported_at ASC, id ASC"
             )?
         } else {
             self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id IS NULL
                  ORDER BY imported_at ASC, id ASC"
@@ -348,6 +365,7 @@ impl Database {
                     description: row.get(12)?,
                     source_url: row.get(13)?,
                     dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
                 })
             })?.filter_map(|r| r.ok()).collect()
         } else {
@@ -368,6 +386,7 @@ impl Database {
                     description: row.get(12)?,
                     source_url: row.get(13)?,
                     dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
                 })
             })?.filter_map(|r| r.ok()).collect()
         };
@@ -391,6 +410,7 @@ impl Database {
                 description: file.description,
                 source_url: file.source_url,
                 dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
                 tags,
             });
         }
@@ -400,7 +420,7 @@ impl Database {
 
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color FROM files WHERE id = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution FROM files WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query([id])?;
@@ -421,6 +441,7 @@ impl Database {
                 description: row.get(12)?,
                 source_url: row.get(13)?,
                 dominant_color: row.get(14)?,
+                color_distribution: row.get(15)?,
             };
             let tags = self.get_file_tags(file.id)?;
             Ok(Some(FileWithTags {
@@ -439,6 +460,7 @@ impl Database {
                 description: file.description,
                 source_url: file.source_url,
                 dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
                 tags,
             }))
         } else {
@@ -448,15 +470,15 @@ impl Database {
 
     pub fn insert_file(&self, file: &FileRecord) -> Result<i64> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at, file.rating, file.description, file.source_url, file.dominant_color],
+            "INSERT OR REPLACE INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, file.imported_at, file.rating, file.description, file.source_url, file.dominant_color, file.color_distribution],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn get_file_by_path(&self, path: &str) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color FROM files WHERE path = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution FROM files WHERE path = ?1"
         )?;
 
         let file_result = stmt.query_row([path], |row| {
@@ -476,6 +498,7 @@ impl Database {
                 description: row.get(12)?,
                 source_url: row.get(13)?,
                 dominant_color: row.get(14)?,
+                color_distribution: row.get(15)?,
             })
         });
 
@@ -498,6 +521,7 @@ impl Database {
                     description: file.description,
                     source_url: file.source_url,
                     dominant_color: file.dominant_color,
+                    color_distribution: file.color_distribution,
                     tags,
                 }))
             }

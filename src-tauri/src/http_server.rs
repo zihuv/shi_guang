@@ -240,6 +240,7 @@ async fn import_image(
         description: String::new(),
         source_url: String::new(),
         dominant_color: String::new(),
+        color_distribution: String::from("[]"),
     };
 
     match db.insert_file(&file_record) {
@@ -443,6 +444,7 @@ async fn import_image_from_url(
         description: String::new(),
         source_url: query.referer.unwrap_or_default(),
         dominant_color: String::new(),
+        color_distribution: String::from("[]"),
     };
 
     match db.insert_file(&file_record) {

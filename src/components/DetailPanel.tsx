@@ -3,6 +3,8 @@ import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
 import { readFile, exists } from "@tauri-apps/plugin-fs";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 
 // Helper to get image URL from file path
 async function getImageSrc(path: string): Promise<string> {
@@ -138,7 +140,7 @@ function FolderDetailPanel({ folder }: { folder: FolderNode }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-4">
+      <div className="flex-1 overflow-x-hidden overflow-y-auto p-4 space-y-4">
         {/* Folder icon */}
         <div className="flex justify-center">
           <div className="w-20 h-20 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
@@ -187,8 +189,19 @@ function FolderDetailPanel({ folder }: { folder: FolderNode }) {
 }
 
 function FileDetailPanel({ file }: { file: FileItem }) {
-  const { addTagToFile, removeTagFromFile, deleteFile, updateFileMetadata, exportFile, updateFileName } = useFileStore();
+  const {
+    addTagToFile,
+    removeTagFromFile,
+    deleteFile,
+    updateFileMetadata,
+    exportFile,
+    updateFileName,
+  } = useFileStore();
   const { tags } = useTagStore();
+  const { folders } = useFolderStore();
+
+  // Find folder by file's folderId
+  const folder = file.folderId ? findFolderById(folders, file.folderId) : null;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [imageSrc, setImageSrc] = useState<string>("");
   const [tagInput, setTagInput] = useState("");
@@ -201,8 +214,8 @@ function FileDetailPanel({ file }: { file: FileItem }) {
 
   // Helper to get extension
   const getExt = (name: string) => {
-    const parts = name.split('.');
-    return parts.length > 1 ? parts[parts.length - 1] : '';
+    const parts = name.split(".");
+    return parts.length > 1 ? parts[parts.length - 1] : "";
   };
 
   useEffect(() => {
@@ -230,9 +243,10 @@ function FileDetailPanel({ file }: { file: FileItem }) {
 
   // Filter tags based on input
   const filteredTags = tagInput
-    ? tags.filter((t) =>
-        t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-        !fileTags.some((ft) => ft.id === t.id)
+    ? tags.filter(
+        (t) =>
+          t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
+          !fileTags.some((ft) => ft.id === t.id),
       )
     : availableTags;
 
@@ -242,10 +256,22 @@ function FileDetailPanel({ file }: { file: FileItem }) {
 
   // Auto-save metadata with debounce
   const saveMetadata = useCallback(
-    debounce(async (newRating: number, newDescription: string, newSourceUrl: string) => {
-      await updateFileMetadata(file.id, newRating, newDescription, newSourceUrl);
-    }, 500),
-    [file.id, updateFileMetadata]
+    debounce(
+      async (
+        newRating: number,
+        newDescription: string,
+        newSourceUrl: string,
+      ) => {
+        await updateFileMetadata(
+          file.id,
+          newRating,
+          newDescription,
+          newSourceUrl,
+        );
+      },
+      500,
+    ),
+    [file.id, updateFileMetadata],
   );
 
   const handleRatingChange = (newRating: number) => {
@@ -272,13 +298,24 @@ function FileDetailPanel({ file }: { file: FileItem }) {
   const handleCreateAndAddTag = async () => {
     if (!tagInput.trim()) return;
     // Create a new tag with random color
-    const colors = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899"];
+    const colors = [
+      "#ef4444",
+      "#f97316",
+      "#eab308",
+      "#22c55e",
+      "#06b6d4",
+      "#3b82f6",
+      "#8b5cf6",
+      "#ec4899",
+    ];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
     const { addTag } = useTagStore.getState();
     await addTag(tagInput.trim(), randomColor);
     // Reload tags and get the new tag
     await useTagStore.getState().loadTags();
-    const newTag = useTagStore.getState().tags.find(t => t.name === tagInput.trim());
+    const newTag = useTagStore
+      .getState()
+      .tags.find((t) => t.name === tagInput.trim());
     if (newTag) {
       await addTagToFile(file.id, newTag.id);
     }
@@ -292,7 +329,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
       setShowExportSuccess(true);
       setTimeout(() => setShowExportSuccess(false), 3000);
     } catch (e) {
-      console.error('Export failed:', e);
+      console.error("Export failed:", e);
     }
   };
 
@@ -318,8 +355,18 @@ function FileDetailPanel({ file }: { file: FileItem }) {
             className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500"
             title="导出文件"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+              />
             </svg>
           </button>
           {showDeleteConfirm ? (
@@ -367,7 +414,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-3 space-y-3">
+      <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3">
         {/* Preview image */}
         <div className="aspect-video bg-gray-100 dark:bg-dark-bg rounded-lg overflow-hidden relative">
           <img
@@ -375,35 +422,56 @@ function FileDetailPanel({ file }: { file: FileItem }) {
             alt={file.name}
             className="w-full h-full object-contain"
           />
-          {/* Dominant color bar */}
-          {file.dominantColor && (
-            <div
-              className="absolute bottom-0 left-0 right-0 h-2"
-              style={{ backgroundColor: file.dominantColor }}
-            />
-          )}
         </div>
+
+        {/* 色彩分布进度条 */}
+        {file.colorDistribution && file.colorDistribution.length > 0 && (
+          <div className="h-3 w-full">
+            <div className="flex w-full h-full">
+              {file.colorDistribution.map((colorInfo, index) => (
+                <div
+                  key={index}
+                  className="h-full relative group cursor-pointer"
+                  style={{
+                    width: `${colorInfo.percentage}%`,
+                    minWidth: colorInfo.percentage > 0 ? "4px" : "0",
+                  }}
+                >
+                  <div
+                    className="absolute inset-0"
+                    style={{ backgroundColor: colorInfo.color }}
+                  />
+                  {/* 悬停提示 */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-1.5 py-0.5 bg-black/80 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10">
+                    {colorInfo.color} {colorInfo.percentage.toFixed(1)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Input fields in order: name, tags, description, source URL */}
         {/* 1. File name - always editable */}
-        <input
-          type="text"
-          value={editedName}
-          onChange={(e) => setEditedName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleNameSave();
-            if (e.key === 'Escape') {
-              setEditedName(getNameWithoutExt(file.name));
-            }
-          }}
-          onBlur={handleNameSave}
-          placeholder="名称"
-          className="w-full px-2 py-1.5 text-sm border border-gray-200 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-500"
-        />
+        <div>
+          <Input
+            type="text"
+            value={editedName}
+            onChange={(e) => setEditedName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleNameSave();
+              if (e.key === "Escape") {
+                setEditedName(getNameWithoutExt(file.name));
+              }
+            }}
+            onBlur={handleNameSave}
+            placeholder="名称"
+          />
+        </div>
 
         {/* 2. Tags input with autocomplete */}
         <div className="relative">
-          <input
+          <Input
             type="text"
             value={tagInput}
             onChange={(e) => {
@@ -413,7 +481,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
             onFocus={() => setShowTagSuggestions(true)}
             onBlur={() => setTimeout(() => setShowTagSuggestions(false), 200)}
             placeholder="添加标签"
-            className="w-full px-2 py-1.5 text-sm border border-gray-200 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
           {showTagSuggestions && tagInput && (
             <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-md shadow-lg max-h-40 overflow-auto">
@@ -438,8 +505,18 @@ function FileDetailPanel({ file }: { file: FileItem }) {
                   onClick={handleCreateAndAddTag}
                   className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary-600 dark:text-primary-400 hover:bg-gray-100 dark:hover:bg-dark-border"
                 >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <svg
+                    className="w-3 h-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
                   </svg>
                   创建标签 "{tagInput}"
                 </button>
@@ -448,120 +525,151 @@ function FileDetailPanel({ file }: { file: FileItem }) {
           )}
         </div>
 
-        {/* Existing tags */}
-        <div className="flex flex-wrap gap-1">
-          {fileTags.map((tag) => (
-            <span
-              key={tag.id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full text-white"
-              style={{ backgroundColor: tag.color }}
-            >
-              {tag.name}
-              <button
-                onClick={() => removeTagFromFile(file.id, tag.id)}
-                className="hover:opacity-70"
+        {/* Existing tags - only show when there are tags */}
+        {fileTags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {fileTags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full text-white"
+                style={{ backgroundColor: tag.color }}
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </span>
-          ))}
-        </div>
+                {tag.name}
+                <button
+                  onClick={() => removeTagFromFile(file.id, tag.id)}
+                  className="hover:opacity-70"
+                >
+                  <svg
+                    className="w-3 h-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* 3. Description */}
-        <textarea
-          value={description}
-          onChange={(e) => handleDescriptionChange(e.target.value)}
-          placeholder="添加备注"
-          className="w-full px-2 py-1.5 text-sm border border-gray-200 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg text-gray-800 dark:text-gray-200 resize-none focus:outline-none focus:ring-1 focus:ring-primary-500"
-          rows={2}
-        />
-
-        {/* 4. Source URL */}
-        <input
-          type="url"
-          value={sourceUrl}
-          onChange={(e) => handleSourceUrlChange(e.target.value)}
-          placeholder="https://"
-          className="w-full px-2 py-1.5 text-sm border border-gray-200 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-500"
-        />
-
-        {/* Rating */}
-        <div className="flex items-center gap-0.5">
-          {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              onClick={() => handleRatingChange(star === rating ? 0 : star)}
-              className="p-0.5 hover:scale-110 transition-transform"
-            >
-              <svg
-                className={`w-5 h-5 ${
-                  star <= rating
-                    ? "text-yellow-400 fill-yellow-400"
-                    : "text-gray-300 dark:text-gray-600"
-                }`}
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-            </button>
-          ))}
+        <div>
+          <Textarea
+            value={description}
+            onChange={(e) => handleDescriptionChange(e.target.value)}
+            placeholder="添加备注"
+            rows={2}
+          />
         </div>
 
-        {/* File info list - left label, right value */}
+        {/* 4. Source URL */}
+        <div>
+          <Input
+            type="url"
+            value={sourceUrl}
+            onChange={(e) => handleSourceUrlChange(e.target.value)}
+            placeholder="https://"
+          />
+        </div>
+
+        {/* Rating and File info list */}
         <div className="space-y-1">
+          <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 my-2 block">
+            素材信息
+          </span>
+
+          {/* Rating */}
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              评级
+            </span>
+            <div className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => handleRatingChange(star === rating ? 0 : star)}
+                  className="p-0.5 hover:scale-110 transition-transform"
+                >
+                  <svg
+                    className={`w-3 h-3 ${
+                      star <= rating
+                        ? "text-yellow-400 fill-yellow-400"
+                        : "text-gray-300 dark:text-gray-600"
+                    }`}
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          </div>
+          {folder && (
+            <div className="flex justify-between">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                文件夹
+              </span>
+              <span className="text-xs text-gray-800 dark:text-gray-200">
+                {folder.name}
+              </span>
+            </div>
+          )}
+          {/* File info list - left label, right value */}
           <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">尺寸</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              尺寸
+            </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
               {file.width} x {file.height}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">大小</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              大小
+            </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
               {formatSize(file.size)}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">格式</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              格式
+            </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
               {file.ext.toUpperCase()}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">创建时间</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              创建时间
+            </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
               {file.createdAt}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">修改时间</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              修改时间
+            </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
               {file.modifiedAt}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">导入时间</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              导入时间
+            </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
               {file.importedAt}
             </span>
           </div>
-          {file.dominantColor && (
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-500 dark:text-gray-400">主色调</span>
-              <div className="flex items-center gap-1.5">
-                <div
-                  className="w-3.5 h-3.5 rounded border border-gray-200 dark:border-dark-border"
-                  style={{ backgroundColor: file.dominantColor }}
-                />
-                <span className="text-xs text-gray-800 dark:text-gray-200">
-                  {file.dominantColor}
-                </span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -579,7 +687,7 @@ function formatSize(bytes: number): string {
 // Debounce function
 function debounce<T extends (...args: any[]) => any>(
   func: T,
-  wait: number
+  wait: number,
 ): (...args: Parameters<T>) => void {
   let timeout: NodeJS.Timeout | null = null;
   return (...args: Parameters<T>) => {

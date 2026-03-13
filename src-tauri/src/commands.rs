@@ -118,6 +118,7 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         description: String::new(),
         source_url: String::new(),
         dominant_color: String::new(),
+        color_distribution: String::from("[]"),
     };
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
@@ -177,6 +178,7 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
         description: String::new(),
         source_url: String::new(),
         dominant_color: String::new(),
+        color_distribution: String::from("[]"),
     };
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
@@ -529,6 +531,7 @@ pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
             description: file.description,
             source_url: file.source_url,
             dominant_color: file.dominant_color,
+            color_distribution: file.color_distribution,
         };
         db.insert_file(&updated_record).map_err(|e| e.to_string())?;
     }
