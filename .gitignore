@@ -36,3 +36,4 @@ Thumbs.db
 .cache
 .parcel-cache
 .vite
+tmp
