@@ -32,6 +32,14 @@ export interface FileItem {
   tags: Tag[]
 }
 
+// Helper function to parse file from database (colorDistribution is JSON string)
+const parseFile = (file: FileItem): FileItem => ({
+  ...file,
+  colorDistribution: typeof file.colorDistribution === 'string'
+    ? JSON.parse(file.colorDistribution)
+    : (file.colorDistribution || [])
+})
+
 export interface Tag {
   id: number
   name: string
@@ -113,7 +121,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     get().searchFiles(query)
   },
 
-  setSelectedFile: (file) => set({ selectedFile: file }),
+  setSelectedFile: (file) => set({ selectedFile: file ? parseFile(file) : null }),
 
   setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
 
@@ -191,13 +199,15 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   addTagToFile: async (fileId, tagId) => {
     await invoke('add_tag_to_file', { fileId, tagId })
-    get().loadFiles()
+    const { selectedFolderId } = get()
+    await get().loadFilesInFolder(selectedFolderId)
     useTagStore.getState().loadTags()
   },
 
   removeTagFromFile: async (fileId, tagId) => {
     await invoke('remove_tag_from_file', { fileId, tagId })
-    get().loadFiles()
+    const { selectedFolderId } = get()
+    await get().loadFilesInFolder(selectedFolderId)
     useTagStore.getState().loadTags()
   },
 
@@ -315,20 +325,37 @@ export const useFileStore = create<FileStore>((set, get) => ({
   updateFileMetadata: async (fileId: number, rating: number, description: string, sourceUrl: string) => {
     console.log('[FileStore] updateFileMetadata called, fileId:', fileId, 'rating:', rating)
     await invoke('update_file_metadata', { fileId, rating, description, sourceUrl })
-    // Reload files to reflect changes
-    await get().loadFiles()
+    // Re-fetch from database to get accurate modified_at (set by trigger)
+    const updatedFile = await invoke<FileItem>('get_file', { fileId })
+    const parsedFile = parseFile(updatedFile)
+    set((state) => ({
+      files: state.files.map((f) => f.id === fileId ? parsedFile : f),
+      selectedFile: state.selectedFile?.id === fileId ? parsedFile : state.selectedFile,
+    }))
   },
 
   moveFile: async (fileId: number, targetFolderId: number | null) => {
     console.log('[FileStore] moveFile called, fileId:', fileId, 'targetFolderId:', targetFolderId)
     await invoke('move_file', { fileId, targetFolderId })
-    await get().loadFiles()
+    // Re-fetch from database to get accurate modified_at
+    const updatedFile = await invoke<FileItem>('get_file', { fileId })
+    const parsedFile = parseFile(updatedFile)
+    set((state) => ({
+      files: state.files.map((f) => f.id === fileId ? parsedFile : f),
+      selectedFile: state.selectedFile?.id === fileId ? parsedFile : state.selectedFile,
+    }))
   },
 
   extractColor: async (fileId: number) => {
     console.log('[FileStore] extractColor called, fileId:', fileId)
     const color = await invoke<string>('extract_color', { fileId })
-    await get().loadFiles()
+    // Re-fetch from database to get accurate modified_at
+    const updatedFile = await invoke<FileItem>('get_file', { fileId })
+    const parsedFile = parseFile(updatedFile)
+    set((state) => ({
+      files: state.files.map((f) => f.id === fileId ? parsedFile : f),
+      selectedFile: state.selectedFile?.id === fileId ? parsedFile : state.selectedFile,
+    }))
     return color
   },
 
@@ -342,6 +369,12 @@ export const useFileStore = create<FileStore>((set, get) => ({
   updateFileName: async (fileId: number, newName: string) => {
     console.log('[FileStore] updateFileName called, fileId:', fileId, 'newName:', newName)
     await invoke('update_file_name', { fileId, newName })
-    await get().loadFiles()
+    // Re-fetch from database to get accurate modified_at
+    const updatedFile = await invoke<FileItem>('get_file', { fileId })
+    const parsedFile = parseFile(updatedFile)
+    set((state) => ({
+      files: state.files.map((f) => f.id === fileId ? parsedFile : f),
+      selectedFile: state.selectedFile?.id === fileId ? parsedFile : state.selectedFile,
+    }))
   },
 }))

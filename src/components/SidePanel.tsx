@@ -5,8 +5,8 @@ import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
 
 export default function SidePanel() {
-  const { loadFiles, loadFilesInFolder, setSelectedFolderId } = useFileStore();
-  const { loadFolders, initDefaultFolder } = useFolderStore();
+  const { loadFilesInFolder, setSelectedFolderId } = useFileStore();
+  const { loadFolders, initDefaultFolder, folders, selectFolder } = useFolderStore();
 
   useEffect(() => {
     // Load folders first, then init default folder
@@ -16,9 +16,12 @@ export default function SidePanel() {
       if (defaultFolder) {
         setSelectedFolderId(defaultFolder.id);
         await loadFilesInFolder(defaultFolder.id);
-      } else {
-        await loadFiles();
+      } else if (folders.length > 0) {
+        // No default folder, but we have folders - select the first one
+        selectFolder(folders[0].id);
+        await loadFilesInFolder(folders[0].id);
       }
+      // If no folders at all, don't load any files
     };
     init();
   }, []);

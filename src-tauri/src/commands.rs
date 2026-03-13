@@ -430,6 +430,14 @@ pub fn get_files_in_folder(state: State<AppState>, folder_id: Option<i64>) -> Re
 }
 
 #[tauri::command]
+pub fn get_file(state: State<AppState>, file_id: i64) -> Result<FileWithTags, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())
+}
+
+#[tauri::command]
 pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64>, is_system: Option<bool>) -> Result<Folder, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 

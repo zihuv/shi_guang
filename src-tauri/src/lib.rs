@@ -139,6 +139,7 @@ pub fn run() {
             commands::import_image_from_base64,
             commands::get_folder_tree,
             commands::get_files_in_folder,
+            commands::get_file,
             commands::create_folder,
             commands::move_file,
             commands::scan_folders,

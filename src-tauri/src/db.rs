@@ -109,6 +109,14 @@ impl Database {
                 imported_at TEXT NOT NULL
             );
 
+            -- Trigger to automatically update modified_at when any field is updated
+            CREATE TRIGGER IF NOT EXISTS update_files_modified_at
+            BEFORE UPDATE ON files
+            FOR EACH ROW
+            BEGIN
+                SELECT NEW.modified_at = datetime('now', 'localtime');
+            END;
+
             CREATE TABLE IF NOT EXISTS tags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
@@ -568,7 +576,7 @@ impl Database {
 
     pub fn update_file_metadata(&self, file_id: i64, rating: i32, description: &str, source_url: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET rating = ?1, description = ?2, source_url = ?3, modified_at = datetime('now', 'localtime') WHERE id = ?4",
+            "UPDATE files SET rating = ?1, description = ?2, source_url = ?3 WHERE id = ?4",
             params![rating, description, source_url, file_id],
         )?;
         Ok(())
@@ -576,7 +584,7 @@ impl Database {
 
     pub fn update_file_dominant_color(&self, file_id: i64, dominant_color: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET dominant_color = ?1, modified_at = datetime('now', 'localtime') WHERE id = ?2",
+            "UPDATE files SET dominant_color = ?1 WHERE id = ?2",
             params![dominant_color, file_id],
         )?;
         Ok(())
@@ -584,7 +592,7 @@ impl Database {
 
     pub fn update_file_name(&self, file_id: i64, name: &str, path: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET name = ?1, path = ?2, modified_at = datetime('now', 'localtime') WHERE id = ?3",
+            "UPDATE files SET name = ?1, path = ?2 WHERE id = ?3",
             params![name, path, file_id],
         )?;
         Ok(())
@@ -657,10 +665,6 @@ impl Database {
             "INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?1, ?2)",
             params![file_id, tag_id],
         )?;
-        self.conn.execute(
-            "UPDATE files SET modified_at = datetime('now', 'localtime') WHERE id = ?1",
-            [file_id],
-        )?;
         Ok(())
     }
 
@@ -668,10 +672,6 @@ impl Database {
         self.conn.execute(
             "DELETE FROM file_tags WHERE file_id = ?1 AND tag_id = ?2",
             params![file_id, tag_id],
-        )?;
-        self.conn.execute(
-            "UPDATE files SET modified_at = datetime('now', 'localtime') WHERE id = ?1",
-            [file_id],
         )?;
         Ok(())
     }
@@ -911,5 +911,40 @@ impl Database {
         } else {
             Ok(false)
         }
+    }
+
+    /// Get all file paths in a directory (including subdirectories)
+    pub fn get_file_paths_in_dir(&self, dir_path: &str) -> Result<std::collections::HashSet<String>> {
+        let pattern = format!("{}%", dir_path);
+        let mut stmt = self.conn.prepare("SELECT path FROM files WHERE path LIKE ?1")?;
+        let paths: Vec<String> = stmt.query_map([&pattern], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(paths.into_iter().collect())
+    }
+
+    /// Check if file is unchanged (by size and modified_at)
+    pub fn is_file_unchanged(&self, path: &str, size: i64, modified_at: &str) -> Result<bool> {
+        let mut stmt = self.conn.prepare(
+            "SELECT size, modified_at FROM files WHERE path = ?1"
+        )?;
+        let mut rows = stmt.query([path])?;
+        if let Some(row) = rows.next()? {
+            let db_size: i64 = row.get(0)?;
+            let db_modified_at: String = row.get(1)?;
+            // Compare size and modified_at
+            Ok(db_size == size && db_modified_at == modified_at)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Update only basic file info (name, size, dimensions, etc.) without affecting user metadata
+    pub fn update_file_basic_info(&self, path: &str, name: &str, ext: &str, size: i64, width: i32, height: i32, folder_id: Option<i64>, created_at: &str, modified_at: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET name = ?1, ext = ?2, size = ?3, width = ?4, height = ?5, folder_id = ?6, created_at = ?7, modified_at = ?8 WHERE path = ?9",
+            params![name, ext, size, width, height, folder_id, created_at, modified_at, path],
+        )?;
+        Ok(())
     }
 }

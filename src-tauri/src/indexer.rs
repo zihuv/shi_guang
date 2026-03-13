@@ -1,6 +1,7 @@
 use crate::db::{Database, FileRecord};
 use std::fs;
 use std::path::Path;
+use std::collections::HashSet;
 use walkdir::WalkDir;
 use image::GenericImageView;
 use image::Pixel;
@@ -31,6 +32,10 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
     // Get index paths for folder creation
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
 
+    // Get existing file paths in this directory for incremental scanning
+    let existing_paths: HashSet<String> = db.get_file_paths_in_dir(dir_path).map_err(|e| e.to_string())?;
+    let mut processed_paths: HashSet<String> = HashSet::new();
+
     for entry in WalkDir::new(path)
         .follow_links(true)
         .into_iter()
@@ -52,6 +57,9 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             continue;
         }
 
+        let file_path_str = file_path.to_string_lossy().to_string();
+        processed_paths.insert(file_path_str.clone());
+
         // Get or create folder for this file
         let folder_id = if let Some(parent) = file_path.parent() {
             let parent_path = parent.to_string_lossy().to_string();
@@ -60,18 +68,62 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             None
         };
 
-        match process_file(file_path, &ext, folder_id) {
-            Ok(file_record) => {
-                if let Err(e) = db.insert_file(&file_record) {
-                    log::warn!("Failed to insert file {}: {}", file_path.display(), e);
-                } else {
-                    count += 1;
+        // Check if file already exists and is unchanged (incremental scan)
+        if existing_paths.contains(&file_path_str) {
+            // File exists, check if it needs update
+            match process_file(file_path, &ext, folder_id) {
+                Ok(file_record) => {
+                    // Check if file is unchanged
+                    if db.is_file_unchanged(&file_path_str, file_record.size, &file_record.modified_at).unwrap_or(false) {
+                        // File is unchanged, skip processing
+                        continue;
+                    }
+                    // File is modified, update basic info only
+                    if let Err(e) = db.update_file_basic_info(
+                        &file_path_str,
+                        &file_record.name,
+                        &file_record.ext,
+                        file_record.size,
+                        file_record.width,
+                        file_record.height,
+                        file_record.folder_id,
+                        &file_record.created_at,
+                        &file_record.modified_at,
+                    ) {
+                        log::warn!("Failed to update file {}: {}", file_path.display(), e);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to process file {}: {}", file_path.display(), e);
                 }
             }
-            Err(e) => {
-                log::warn!("Failed to process file {}: {}", file_path.display(), e);
+        } else {
+            // New file, insert it
+            match process_file(file_path, &ext, folder_id) {
+                Ok(file_record) => {
+                    if let Err(e) = db.insert_file(&file_record) {
+                        log::warn!("Failed to insert file {}: {}", file_path.display(), e);
+                    } else {
+                        count += 1;
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to process file {}: {}", file_path.display(), e);
+                }
             }
         }
+    }
+
+    // Mark deleted files (files that existed but are no longer on disk)
+    let deleted_paths: Vec<String> = existing_paths.difference(&processed_paths).cloned().collect();
+    for deleted_path in &deleted_paths {
+        if let Err(e) = db.delete_file(deleted_path) {
+            log::warn!("Failed to delete file {}: {}", deleted_path, e);
+        }
+    }
+
+    if !deleted_paths.is_empty() {
+        log::info!("Marked {} deleted files", deleted_paths.len());
     }
 
     Ok(count)

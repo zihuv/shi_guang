@@ -6,6 +6,14 @@ import { readFile, exists } from "@tauri-apps/plugin-fs";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 
+// Format date to match database format (YYYY-MM-DD HH:MM:SS)
+function formatDateTime(isoString: string): string {
+  if (!isoString) return ""
+  const date = new Date(isoString)
+  const pad = (n: number) => n.toString().padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 // Helper to get image URL from file path
 async function getImageSrc(path: string): Promise<string> {
   try {
@@ -663,7 +671,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
               创建时间
             </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
-              {file.createdAt}
+              {formatDateTime(file.createdAt)}
             </span>
           </div>
           <div className="flex justify-between">
@@ -671,7 +679,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
               修改时间
             </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
-              {file.modifiedAt}
+              {formatDateTime(file.modifiedAt)}
             </span>
           </div>
           <div className="flex justify-between">
@@ -679,7 +687,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
               导入时间
             </span>
             <span className="text-xs text-gray-800 dark:text-gray-200">
-              {file.importedAt}
+              {formatDateTime(file.importedAt)}
             </span>
           </div>
         </div>
