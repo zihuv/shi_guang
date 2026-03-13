@@ -27,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/AlertDialog'
-import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil } from 'lucide-react'
+import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe } from 'lucide-react'
 
 interface FolderItemProps {
   folder: FolderNode
@@ -96,7 +96,11 @@ function FolderItem({ folder, depth }: FolderItemProps) {
               <span className="w-5" />
             )}
 
-            <FolderIcon className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+            {folder.name === '浏览器采集' || folder.isSystem ? (
+              <Globe className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            ) : (
+              <FolderIcon className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+            )}
 
             <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{folder.name}</span>
 

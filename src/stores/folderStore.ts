@@ -7,6 +7,7 @@ export interface FolderNode {
   path: string
   children: FolderNode[]
   fileCount: number
+  isSystem?: boolean
 }
 
 interface FolderStore {

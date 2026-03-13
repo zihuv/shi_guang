@@ -21,7 +21,6 @@ const dragDropState = {
 function App() {
   const { theme, loadSettings } = useSettingsStore();
   const {
-    loadFiles,
     importImagesFromBase64,
     importFile: importFileFn,
     previewMode,
@@ -37,10 +36,9 @@ function App() {
 
   useEffect(() => {
     loadSettings();
-    loadFiles();
     loadTags();
     loadFolders();
-  }, [loadSettings, loadFiles, loadTags, loadFolders]);
+  }, [loadSettings, loadTags, loadFolders]);
 
   // Listen for Tauri drag and drop events
   useEffect(() => {

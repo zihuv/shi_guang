@@ -3,6 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFileStore } from "@/stores/fileStore";
 
+const loadFilesInCurrentFolder = async () => {
+  const selectedFolderId = useFolderStore.getState().selectedFolderId;
+  if (selectedFolderId) {
+    await useFileStore.getState().loadFilesInFolder(selectedFolderId);
+  }
+};
+
 interface Settings {
   theme: "light" | "dark";
   indexPaths: string[];
@@ -33,7 +40,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     await invoke("scan_folders");
     // Reload folders and files in UI
     useFolderStore.getState().loadFolders();
-    useFileStore.getState().loadFiles();
+    loadFilesInCurrentFolder();
   },
 
   removeIndexPath: async (path) => {
@@ -76,7 +83,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
         await invoke("scan_folders");
         // Reload folders and files in UI
         useFolderStore.getState().loadFolders();
-        useFileStore.getState().loadFiles();
+        loadFilesInCurrentFolder();
       } catch (e) {
         console.error("Failed to add default index path:", e);
       }
@@ -86,7 +93,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
         await invoke("reindex_all");
         await invoke("scan_folders");
         useFolderStore.getState().loadFolders();
-        useFileStore.getState().loadFiles();
+        loadFilesInCurrentFolder();
       } catch (e) {
         console.error("Failed to reindex:", e);
       }

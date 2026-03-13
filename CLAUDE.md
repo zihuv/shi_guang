@@ -6,6 +6,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 - **Never commit code yourself** - Only generate fixes, let the user commit themselves
 - **Prefer third-party libraries** - Use mature, well-tested libraries (like shadcn/ui) to simplify development
+- **Always self-test after completing a feature** - Run the app and verify the feature works correctly before considering the task done
 
 ## Project Overview
 
