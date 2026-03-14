@@ -825,3 +825,152 @@ pub fn move_folder(state: State<AppState>, folder_id: i64, new_parent_id: Option
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.move_folder(folder_id, new_parent_id, sort_order).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<i64>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get file info
+    let file = db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // Get target folder path
+    let target_path = if let Some(folder_id) = target_folder_id {
+        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
+        let folder = folders.iter().find(|f| f.id == folder_id)
+            .ok_or_else(|| "Target folder not found".to_string())?;
+        folder.path.clone()
+    } else {
+        // Copy to root (no folder)
+        let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+        index_paths.first().cloned().unwrap_or_default()
+    };
+
+    // Get file name and extension
+    let source_path = Path::new(&file.path);
+    let file_name = source_path.file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid file path".to_string())?;
+
+    // Build new path
+    let new_path = format!("{}/{}", target_path, file_name);
+    let new_path_obj = Path::new(&new_path);
+
+    // Copy file in file system (only if source and destination are different)
+    if source_path.exists() && source_path != new_path_obj {
+        fs::copy(source_path, new_path_obj).map_err(|e| e.to_string())?;
+    }
+
+    // Get timestamps from source file
+    let metadata = fs::metadata(source_path).map_err(|e| e.to_string())?;
+    let created_at = metadata.created()
+        .ok()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+
+    let modified_at = metadata.modified()
+        .ok()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+
+    // Use shared function to save and import (this handles color distribution, etc.)
+    let image_data = fs::read(source_path).map_err(|e| e.to_string())?;
+    let file_record = crate::db::save_and_import_image(
+        &image_data,
+        &new_path_obj,
+        target_folder_id,
+        created_at,
+        modified_at,
+    )?;
+
+    // Update the rating, description, and source_url from the original file
+    db.update_file_metadata(file_record.id, file.rating, &file.description, &file.source_url)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_file(state: State<AppState>, file_id: i64) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get file info
+    let file = db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // Open file with default application
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&file.path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &file.path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&file.path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn show_in_explorer(state: State<AppState>, file_id: i64) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get file info
+    let file = db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // Get parent directory
+    let path = Path::new(&file.path);
+    let parent = path.parent().ok_or_else(|| "Invalid file path".to_string())?;
+
+    // Open in file explorer
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}

@@ -3,6 +3,7 @@ import { useDraggable } from '@dnd-kit/core'
 import { useFileStore, FileItem, getNameWithoutExt } from '@/stores/fileStore'
 import { useTagStore } from '@/stores/tagStore'
 import { readFile, exists } from '@tauri-apps/plugin-fs'
+import FileContextMenu from './FileContextMenu'
 
 // Helper to get image URL from file path using fs plugin
 async function getImageSrc(path: string): Promise<string> {
@@ -350,63 +351,65 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onD
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      data-file-id={file.id}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
-        isMultiSelected
-          ? 'ring-2 ring-primary-500 shadow-lg'
-          : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
-      }`}
-    >
-      <div className="relative bg-gray-100 dark:bg-dark-bg" style={getContainerStyle()}>
-        {imageSrc === null ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-        ) : imageSrc && !imageError ? (
-          <img
-            src={imageSrc}
-            alt={file.name}
-            className="absolute inset-0 w-full h-full object-contain"
-            onError={() => setImageError(true)}
-            loading="lazy"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-        )}
+    <FileContextMenu file={file}>
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        data-file-id={file.id}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
+          isMultiSelected
+            ? 'ring-2 ring-primary-500 shadow-lg'
+            : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
+        }`}
+      >
+        <div className="relative bg-gray-100 dark:bg-dark-bg" style={getContainerStyle()}>
+          {imageSrc === null ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+          ) : imageSrc && !imageError ? (
+            <img
+              src={imageSrc}
+              alt={file.name}
+              className="absolute inset-0 w-full h-full object-contain"
+              onError={() => setImageError(true)}
+              loading="lazy"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+          )}
+        </div>
+        <div className="p-2 bg-white dark:bg-dark-surface">
+          <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
+          {file.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {file.tags.slice(0, 3).map(tag => (
+                <span
+                  key={tag.id}
+                  className="px-1.5 py-0.5 text-[10px] rounded-full text-white"
+                  style={{ backgroundColor: tag.color }}
+                >
+                  {tag.name}
+                </span>
+              ))}
+              {file.tags.length > 3 && (
+                <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="p-2 bg-white dark:bg-dark-surface">
-        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
-        <p className="text-xs text-gray-400 mt-0.5">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
-        {file.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {file.tags.slice(0, 3).map(tag => (
-              <span
-                key={tag.id}
-                className="px-1.5 py-0.5 text-[10px] rounded-full text-white"
-                style={{ backgroundColor: tag.color }}
-              >
-                {tag.name}
-              </span>
-            ))}
-            {file.tags.length > 3 && (
-              <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    </FileContextMenu>
   )
 }
 
@@ -449,47 +452,49 @@ function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onCl
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      data-file-id={file.id}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
-        isMultiSelected
-          ? 'ring-2 ring-primary-500 shadow-lg'
-          : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
-      }`}
-    >
+    <FileContextMenu file={file}>
       <div
-        className="relative bg-gray-100 dark:bg-dark-bg"
-        style={{ paddingBottom: getAspectRatio() }}
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        data-file-id={file.id}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
+          isMultiSelected
+            ? 'ring-2 ring-primary-500 shadow-lg'
+            : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
+        }`}
       >
-        {imageSrc === null ? (
-          <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        ) : imageSrc && !imageError ? (
-          <img
-            src={imageSrc}
-            alt={file.name}
-            className="absolute inset-0 w-full h-full object-contain"
-            onError={() => setImageError(true)}
-            loading="lazy"
-          />
-        ) : (
-          <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        )}
+        <div
+          className="relative bg-gray-100 dark:bg-dark-bg"
+          style={{ paddingBottom: getAspectRatio() }}
+        >
+          {imageSrc === null ? (
+            <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          ) : imageSrc && !imageError ? (
+            <img
+              src={imageSrc}
+              alt={file.name}
+              className="absolute inset-0 w-full h-full object-contain"
+              onError={() => setImageError(true)}
+              loading="lazy"
+            />
+          ) : (
+            <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          )}
+        </div>
+        {/* 始终显示文件名 */}
+        <div className="p-2 bg-white dark:bg-dark-surface">
+          <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
+          <p className="text-[10px] text-gray-400">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
+        </div>
       </div>
-      {/* 始终显示文件名 */}
-      <div className="p-2 bg-white dark:bg-dark-surface">
-        <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
-        <p className="text-[10px] text-gray-400">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
-      </div>
-    </div>
+    </FileContextMenu>
   )
 }
 
@@ -524,49 +529,51 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
   }, [file.path, fileExists])
 
   return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      data-file-id={file.id}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      className={`flex items-center gap-3 p-2 rounded-lg transition-colors file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
-        isMultiSelected
-          ? 'bg-primary-50 dark:bg-primary-900/20'
-          : 'hover:bg-gray-100 dark:hover:bg-dark-border'
-      }`}
-    >
+    <FileContextMenu file={file}>
       <div
-        className="rounded bg-gray-100 dark:bg-dark-bg flex-shrink-0 overflow-hidden flex items-center justify-center"
-        style={{ width: 40, height: 40 }}
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        data-file-id={file.id}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        className={`flex items-center gap-3 p-2 rounded-lg transition-colors file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
+          isMultiSelected
+            ? 'bg-primary-50 dark:bg-primary-900/20'
+            : 'hover:bg-gray-100 dark:hover:bg-dark-border'
+        }`}
       >
-        {imageSrc === null ? (
-          <svg className="w-5 h-5 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        ) : imageSrc && !imageError ? (
-          <img
-            src={imageSrc}
-            alt={file.name}
-            className="max-w-full max-h-full object-contain"
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <svg className="w-5 h-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        )}
+        <div
+          className="rounded bg-gray-100 dark:bg-dark-bg flex-shrink-0 overflow-hidden flex items-center justify-center"
+          style={{ width: 40, height: 40 }}
+        >
+          {imageSrc === null ? (
+            <svg className="w-5 h-5 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          ) : imageSrc && !imageError ? (
+            <img
+              src={imageSrc}
+              alt={file.name}
+              className="max-w-full max-h-full object-contain"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <svg className="w-5 h-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
+          <p className="text-xs text-gray-400">{file.width} x {file.height}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
+          <span className="text-xs text-gray-400">{file.ext.toUpperCase()}</span>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
-        <p className="text-xs text-gray-400">{file.width} x {file.height}</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
-        <span className="text-xs text-gray-400">{file.ext.toUpperCase()}</span>
-      </div>
-    </div>
+    </FileContextMenu>
   )
 }
 
