@@ -8,6 +8,8 @@ export interface FolderNode {
   children: FolderNode[]
   fileCount: number
   isSystem?: boolean
+  sortOrder?: number
+  parentId?: number | null
 }
 
 interface FolderStore {
@@ -19,6 +21,7 @@ interface FolderStore {
   addingSubfolder: FolderNode | null
   editingFolder: FolderNode | null
   deleteConfirm: FolderNode | null
+  dragOverFolderId: number | null
   loadFolders: () => Promise<void>
   initDefaultFolder: () => Promise<{ id: number; name: string; path: string; parent_id: number | null; created_at: string } | null>
   selectFolder: (folderId: number | null) => void
@@ -27,10 +30,12 @@ interface FolderStore {
   deleteFolder: (id: number) => Promise<void>
   renameFolder: (id: number, name: string) => Promise<void>
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
+  reorderFolders: (folderIds: number[]) => Promise<void>
   setNewFolderName: (name: string) => void
   setAddingSubfolder: (folder: FolderNode | null) => void
   setEditingFolder: (folder: FolderNode | null) => void
   setDeleteConfirm: (folder: FolderNode | null) => void
+  setDragOverFolderId: (folderId: number | null) => void
 }
 
 export const useFolderStore = create<FolderStore>((set, get) => ({
@@ -42,6 +47,9 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
   addingSubfolder: null,
   editingFolder: null,
   deleteConfirm: null,
+  dragOverFolderId: null,
+
+  setDragOverFolderId: (folderId) => set({ dragOverFolderId: folderId }),
 
   loadFolders: async () => {
     set({ isLoading: true })
@@ -112,6 +120,16 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
       await get().loadFolders()
     } catch (e) {
       console.error('Failed to move file:', e)
+    }
+  },
+
+  reorderFolders: async (folderIds) => {
+    try {
+      await invoke('reorder_folders', { folderIds })
+      // Reload folders to reflect the new order
+      await get().loadFolders()
+    } catch (e) {
+      console.error('Failed to reorder folders:', e)
     }
   },
 

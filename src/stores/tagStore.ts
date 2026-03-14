@@ -6,6 +6,7 @@ export interface Tag {
   name: string
   color: string
   count: number
+  sortOrder?: number
 }
 
 interface TagStore {
@@ -15,6 +16,7 @@ interface TagStore {
   addTag: (name: string, color: string) => Promise<void>
   deleteTag: (id: number) => Promise<void>
   updateTag: (id: number, name: string, color: string) => Promise<void>
+  reorderTags: (tagIds: number[]) => Promise<void>
   setSelectedTagId: (id: number | null) => void
 }
 
@@ -44,6 +46,15 @@ export const useTagStore = create<TagStore>((set, get) => ({
   updateTag: async (id, name, color) => {
     await invoke('update_tag', { id, name, color })
     get().loadTags()
+  },
+
+  reorderTags: async (tagIds) => {
+    try {
+      await invoke('reorder_tags', { tagIds })
+      await get().loadTags()
+    } catch (e) {
+      console.error('Failed to reorder tags:', e)
+    }
   },
 
   setSelectedTagId: (id) => set({ selectedTagId: id }),

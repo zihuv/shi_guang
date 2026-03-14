@@ -152,6 +152,9 @@ pub fn run() {
             commands::update_file_name,
             commands::init_browser_collection_folder,
             commands::get_browser_collection_folder,
+            commands::reorder_folders,
+            commands::reorder_tags,
+            commands::move_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -83,6 +83,8 @@ pub struct Folder {
     pub created_at: String,
     #[serde(rename = "isSystem")]
     pub is_system: bool,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -111,6 +113,8 @@ pub struct Tag {
     pub name: String,
     pub color: String,
     pub count: i64,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -165,6 +169,7 @@ impl Database {
                 parent_id INTEGER,
                 created_at TEXT NOT NULL,
                 is_system INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0,
                 FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
             );
 
@@ -192,7 +197,8 @@ impl Database {
             CREATE TABLE IF NOT EXISTS tags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                color TEXT NOT NULL
+                color TEXT NOT NULL,
+                sort_order INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS file_tags (
@@ -290,6 +296,26 @@ impl Database {
         )?;
         if has_color_distribution == 0 {
             self.conn.execute("ALTER TABLE files ADD COLUMN color_distribution TEXT DEFAULT '[]'", [])?;
+        }
+
+        // Add sort_order column to folders if it doesn't exist (for migration)
+        let has_folder_sort_order: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('folders') WHERE name = 'sort_order'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_folder_sort_order == 0 {
+            self.conn.execute("ALTER TABLE folders ADD COLUMN sort_order INTEGER DEFAULT 0", [])?;
+        }
+
+        // Add sort_order column to tags if it doesn't exist (for migration)
+        let has_tag_sort_order: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tags') WHERE name = 'sort_order'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_tag_sort_order == 0 {
+            self.conn.execute("ALTER TABLE tags ADD COLUMN sort_order INTEGER DEFAULT 0", [])?;
         }
 
         // Create indexes after migration
@@ -670,6 +696,14 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_file_path_and_folder(&self, file_id: i64, path: &str, folder_id: Option<i64>, modified_at: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET path = ?1, folder_id = ?2, modified_at = ?3 WHERE id = ?4",
+            params![path, folder_id, modified_at, file_id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_file(&self, path: &str) -> Result<()> {
         self.conn.execute("DELETE FROM files WHERE path = ?1", [path])?;
         Ok(())
@@ -677,11 +711,11 @@ impl Database {
 
     pub fn get_all_tags(&self) -> Result<Vec<Tag>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.name, t.color, COUNT(ft.file_id) as count
+            "SELECT t.id, t.name, t.color, COUNT(ft.file_id) as count, t.sort_order
              FROM tags t
              LEFT JOIN file_tags ft ON t.id = ft.tag_id
              GROUP BY t.id
-             ORDER BY t.name"
+             ORDER BY t.sort_order ASC, t.name ASC"
         )?;
         let tags = stmt.query_map([], |row| {
             Ok(Tag {
@@ -689,6 +723,7 @@ impl Database {
                 name: row.get(1)?,
                 color: row.get(2)?,
                 count: row.get(3)?,
+                sort_order: row.get(4)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(tags)
@@ -717,7 +752,7 @@ impl Database {
 
     pub fn get_file_tags(&self, file_id: i64) -> Result<Vec<Tag>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.name, t.color FROM tags t
+            "SELECT t.id, t.name, t.color, t.sort_order FROM tags t
              INNER JOIN file_tags ft ON t.id = ft.tag_id
              WHERE ft.file_id = ?1"
         )?;
@@ -727,6 +762,7 @@ impl Database {
                 name: row.get(1)?,
                 color: row.get(2)?,
                 count: 1,
+                sort_order: row.get(3)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(tags)
@@ -789,7 +825,7 @@ impl Database {
 
     pub fn get_all_folders(&self) -> Result<Vec<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at, is_system FROM folders ORDER BY created_at"
+            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders ORDER BY sort_order ASC, created_at ASC"
         )?;
         let folders = stmt.query_map([], |row| {
             Ok(Folder {
@@ -799,6 +835,7 @@ impl Database {
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
                 is_system: row.get::<_, i32>(5)? == 1,
+                sort_order: row.get(6)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(folders)
@@ -806,7 +843,7 @@ impl Database {
 
     pub fn get_folder_by_path(&self, path: &str) -> Result<Option<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at, is_system FROM folders WHERE path = ?1"
+            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE path = ?1"
         )?;
         let mut rows = stmt.query([path])?;
         if let Some(row) = rows.next()? {
@@ -817,6 +854,7 @@ impl Database {
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
                 is_system: row.get::<_, i32>(5)? == 1,
+                sort_order: row.get(6)?,
             }))
         } else {
             Ok(None)
@@ -934,7 +972,7 @@ impl Database {
 
     pub fn get_folder_by_id(&self, id: i64) -> Result<Option<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at, is_system FROM folders WHERE id = ?1"
+            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE id = ?1"
         )?;
         let mut rows = stmt.query([id])?;
         if let Some(row) = rows.next()? {
@@ -945,6 +983,7 @@ impl Database {
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
                 is_system: row.get::<_, i32>(5)? == 1,
+                sort_order: row.get(6)?,
             }))
         } else {
             Ok(None)
@@ -958,7 +997,7 @@ impl Database {
 
     pub fn get_browser_collection_folder(&self) -> Result<Option<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at, is_system FROM folders WHERE is_system = 1 LIMIT 1"
+            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE is_system = 1 LIMIT 1"
         )?;
         let mut rows = stmt.query([])?;
         if let Some(row) = rows.next()? {
@@ -969,6 +1008,7 @@ impl Database {
                 parent_id: row.get(3)?,
                 created_at: row.get(4)?,
                 is_system: row.get::<_, i32>(5)? == 1,
+                sort_order: row.get(6)?,
             }))
         } else {
             Ok(None)
@@ -1016,6 +1056,37 @@ impl Database {
         self.conn.execute(
             "UPDATE files SET name = ?1, ext = ?2, size = ?3, width = ?4, height = ?5, folder_id = ?6, created_at = ?7, modified_at = ?8 WHERE path = ?9",
             params![name, ext, size, width, height, folder_id, created_at, modified_at, path],
+        )?;
+        Ok(())
+    }
+
+    /// Reorder folders by updating their sort_order values
+    pub fn reorder_folders(&self, folder_ids: &[i64]) -> Result<()> {
+        for (index, folder_id) in folder_ids.iter().enumerate() {
+            self.conn.execute(
+                "UPDATE folders SET sort_order = ?1 WHERE id = ?2",
+                params![index as i64, folder_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Reorder tags by updating their sort_order values
+    pub fn reorder_tags(&self, tag_ids: &[i64]) -> Result<()> {
+        for (index, tag_id) in tag_ids.iter().enumerate() {
+            self.conn.execute(
+                "UPDATE tags SET sort_order = ?1 WHERE id = ?2",
+                params![index as i64, tag_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Move a folder to a new parent and/or position
+    pub fn move_folder(&self, folder_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE folders SET parent_id = ?1, sort_order = ?2 WHERE id = ?3",
+            params![new_parent_id, sort_order, folder_id],
         )?;
         Ok(())
     }

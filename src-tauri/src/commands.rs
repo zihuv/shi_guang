@@ -1,4 +1,4 @@
-use crate::db::{FileWithTags, Tag, FileRecord, Folder};
+use crate::db::{FileWithTags, Tag, Folder};
 use crate::indexer;
 use crate::AppState;
 use tauri::State;
@@ -19,6 +19,8 @@ pub struct FolderTreeNode {
     pub children: Vec<FolderTreeNode>,
     #[serde(rename = "fileCount")]
     pub file_count: i32,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i32,
 }
 
 fn get_import_dir() -> Result<std::path::PathBuf, String> {
@@ -337,15 +339,17 @@ fn build_folder_tree(folders: &[Folder], file_counts: &HashMap<i64, i32>) -> Vec
         children_map: &HashMap<Option<i64>, Vec<&Folder>>,
         file_counts: &HashMap<i64, i32>,
     ) -> FolderTreeNode {
-        let children: Vec<FolderTreeNode> = children_map
+        // Sort children by sort_order
+        let mut children_vec: Vec<&Folder> = children_map
             .get(&Some(folder.id))
-            .map(|children| {
-                children
-                    .iter()
-                    .map(|c| build_node(c, children_map, file_counts))
-                    .collect()
-            })
+            .map(|c| c.clone())
             .unwrap_or_default();
+        children_vec.sort_by_key(|f| f.sort_order);
+
+        let children: Vec<FolderTreeNode> = children_vec
+            .iter()
+            .map(|c| build_node(c, children_map, file_counts))
+            .collect();
 
         FolderTreeNode {
             id: folder.id,
@@ -353,12 +357,13 @@ fn build_folder_tree(folders: &[Folder], file_counts: &HashMap<i64, i32>) -> Vec
             path: folder.path.clone(),
             children,
             file_count: *file_counts.get(&folder.id).unwrap_or(&0),
+            sort_order: folder.sort_order,
         }
     }
 
-    // Get root folders (those with parent_id = None)
-    let empty_vec: Vec<&Folder> = vec![];
-    let root_folders = children_map.get(&None).unwrap_or(&empty_vec);
+    // Get root folders (those with parent_id = None) and sort by sort_order
+    let mut root_folders: Vec<&Folder> = children_map.get(&None).map(|c| c.clone()).unwrap_or_default();
+    root_folders.sort_by_key(|f| f.sort_order);
     root_folders
         .iter()
         .map(|f| build_node(f, &children_map, file_counts))
@@ -435,6 +440,7 @@ pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64
         parent_id,
         created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         is_system: system,
+        sort_order: 0,
     })
 }
 
@@ -476,32 +482,9 @@ pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
         fs::rename(old_path, new_path_obj).map_err(|e| e.to_string())?;
     }
 
-    // Update database
-    db.update_file_folder(file_id, target_folder_id).map_err(|e| e.to_string())?;
-
-    // Also update the path in the database if file was moved
-    if old_path != new_path_obj && old_path.exists() == false {
-        // File was successfully moved, update path
-        let updated_record = FileRecord {
-            id: file_id,
-            path: new_path,
-            name: file.name,
-            ext: file.ext,
-            size: file.size,
-            width: file.width,
-            height: file.height,
-            folder_id: target_folder_id,
-            created_at: file.created_at,
-            modified_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            imported_at: file.imported_at,
-            rating: file.rating,
-            description: file.description,
-            source_url: file.source_url,
-            dominant_color: file.dominant_color,
-            color_distribution: file.color_distribution,
-        };
-        db.insert_file(&updated_record).map_err(|e| e.to_string())?;
-    }
+    // Update database - use UPDATE instead of INSERT to avoid creating duplicate records
+    let modified_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    db.update_file_path_and_folder(file_id, &new_path, target_folder_id, &modified_at).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -563,6 +546,7 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
             parent_id: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             is_system: false,
+            sort_order: 0,
         })
     } else {
         Err("No index path configured".to_string())
@@ -811,6 +795,7 @@ pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, 
             parent_id: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             is_system: true,
+            sort_order: 0,
         })
     } else {
         Err("No index path configured".to_string())
@@ -821,4 +806,22 @@ pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, 
 pub fn get_browser_collection_folder(state: State<AppState>) -> Result<Option<Folder>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_browser_collection_folder().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reorder_folders(state: State<AppState>, folder_ids: Vec<i64>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.reorder_folders(&folder_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reorder_tags(state: State<AppState>, tag_ids: Vec<i64>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.reorder_tags(&tag_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn move_folder(state: State<AppState>, folder_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.move_folder(folder_id, new_parent_id, sort_order).map_err(|e| e.to_string())
 }

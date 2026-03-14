@@ -53,6 +53,9 @@ interface FileStore {
   selectedFiles: number[]
   searchQuery: string
   isLoading: boolean
+  // Internal drag state (to prevent showing drop overlay for internal drags)
+  isDraggingInternal: boolean
+  setIsDraggingInternal: (isDragging: boolean) => void
   // Preview mode state
   previewMode: boolean
   previewIndex: number
@@ -75,7 +78,7 @@ interface FileStore {
   removeTagFromFile: (fileId: number, tagId: number) => Promise<void>
   deleteFile: (fileId: number) => Promise<void>
   deleteFiles: (fileIds: number[]) => Promise<void>
-  importFile: (sourcePath: string, refresh?: boolean) => Promise<FileItem | null>
+  importFile: (sourcePath: string, refresh?: boolean, targetFolderId?: number | null) => Promise<FileItem | null>
   importFiles: (sourcePaths: string[]) => Promise<FileItem[]>
   importImageFromBase64: (base64Data: string, ext: string, refresh?: boolean) => Promise<FileItem | null>
   importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<FileItem[]>
@@ -93,6 +96,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
   selectedFiles: [],
   searchQuery: '',
   isLoading: false,
+  isDraggingInternal: false,
+
+  setIsDraggingInternal: (isDragging) => set({ isDraggingInternal: isDragging }),
   // Preview mode defaults
   previewMode: false,
   previewIndex: 0,
@@ -231,9 +237,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
     console.log('[FileStore] deleteFiles completed')
   },
 
-  importFile: async (sourcePath: string, refresh = true) => {
-    console.log('[FileStore] importFile called, path:', sourcePath, 'refresh:', refresh)
-    const { selectedFolderId } = get()
+  importFile: async (sourcePath: string, refresh = true, targetFolderId?: number | null) => {
+    console.log('[FileStore] importFile called, path:', sourcePath, 'refresh:', refresh, 'targetFolderId:', targetFolderId)
+    const selectedFolderId = targetFolderId !== undefined ? targetFolderId : get().selectedFolderId
     try {
       const file = await invoke<FileItem>('import_file', { sourcePath, folderId: selectedFolderId })
       console.log('[FileStore] importFile result:', file)

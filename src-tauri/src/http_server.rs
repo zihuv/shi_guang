@@ -240,6 +240,7 @@ async fn import_image(
                         parent_id: None,
                         created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                         is_system: true,
+                        sort_order: 0,
                     }
                 }
                 Err(e) => {
@@ -536,6 +537,7 @@ async fn import_image_from_url(
                         parent_id: None,
                         created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                         is_system: true,
+                        sort_order: 0,
                     }
                 }
                 Err(e) => {

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { useDraggable } from '@dnd-kit/core'
 import { useFileStore, FileItem, getNameWithoutExt } from '@/stores/fileStore'
 import { useTagStore } from '@/stores/tagStore'
 import { readFile, exists } from '@tauri-apps/plugin-fs'
@@ -324,6 +325,12 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onD
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
 
+  // dnd-kit useDraggable
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `file-${file.id}`,
+    data: { type: 'app-file', fileId: file.id, fileName: file.name }
+  })
+
   // 检查文件是否还存在
   const fileExists = files.some(f => f.id === file.id)
 
@@ -344,10 +351,13 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onD
 
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       data-file-id={file.id}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all file-card ${
+      className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
         isMultiSelected
           ? 'ring-2 ring-primary-500 shadow-lg'
           : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
@@ -411,6 +421,12 @@ function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onCl
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
 
+  // dnd-kit useDraggable
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `file-${file.id}`,
+    data: { type: 'app-file', fileId: file.id, fileName: file.name }
+  })
+
   const fileExists = files.some(f => f.id === file.id)
 
   useEffect(() => {
@@ -434,10 +450,13 @@ function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onCl
 
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       data-file-id={file.id}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`group relative rounded-lg overflow-hidden cursor-pointer transition-all file-card ${
+      className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
         isMultiSelected
           ? 'ring-2 ring-primary-500 shadow-lg'
           : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
@@ -485,6 +504,12 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
 
+  // dnd-kit useDraggable
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `file-${file.id}`,
+    data: { type: 'app-file', fileId: file.id, fileName: file.name }
+  })
+
   // 检查文件是否还存在
   const fileExists = files.some(f => f.id === file.id)
 
@@ -500,10 +525,13 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
 
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       data-file-id={file.id}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors file-card ${
+      className={`flex items-center gap-3 p-2 rounded-lg transition-colors file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
         isMultiSelected
           ? 'bg-primary-50 dark:bg-primary-900/20'
           : 'hover:bg-gray-100 dark:hover:bg-dark-border'

@@ -37,3 +37,7 @@ Thumbs.db
 .parcel-cache
 .vite
 tmp
+
+# Rspress
+website/.rspress
+website/doc_build

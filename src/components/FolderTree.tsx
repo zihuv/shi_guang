@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
 import { Button } from '@/components/ui/Button'
@@ -37,32 +38,37 @@ interface FolderItemProps {
 function FolderItem({ folder, depth }: FolderItemProps) {
   const { selectedFolderId, expandedFolderIds, selectFolder, toggleFolder } = useFolderStore()
   const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
+  const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
   const isSelected = selectedFolderId === folder.id
   const hasChildren = folder.children && folder.children.length > 0
 
+  // dnd-kit useDroppable
+  const { isOver, setNodeRef } = useDroppable({
+    id: `folder-${folder.id}`,
+    data: { type: 'folder', folderId: folder.id, folderName: folder.name }
+  })
+
   const handleClick = async () => {
     selectFolder(folder.id)
     setSelectedFolderId(folder.id)
-    // Clear selected file when switching folders
     setSelectedFile(null)
     await loadFilesInFolder(folder.id)
   }
 
-  const handleAddSubfolder = () => {
-    // We use a callback to set the parent folder
-    const store = useFolderStore.getState()
-    store.setAddingSubfolder(folder)
+  const handleAddSubfolder = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setAddingSubfolder(folder)
   }
 
-  const handleRename = () => {
-    const store = useFolderStore.getState()
-    store.setEditingFolder(folder)
+  const handleRename = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingFolder(folder)
   }
 
-  const handleDelete = () => {
-    const store = useFolderStore.getState()
-    store.setDeleteConfirm(folder)
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDeleteConfirm(folder)
   }
 
   return (
@@ -70,10 +76,14 @@ function FolderItem({ folder, depth }: FolderItemProps) {
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
+            ref={setNodeRef}
+            data-folder-id={folder.id}
             className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm cursor-pointer transition-colors ${
               isSelected
                 ? 'bg-primary-100 dark:bg-primary-900/30'
-                : 'hover:bg-gray-100 dark:hover:bg-dark-border'
+                : isOver
+                  ? 'bg-blue-100 dark:bg-blue-900/30'
+                  : 'hover:bg-gray-100 dark:hover:bg-dark-border'
             }`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
             onClick={handleClick}
@@ -221,7 +231,10 @@ export default function FolderTree() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-2">
+      <div
+        id="folder-tree-container"
+        className="flex-1 overflow-auto p-2"
+      >
         {isLoading ? (
           <div className="flex items-center justify-center p-4">
             <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
