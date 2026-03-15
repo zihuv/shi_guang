@@ -42,6 +42,13 @@ jobs:
       - name: Build website
         run: pnpm run docs:build
 
+      - name: Fix hydration warning - add suppressHydrationWarning to HTML
+        run: |
+          # Add suppressHydrationWarning to all HTML files
+          for file in $(find website/.rspress/build -name "*.html"); do
+            sed -i 's/<html lang="en">/<html lang="en" suppressHydrationWarning="true">/g' "$file"
+          done
+
       - name: Create .nojekyll
         run: touch website/.rspress/build/.nojekyll
 
