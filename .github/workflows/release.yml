@@ -63,15 +63,14 @@ jobs:
       - name: Generate release body from template
         id: release_body
         run: |
-          node -e "
+          content=$(node -e "
             const fs = require('fs');
             const version = process.env.VERSION;
             const content = fs.readFileSync('.github/release_template.md', 'utf8')
               .replace(/VERSION/g, version);
-            // 输出到 GITHUB_OUTPUT，自动处理多行
-            const output = process.env.GITHUB_OUTPUT;
-            fs.appendFileSync(output, \`body<<EOF\n\${content}\nEOF\n\`);
-          "
+            console.log(content);
+          ")
+          printf 'body=%s\n' "$content" >> $GITHUB_OUTPUT
         env:
           VERSION: ${{ github.event.inputs.version }}
 
