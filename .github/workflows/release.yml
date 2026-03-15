@@ -74,6 +74,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.event.inputs.version }} # 使用输入的版本
+          tagName: ${{ github.event.inputs.version }}
           releaseName: "${{ github.event.inputs.version }}"
-          releaseBody: "- 更新内容待补充（@zihuv）"
+          releaseBodyPath: .github/release_template.md
