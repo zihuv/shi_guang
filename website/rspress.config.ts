@@ -1,13 +1,15 @@
 import { defineConfig } from "rspress/config";
 
 export default defineConfig({
-  title: "拾光文档",
-  description: "拾光桌面应用技术文档",
+  title: "拾光",
+  description: "拾光",
+  outDir: ".rspress/build",
   themeConfig: {
     socialLinks: [
       {
         icon: "github",
-        link: "https://github.com/zihuv/shiguang",
+        mode: "link",
+        content: "https://github.com/zihuv/shiguang",
       },
     ],
     nav: [
