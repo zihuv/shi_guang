@@ -61,12 +61,13 @@ jobs:
         run: node scripts/update-version.cjs ${{ github.event.inputs.version }}
 
       - name: Replace VERSION in release template
-        run: node -e "
-          const fs = require('fs');
-          const version = '${{ github.event.inputs.version }}';
-          const content = fs.readFileSync('.github/release_template.md', 'utf8');
-          fs.writeFileSync('.github/release_template.md', content.replace(/VERSION/g, version));
-        "
+        run: |
+          node -e "
+            const fs = require('fs');
+            const version = '${{ github.event.inputs.version }}';
+            const content = fs.readFileSync('.github/release_template.md', 'utf8');
+            fs.writeFileSync('.github/release_template.md', content.replace(/VERSION/g, version));
+          "
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.1
