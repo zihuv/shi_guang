@@ -5,6 +5,7 @@ export default defineConfig({
   description: "拾光",
   outDir: ".rspress/build",
   base: "/shiguang/",
+  icon: "/icon.ico",
   themeConfig: {
     socialLinks: [
       {
