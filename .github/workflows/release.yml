@@ -57,30 +57,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev
 
-      - name: Update version
-        run: node scripts/update-version.cjs ${{ github.event.inputs.version }}
-
-      - name: Generate release body from template
-        id: release_body
-        run: |
-          # Use Node.js for cross-platform compatibility
-          node -e "
-            const fs = require('fs');
-            const version = process.env.VERSION;
-            const content = fs.readFileSync('.github/release_template.md', 'utf8')
-              .replace(/VERSION/g, version);
-            
-            // Write to GITHUB_OUTPUT with proper multiline handling
-            const fs = require('fs');
-            const outputFile = process.env.GITHUB_OUTPUT;
-            const delimiter = 'EOF_' + Math.random().toString(36).substring(7);
-            
-            fs.appendFileSync(outputFile, `body<<${delimiter}\n`);
-            fs.appendFileSync(outputFile, `${content}\n`);
-            fs.appendFileSync(outputFile, `${delimiter}\n`);
-          "
-        env:
-          VERSION: ${{ github.event.inputs.version }}
+      - name: Prepare release (update version and generate body)
+        id: prepare_release
+        run: node scripts/prepare-release.cjs ${{ github.event.inputs.version }}
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.1
@@ -89,4 +68,4 @@ jobs:
         with:
           tagName: ${{ github.event.inputs.version }}
           releaseName: "${{ github.event.inputs.version }}"
-          releaseBody: ${{ steps.release_body.outputs.body }}
+          releaseBody: ${{ steps.prepare_release.outputs.body }}
