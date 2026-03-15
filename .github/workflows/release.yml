@@ -60,14 +60,20 @@ jobs:
       - name: Update version
         run: node scripts/update-version.cjs ${{ github.event.inputs.version }}
 
-      - name: Replace VERSION in release template
+      - name: Generate release body from template
+        id: release_body
         run: |
           node -e "
             const fs = require('fs');
-            const version = '${{ github.event.inputs.version }}';
-            const content = fs.readFileSync('.github/release_template.md', 'utf8');
-            fs.writeFileSync('.github/release_template.md', content.replace(/VERSION/g, version));
+            const version = process.env.VERSION;
+            const content = fs.readFileSync('.github/release_template.md', 'utf8')
+              .replace(/VERSION/g, version);
+            // 输出到 GITHUB_OUTPUT，自动处理多行
+            const output = process.env.GITHUB_OUTPUT;
+            fs.appendFileSync(output, \`body<<EOF\n\${content}\nEOF\n\`);
           "
+        env:
+          VERSION: ${{ github.event.inputs.version }}
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.1
@@ -76,4 +82,4 @@ jobs:
         with:
           tagName: ${{ github.event.inputs.version }}
           releaseName: "${{ github.event.inputs.version }}"
-          releaseBodyPath: .github/release_template.md
+          releaseBody: ${{ steps.release_body.outputs.body }}
