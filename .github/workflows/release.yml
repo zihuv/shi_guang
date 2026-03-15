@@ -63,14 +63,22 @@ jobs:
       - name: Generate release body from template
         id: release_body
         run: |
-          content=$(node -e "
+          # Use Node.js for cross-platform compatibility
+          node -e "
             const fs = require('fs');
             const version = process.env.VERSION;
             const content = fs.readFileSync('.github/release_template.md', 'utf8')
               .replace(/VERSION/g, version);
-            console.log(content);
-          ")
-          printf 'body=%s\n' "$content" >> $GITHUB_OUTPUT
+            
+            // Write to GITHUB_OUTPUT with proper multiline handling
+            const fs = require('fs');
+            const outputFile = process.env.GITHUB_OUTPUT;
+            const delimiter = 'EOF_' + Math.random().toString(36).substring(7);
+            
+            fs.appendFileSync(outputFile, `body<<${delimiter}\n`);
+            fs.appendFileSync(outputFile, `${content}\n`);
+            fs.appendFileSync(outputFile, `${delimiter}\n`);
+          "
         env:
           VERSION: ${{ github.event.inputs.version }}
 
