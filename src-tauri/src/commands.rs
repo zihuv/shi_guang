@@ -625,59 +625,14 @@ pub fn extract_color(state: State<AppState>, file_id: i64) -> Result<String, Str
 
     let path = Path::new(&file.path);
 
-    // Extract color using the same logic as indexer
-    let color = extract_dominant_color_from_file(path)?;
+    // Extract color using the indexer function
+    let color = indexer::extract_dominant_color(path)?;
 
     // Update the file with the extracted color
     db.update_file_dominant_color(file_id, &color)
         .map_err(|e| e.to_string())?;
 
     Ok(color)
-}
-
-fn extract_dominant_color_from_file(path: &Path) -> Result<String, String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    // Skip non-image formats
-    if ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("psd")
-        || ext.eq_ignore_ascii_case("ai") || ext.eq_ignore_ascii_case("eps")
-        || ext.eq_ignore_ascii_case("raw") || ext.eq_ignore_ascii_case("cr2")
-        || ext.eq_ignore_ascii_case("nef") || ext.eq_ignore_ascii_case("arw")
-        || ext.eq_ignore_ascii_case("dng") || ext.eq_ignore_ascii_case("heic")
-        || ext.eq_ignore_ascii_case("heif") {
-        return Ok(String::new());
-    }
-
-    match image::open(path) {
-        Ok(img) => {
-            // Resize image to small size for faster processing
-            let img = img.resize(50, 50, image::imageops::FilterType::Nearest);
-            let pixels: Vec<_> = img.pixels().collect();
-
-            // Simple average color calculation
-            let mut r_sum: u64 = 0;
-            let mut g_sum: u64 = 0;
-            let mut b_sum: u64 = 0;
-            let count = pixels.len() as u64;
-
-            for pixel in pixels {
-                let rgb = pixel.2.to_rgb();
-                r_sum += rgb[0] as u64;
-                g_sum += rgb[1] as u64;
-                b_sum += rgb[2] as u64;
-            }
-
-            if count > 0 {
-                let r = (r_sum / count) as u8;
-                let g = (g_sum / count) as u8;
-                let b = (b_sum / count) as u8;
-                Ok(format!("#{:02X}{:02X}{:02X}", r, g, b))
-            } else {
-                Ok(String::new())
-            }
-        }
-        Err(_) => Ok(String::new()),
-    }
 }
 
 #[tauri::command]

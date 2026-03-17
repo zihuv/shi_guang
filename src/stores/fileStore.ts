@@ -171,7 +171,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   loadFilesInFolder: async (folderId) => {
     console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
-    set({ isLoading: true })
+    set({ isLoading: true, selectedFile: null, selectedFiles: [] })
     try {
       const files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
       // Parse colorDistribution from JSON string

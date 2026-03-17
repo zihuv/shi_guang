@@ -227,7 +227,7 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
     }
 }
 
-fn extract_dominant_color(path: &Path) -> Result<String, String> {
+pub fn extract_dominant_color(path: &Path) -> Result<String, String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     // Skip non-image formats

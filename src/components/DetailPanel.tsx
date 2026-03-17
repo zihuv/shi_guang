@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
-import { readFile, exists } from "@tauri-apps/plugin-fs";
+import { getImageSrc, formatSize, findFolderById, debounce } from "@/utils";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 
@@ -12,39 +12,6 @@ function formatDateTime(isoString: string): string {
   const date = new Date(isoString)
   const pad = (n: number) => n.toString().padStart(2, "0")
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
-
-// Helper to get image URL from file path
-async function getImageSrc(path: string): Promise<string> {
-  try {
-    const fileExists = await exists(path);
-    if (!fileExists) {
-      return "";
-    }
-    const contents = await readFile(path);
-    const blob = new Blob([contents]);
-    return URL.createObjectURL(blob);
-  } catch (e: any) {
-    if (e?.message?.includes("No such file or directory")) {
-      return "";
-    }
-    console.error("Failed to read file:", e);
-    return "";
-  }
-}
-
-// Find folder by ID in the folder tree
-function findFolderById(folders: FolderNode[], id: number): FolderNode | null {
-  for (const folder of folders) {
-    if (folder.id === id) {
-      return folder;
-    }
-    const found = findFolderById(folder.children, id);
-    if (found) {
-      return found;
-    }
-  }
-  return null;
 }
 
 export default function DetailPanel() {
@@ -696,26 +663,3 @@ function FileDetailPanel({ file }: { file: FileItem }) {
   );
 }
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-}
-
-// Debounce function
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number,
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(() => {
-      func(...args);
-    }, wait);
-  };
-}

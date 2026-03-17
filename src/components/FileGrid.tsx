@@ -2,29 +2,8 @@ import { useEffect, useState, useRef } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { useFileStore, FileItem, getNameWithoutExt } from '@/stores/fileStore'
 import { useTagStore } from '@/stores/tagStore'
-import { readFile, exists } from '@tauri-apps/plugin-fs'
+import { getImageSrc, formatSize } from '@/utils'
 import FileContextMenu from './FileContextMenu'
-
-// Helper to get image URL from file path using fs plugin
-async function getImageSrc(path: string): Promise<string> {
-  try {
-    // First check if file exists to avoid unnecessary read errors
-    const fileExists = await exists(path)
-    if (!fileExists) {
-      return ''
-    }
-    const contents = await readFile(path)
-    const blob = new Blob([contents])
-    return URL.createObjectURL(blob)
-  } catch (e: any) {
-    // 文件不存在或已删除，静默处理，不显示错误
-    if (e?.message?.includes('No such file or directory')) {
-      return ''
-    }
-    console.error('Failed to read file:', e)
-    return ''
-  }
-}
 
 export default function FileGrid() {
   const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, deleteFiles, openPreview } = useFileStore()
@@ -577,10 +556,3 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
   )
 }
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
