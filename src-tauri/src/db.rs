@@ -221,6 +221,7 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);
             CREATE INDEX IF NOT EXISTS idx_files_ext ON files(ext);
+            CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
             "
         )?;
 
@@ -355,10 +356,13 @@ impl Database {
             })
         })?.filter_map(|r| r.ok()).collect();
 
-        let mut result = Vec::new();
-        for file in files {
-            let tags = self.get_file_tags(file.id)?;
-            result.push(FileWithTags {
+        // 批量获取所有文件的 tags
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
                 id: file.id,
                 path: file.path,
                 name: file.name,
@@ -376,8 +380,8 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
-            });
-        }
+            }
+        }).collect();
 
         Ok(result)
     }
@@ -412,10 +416,13 @@ impl Database {
             })
         })?.filter_map(|r| r.ok()).collect();
 
-        let mut result = Vec::new();
-        for file in files {
-            let tags = self.get_file_tags(file.id)?;
-            result.push(FileWithTags {
+        // 批量获取所有文件的 tags
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
                 id: file.id,
                 path: file.path,
                 name: file.name,
@@ -433,8 +440,8 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
-            });
-        }
+            }
+        }).collect();
 
         Ok(result)
     }
@@ -500,10 +507,13 @@ impl Database {
             })?.filter_map(|r| r.ok()).collect()
         };
 
-        let mut result = Vec::new();
-        for file in files {
-            let tags = self.get_file_tags(file.id)?;
-            result.push(FileWithTags {
+        // 批量获取所有文件的 tags
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
                 id: file.id,
                 path: file.path,
                 name: file.name,
@@ -521,8 +531,8 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
-            });
-        }
+            }
+        }).collect();
 
         Ok(result)
     }
@@ -748,6 +758,47 @@ impl Database {
     pub fn delete_tag(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM tags WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    /// 批量获取多个文件的 tags，避免 N+1 查询
+    pub fn get_tags_for_files(&self, file_ids: &[i64]) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
+        if file_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        // 构建 IN 查询
+        let placeholders: Vec<String> = file_ids.iter().map(|_| "?".to_string()).collect();
+        let query = format!(
+            "SELECT ft.file_id, t.id, t.name, t.color, t.sort_order FROM tags t
+             INNER JOIN file_tags ft ON t.id = ft.tag_id
+             WHERE ft.file_id IN ({})",
+            placeholders.join(", ")
+        );
+
+        let mut stmt = self.conn.prepare(&query)?;
+
+        // 使用 rusqlite::params_from_iter 来构建参数
+        use rusqlite::ToSql;
+        let params: Vec<Box<dyn ToSql>> = file_ids.iter().map(|&id| Box::new(id) as Box<dyn ToSql>).collect();
+        let params_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let mut result: std::collections::HashMap<i64, Vec<Tag>> = std::collections::HashMap::new();
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok((row.get::<_, i64>(0)?, Tag {
+                id: row.get(1)?,
+                name: row.get(2)?,
+                color: row.get(3)?,
+                count: 1,
+                sort_order: row.get(4)?,
+            }))
+        })?;
+
+        for row in rows.flatten() {
+            let (file_id, tag) = row;
+            result.entry(file_id).or_insert_with(Vec::new).push(tag);
+        }
+
+        Ok(result)
     }
 
     pub fn get_file_tags(&self, file_id: i64) -> Result<Vec<Tag>> {
@@ -1033,6 +1084,19 @@ impl Database {
             .filter_map(|r| r.ok())
             .collect();
         Ok(paths.into_iter().collect())
+    }
+
+    /// 获取每个文件夹的文件数量（高效批量查询）
+    pub fn get_file_counts_by_folders(&self) -> Result<std::collections::HashMap<i64, i32>> {
+        let mut stmt = self.conn.prepare("SELECT folder_id, COUNT(*) as count FROM files WHERE folder_id IS NOT NULL GROUP BY folder_id")?;
+        let counts: Vec<(i64, i32)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+        let mut result = std::collections::HashMap::new();
+        for (folder_id, count) in counts {
+            result.insert(folder_id, count);
+        }
+        Ok(result)
     }
 
     /// Check if file is unchanged (by size and modified_at)

@@ -227,16 +227,21 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
     }
 }
 
-pub fn extract_dominant_color(path: &Path) -> Result<String, String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    // Skip non-image formats
-    if ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("psd")
+/// 检查是否为不支持颜色提取的图像格式
+fn is_color_extraction_unsupported_format(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("psd")
         || ext.eq_ignore_ascii_case("ai") || ext.eq_ignore_ascii_case("eps")
         || ext.eq_ignore_ascii_case("raw") || ext.eq_ignore_ascii_case("cr2")
         || ext.eq_ignore_ascii_case("nef") || ext.eq_ignore_ascii_case("arw")
         || ext.eq_ignore_ascii_case("dng") || ext.eq_ignore_ascii_case("heic")
-        || ext.eq_ignore_ascii_case("heif") {
+        || ext.eq_ignore_ascii_case("heif")
+}
+
+pub fn extract_dominant_color(path: &Path) -> Result<String, String> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    // Skip non-image formats
+    if is_color_extraction_unsupported_format(ext) {
         return Ok(String::new());
     }
 
@@ -277,12 +282,7 @@ pub fn extract_color_distribution(path: &Path) -> Result<Vec<ColorInfo>, String>
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     // Skip non-image formats
-    if ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("psd")
-        || ext.eq_ignore_ascii_case("ai") || ext.eq_ignore_ascii_case("eps")
-        || ext.eq_ignore_ascii_case("raw") || ext.eq_ignore_ascii_case("cr2")
-        || ext.eq_ignore_ascii_case("nef") || ext.eq_ignore_ascii_case("arw")
-        || ext.eq_ignore_ascii_case("dng") || ext.eq_ignore_ascii_case("heic")
-        || ext.eq_ignore_ascii_case("heif") {
+    if is_color_extraction_unsupported_format(ext) {
         return Ok(Vec::new());
     }
 

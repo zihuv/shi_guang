@@ -322,7 +322,7 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onD
       if (mounted) setImageSrc(src)
     })
     return () => { mounted = false }
-  }, [file.path, fileExists])
+  }, [file.path, file.id, fileExists])
 
   // 强制正方形格子
   const getContainerStyle = () => {
@@ -505,7 +505,7 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
       if (mounted) setImageSrc(src)
     })
     return () => { mounted = false }
-  }, [file.path, fileExists])
+  }, [file.path, file.id, fileExists])
 
   return (
     <FileContextMenu file={file}>

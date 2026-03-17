@@ -40,6 +40,9 @@ const parseFile = (file: FileItem): FileItem => ({
     : (file.colorDistribution || [])
 })
 
+// 批量解析文件列表
+const parseFileList = (files: FileItem[]): FileItem[] => files.map(parseFile)
+
 export interface Tag {
   id: number
   name: string
@@ -153,10 +156,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     try {
       const files = await invoke<FileItem[]>('get_all_files')
       // Parse colorDistribution from JSON string
-      const parsedFiles = files.map(f => ({
-        ...f,
-        colorDistribution: f.colorDistribution ? JSON.parse(f.colorDistribution as unknown as string) : []
-      }))
+      const parsedFiles = parseFileList(files)
       // Update selectedFile if it exists in the new files list
       let newSelectedFile = selectedFile
       if (selectedFile) {
@@ -175,10 +175,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     try {
       const files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
       // Parse colorDistribution from JSON string
-      const parsedFiles = files.map(f => ({
-        ...f,
-        colorDistribution: f.colorDistribution ? JSON.parse(f.colorDistribution as unknown as string) : []
-      }))
+      const parsedFiles = parseFileList(files)
       console.log('[fileStore] Loaded files:', parsedFiles.length)
       set({ files: parsedFiles, isLoading: false })
     } catch (e) {
@@ -192,10 +189,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     try {
       const files = await invoke<FileItem[]>('search_files', { query })
       // Parse colorDistribution from JSON string
-      const parsedFiles = files.map(f => ({
-        ...f,
-        colorDistribution: f.colorDistribution ? JSON.parse(f.colorDistribution as unknown as string) : []
-      }))
+      const parsedFiles = parseFileList(files)
       set({ files: parsedFiles, isLoading: false })
     } catch (e) {
       console.error('Failed to search files:', e)

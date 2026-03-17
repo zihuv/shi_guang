@@ -1,4 +1,4 @@
-use crate::db::{FileWithTags, Tag, Folder};
+use crate::db::{Database, FileWithTags, Tag, Folder};
 use crate::indexer;
 use crate::AppState;
 use tauri::State;
@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use chrono::{DateTime, Local};
-use image::GenericImageView;
-use image::Pixel;
 use base64::Engine;
 use std::collections::HashMap;
 
@@ -38,6 +36,24 @@ fn get_import_dir() -> Result<std::path::PathBuf, String> {
     Ok(import_dir)
 }
 
+/// 获取导入目标目录：如果指定了 folder_id，使用该文件夹路径；否则使用默认导入目录
+fn get_target_dir(db: &Database, folder_id: Option<i64>) -> Result<std::path::PathBuf, String> {
+    if let Some(fid) = folder_id {
+        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
+        if let Some(folder) = folders.iter().find(|f| f.id == fid) {
+            return Ok(Path::new(&folder.path).to_path_buf());
+        }
+    }
+    get_import_dir()
+}
+
+/// 生成简单的 UUID 字符串
+fn uuid_simple() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    format!("{:x}{:x}", duration.as_secs(), duration.subsec_nanos())
+}
+
 #[tauri::command]
 pub fn import_file(state: State<AppState>, source_path: String, folder_id: Option<i64>) -> Result<FileWithTags, String> {
     // Check if this source file was recently imported (within 3 seconds)
@@ -57,17 +73,8 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         return Err("Source file does not exist".to_string());
     }
 
-    // Determine target directory: use folder path if folder_id is provided, otherwise use default import dir
-    let target_dir = if let Some(fid) = folder_id {
-        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        if let Some(folder) = folders.iter().find(|f| f.id == fid) {
-            Path::new(&folder.path).to_path_buf()
-        } else {
-            get_import_dir()?
-        }
-    } else {
-        get_import_dir()?
-    };
+    // 获取目标目录
+    let target_dir = get_target_dir(&db, folder_id)?;
 
     // Generate unique filename
     let ext = source.extension()
@@ -121,17 +128,8 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
 pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext: String, folder_id: Option<i64>) -> Result<FileWithTags, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
-    // Determine target directory: use folder path if folder_id is provided, otherwise use default import dir
-    let target_dir = if let Some(fid) = folder_id {
-        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        if let Some(folder) = folders.iter().find(|f| f.id == fid) {
-            Path::new(&folder.path).to_path_buf()
-        } else {
-            get_import_dir()?
-        }
-    } else {
-        get_import_dir()?
-    };
+    // 获取目标目录
+    let target_dir = get_target_dir(&db, folder_id)?;
 
     // Generate unique filename
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
@@ -160,12 +158,6 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
     db.get_file_by_path(&dest_path.to_string_lossy())
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Failed to retrieve imported file".to_string())
-}
-
-fn uuid_simple() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    format!("{:x}{:x}", duration.as_secs(), duration.subsec_nanos())
 }
 
 #[tauri::command]
@@ -375,14 +367,8 @@ pub fn get_folder_tree(state: State<AppState>) -> Result<Vec<FolderTreeNode>, St
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let folders = db.get_all_folders().map_err(|e| e.to_string())?;
 
-    // Get file counts per folder
-    let mut file_counts: HashMap<i64, i32> = HashMap::new();
-    let files = db.get_all_files().map_err(|e| e.to_string())?;
-    for file in files {
-        if let Some(folder_id) = file.folder_id {
-            *file_counts.entry(folder_id).or_insert(0) += 1;
-        }
-    }
+    // 使用高效的批量查询获取文件数量
+    let file_counts = db.get_file_counts_by_folders().map_err(|e| e.to_string())?;
 
     Ok(build_folder_tree(&folders, &file_counts))
 }
