@@ -361,6 +361,11 @@ async fn import_image(
         Err(e) => {
             // Clean up the file if database insert failed
             let _ = std::fs::remove_file(&dest_path);
+            log::error!("Failed to import browser image: {}", e);
+            // Emit event to frontend to show error
+            let _ = state.app_handle.emit("file-import-error", serde_json::json!({
+                "error": format!("Database error: {}", e),
+            }));
             let resp = ImportResponse {
                 success: false,
                 file_id: None,

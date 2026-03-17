@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
 import type { Modifier } from "@dnd-kit/core";
 import { readFile } from '@tauri-apps/plugin-fs';
+import { toast, Toaster } from 'sonner';
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useTagStore } from "@/stores/tagStore";
@@ -137,6 +138,7 @@ function App() {
     let unlistenDragDrop: (() => void) | undefined;
     let unlistenDragLeave: (() => void) | undefined;
     let unlistenFileImported: (() => void) | undefined;
+    let unlistenFileImportError: (() => void) | undefined;
 
     const setupListeners = async () => {
       unlistenDragEnter = await listen("tauri://drag-enter", () => {
@@ -218,14 +220,24 @@ function App() {
         },
       );
 
-      // Listen for file imported from browser extension
+      // Listen for file imported from browser extension - success
       unlistenFileImported = await listen<{ file_id: number; path: string }>(
         "file-imported",
-        async () => {
+        async (event) => {
           console.log("[FileImported] Refreshing file list...");
+          toast.success("图片导入成功");
           // Refresh current folder's files
           const folderId = useFolderStore.getState().selectedFolderId;
           await useFileStore.getState().loadFilesInFolder(folderId);
+        },
+      );
+
+      // Listen for file import error from browser extension
+      const unlistenFileImportError = await listen<{ error: string }>(
+        "file-import-error",
+        async (event) => {
+          console.log("[FileImportError]", event.payload.error);
+          toast.error(`图片导入失败: ${event.payload.error}`);
         },
       );
 
@@ -239,6 +251,7 @@ function App() {
       unlistenDragDrop?.();
       unlistenDragLeave?.();
       unlistenFileImported?.();
+      unlistenFileImportError?.();
       dragDropState.listenersReady = false;
     };
   }, []);
@@ -375,6 +388,7 @@ function App() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
       />
+      <Toaster position="bottom-right" />
     </div>
   );
 }
