@@ -23,6 +23,9 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  DropAnimation,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -46,9 +49,10 @@ interface SortableTagProps {
   onClear: (id: number) => void
   onEdit: (tag: Tag) => void
   onDelete: (id: number) => void
+  isOverId: number | null
 }
 
-function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete }: SortableTagProps) {
+function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, isOverId }: SortableTagProps) {
   const {
     attributes,
     listeners,
@@ -63,12 +67,21 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete }
     transition,
   }
 
+  // Show insertion line when another item is being dragged over this item
+  const showInsertLine = isOverId !== null && isOverId !== tag.id
+
   return (
     <div ref={setNodeRef} style={style} data-tag-id={tag.id}>
+      {/* Insertion line - top */}
+      {showInsertLine && (
+        <div className="h-0.5 bg-primary-500 rounded-full my-0.5" />
+      )}
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className={`group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm cursor-pointer transition-colors h-8 ${
+            {...attributes}
+            {...listeners}
+            className={`group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm cursor-grab active:cursor-grabbing transition-colors h-8 ${
               selectedTagId === tag.id
                 ? 'bg-primary-100 dark:bg-primary-900/30'
                 : isDragging
@@ -77,13 +90,6 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete }
             }`}
             onClick={() => onSelect(tag.id)}
           >
-            <div
-              {...attributes}
-              {...listeners}
-              className="cursor-grab active:cursor-grabbing"
-            >
-              <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0" />
-            </div>
             <span
               className="w-3 h-3 rounded-full flex-shrink-0"
               style={{ backgroundColor: tag.color }}
@@ -121,12 +127,16 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete }
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+      {/* Insertion line - bottom (show when this is the last item before insertion point) */}
+      {showInsertLine && (
+        <div className="h-0.5 bg-primary-500 rounded-full my-0.5" />
+      )}
     </div>
   )
 }
 
 export default function TagPanel() {
-  const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } = useTagStore()
+  const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId, setTags } = useTagStore()
   const [isAdding, setIsAdding] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [selectedColor, setSelectedColor] = useState(TAG_COLORS[0])
@@ -136,11 +146,18 @@ export default function TagPanel() {
   const [editName, setEditName] = useState('')
   const [editColor, setEditColor] = useState('')
 
-  // Dnd-kit sensors
+  // Drag state
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [overId, setOverId] = useState<number | null>(null)
+
+  const activeTag = activeId ? tags.find(t => t.id === activeId) : null
+
+  // Dnd-kit sensors - prevent accidental drag with delay
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        delay: 250,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -148,19 +165,38 @@ export default function TagPanel() {
     })
   )
 
+  const handleDragStart = (event: { active: { id: number | string } }) => {
+    setActiveId(event.active.id as number)
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
+    setActiveId(null)
 
     if (over && active.id !== over.id) {
       const oldIndex = tags.findIndex(t => t.id === active.id)
       const newIndex = tags.findIndex(t => t.id === over.id)
 
       if (oldIndex !== -1 && newIndex !== -1) {
+        // Optimistic update: update local state first
         const newTags = arrayMove(tags, oldIndex, newIndex)
+        setTags(newTags)
+
+        // Then call API
         const tagIds = newTags.map(t => t.id)
         reorderTags(tagIds)
       }
     }
+  }
+
+  const dropAnimation: DropAnimation = {
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: '0.5',
+        },
+      },
+    }),
   }
 
   const handleAddTag = async () => {
@@ -214,7 +250,11 @@ export default function TagPanel() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          onDragOver={(event) => {
+            setOverId(event.over?.id as number | null)
+          }}
         >
           <SortableContext
             items={tags.map(t => t.id)}
@@ -230,10 +270,26 @@ export default function TagPanel() {
                   onClear={handleClearTag}
                   onEdit={handleEditTag}
                   onDelete={handleDeleteTag}
+                  isOverId={overId}
                 />
               ))}
             </div>
           </SortableContext>
+          <DragOverlay dropAnimation={dropAnimation}>
+            {activeTag ? (
+              <div className="opacity-80 cursor-grabbing">
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm bg-primary-100 dark:bg-primary-900/30 border border-primary-300 dark:border-primary-700 shadow-lg">
+                  <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: activeTag.color }}
+                  />
+                  <span className="min-w-0 flex-1 text-gray-700 dark:text-gray-300 truncate">{activeTag.name}</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">{activeTag.count}</span>
+                </div>
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       </div>
 

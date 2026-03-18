@@ -548,37 +548,44 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
         return Err("Cannot delete system folder".to_string());
     }
 
-    // First, delete all files in this folder (and subfolders)
-    // Get folder path to find all matching files
-    if let Some(folder) = db.get_folder_by_id(id).map_err(|e| e.to_string())? {
+    // Get folder path
+    let folder = db.get_folder_by_id(id).map_err(|e| e.to_string())?;
+    if let Some(folder) = folder {
         let folder_path = folder.path.clone();
 
         // Get all files
         let files = db.get_all_files().map_err(|e| e.to_string())?;
 
-        // Delete all files whose path starts with this folder's path
+        // Get all folders (for finding subfolders)
+        let all_folders = db.get_all_folders().map_err(|e| e.to_string())?;
+
+        // Collect all subfolder IDs (folders whose path starts with this folder's path)
+        let subfolder_ids: Vec<i64> = all_folders
+            .iter()
+            .filter(|f| f.path.starts_with(&folder_path) && f.id != id)
+            .map(|f| f.id)
+            .collect();
+
+        // Step 1: First, set folder_id to NULL for all files in this folder and subfolders
+        // This breaks the FK constraint before we delete the folders
+        let all_folder_ids: Vec<i64> = std::iter::once(id)
+            .chain(subfolder_ids.iter().copied())
+            .collect();
+
+        db.clear_files_folder_id(&all_folder_ids).map_err(|e| e.to_string())?;
+
+        // Step 2: Delete all files whose path starts with this folder's path
         for file in &files {
             if file.path.starts_with(&folder_path) {
                 db.delete_file(&file.path).map_err(|e| e.to_string())?;
             }
         }
 
-        // Also handle subfolder files - get all folders and delete files in subfolders
-        let all_folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        for subfolder in &all_folders {
-            if subfolder.path.starts_with(&folder_path) && subfolder.id != id {
-                let subfolder_path = subfolder.path.clone();
-                for file in &files {
-                    if file.path.starts_with(&subfolder_path) {
-                        let _ = db.delete_file(&file.path);
-                    }
-                }
-            }
-        }
+        // Step 3: Delete the folder - SQLite FK CASCADE will automatically delete all subfolders
+        db.delete_folder(id).map_err(|e| e.to_string())?;
     }
 
-    // Then delete the folder itself
-    db.delete_folder(id).map_err(|e| e.to_string())
+    Ok(())
 }
 
 #[tauri::command]

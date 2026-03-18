@@ -223,7 +223,7 @@ function App() {
       // Listen for file imported from browser extension - success
       unlistenFileImported = await listen<{ file_id: number; path: string }>(
         "file-imported",
-        async (event) => {
+        async () => {
           console.log("[FileImported] Refreshing file list...");
           toast.success("图片导入成功");
           // Refresh current folder's files
@@ -233,7 +233,7 @@ function App() {
       );
 
       // Listen for file import error from browser extension
-      const unlistenFileImportError = await listen<{ error: string }>(
+      await listen<{ error: string }>(
         "file-import-error",
         async (event) => {
           console.log("[FileImportError]", event.payload.error);

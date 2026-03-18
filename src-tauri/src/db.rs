@@ -1148,10 +1148,132 @@ impl Database {
 
     /// Move a folder to a new parent and/or position
     pub fn move_folder(&self, folder_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<()> {
-        self.conn.execute(
-            "UPDATE folders SET parent_id = ?1, sort_order = ?2 WHERE id = ?3",
-            params![new_parent_id, sort_order, folder_id],
-        )?;
+        // Get current folder info
+        let folder = self.get_folder_by_id(folder_id)?;
+        if let Some(folder) = folder {
+            let old_folder_path = folder.path.clone();
+
+            // Get new parent folder path
+            let new_parent_path = if let Some(parent_id) = new_parent_id {
+                let parent = self.get_folder_by_id(parent_id)?;
+                parent.map(|p| p.path.clone()).unwrap_or_default()
+            } else {
+                // Root level - should use index paths or a base path
+                // For now, use the parent of the old path
+                std::path::Path::new(&old_folder_path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            };
+
+            let new_folder_path = std::path::Path::new(&new_parent_path)
+                .join(&folder.name)
+                .to_string_lossy()
+                .to_string();
+
+            // Move folder in file system - source must exist
+            let old_path = std::path::Path::new(&old_folder_path);
+            let new_path = std::path::Path::new(&new_folder_path);
+
+            // If source doesn't exist, we can't move it
+            if !old_path.exists() {
+                return Err(rusqlite::Error::InvalidParameterName(
+                    format!("Source folder does not exist: {}", old_folder_path)
+                ));
+            }
+
+            if new_path.exists() {
+                return Err(rusqlite::Error::InvalidParameterName(
+                    format!("Destination path already exists: {}", new_folder_path)
+                ));
+            }
+
+            // Try rename first (works within same volume)
+            match std::fs::rename(old_path, new_path) {
+                Ok(_) => {}
+                Err(e) => {
+                    // If rename fails (e.g., cross-volume on Windows), try copy+delete
+                    if let Err(copy_err) = Self::copy_dir_recursive(old_path, new_path) {
+                        return Err(rusqlite::Error::InvalidParameterName(
+                            format!("Failed to move folder: {} -> {}: {} / copy failed: {}",
+                                old_folder_path, new_folder_path, e, copy_err)
+                        ));
+                    }
+                    // Clean up old directory
+                    if let Err(del_err) = std::fs::remove_dir_all(old_path) {
+                        // Log but don't fail - the move succeeded
+                        eprintln!("Warning: failed to remove old folder after copy: {}", del_err);
+                    }
+                }
+            }
+
+            // Update folder's parent_id, sort_order and path
+            self.conn.execute(
+                "UPDATE folders SET parent_id = ?1, sort_order = ?2, path = ?3 WHERE id = ?4",
+                params![new_parent_id, sort_order, new_folder_path, folder_id],
+            )?;
+
+            // Update all subfolder paths (recursive)
+            let mut stmt = self.conn.prepare("SELECT id, path FROM folders WHERE path LIKE ?1")?;
+            let pattern = format!("{}/%", old_folder_path);
+            let subfolders: Vec<(i64, String)> = stmt
+                .query_map([pattern], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .filter_map(|r| r.ok())
+                .collect();
+            for (subfolder_id, subfolder_old_path) in subfolders {
+                let new_subfolder_path = subfolder_old_path.replacen(&old_folder_path, &new_folder_path, 1);
+                self.conn.execute(
+                    "UPDATE folders SET path = ?1 WHERE id = ?2",
+                    params![new_subfolder_path, subfolder_id],
+                )?;
+            }
+
+            // Update all file paths
+            let mut stmt = self.conn.prepare("SELECT id, path FROM files WHERE path LIKE ?1")?;
+            let pattern = format!("{}/%", old_folder_path);
+            let files: Vec<(i64, String)> = stmt
+                .query_map([pattern], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .filter_map(|r| r.ok())
+                .collect();
+            for (file_id, file_old_path) in files {
+                let new_file_path = file_old_path.replacen(&old_folder_path, &new_folder_path, 1);
+                self.conn.execute(
+                    "UPDATE files SET path = ?1 WHERE id = ?2",
+                    params![new_file_path, file_id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Copy directory recursively (for cross-volume moves on Windows)
+    fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+        if !dst.exists() {
+            std::fs::create_dir_all(dst)?;
+        }
+
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if entry_path.is_dir() {
+                Self::copy_dir_recursive(&entry_path, &dst_path)?;
+            } else {
+                std::fs::copy(&entry_path, &dst_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Clear folder_id (set to NULL) for all files in a folder and its subfolders
+    pub fn clear_files_folder_id(&self, folder_ids: &[i64]) -> Result<()> {
+        for folder_id in folder_ids {
+            self.conn.execute(
+                "UPDATE files SET folder_id = NULL WHERE folder_id = ?1",
+                params![folder_id],
+            )?;
+        }
         Ok(())
     }
 }

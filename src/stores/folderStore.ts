@@ -30,7 +30,9 @@ interface FolderStore {
   deleteFolder: (id: number) => Promise<void>
   renameFolder: (id: number, name: string) => Promise<void>
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
+  moveFolder: (folderId: number, newParentId: number | null) => Promise<void>
   reorderFolders: (folderIds: number[]) => Promise<void>
+  setFolders: (folders: FolderNode[]) => void
   setNewFolderName: (name: string) => void
   setAddingSubfolder: (folder: FolderNode | null) => void
   setEditingFolder: (folder: FolderNode | null) => void
@@ -50,6 +52,8 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
   dragOverFolderId: null,
 
   setDragOverFolderId: (folderId) => set({ dragOverFolderId: folderId }),
+
+  setFolders: (folders) => set({ folders }),
 
   loadFolders: async () => {
     set({ isLoading: true })
@@ -120,6 +124,15 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
       await get().loadFolders()
     } catch (e) {
       console.error('Failed to move file:', e)
+    }
+  },
+
+  moveFolder: async (folderId, newParentId) => {
+    try {
+      await invoke('move_folder', { folderId, newParentId, sortOrder: 0 })
+      await get().loadFolders()
+    } catch (e) {
+      console.error('Failed to move folder:', e)
     }
   },
 

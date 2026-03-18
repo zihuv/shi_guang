@@ -17,6 +17,7 @@ interface TagStore {
   deleteTag: (id: number) => Promise<void>
   updateTag: (id: number, name: string, color: string) => Promise<void>
   reorderTags: (tagIds: number[]) => Promise<void>
+  setTags: (tags: Tag[]) => void
   setSelectedTagId: (id: number | null) => void
 }
 
@@ -58,4 +59,6 @@ export const useTagStore = create<TagStore>((set, get) => ({
   },
 
   setSelectedTagId: (id) => set({ selectedTagId: id }),
+
+  setTags: (tags) => set({ tags }),
 }))
