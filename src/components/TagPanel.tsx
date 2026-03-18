@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { useTagStore, Tag } from '@/stores/tagStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -15,26 +17,6 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/ContextMenu'
 import { Plus, X, Pencil, Trash2, GripVertical } from 'lucide-react'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragOverlay,
-  defaultDropAnimationSideEffects,
-  DropAnimation,
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 
 const TAG_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#84cc16',
@@ -50,28 +32,41 @@ interface SortableTagProps {
   onEdit: (tag: Tag) => void
   onDelete: (id: number) => void
   isOverId: number | null
+  onDragStart: () => void
+  onDragEnd: () => void
 }
 
-function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, isOverId }: SortableTagProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: tag.id })
+function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, isOverId, onDragStart, onDragEnd }: SortableTagProps) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
+  // @atlaskit draggable
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+
+    return draggable({
+      element,
+      getInitialData: () => ({
+        type: 'tag',
+        tagId: tag.id,
+      }),
+      onDragStart: () => {
+        setIsDragging(true)
+        onDragStart()
+      },
+      onDrop: () => {
+        setIsDragging(false)
+        onDragEnd()
+      },
+    })
+  }, [tag.id, onDragStart, onDragEnd])
 
   // Show insertion line when another item is being dragged over this item
   const showInsertLine = isOverId !== null && isOverId !== tag.id
 
   return (
-    <div ref={setNodeRef} style={style} data-tag-id={tag.id}>
+    <div ref={ref} data-tag-id={tag.id}>
       {/* Insertion line - top */}
       {showInsertLine && (
         <div className="h-0.5 bg-primary-500 rounded-full my-0.5" />
@@ -79,8 +74,6 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, 
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            {...attributes}
-            {...listeners}
             className={`group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm cursor-grab active:cursor-grabbing transition-colors h-8 ${
               selectedTagId === tag.id
                 ? 'bg-primary-100 dark:bg-primary-900/30'
@@ -90,6 +83,7 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, 
             }`}
             onClick={() => onSelect(tag.id)}
           >
+            <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0" />
             <span
               className="w-3 h-3 rounded-full flex-shrink-0"
               style={{ backgroundColor: tag.color }}
@@ -136,7 +130,7 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, 
 }
 
 export default function TagPanel() {
-  const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId, setTags } = useTagStore()
+  const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } = useTagStore()
   const [isAdding, setIsAdding] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [selectedColor, setSelectedColor] = useState(TAG_COLORS[0])
@@ -146,58 +140,77 @@ export default function TagPanel() {
   const [editName, setEditName] = useState('')
   const [editColor, setEditColor] = useState('')
 
-  // Drag state
-  const [activeId, setActiveId] = useState<number | null>(null)
+  // Drag state - activeId is only set, not read (used for tracking drag source)
+  const [, setActiveId] = useState<number | null>(null)
   const [overId, setOverId] = useState<number | null>(null)
+  const [localTags, setLocalTags] = useState(tags)
 
-  const activeTag = activeId ? tags.find(t => t.id === activeId) : null
+  // Keep localTags in sync with tags prop
+  useEffect(() => {
+    setLocalTags(tags)
+  }, [tags])
 
-  // Dnd-kit sensors - prevent accidental drag with delay
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
+  // Monitor drag events for tag reordering
+  useEffect(() => {
+    return monitorForElements({
+      onDragStart: ({ source }) => {
+        if (source.data.type === 'tag') {
+          setActiveId(source.data.tagId as number)
+        }
       },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  )
+      onDrag: ({ source, location }) => {
+        if (source.data.type !== 'tag') return
 
-  const handleDragStart = (event: { active: { id: number | string } }) => {
-    setActiveId(event.active.id as number)
-  }
+        const dropTargets = location.current.dropTargets
+        if (dropTargets.length === 0) {
+          setOverId(null)
+          return
+        }
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveId(null)
+        const target = dropTargets[0]
+        if (target.data.type === 'tag') {
+          setOverId(target.data.tagId as number)
+        }
+      },
+      onDrop: ({ source, location }) => {
+        if (source.data.type !== 'tag') return
 
-    if (over && active.id !== over.id) {
-      const oldIndex = tags.findIndex(t => t.id === active.id)
-      const newIndex = tags.findIndex(t => t.id === over.id)
+        const sourceTagId = source.data.tagId as number
+        const dropTargets = location.current.dropTargets
 
-      if (oldIndex !== -1 && newIndex !== -1) {
-        // Optimistic update: update local state first
-        const newTags = arrayMove(tags, oldIndex, newIndex)
-        setTags(newTags)
+        if (dropTargets.length === 0) {
+          setActiveId(null)
+          setOverId(null)
+          return
+        }
 
-        // Then call API
-        const tagIds = newTags.map(t => t.id)
-        reorderTags(tagIds)
+        const target = dropTargets[0]
+        if (target.data.type === 'tag') {
+          const targetTagId = target.data.tagId as number
+
+          if (sourceTagId !== targetTagId) {
+            const oldIndex = localTags.findIndex(t => t.id === sourceTagId)
+            const newIndex = localTags.findIndex(t => t.id === targetTagId)
+
+            if (oldIndex !== -1 && newIndex !== -1) {
+              // Optimistic update: update local state first
+              const newTags = [...localTags]
+              const [movedTag] = newTags.splice(oldIndex, 1)
+              newTags.splice(newIndex, 0, movedTag)
+              setLocalTags(newTags)
+
+              // Then call API
+              const tagIds = newTags.map(t => t.id)
+              reorderTags(tagIds)
+            }
+          }
+        }
+
+        setActiveId(null)
+        setOverId(null)
       }
-    }
-  }
-
-  const dropAnimation: DropAnimation = {
-    sideEffects: defaultDropAnimationSideEffects({
-      styles: {
-        active: {
-          opacity: '0.5',
-        },
-      },
-    }),
-  }
+    })
+  }, [localTags, reorderTags])
 
   const handleAddTag = async () => {
     if (newTagName.trim()) {
@@ -247,50 +260,22 @@ export default function TagPanel() {
       </div>
 
       <div className="flex-1 overflow-auto p-2">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOver={(event) => {
-            setOverId(event.over?.id as number | null)
-          }}
-        >
-          <SortableContext
-            items={tags.map(t => t.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-1">
-              {tags.map((tag) => (
-                <SortableTag
-                  key={tag.id}
-                  tag={tag}
-                  selectedTagId={selectedTagId}
-                  onSelect={setSelectedTagId}
-                  onClear={handleClearTag}
-                  onEdit={handleEditTag}
-                  onDelete={handleDeleteTag}
-                  isOverId={overId}
-                />
-              ))}
-            </div>
-          </SortableContext>
-          <DragOverlay dropAnimation={dropAnimation}>
-            {activeTag ? (
-              <div className="opacity-80 cursor-grabbing">
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm bg-primary-100 dark:bg-primary-900/30 border border-primary-300 dark:border-primary-700 shadow-lg">
-                  <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                  <span
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: activeTag.color }}
-                  />
-                  <span className="min-w-0 flex-1 text-gray-700 dark:text-gray-300 truncate">{activeTag.name}</span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">{activeTag.count}</span>
-                </div>
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        <div className="space-y-1">
+          {localTags.map((tag) => (
+            <SortableTag
+              key={tag.id}
+              tag={tag}
+              selectedTagId={selectedTagId}
+              onSelect={setSelectedTagId}
+              onClear={handleClearTag}
+              onEdit={handleEditTag}
+              onDelete={handleDeleteTag}
+              isOverId={overId}
+              onDragStart={() => {}}
+              onDragEnd={() => {}}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Add Tag Dialog */}

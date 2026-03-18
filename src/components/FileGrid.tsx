@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
-import { useDraggable } from '@dnd-kit/core'
+import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { useFileStore, FileItem, getNameWithoutExt } from '@/stores/fileStore'
 import { useTagStore } from '@/stores/tagStore'
+import { useFolderStore } from '@/stores/folderStore'
 import { getImageSrc, formatSize } from '@/utils'
 import FileContextMenu from './FileContextMenu'
 
@@ -11,6 +12,7 @@ export default function FileGrid() {
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'adaptive'>('grid')
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
+  const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
 
   // Box selection state
   const [isSelecting, setIsSelecting] = useState(false)
@@ -203,8 +205,11 @@ export default function FileGrid() {
                   file={file}
                   isSelected={selectedFile?.id === file.id}
                   isMultiSelected={selectedFiles.includes(file.id)}
+                  isDragging={draggingFileId === file.id}
                   onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
                   onDoubleClick={() => handleFileDoubleClick(index)}
+                  onDragStart={() => setDraggingFileId(file.id)}
+                  onDragEnd={() => setDraggingFileId(null)}
                 />
               </div>
             ))}
@@ -217,8 +222,11 @@ export default function FileGrid() {
                 file={file}
                 isSelected={selectedFile?.id === file.id}
                 isMultiSelected={selectedFiles.includes(file.id)}
+                isDragging={draggingFileId === file.id}
                 onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
                 onDoubleClick={() => handleFileDoubleClick(index)}
+                onDragStart={() => setDraggingFileId(file.id)}
+                onDragEnd={() => setDraggingFileId(null)}
               />
             ))}
           </div>
@@ -230,8 +238,11 @@ export default function FileGrid() {
                 file={file}
                 isSelected={selectedFile?.id === file.id}
                 isMultiSelected={selectedFiles.includes(file.id)}
+                isDragging={draggingFileId === file.id}
                 onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
                 onDoubleClick={() => handleFileDoubleClick(index)}
+                onDragStart={() => setDraggingFileId(file.id)}
+                onDragEnd={() => setDraggingFileId(null)}
               />
             ))}
           </div>
@@ -294,22 +305,43 @@ export default function FileGrid() {
   )
 }
 
-function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onDoubleClick }: {
+function FileCard({ file, isSelected: _isSelected, isMultiSelected, isDragging, onClick, onDoubleClick, onDragStart, onDragEnd }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
+  isDragging: boolean
   onClick: (e: React.MouseEvent) => void
   onDoubleClick?: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
 }) {
   const { files } = useFileStore()
+  const { uniqueContextId } = useFolderStore()
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
-  // dnd-kit useDraggable
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `file-${file.id}`,
-    data: { type: 'app-file', fileId: file.id, fileName: file.name }
-  })
+  // @atlaskit draggable
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+
+    return draggable({
+      element,
+      getInitialData: () => ({
+        type: 'app-file',
+        fileId: file.id,
+        fileName: file.name,
+        uniqueContextId,
+      }),
+      onDragStart: () => {
+        onDragStart()
+      },
+      onDrop: () => {
+        onDragEnd()
+      },
+    })
+  }, [file.id, uniqueContextId, onDragStart, onDragEnd])
 
   // 检查文件是否还存在
   const fileExists = files.some(f => f.id === file.id)
@@ -332,9 +364,7 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onD
   return (
     <FileContextMenu file={file}>
       <div
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
+        ref={ref}
         data-file-id={file.id}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
@@ -392,22 +422,43 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onD
   )
 }
 
-function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onClick, onDoubleClick }: {
+function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, isDragging, onClick, onDoubleClick, onDragStart, onDragEnd }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
+  isDragging: boolean
   onClick: (e: React.MouseEvent) => void
   onDoubleClick?: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
 }) {
   const { files } = useFileStore()
+  const { uniqueContextId } = useFolderStore()
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
-  // dnd-kit useDraggable
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `file-${file.id}`,
-    data: { type: 'app-file', fileId: file.id, fileName: file.name }
-  })
+  // @atlaskit draggable
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+
+    return draggable({
+      element,
+      getInitialData: () => ({
+        type: 'app-file',
+        fileId: file.id,
+        fileName: file.name,
+        uniqueContextId,
+      }),
+      onDragStart: () => {
+        onDragStart()
+      },
+      onDrop: () => {
+        onDragEnd()
+      },
+    })
+  }, [file.id, uniqueContextId, onDragStart, onDragEnd])
 
   const fileExists = files.some(f => f.id === file.id)
 
@@ -433,9 +484,7 @@ function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onCl
   return (
     <FileContextMenu file={file}>
       <div
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
+        ref={ref}
         data-file-id={file.id}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
@@ -477,22 +526,43 @@ function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, onCl
   )
 }
 
-function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDoubleClick }: {
+function FileRow({ file, isSelected: _isSelected, isMultiSelected, isDragging, onClick, onDoubleClick, onDragStart, onDragEnd }: {
   file: FileItem
   isSelected: boolean
   isMultiSelected: boolean
+  isDragging: boolean
   onClick: (e: React.MouseEvent) => void
   onDoubleClick?: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
 }) {
   const { files } = useFileStore()
+  const { uniqueContextId } = useFolderStore()
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
-  // dnd-kit useDraggable
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `file-${file.id}`,
-    data: { type: 'app-file', fileId: file.id, fileName: file.name }
-  })
+  // @atlaskit draggable
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+
+    return draggable({
+      element,
+      getInitialData: () => ({
+        type: 'app-file',
+        fileId: file.id,
+        fileName: file.name,
+        uniqueContextId,
+      }),
+      onDragStart: () => {
+        onDragStart()
+      },
+      onDrop: () => {
+        onDragEnd()
+      },
+    })
+  }, [file.id, uniqueContextId, onDragStart, onDragEnd])
 
   // 检查文件是否还存在
   const fileExists = files.some(f => f.id === file.id)
@@ -510,9 +580,7 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
   return (
     <FileContextMenu file={file}>
       <div
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
+        ref={ref}
         data-file-id={file.id}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
@@ -555,4 +623,3 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, onClick, onDo
     </FileContextMenu>
   )
 }
-

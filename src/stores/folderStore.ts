@@ -22,6 +22,7 @@ interface FolderStore {
   editingFolder: FolderNode | null
   deleteConfirm: FolderNode | null
   dragOverFolderId: number | null
+  uniqueContextId: string
   loadFolders: () => Promise<void>
   initDefaultFolder: () => Promise<{ id: number; name: string; path: string; parent_id: number | null; created_at: string } | null>
   selectFolder: (folderId: number | null) => void
@@ -50,6 +51,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
   editingFolder: null,
   deleteConfirm: null,
   dragOverFolderId: null,
+  uniqueContextId: 'shiguang-folder-tree-context',
 
   setDragOverFolderId: (folderId) => set({ dragOverFolderId: folderId }),
 

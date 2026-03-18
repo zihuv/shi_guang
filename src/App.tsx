@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
-import type { Modifier } from "@dnd-kit/core";
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { readFile } from '@tauri-apps/plugin-fs';
 import { toast, Toaster } from 'sonner';
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -61,16 +60,6 @@ function DragPreview({ fileId, files }: { fileId: number; files: any[] }) {
 function App() {
   const { theme, loadSettings } = useSettingsStore();
 
-  // 调整拖拽预览位置 - 让预览图显示在鼠标下方偏右，指针在预览图左上角
-  const adjustDragPosition = useCallback((args: Parameters<Modifier>[0]) => {
-    const { transform } = args;
-    // 预览图是 96x96 (w-24 h-24)，让预览图向右下偏移，指针在左上角
-    return {
-      ...transform,
-      x: transform.x + 30,  // 向右偏移
-      y: transform.y + 30,  // 向下偏移
-    }
-  }, []);
   const {
     importImagesFromBase64,
     importFile: importFileFn,
@@ -79,48 +68,32 @@ function App() {
   } = useFileStore();
   const { loadTags } = useTagStore();
   const { loadFolders, dragOverFolderId, setDragOverFolderId } = useFolderStore();
-  const { isDraggingInternal, moveFile, loadFilesInFolder } = useFileStore();
+  const { isDraggingInternal } = useFileStore();
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
-
-  // dnd-kit sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 3 } })
-  );
-
-  // Handle drag end - move file to folder
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over } = event;
-    setDraggingFileId(null);
-    if (over && active.data.current?.type === 'app-file' && over.data.current?.type === 'folder') {
-      const fileId = active.data.current.fileId;
-      const folderId = over.data.current.folderId;
-      console.log('[DndContext] Moving file:', fileId, 'to folder:', folderId);
-      await moveFile(fileId, folderId);
-      // Refresh current folder's files
-      const currentFolderId = useFolderStore.getState().selectedFolderId;
-      await loadFilesInFolder(currentFolderId);
-    }
-  }, [moveFile, loadFilesInFolder]);
-
-  // Handle drag start
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    // 保存拖拽文件的 ID
-    if (event.active.data.current?.type === 'app-file') {
-      setDraggingFileId(event.active.data.current.fileId)
-    }
-  }, []);
-
-  // Handle drag cancel
-  const handleDragCancel = useCallback(() => {
-    setDraggingFileId(null);
-  }, []);
 
   // Use ref to store importFile function to prevent effect re-runs
   const importFileRef = useRef(importFileFn);
   importFileRef.current = importFileFn;
 
+  // Monitor drag events at the document level
+  useEffect(() => {
+    return monitorForElements({
+      onDragStart: ({ source }) => {
+        if (source.data.type === 'app-file') {
+          setDraggingFileId(source.data.fileId as number)
+        }
+      },
+      onDrop: ({ source }) => {
+        if (source.data.type === 'app-file') {
+          setDraggingFileId(null)
+        }
+      }
+    })
+  }, [])
+
+  // Setup drag-drop event listeners
   useEffect(() => {
     loadSettings();
     loadTags();
@@ -360,29 +333,24 @@ function App() {
 
       <Header onOpenSettings={() => setShowSettings(true)} />
 
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <div className="flex flex-1 overflow-hidden">
-          <SidePanel />
+      <div className="flex flex-1 overflow-hidden">
+        <SidePanel />
 
-          <main className="flex-1 overflow-hidden">
-            {previewMode ? <ImagePreview /> : <FileGrid />}
-          </main>
+        <main className="flex-1 overflow-hidden">
+          {previewMode ? <ImagePreview /> : <FileGrid />}
+        </main>
 
-          <DetailPanel />
+        <DetailPanel />
+      </div>
+
+      {/* Drag overlay for internal file dragging */}
+      {draggingFileId && (
+        <div className="fixed inset-0 pointer-events-none z-50">
+          <div className="absolute cursor-pointer" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
+            <DragPreview fileId={draggingFileId} files={files} />
+          </div>
         </div>
-        <DragOverlay modifiers={[adjustDragPosition]} dropAnimation={null}>
-          {draggingFileId ? (
-            <div className="cursor-pointer">
-              <DragPreview fileId={draggingFileId} files={files} />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      )}
 
       <SettingsModal
         open={showSettings}

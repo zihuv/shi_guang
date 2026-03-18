@@ -1,25 +1,10 @@
-import { useState, useCallback } from 'react'
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragOverlay,
-  useDroppable,
-  defaultDropAnimationSideEffects,
-  DropAnimation,
-  DragStartEvent,
-  DragOverEvent,
-  pointerWithin,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
+import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
+import { extractInstruction, type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
+import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
 import { Button } from '@/components/ui/Button'
@@ -92,20 +77,6 @@ const getAllFolderIds = (folders: FolderNode[]): number[] => {
   return ids
 }
 
-// Calculate the global index of a folder in the entire tree
-const findGlobalIndex = (folders: FolderNode[], folderId: number, currentIndex: number = 0): number => {
-  for (const folder of folders) {
-    if (folder.id === folderId) return currentIndex
-    currentIndex++
-    if (folder.children && folder.children.length > 0) {
-      const found = findGlobalIndex(folder.children, folderId, currentIndex)
-      if (found !== -1) return found
-      currentIndex += folder.children.length
-    }
-  }
-  return -1
-}
-
 // Check if a folder is a descendant of another
 const isDescendant = (folders: FolderNode[], parentId: number, childId: number): boolean => {
   const findFolder = (items: FolderNode[], id: number): FolderNode | null => {
@@ -145,12 +116,34 @@ const flattenFolders = (nodes: FolderNode[], depth = 0): (FolderNode & { sortOrd
   return result
 }
 
-
 // Drag position type
 type DragPosition =
   | { type: 'none' }
   | { type: 'nest'; folderId: number }
   | { type: 'sort'; targetId: number; before: boolean }
+  | { type: 'instruction'; instruction: Instruction; itemId: number; targetId: number }
+
+// Tree item registry for flash effects
+type CleanupFn = () => void;
+
+function createTreeItemRegistry() {
+  const registry = new Map<string, { element: HTMLElement }>();
+
+  const registerTreeItem = ({
+    itemId,
+    element,
+  }: {
+    itemId: string;
+    element: HTMLElement;
+  }): CleanupFn => {
+    registry.set(itemId, { element });
+    return () => {
+      registry.delete(itemId);
+    };
+  };
+
+  return { registry, registerTreeItem };
+}
 
 interface FolderItemProps {
   folder: FolderNode
@@ -159,19 +152,30 @@ interface FolderItemProps {
   activeId: number | null
   onDragPositionChange: (position: DragPosition) => void
   allFolderIds: number[]
+  registerItem?: (itemId: string, element: HTMLElement) => CleanupFn
 }
 
-function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds }: FolderItemProps) {
-  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder } = useFolderStore()
+function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
+  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, uniqueContextId } = useFolderStore()
   const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
   const isSelected = selectedFolderId === folder.id
   const hasChildren = folder.children && folder.children.length > 0
   const isSystemFolder = folder.name === '浏览器采集' || folder.isSystem
+  const isBeingDragged = activeId === folder.id
 
   // Check if this folder can be dragged (not a system folder)
   const canDrag = !isSystemFolder
+
+  // ref for the draggable element (the folder row itself)
+  const draggableRef = useRef<HTMLDivElement>(null)
+
+  // Register for flash effect
+  useEffect(() => {
+    if (!draggableRef.current || !registerItem) return
+    return registerItem(folder.id.toString(), draggableRef.current)
+  }, [folder.id, registerItem])
 
   // Compute available targets for "Move to" submenu (exclude self, descendants, and system folders)
   const flatFolders = flattenFolders(folders)
@@ -182,35 +186,96 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     return true
   })
 
-  // dnd-kit sortable
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({
-    id: folder.id,
-    disabled: !canDrag
-  })
+  // Setup draggable and drop target
+  useEffect(() => {
+    const element = draggableRef.current
+    if (!element) return
 
-  // dnd-kit useDroppable for detecting folder body hover (nesting)
-  const { setNodeRef: setDroppableRef } = useDroppable({
-    id: `folder-drop-${folder.id}`,
-    data: { type: 'folder', folderId: folder.id, folderName: folder.name }
-  })
+    // Only make draggable if not a system folder
+    if (!canDrag) return
 
-  // Combine both refs into one callback
-  const setRef = useCallback((node: HTMLDivElement | null) => {
-    setSortableRef(node)
-    setDroppableRef(node)
-  }, [setSortableRef, setDroppableRef])
-
-  // Don't apply transform if this item is being dragged - it stays in place
-  const style = isDragging
-    ? { transition: 'none' }
-    : { transform: CSS.Transform.toString(transform), transition }
+    return combine(
+      draggable({
+        element,
+        getInitialData: () => ({
+          type: 'folder',
+          folderId: folder.id,
+          folderName: folder.name,
+          uniqueContextId,
+        }),
+        onDragStart: ({ source }) => {
+          onDragPositionChange({ type: 'none' })
+          // We use a custom event to notify parent about activeId
+          const event = new CustomEvent('folder-drag-start', {
+            detail: { folderId: source.data.folderId },
+            bubbles: true
+          })
+          element.dispatchEvent(event)
+        },
+        onDrop: () => {
+          const event = new CustomEvent('folder-drag-end', {
+            detail: {},
+            bubbles: true
+          })
+          element.dispatchEvent(event)
+        }
+      }),
+      dropTargetForElements({
+        element,
+        getData: ({ input, element }) => {
+          const data = {
+            type: 'folder' as const,
+            folderId: folder.id,
+            folderName: folder.name,
+            hasChildren,
+            uniqueContextId,
+          }
+          return attachClosestEdge(data, {
+            input,
+            element,
+            allowedEdges: ['top', 'bottom', 'fill'],
+          })
+        },
+        canDrop: ({ source }) => {
+          // Only accept drops from our own context
+          if (source.data.uniqueContextId !== uniqueContextId) {
+            return false
+          }
+          // Accept both files and folders, but not self
+          if (source.data.type === 'folder') {
+            return source.data.folderId !== folder.id
+          }
+          if (source.data.type === 'app-file') {
+            return true
+          }
+          return false
+        },
+        onDragEnter: ({ source }) => {
+          if (source.data.type === 'folder') {
+            const sourceFolderId = source.data.folderId as number
+            // Check for circular reference
+            if (sourceFolderId === folder.id || isDescendant(folders, sourceFolderId, folder.id)) return
+            onDragPositionChange({ type: 'nest', folderId: folder.id })
+          }
+          // For files, we don't show a visual indicator for nesting
+        },
+        onDragLeave: ({ source }) => {
+          // Only reset if we're leaving to a non-child target
+          if (source.data.type === 'folder') {
+            const sourceFolderId = source.data.folderId as number
+            // Keep the nest position if moving to a child
+            if (isDescendant(folders, folder.id, sourceFolderId)) return
+            if (dragPosition.type === 'nest' && dragPosition.folderId === folder.id) {
+              onDragPositionChange({ type: 'none' })
+            }
+          }
+        },
+        onDrop: () => {
+          // Handled by monitorForElements in parent
+        }
+      })
+    )
+  }, [folder.id, canDrag, hasChildren, folders, uniqueContextId])
 
   const handleClick = async () => {
     selectFolder(folder.id)
@@ -234,9 +299,6 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     setDeleteConfirm(folder)
   }
 
-  // Only show as draggable when there's an active drag and this isn't the dragged item
-  const isBeingDragged = activeId === folder.id
-
   // Determine visual state based on dragPosition
   const isNestingTarget = dragPosition.type === 'nest' && dragPosition.folderId === folder.id && !isBeingDragged
 
@@ -248,7 +310,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   const showInsertLineAfter = isSortTarget && !dragPosition.before
 
   return (
-    <div ref={setRef} style={style}>
+    <div data-folder-id={folder.id}>
       {/* Insertion line - top (before this item) */}
       {showInsertLineBefore && canDrag && (
         <div
@@ -261,12 +323,11 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            {...attributes}
-            {...listeners}
+            ref={draggableRef}
             data-folder-id={folder.id}
             className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${
               isBeingDragged
-                ? 'cursor-grabbing'
+                ? 'opacity-50'
                 : canDrag
                   ? 'cursor-grab active:cursor-grabbing'
                   : 'cursor-default'
@@ -347,10 +408,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
       </ContextMenu>
 
       {hasChildren && isExpanded && (
-        <SortableContext
-          items={folder.children.map(c => c.id)}
-          strategy={verticalListSortingStrategy}
-        >
+        <div className="space-y-1">
           {folder.children.map((child) => (
             <FolderItem
               key={child.id}
@@ -360,9 +418,10 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
               activeId={activeId}
               onDragPositionChange={onDragPositionChange}
               allFolderIds={allFolderIds}
+              registerItem={registerItem}
             />
           ))}
-        </SortableContext>
+        </div>
       )}
 
       {/* Insertion line - bottom (after this item) */}
@@ -397,6 +456,7 @@ export default function FolderTree() {
     reorderFolders,
     moveFolder,
     setFolders,
+    uniqueContextId,
   } = useFolderStore()
   const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
@@ -405,212 +465,408 @@ export default function FolderTree() {
   const [activeId, setActiveId] = useState<number | null>(null)
   const [dragPosition, setDragPosition] = useState<DragPosition>({ type: 'none' })
 
-  // Dnd-kit sensors - prevent accidental drag with delay
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        delay: 200,
-        tolerance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor)
-  )
+  // Track mouse position for drag between folders
+  const mouseYRef = useRef<number>(0)
 
-  const activeFolder = activeId ? (() => {
-    const findFolder = (items: FolderNode[]): FolderNode | null => {
-      for (const item of items) {
-        if (item.id === activeId) return item
-        if (item.children) {
-          const found = findFolder(item.children)
-          if (found) return found
+  // Listen for drag events from child FolderItem components
+  useEffect(() => {
+    const container = document.getElementById('folder-tree-container')
+    if (!container) return
+
+    const handleDragStart = (e: Event) => {
+      const customEvent = e as CustomEvent<{ folderId: number }>
+      setActiveId(customEvent.detail.folderId)
+    }
+
+    const handleDragEnd = () => {
+      setActiveId(null)
+    }
+
+    // Track mouse position during drag for "between folders" detection
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseYRef.current = e.clientY
+    }
+
+    // Add mousemove listener on document to track mouse during drag
+    document.addEventListener('mousemove', handleMouseMove)
+
+    container.addEventListener('folder-drag-start', handleDragStart)
+    container.addEventListener('folder-drag-end', handleDragEnd)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      container.removeEventListener('folder-drag-start', handleDragStart)
+      container.removeEventListener('folder-drag-end', handleDragEnd)
+    }
+  }, [])
+
+  // Monitor drag events at the document level for drop handling
+  const [{ registry, registerTreeItem }] = useState(createTreeItemRegistry);
+
+  useEffect(() => {
+    return monitorForElements({
+      canMonitor: ({ source }) =>
+        source.data.uniqueContextId === uniqueContextId &&
+        (source.data.type === 'folder' || source.data.type === 'app-file'),
+      onDragStart: ({ source }) => {
+        if (source.data.type === 'folder') {
+          setActiveId(source.data.folderId as number)
         }
-      }
-      return null
-    }
-    return findFolder(folders)
-  })() : null
-
-  const dropAnimation: DropAnimation = {
-    sideEffects: defaultDropAnimationSideEffects({
-      styles: {
-        active: {
-          opacity: '0',
-        },
       },
-    }),
-  }
+      onDrag: ({ source, location }) => {
+        const dropTargets = location.current.dropTargets
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as number)
-  }
+        if (dropTargets.length === 0) {
+          // No drop target - check if we're between folders for sorting
+          // Manually find the closest folder for sorting indicator
+          const allIds = getAllFolderIds(folders)
+          let closestFolder: { id: number; element: HTMLElement } | null = null
+          let minDistance = Infinity
+          const mouseY = mouseYRef.current
 
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
+          for (const id of allIds) {
+            const item = registry.get(id.toString())
+            if (!item?.element) continue
+            const rect = item.element.getBoundingClientRect()
+            const folderCenterY = rect.top + rect.height / 2
+            const distance = Math.abs(mouseY - folderCenterY)
+            if (distance < minDistance) {
+              minDistance = distance
+              closestFolder = { id, element: item.element }
+            }
+          }
 
-    if (!over || !active) {
-      setDragPosition({ type: 'none' })
-      return
-    }
-
-    const activeId = active.id as number
-    const overData = over.data.current
-
-    // If dragging over a folder droppable area -> nesting
-    if (overData?.type === 'folder') {
-      const targetFolderId = overData.folderId as number
-
-      // Prevent nesting on itself or circular reference
-      if (activeId !== targetFolderId && !isDescendant(folders, activeId, targetFolderId)) {
-        setDragPosition({ type: 'nest', folderId: targetFolderId })
-        return
-      }
-    }
-
-    // Dragging over a sortable item -> sorting
-    // Determine if we should insert before or after based on mouse position
-    const overId = over.id as number
-    const activeRect = active.rect.current.translated
-    const overRect = over.rect
-
-    if (activeRect && overRect) {
-      // Calculate the midpoint of the target item
-      const overMiddleY = overRect.top + overRect.height / 2
-      const activeCenterY = activeRect.top + activeRect.height / 2
-
-      // If the active item is being dragged above the middle of the target, insert before
-      // Otherwise, insert after
-      const before = activeCenterY < overMiddleY
-
-      setDragPosition({ type: 'sort', targetId: overId, before })
-      return
-    }
-
-    setDragPosition({ type: 'none' })
-  }
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-
-    setActiveId(null)
-    const finalPosition = dragPosition
-    setDragPosition({ type: 'none' })
-
-    if (!over) return
-
-    const activeFolderId = active.id as number
-
-    // Case 1: Nesting (dropped on a folder)
-    if (finalPosition.type === 'nest') {
-      const targetFolderId = finalPosition.folderId
-
-      // Prevent dropping on itself or circular reference
-      if (activeFolderId === targetFolderId) return
-      if (isDescendant(folders, activeFolderId, targetFolderId)) return
-
-      moveFolder(activeFolderId, targetFolderId)
-      return
-    }
-
-    // Case 2: Sorting (dropped between items)
-    if (finalPosition.type === 'sort') {
-      const targetId = finalPosition.targetId
-      const insertBefore = finalPosition.before
-
-      if (activeFolderId === targetId) return
-
-      // Find the parent of both folders
-      const activeParentId = findFolderParentId(folders, activeFolderId, null)
-      const targetParentId = findFolderParentId(folders, targetId, null)
-
-      // Check for parent-child relationship - prevent circular reference
-      // 1. Prevent dragging a parent into its own child (would create circular reference)
-      if (isDescendant(folders, activeFolderId, targetId)) {
-        console.log('Cannot drag parent into its own child (circular reference)')
-        return
-      }
-
-      // 2. Prevent dragging a child before/after its own parent in the same level
-      // This is allowed - child can be reordered within its siblings
-
-      // If the target is in a different parent, this is a "move" operation
-      // not just a "sort" operation - we need to change the parent
-      if (activeParentId !== targetParentId) {
-        // Check if this is a child-to-parent move (child being moved to parent's level)
-        // or a parent-to-child move (which should be blocked)
-
-        // If target is the parent of active folder, this is a "move out" operation
-        if (targetParentId === activeFolderId) {
-          // This is a parent being dragged to its child's position
-          // This could create a circular reference, block it
-          console.log('Cannot drag parent to child position (circular reference)')
+          if (closestFolder && minDistance < 100) { // Within 100px threshold
+            const rect = closestFolder.element.getBoundingClientRect()
+            const before = mouseY < rect.top + rect.height / 2
+            setDragPosition({
+              type: 'sort',
+              targetId: closestFolder.id,
+              before
+            })
+          } else {
+            setDragPosition({ type: 'none' })
+          }
           return
         }
 
-        // This is a cross-parent move - move the folder to the target's parent
-        // The backend will place it at the end, which is acceptable for now
-        moveFolder(activeFolderId, targetParentId)
-        return
-      }
+        const target = dropTargets[0]
+        const targetData = target.data
 
-      // Same parent - just reorder
-      const siblings = findSiblings(folders, activeParentId)
-      const activeIndex = siblings.findIndex(f => f.id === activeFolderId)
-      const targetIndex = siblings.findIndex(f => f.id === targetId)
+        // Check for closest edge first (for sorting) - only for folder drags
+        const closestEdge = extractClosestEdge(targetData)
+        const isFolderDrag = source.data.type === 'folder'
+        const sourceFolderId = isFolderDrag ? source.data.folderId as number : null
 
-      if (activeIndex === -1 || targetIndex === -1) return
-
-      // Calculate the new index based on insert position
-      let newIndex = targetIndex
-      if (!insertBefore && targetIndex > activeIndex) {
-        // Inserting after, and target is after current position
-        newIndex = targetIndex
-      } else if (!insertBefore && targetIndex < activeIndex) {
-        // Inserting after, and target is before current position
-        newIndex = targetIndex + 1
-      } else if (insertBefore && targetIndex > activeIndex) {
-        // Inserting before, and target is after current position
-        newIndex = targetIndex - 1
-      } else if (insertBefore && targetIndex < activeIndex) {
-        // Inserting before, and target is before current position
-        newIndex = targetIndex
-      }
-
-      if (newIndex === activeIndex) return
-
-      // Reorder the array
-      const newSiblings = [...siblings]
-      const [movedFolder] = newSiblings.splice(activeIndex, 1)
-      newSiblings.splice(newIndex, 0, movedFolder)
-
-      // Update UI optimistically
-      const updateFoldersOrder = (items: FolderNode[]): FolderNode[] => {
-        return items.map(item => {
-          if (item.id === activeParentId) {
-            return { ...item, children: newSiblings }
+        if (closestEdge && isFolderDrag) {
+          // 'fill' edge means center - for folders, still allow sorting if dragged to center
+          if (closestEdge === 'fill') {
+            // Allow sorting in center too
+            const targetFolderId = targetData.folderId as number
+            setDragPosition({
+              type: 'sort',
+              targetId: targetFolderId,
+              before: false // Insert after by default in center
+            })
+            return
           }
-          if (item.children && item.children.length > 0) {
-            return { ...item, children: updateFoldersOrder(item.children) }
+          // top/bottom edges for folder sorting
+          const targetFolderId = targetData.folderId as number
+          setDragPosition({
+            type: 'sort',
+            targetId: targetFolderId,
+            before: closestEdge === 'top'
+          })
+          return
+        }
+
+        // No closest edge - check if dropping on a folder body (for nesting)
+        if (targetData.type === 'folder') {
+          const targetFolderId = targetData.folderId as number
+
+          // For folder drags, prevent nesting on itself or circular reference
+          if (isFolderDrag) {
+            if (sourceFolderId !== targetFolderId && !isDescendant(folders, sourceFolderId!, targetFolderId)) {
+              setDragPosition({ type: 'nest', folderId: targetFolderId })
+              return
+            }
+          } else {
+            // For file drags, always allow nesting
+            setDragPosition({ type: 'nest', folderId: targetFolderId })
+            return
           }
-          return item
-        })
-      }
+        }
 
-      if (activeParentId === null) {
-        setFolders(newSiblings)
-      } else {
-        setFolders(updateFoldersOrder(folders))
-      }
+        setDragPosition({ type: 'none' })
+      },
+      onDrop: ({ source, location }) => {
+        const dropTargets = location.current.dropTargets
 
-      // Call API to persist the order
-      const folderIds = newSiblings
-        .filter(f => !f.isSystem && f.name !== '浏览器采集')
-        .map(f => f.id)
+        // Handle folder drop using saved dragPosition if available (for drops in empty areas)
+        if (source.data.type === 'folder' && dragPosition.type === 'sort') {
+          const activeFolderId = source.data.folderId as number
+          const targetId = dragPosition.targetId
+          const insertBefore = dragPosition.before
 
-      if (folderIds.length > 0) {
-        reorderFolders(folderIds)
+          // Check for circular reference
+          if (isDescendant(folders, activeFolderId, targetId)) {
+            console.log('Cannot drag parent into its own child (circular reference)')
+            setDragPosition({ type: 'none' })
+            setActiveId(null)
+            return
+          }
+
+          // Find the parent of both folders
+          const activeParentId = findFolderParentId(folders, activeFolderId, null)
+          const targetParentId = findFolderParentId(folders, targetId, null)
+
+          // If different parents, it's a move operation
+          if (activeParentId !== targetParentId) {
+            // Check if target is parent of active (circular reference)
+            if (isDescendant(folders, activeFolderId, targetId)) {
+              console.log('Cannot drag parent to child position (circular reference)')
+              setDragPosition({ type: 'none' })
+              setActiveId(null)
+              return
+            }
+
+            // Cross-parent move
+            moveFolder(activeFolderId, targetParentId)
+
+            // Trigger flash effect
+            const { element } = registry.get(activeFolderId.toString()) ?? {};
+            if (element) {
+              triggerPostMoveFlash(element);
+            }
+
+            setDragPosition({ type: 'none' })
+            setActiveId(null)
+            return
+          } else {
+            // Same parent - just reorder
+            const siblings = findSiblings(folders, activeParentId)
+            const activeIndex = siblings.findIndex(f => f.id === activeFolderId)
+            const targetIndex = siblings.findIndex(f => f.id === targetId)
+
+            if (activeIndex === -1 || targetIndex === -1) {
+              setDragPosition({ type: 'none' })
+              setActiveId(null)
+              return
+            }
+
+            // Calculate the new index based on insert position
+            let newIndex = targetIndex
+            if (!insertBefore && targetIndex > activeIndex) {
+              newIndex = targetIndex
+            } else if (!insertBefore && targetIndex < activeIndex) {
+              newIndex = targetIndex + 1
+            } else if (insertBefore && targetIndex > activeIndex) {
+              newIndex = targetIndex - 1
+            } else if (insertBefore && targetIndex < activeIndex) {
+              newIndex = targetIndex
+            }
+
+            if (newIndex === activeIndex) {
+              setDragPosition({ type: 'none' })
+              setActiveId(null)
+              return
+            }
+
+            // Reorder the array
+            const newSiblings = [...siblings]
+            const [movedFolder] = newSiblings.splice(activeIndex, 1)
+            newSiblings.splice(newIndex, 0, movedFolder)
+
+            // Update UI optimistically
+            const updateFoldersOrder = (items: FolderNode[]): FolderNode[] => {
+              return items.map(item => {
+                if (item.id === activeParentId) {
+                  return { ...item, children: newSiblings }
+                }
+                if (item.children && item.children.length > 0) {
+                  return { ...item, children: updateFoldersOrder(item.children) }
+                }
+                return item
+              })
+            }
+
+            if (activeParentId === null) {
+              setFolders(newSiblings)
+            } else {
+              setFolders(updateFoldersOrder(folders))
+            }
+
+            // Call API to persist the order
+            const folderIds = newSiblings
+              .filter(f => !f.isSystem && f.name !== '浏览器采集')
+              .map(f => f.id)
+
+            if (folderIds.length > 0) {
+              reorderFolders(folderIds)
+            }
+
+            // Trigger flash effect on the moved item
+            const { element } = registry.get(movedFolder.id.toString()) ?? {};
+            if (element) {
+              triggerPostMoveFlash(element);
+            }
+          }
+
+          setDragPosition({ type: 'none' })
+          setActiveId(null)
+          return
+        }
+
+        if (dropTargets.length === 0) {
+          setDragPosition({ type: 'none' })
+          setActiveId(null)
+          return
+        }
+
+        const target = dropTargets[0]
+        const targetData = target.data
+
+        // Handle file drop - move file to folder
+        if (source.data.type === 'app-file' && targetData.type === 'folder') {
+          const fileId = source.data.fileId as number
+          const targetFolderId = targetData.folderId as number
+          useFileStore.getState().moveFile(fileId, targetFolderId)
+          setDragPosition({ type: 'none' })
+          setActiveId(null)
+          return
+        }
+
+        // Handle folder drop
+        const activeFolderId = source.data.folderId as number
+
+        // Case 1: Nesting (dropped on a folder body)
+        if (targetData.type === 'folder') {
+          const targetFolderId = targetData.folderId as number
+
+          // Prevent dropping on itself or circular reference
+          if (activeFolderId !== targetFolderId && !isDescendant(folders, activeFolderId, targetFolderId)) {
+            moveFolder(activeFolderId, targetFolderId)
+
+            // Trigger flash effect on the moved item
+            const { element } = registry.get(activeFolderId.toString()) ?? {};
+            if (element) {
+              triggerPostMoveFlash(element);
+            }
+          }
+        }
+
+        // Case 2: Sorting (dropped on edge)
+        const closestEdge = extractClosestEdge(targetData)
+        if (closestEdge && targetData.folderId !== activeFolderId) {
+          const targetId = targetData.folderId as number
+          const insertBefore = closestEdge === 'top'
+
+          // Check for circular reference
+          if (isDescendant(folders, activeFolderId, targetId)) {
+            console.log('Cannot drag parent into its own child (circular reference)')
+            setDragPosition({ type: 'none' })
+            setActiveId(null)
+            return
+          }
+
+          // Find the parent of both folders
+          const activeParentId = findFolderParentId(folders, activeFolderId, null)
+          const targetParentId = findFolderParentId(folders, targetId, null)
+
+          // If different parents, it's a move operation
+          if (activeParentId !== targetParentId) {
+            // Check if target is parent of active (circular reference)
+            if (isDescendant(folders, activeFolderId, targetId)) {
+              console.log('Cannot drag parent to child position (circular reference)')
+              setDragPosition({ type: 'none' })
+              setActiveId(null)
+              return
+            }
+
+            // Cross-parent move
+            moveFolder(activeFolderId, targetParentId)
+
+            // Trigger flash effect
+            const { element } = registry.get(activeFolderId.toString()) ?? {};
+            if (element) {
+              triggerPostMoveFlash(element);
+            }
+          } else {
+            // Same parent - just reorder
+            const siblings = findSiblings(folders, activeParentId)
+            const activeIndex = siblings.findIndex(f => f.id === activeFolderId)
+            const targetIndex = siblings.findIndex(f => f.id === targetId)
+
+            if (activeIndex === -1 || targetIndex === -1) {
+              setDragPosition({ type: 'none' })
+              setActiveId(null)
+              return
+            }
+
+            // Calculate the new index based on insert position
+            let newIndex = targetIndex
+            if (!insertBefore && targetIndex > activeIndex) {
+              newIndex = targetIndex
+            } else if (!insertBefore && targetIndex < activeIndex) {
+              newIndex = targetIndex + 1
+            } else if (insertBefore && targetIndex > activeIndex) {
+              newIndex = targetIndex - 1
+            } else if (insertBefore && targetIndex < activeIndex) {
+              newIndex = targetIndex
+            }
+
+            if (newIndex === activeIndex) {
+              setDragPosition({ type: 'none' })
+              setActiveId(null)
+              return
+            }
+
+            // Reorder the array
+            const newSiblings = [...siblings]
+            const [movedFolder] = newSiblings.splice(activeIndex, 1)
+            newSiblings.splice(newIndex, 0, movedFolder)
+
+            // Update UI optimistically
+            const updateFoldersOrder = (items: FolderNode[]): FolderNode[] => {
+              return items.map(item => {
+                if (item.id === activeParentId) {
+                  return { ...item, children: newSiblings }
+                }
+                if (item.children && item.children.length > 0) {
+                  return { ...item, children: updateFoldersOrder(item.children) }
+                }
+                return item
+              })
+            }
+
+            if (activeParentId === null) {
+              setFolders(newSiblings)
+            } else {
+              setFolders(updateFoldersOrder(folders))
+            }
+
+            // Call API to persist the order
+            const folderIds = newSiblings
+              .filter(f => !f.isSystem && f.name !== '浏览器采集')
+              .map(f => f.id)
+
+            if (folderIds.length > 0) {
+              reorderFolders(folderIds)
+            }
+
+            // Trigger flash effect on the moved item
+            const { element } = registry.get(movedFolder.id.toString()) ?? {};
+            if (element) {
+              triggerPostMoveFlash(element);
+            }
+          }
+        }
+
+        setDragPosition({ type: 'none' })
+        setActiveId(null)
       }
-    }
-  }
+    })
+  }, [folders, moveFolder, reorderFolders, setFolders, uniqueContextId])
 
   const handleAddFolder = async () => {
     if (newFolderName.trim()) {
@@ -690,48 +946,26 @@ export default function FolderTree() {
             </svg>
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={pointerWithin}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDragOver={handleDragOver}
-          >
-            <SortableContext items={folders.map(f => f.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-1">
-                {folders.map((folder) => (
-                  <FolderItem
-                    key={folder.id}
-                    folder={folder}
-                    depth={0}
-                    dragPosition={dragPosition}
-                    activeId={activeId}
-                    onDragPositionChange={setDragPosition}
-                    allFolderIds={allFolderIds}
-                  />
-                ))}
+          <div className="space-y-1">
+            {folders.map((folder) => (
+              <FolderItem
+                key={folder.id}
+                folder={folder}
+                depth={0}
+                dragPosition={dragPosition}
+                activeId={activeId}
+                onDragPositionChange={setDragPosition}
+                allFolderIds={allFolderIds}
+                registerItem={registerTreeItem}
+              />
+            ))}
 
-                {folders.length === 0 && (
-                  <div className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
-                    暂无文件夹
-                  </div>
-                )}
+            {folders.length === 0 && (
+              <div className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+                暂无文件夹
               </div>
-            </SortableContext>
-            <DragOverlay dropAnimation={dropAnimation}>
-              {activeFolder && !activeFolder.isSystem && activeFolder.name !== '浏览器采集' ? (
-                <div className="cursor-grabbing">
-                  <div className="flex items-center gap-1 px-2 py-1.5 rounded-md text-sm bg-primary-100 dark:bg-primary-900/30 border-2 border-blue-400 dark:border-blue-600 shadow-xl">
-                    <FolderIcon className="w-4 h-4 text-yellow-500 flex-shrink-0" />
-                    <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{activeFolder.name}</span>
-                    {activeFolder.fileCount > 0 && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500">{activeFolder.fileCount}</span>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+            )}
+          </div>
         )}
       </div>
 
