@@ -583,6 +583,12 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
 
         // Step 3: Delete the folder - SQLite FK CASCADE will automatically delete all subfolders
         db.delete_folder(id).map_err(|e| e.to_string())?;
+
+        // Step 4: Delete the actual folder from filesystem
+        let folder_path_obj = std::path::Path::new(&folder_path);
+        if folder_path_obj.exists() {
+            std::fs::remove_dir_all(folder_path_obj).map_err(|e| e.to_string())?;
+        }
     }
 
     Ok(())

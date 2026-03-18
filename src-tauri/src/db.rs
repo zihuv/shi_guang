@@ -1146,15 +1146,22 @@ impl Database {
         Ok(())
     }
 
+    /// Normalize path separators to OS-native format
+    fn normalize_path(path: &str) -> String {
+        std::path::Path::new(path)
+            .to_string_lossy()
+            .to_string()
+    }
+
     /// Move a folder to a new parent and/or position
     pub fn move_folder(&self, folder_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<()> {
         // Get current folder info
         let folder = self.get_folder_by_id(folder_id)?;
         if let Some(folder) = folder {
-            let old_folder_path = folder.path.clone();
+            let old_folder_path = Self::normalize_path(&folder.path);
 
-            // Get new parent folder path
-            let new_parent_path = if let Some(parent_id) = new_parent_id {
+            // Get new parent folder path (normalize to handle mixed separators from database)
+            let new_parent_path = Self::normalize_path(&if let Some(parent_id) = new_parent_id {
                 let parent = self.get_folder_by_id(parent_id)?;
                 parent.map(|p| p.path.clone()).unwrap_or_default()
             } else {
@@ -1164,12 +1171,14 @@ impl Database {
                     .parent()
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_default()
-            };
+            });
 
-            let new_folder_path = std::path::Path::new(&new_parent_path)
-                .join(&folder.name)
-                .to_string_lossy()
-                .to_string();
+            let new_folder_path = Self::normalize_path(
+                &std::path::Path::new(&new_parent_path)
+                    .join(&folder.name)
+                    .to_string_lossy()
+                    .to_string()
+            );
 
             // Move folder in file system - source must exist
             let old_path = std::path::Path::new(&old_folder_path);

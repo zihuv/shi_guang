@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
-import { extractInstruction, type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
+import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
 import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
@@ -152,7 +152,7 @@ interface FolderItemProps {
   activeId: number | null
   onDragPositionChange: (position: DragPosition) => void
   allFolderIds: number[]
-  registerItem?: (itemId: string, element: HTMLElement) => CleanupFn
+  registerItem?: ({ itemId, element }: { itemId: string; element: HTMLElement }) => CleanupFn
 }
 
 function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
@@ -174,7 +174,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   // Register for flash effect
   useEffect(() => {
     if (!draggableRef.current || !registerItem) return
-    return registerItem(folder.id.toString(), draggableRef.current)
+    return registerItem({ itemId: folder.id.toString(), element: draggableRef.current })
   }, [folder.id, registerItem])
 
   // Compute available targets for "Move to" submenu (exclude self, descendants, and system folders)
@@ -233,7 +233,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
           return attachClosestEdge(data, {
             input,
             element,
-            allowedEdges: ['top', 'bottom', 'fill'],
+            allowedEdges: ['top', 'bottom'],
           })
         },
         canDrop: ({ source }) => {
@@ -559,17 +559,6 @@ export default function FolderTree() {
         const sourceFolderId = isFolderDrag ? source.data.folderId as number : null
 
         if (closestEdge && isFolderDrag) {
-          // 'fill' edge means center - for folders, still allow sorting if dragged to center
-          if (closestEdge === 'fill') {
-            // Allow sorting in center too
-            const targetFolderId = targetData.folderId as number
-            setDragPosition({
-              type: 'sort',
-              targetId: targetFolderId,
-              before: false // Insert after by default in center
-            })
-            return
-          }
           // top/bottom edges for folder sorting
           const targetFolderId = targetData.folderId as number
           setDragPosition({
