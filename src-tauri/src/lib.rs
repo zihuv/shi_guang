@@ -158,6 +158,7 @@ pub fn run() {
             commands::copy_file,
             commands::open_file,
             commands::show_in_explorer,
+            commands::show_folder_in_explorer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

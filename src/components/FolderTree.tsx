@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
@@ -36,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/AlertDialog'
-import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move } from 'lucide-react'
+import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move, FolderOpen } from 'lucide-react'
 
 // Helper functions for folder tree operations
 const findFolderParentId = (folders: FolderNode[], folderId: number, parentId: number | null): number | null => {
@@ -186,6 +187,12 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     return true
   })
 
+  // Add root option at the beginning
+  const menuItems = [
+    { id: null, name: '根目录', sortOrder: -1 as number, children: [], fileCount: 0 },
+    ...availableTargets
+  ]
+
   // Setup draggable and drop target
   useEffect(() => {
     const element = draggableRef.current
@@ -299,6 +306,15 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     setDeleteConfirm(folder)
   }
 
+  const handleShowInExplorer = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await invoke('show_folder_in_explorer', { folderId: folder.id })
+    } catch (err) {
+      console.error('Failed to show folder in explorer:', err)
+    }
+  }
+
   // Determine visual state based on dragPosition
   const isNestingTarget = dragPosition.type === 'nest' && dragPosition.folderId === folder.id && !isBeingDragged
 
@@ -310,7 +326,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   const showInsertLineAfter = isSortTarget && !dragPosition.before
 
   return (
-    <div data-folder-id={folder.id}>
+    <div className="folder-item-wrapper" data-folder-id={folder.id}>
       {/* Insertion line - top (before this item) */}
       {showInsertLineBefore && canDrag && (
         <div
@@ -374,6 +390,11 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
         </ContextMenuTrigger>
 
         <ContextMenuContent>
+          <ContextMenuItem onClick={handleShowInExplorer}>
+            <FolderOpen className="w-4 h-4 mr-2" />
+            显示在资源管理器
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onClick={handleAddSubfolder}>
             <Plus className="w-4 h-4 mr-2" />
             创建子文件夹
@@ -388,13 +409,13 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
               移动到
             </ContextMenuSubTrigger>
             <ContextMenuSubContent>
-              {availableTargets.map((target) => (
+              {menuItems.map((target) => (
                 <ContextMenuItem
-                  key={target.id}
+                  key={target.id === null ? 'root' : target.id}
                   onClick={() => moveFolder(folder.id, target.id)}
-                  style={{ paddingLeft: `${((target.sortOrder as number) || 0) * 12 + 8}px` }}
+                  style={{ paddingLeft: `${((target.sortOrder as number) === -1 ? 0 : target.sortOrder || 0) * 12 + 8}px` }}
                 >
-                  {target.name}
+                  {(target.sortOrder as number) === -1 ? '📁 ' + target.name : target.name}
                 </ContextMenuItem>
               ))}
             </ContextMenuSubContent>
@@ -501,7 +522,9 @@ export default function FolderTree() {
   }, [])
 
   // Monitor drag events at the document level for drop handling
-  const [{ registry, registerTreeItem }] = useState(createTreeItemRegistry);
+  // Use useState with initializer function to only create registry once
+  const [registryState] = useState(() => createTreeItemRegistry());
+  const { registry, registerTreeItem } = registryState;
 
   useEffect(() => {
     return monitorForElements({
@@ -905,8 +928,9 @@ export default function FolderTree() {
     }
   }
 
-  // Get all folder IDs for drag calculations
-  const allFolderIds = getAllFolderIds(folders)
+  // Memoize expensive computations
+  const allFolderIds = useMemo(() => getAllFolderIds(folders), [folders])
+  const memoizedFolders = useMemo(() => folders, [folders])
 
   return (
     <div className="flex flex-col">
@@ -936,7 +960,7 @@ export default function FolderTree() {
           </div>
         ) : (
           <div className="space-y-1">
-            {folders.map((folder) => (
+            {memoizedFolders.map((folder) => (
               <FolderItem
                 key={folder.id}
                 folder={folder}

@@ -42,6 +42,12 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
 
   const flatFolders = flattenFolders(folders)
 
+  // Add root option at the beginning
+  const menuItems = [
+    { id: null, name: '根目录', sortOrder: -1 as const },
+    ...flatFolders
+  ]
+
   // Open file with default application (using Rust backend)
   const handleOpenFile = async () => {
     try {
@@ -115,13 +121,13 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
             复制到
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {flatFolders.map((folder) => (
+            {menuItems.map((folder) => (
               <ContextMenuItem
-                key={folder.id}
+                key={folder.id === null ? 'root' : folder.id}
                 onClick={() => handleCopyFile(folder.id)}
-                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
+                style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
               >
-                {folder.name}
+                {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
               </ContextMenuItem>
             ))}
           </ContextMenuSubContent>
@@ -134,13 +140,13 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
             移动到
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {flatFolders.map((folder) => (
+            {menuItems.map((folder) => (
               <ContextMenuItem
-                key={folder.id}
+                key={folder.id === null ? 'root' : folder.id}
                 onClick={() => handleMoveFile(folder.id)}
-                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
+                style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
               >
-                {folder.name}
+                {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
               </ContextMenuItem>
             ))}
           </ContextMenuSubContent>

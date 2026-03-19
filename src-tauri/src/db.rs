@@ -893,10 +893,12 @@ impl Database {
     }
 
     pub fn get_folder_by_path(&self, path: &str) -> Result<Option<Folder>> {
+        // Normalize path separators to handle Windows/Unix path differences
+        let normalized_path = path.replace('\\', "/");
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE path = ?1"
+            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE REPLACE(path, '\\', '/') = ?1"
         )?;
-        let mut rows = stmt.query([path])?;
+        let mut rows = stmt.query([normalized_path.as_str()])?;
         if let Some(row) = rows.next()? {
             Ok(Some(Folder {
                 id: row.get(0)?,
@@ -1161,17 +1163,15 @@ impl Database {
             let old_folder_path = Self::normalize_path(&folder.path);
 
             // Get new parent folder path (normalize to handle mixed separators from database)
-            let new_parent_path = Self::normalize_path(&if let Some(parent_id) = new_parent_id {
+            let new_parent_path = if let Some(parent_id) = new_parent_id {
+                // Moving to a specific parent folder
                 let parent = self.get_folder_by_id(parent_id)?;
-                parent.map(|p| p.path.clone()).unwrap_or_default()
+                Self::normalize_path(&parent.map(|p| p.path.clone()).unwrap_or_default())
             } else {
-                // Root level - should use index paths or a base path
-                // For now, use the parent of the old path
-                std::path::Path::new(&old_folder_path)
-                    .parent()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            });
+                // Root level - use the first index path as root
+                let index_paths = self.get_index_paths()?;
+                index_paths.first().cloned().unwrap_or_default()
+            };
 
             let new_folder_path = Self::normalize_path(
                 &std::path::Path::new(&new_parent_path)

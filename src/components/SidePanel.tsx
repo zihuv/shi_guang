@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import FolderTree from "@/components/FolderTree"
 import TagPanel from "@/components/TagPanel"
 import { useFileStore } from "@/stores/fileStore";
@@ -7,8 +7,13 @@ import { useFolderStore } from "@/stores/folderStore";
 export default function SidePanel() {
   const { loadFilesInFolder, setSelectedFolderId } = useFileStore();
   const { loadFolders, initDefaultFolder, folders, selectFolder } = useFolderStore();
+  const initRef = useRef(false);
 
   useEffect(() => {
+    // Prevent double initialization
+    if (initRef.current) return;
+    initRef.current = true;
+
     // Load folders first, then init default folder
     const init = async () => {
       await loadFolders();

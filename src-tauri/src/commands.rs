@@ -504,7 +504,11 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
     let folders = db.get_all_folders().map_err(|e| e.to_string())?;
 
     if !folders.is_empty() {
-        // Return the first folder
+        // Return the first root folder (parent_id = NULL)
+        if let Some(root_folder) = folders.iter().find(|f| f.parent_id.is_none()) {
+            return Ok(root_folder.clone());
+        }
+        // Fallback: return the first folder
         return Ok(folders[0].clone());
     }
 
@@ -922,6 +926,46 @@ pub fn show_in_explorer(state: State<AppState>, file_id: i64) -> Result<(), Stri
     {
         std::process::Command::new("xdg-open")
             .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn show_folder_in_explorer(state: State<AppState>, folder_id: i64) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get folder info
+    let folder = db.get_folder_by_id(folder_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Folder not found".to_string())?;
+
+    // Open folder in file explorer
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&folder.path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Use /select to open explorer with the folder selected
+        // Convert path separators to Windows format
+        let path = folder.path.replace('/', "\\");
+        std::process::Command::new("explorer")
+            .arg(&format!("/select,{}", path))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&folder.path)
             .spawn()
             .map_err(|e| e.to_string())?;
     }

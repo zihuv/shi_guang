@@ -59,6 +59,7 @@ function DragPreview({ fileId, files }: { fileId: number; files: any[] }) {
 
 function App() {
   const { theme, loadSettings } = useSettingsStore();
+  const initRef = useRef(false);
 
   const {
     importImagesFromBase64,
@@ -67,7 +68,7 @@ function App() {
     files,
   } = useFileStore();
   const { loadTags } = useTagStore();
-  const { loadFolders, dragOverFolderId, setDragOverFolderId } = useFolderStore();
+  const { dragOverFolderId, setDragOverFolderId } = useFolderStore();
   const { isDraggingInternal } = useFileStore();
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -93,12 +94,14 @@ function App() {
     })
   }, [])
 
-  // Setup drag-drop event listeners
+  // Setup drag-drop event listeners and initial data load
   useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
     loadSettings();
     loadTags();
-    loadFolders();
-  }, [loadSettings, loadTags, loadFolders]);
+    // loadFolders is called by SidePanel component
+  }, [loadSettings, loadTags]);
 
   // Listen for Tauri drag and drop events
   useEffect(() => {
