@@ -30,6 +30,7 @@ export interface FileItem {
   dominantColor: string
   colorDistribution: Array<{ color: string; percentage: number }>
   tags: Tag[]
+  deletedAt?: string | null
 }
 
 // Helper function to parse file from database (colorDistribution is JSON string)
@@ -90,6 +91,16 @@ interface FileStore {
   extractColor: (fileId: number) => Promise<string>
   exportFile: (fileId: number) => Promise<string>
   updateFileName: (fileId: number, newName: string) => Promise<void>
+  // Trash-related state
+  trashFiles: FileItem[]
+  trashCount: number
+  loadTrashFiles: () => Promise<void>
+  restoreFile: (fileId: number) => Promise<void>
+  restoreFiles: (fileIds: number[]) => Promise<void>
+  permanentDeleteFile: (fileId: number) => Promise<void>
+  permanentDeleteFiles: (fileIds: number[]) => Promise<void>
+  emptyTrash: () => Promise<void>
+  loadTrashCount: () => Promise<void>
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
@@ -106,6 +117,10 @@ export const useFileStore = create<FileStore>((set, get) => ({
   previewMode: false,
   previewIndex: 0,
   previewFiles: [],
+
+  // Trash-related state
+  trashFiles: [],
+  trashCount: 0,
 
   setPreviewMode: (mode) => set({ previewMode: mode }),
 
@@ -376,5 +391,65 @@ export const useFileStore = create<FileStore>((set, get) => ({
       files: state.files.map((f) => f.id === fileId ? parsedFile : f),
       selectedFile: state.selectedFile?.id === fileId ? parsedFile : state.selectedFile,
     }))
+  },
+
+  // Trash-related methods
+  loadTrashFiles: async () => {
+    console.log('[FileStore] loadTrashFiles called')
+    set({ isLoading: true })
+    try {
+      const files = await invoke<FileItem[]>('get_trash_files')
+      const parsedFiles = parseFileList(files)
+      set({ trashFiles: parsedFiles, isLoading: false })
+      console.log('[FileStore] Loaded trash files:', parsedFiles.length)
+    } catch (e) {
+      console.error('[FileStore] Failed to load trash files:', e)
+      set({ isLoading: false })
+    }
+  },
+
+  restoreFile: async (fileId: number) => {
+    console.log('[FileStore] restoreFile called, fileId:', fileId)
+    await invoke('restore_file', { fileId })
+    // Reload trash files and refresh current view
+    await get().loadTrashFiles()
+    await get().loadTrashCount()
+  },
+
+  restoreFiles: async (fileIds: number[]) => {
+    console.log('[FileStore] restoreFiles called, fileIds:', fileIds)
+    await invoke('restore_files', { fileIds })
+    await get().loadTrashFiles()
+    await get().loadTrashCount()
+  },
+
+  permanentDeleteFile: async (fileId: number) => {
+    console.log('[FileStore] permanentDeleteFile called, fileId:', fileId)
+    await invoke('permanent_delete_file', { fileId })
+    await get().loadTrashFiles()
+    await get().loadTrashCount()
+  },
+
+  permanentDeleteFiles: async (fileIds: number[]) => {
+    console.log('[FileStore] permanentDeleteFiles called, fileIds:', fileIds)
+    await invoke('permanent_delete_files', { fileIds })
+    await get().loadTrashFiles()
+    await get().loadTrashCount()
+  },
+
+  emptyTrash: async () => {
+    console.log('[FileStore] emptyTrash called')
+    await invoke('empty_trash')
+    await get().loadTrashFiles()
+    await get().loadTrashCount()
+  },
+
+  loadTrashCount: async () => {
+    try {
+      const count = await invoke<number>('get_trash_count')
+      set({ trashCount: count })
+    } catch (e) {
+      console.error('[FileStore] Failed to load trash count:', e)
+    }
   },
 }))

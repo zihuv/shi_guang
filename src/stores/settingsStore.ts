@@ -13,22 +13,30 @@ const loadFilesInCurrentFolder = async () => {
 interface Settings {
   theme: "light" | "dark";
   indexPaths: string[];
+  useTrash: boolean;
 }
 
 interface SettingsStore extends Settings {
   setTheme: (theme: "light" | "dark") => Promise<void>;
   addIndexPath: (path: string) => Promise<void>;
   removeIndexPath: (path: string) => Promise<void>;
+  setDeleteMode: (useTrash: boolean) => Promise<void>;
   loadSettings: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
   theme: "light",
   indexPaths: [],
+  useTrash: true,
 
   setTheme: async (theme) => {
     await invoke("set_setting", { key: "theme", value: theme });
     set({ theme });
+  },
+
+  setDeleteMode: async (useTrash: boolean) => {
+    await invoke("set_delete_mode", { useTrash });
+    set({ useTrash });
   },
 
   addIndexPath: async (path) => {
@@ -52,6 +60,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   loadSettings: async () => {
     let theme: "light" | "dark" = "light";
     let indexPaths: string[] = [];
+    let useTrash: boolean = true;
 
     // Get theme
     try {
@@ -63,6 +72,13 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
       if (!errorMsg.includes("Setting not found")) {
         console.error("Failed to load theme:", e);
       }
+    }
+
+    // Get delete mode
+    try {
+      useTrash = await invoke<boolean>("get_delete_mode");
+    } catch (e) {
+      console.error("Failed to load delete mode:", e);
     }
 
     // Get index paths
@@ -102,6 +118,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     set({
       theme,
       indexPaths: indexPaths || [],
+      useTrash,
     });
   },
 }));

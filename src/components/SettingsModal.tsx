@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
-import { Sun, Moon, Trash2, Plus } from "lucide-react";
+import { Sun, Moon, Trash2, Plus, Trash, AlertTriangle } from "lucide-react";
 
 interface SettingsModalProps {
   open: boolean;
@@ -16,7 +16,7 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const { indexPaths, addIndexPath, removeIndexPath, theme, setTheme } =
+  const { indexPaths, addIndexPath, removeIndexPath, theme, setTheme, useTrash, setDeleteMode } =
     useSettingsStore();
   const [isAdding, setIsAdding] = useState(false);
 
@@ -83,6 +83,96 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 <Plus className="w-4 h-4" />
                 {isAdding ? "选择中..." : "添加目录"}
               </Button>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              删除设置
+            </h3>
+            <div className="space-y-3">
+              <div
+                className={`flex items-center justify-between p-3 rounded-lg border ${
+                  useTrash
+                    ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+                    : "bg-gray-50 dark:bg-dark-bg border-gray-200 dark:border-dark-border"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      useTrash
+                        ? "bg-blue-100 dark:bg-blue-800"
+                        : "bg-gray-200 dark:bg-dark-border"
+                    }`}
+                  >
+                    <Trash
+                      className={`w-5 h-5 ${
+                        useTrash
+                          ? "text-blue-600 dark:text-blue-400"
+                          : "text-gray-500 dark:text-gray-400"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      移动到回收站
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      删除的文件可以恢复
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant={useTrash ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setDeleteMode(true)}
+                >
+                  开启
+                </Button>
+              </div>
+
+              <div
+                className={`flex items-center justify-between p-3 rounded-lg border ${
+                  !useTrash
+                    ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                    : "bg-gray-50 dark:bg-dark-bg border-gray-200 dark:border-dark-border"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      !useTrash
+                        ? "bg-red-100 dark:bg-red-800"
+                        : "bg-gray-200 dark:bg-dark-border"
+                    }`}
+                  >
+                    <AlertTriangle
+                      className={`w-5 h-5 ${
+                        !useTrash
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-gray-500 dark:text-gray-400"
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      直接删除
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      文件将被永久删除
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant={!useTrash ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setDeleteMode(false)}
+                  className={!useTrash ? "bg-red-500 hover:bg-red-600" : ""}
+                >
+                  开启
+                </Button>
+              </div>
             </div>
           </div>
 

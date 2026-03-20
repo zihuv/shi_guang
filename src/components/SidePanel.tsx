@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import FolderTree from "@/components/FolderTree"
 import TagPanel from "@/components/TagPanel"
+import TrashPanel from "@/components/TrashPanel"
 import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
 
 export default function SidePanel() {
-  const { loadFilesInFolder, setSelectedFolderId } = useFileStore();
+  const { loadFilesInFolder, setSelectedFolderId, loadTrashCount } = useFileStore();
   const { loadFolders, initDefaultFolder, folders, selectFolder } = useFolderStore();
   const initRef = useRef(false);
 
@@ -17,6 +18,7 @@ export default function SidePanel() {
     // Load folders first, then init default folder
     const init = async () => {
       await loadFolders();
+      await loadTrashCount();
       const defaultFolder = await initDefaultFolder();
       if (defaultFolder) {
         setSelectedFolderId(defaultFolder.id);
@@ -35,6 +37,9 @@ export default function SidePanel() {
     <aside className="w-60 flex-shrink-0 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border flex flex-col overflow-hidden">
       <div className="flex-1 overflow-auto">
         <FolderTree />
+      </div>
+      <div className="border-t border-gray-200 dark:border-dark-border">
+        <TrashPanel />
       </div>
       <div className="border-t border-gray-200 dark:border-dark-border flex-1 overflow-auto">
         <TagPanel />

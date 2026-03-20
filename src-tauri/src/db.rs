@@ -143,6 +143,8 @@ pub struct FileWithTags {
     #[serde(rename = "colorDistribution")]
     pub color_distribution: String,
     pub tags: Vec<Tag>,
+    #[serde(rename = "deletedAt")]
+    pub deleted_at: Option<String>,
 }
 
 pub struct Database {
@@ -319,6 +321,16 @@ impl Database {
             self.conn.execute("ALTER TABLE tags ADD COLUMN sort_order INTEGER DEFAULT 0", [])?;
         }
 
+        // Add deleted_at column to files if it doesn't exist (for migration)
+        let has_deleted_at: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'deleted_at'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_deleted_at == 0 {
+            self.conn.execute("ALTER TABLE files ADD COLUMN deleted_at TEXT DEFAULT NULL", [])?;
+        }
+
         // Create indexes after migration
         self.conn.execute_batch(
             "
@@ -327,12 +339,18 @@ impl Database {
             "
         )?;
 
+        // Initialize default settings if not exist
+        self.conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')",
+            [],
+        )?;
+
         Ok(())
     }
 
     pub fn get_all_files(&self) -> Result<Vec<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution FROM files ORDER BY imported_at ASC, id ASC"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC"
         )?;
 
         let files: Vec<FileRecord> = stmt.query_map([], |row| {
@@ -380,6 +398,7 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
+                deleted_at: None,
             }
         }).collect();
 
@@ -391,7 +410,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
              FROM files
-             WHERE name LIKE ?1
+             WHERE name LIKE ?1 AND deleted_at IS NULL
              ORDER BY imported_at ASC, id ASC"
         )?;
 
@@ -440,6 +459,7 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
+                deleted_at: None,
             }
         }).collect();
 
@@ -451,14 +471,14 @@ impl Database {
             self.conn.prepare(
                 "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
-                 WHERE folder_id = ?1
+                 WHERE folder_id = ?1 AND deleted_at IS NULL
                  ORDER BY imported_at ASC, id ASC"
             )?
         } else {
             self.conn.prepare(
                 "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
-                 WHERE folder_id IS NULL
+                 WHERE folder_id IS NULL AND deleted_at IS NULL
                  ORDER BY imported_at ASC, id ASC"
             )?
         };
@@ -531,6 +551,7 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
+                deleted_at: None,
             }
         }).collect();
 
@@ -539,11 +560,12 @@ impl Database {
 
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution FROM files WHERE id = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query([id])?;
         if let Some(row) = rows.next()? {
+            let deleted_at: Option<String> = row.get(16)?;
             let file = FileRecord {
                 id: row.get(0)?,
                 path: row.get(1)?,
@@ -581,6 +603,7 @@ impl Database {
                 dominant_color: file.dominant_color,
                 color_distribution: file.color_distribution,
                 tags,
+                deleted_at,
             }))
         } else {
             Ok(None)
@@ -622,11 +645,12 @@ impl Database {
 
     pub fn get_file_by_path(&self, path: &str) -> Result<Option<FileWithTags>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution FROM files WHERE path = ?1"
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE path = ?1"
         )?;
 
         let file_result = stmt.query_row([path], |row| {
-            Ok(FileRecord {
+            let deleted_at: Option<String> = row.get(16)?;
+            Ok((FileRecord {
                 id: row.get(0)?,
                 path: row.get(1)?,
                 name: row.get(2)?,
@@ -643,11 +667,11 @@ impl Database {
                 source_url: row.get(13)?,
                 dominant_color: row.get(14)?,
                 color_distribution: row.get(15)?,
-            })
+            }, deleted_at))
         });
 
         match file_result {
-            Ok(file) => {
+            Ok((file, deleted_at)) => {
                 let tags = self.get_file_tags(file.id)?;
                 Ok(Some(FileWithTags {
                     id: file.id,
@@ -667,6 +691,7 @@ impl Database {
                     dominant_color: file.dominant_color,
                     color_distribution: file.color_distribution,
                     tags,
+                    deleted_at,
                 }))
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -716,6 +741,120 @@ impl Database {
 
     pub fn delete_file(&self, path: &str) -> Result<()> {
         self.conn.execute("DELETE FROM files WHERE path = ?1", [path])?;
+        Ok(())
+    }
+
+    // Soft delete - sets deleted_at timestamp
+    pub fn soft_delete_file(&self, file_id: i64) -> Result<()> {
+        let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        self.conn.execute(
+            "UPDATE files SET deleted_at = ?1 WHERE id = ?2",
+            params![now, file_id],
+        )?;
+        Ok(())
+    }
+
+    // Restore file - clears deleted_at
+    pub fn restore_file(&self, file_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET deleted_at = NULL WHERE id = ?1",
+            params![file_id],
+        )?;
+        Ok(())
+    }
+
+    // Permanent delete - actually removes from database
+    pub fn permanent_delete_file(&self, file_id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM files WHERE id = ?1", params![file_id])?;
+        Ok(())
+    }
+
+    // Get all trash files (deleted files)
+    pub fn get_trash_files(&self) -> Result<Vec<FileWithTags>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id ASC"
+        )?;
+
+        let files: Vec<FileRecord> = stmt.query_map([], |row| {
+            Ok(FileRecord {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                ext: row.get(3)?,
+                size: row.get(4)?,
+                width: row.get(5)?,
+                height: row.get(6)?,
+                folder_id: row.get(7)?,
+                created_at: row.get(8)?,
+                modified_at: row.get(9)?,
+                imported_at: row.get(10)?,
+                rating: row.get(11)?,
+                description: row.get(12)?,
+                source_url: row.get(13)?,
+                dominant_color: row.get(14)?,
+                color_distribution: row.get(15)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+
+        // 批量获取所有文件的 tags
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        // Get deleted_at values separately
+        let mut stmt2 = self.conn.prepare(
+            "SELECT id, deleted_at FROM files WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id ASC"
+        )?;
+        let deleted_at_map: std::collections::HashMap<i64, String> = stmt2.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.filter_map(|r| r.ok()).collect::<std::collections::HashMap<_, _>>();
+
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
+                id: file.id,
+                path: file.path,
+                name: file.name,
+                ext: file.ext,
+                size: file.size,
+                width: file.width,
+                height: file.height,
+                folder_id: file.folder_id,
+                created_at: file.created_at,
+                modified_at: file.modified_at,
+                imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
+                tags,
+                deleted_at: deleted_at_map.get(&file.id).cloned(),
+            }
+        }).collect();
+
+        Ok(result)
+    }
+
+    // Get delete mode setting
+    pub fn get_delete_mode(&self) -> Result<bool> {
+        let mut stmt = self.conn.prepare("SELECT value FROM settings WHERE key = 'use_trash'")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let value: String = row.get(0)?;
+            Ok(value == "true")
+        } else {
+            // Default to true (use trash)
+            Ok(true)
+        }
+    }
+
+    // Set delete mode setting
+    pub fn set_delete_mode(&self, use_trash: bool) -> Result<()> {
+        let value = if use_trash { "true" } else { "false" };
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('use_trash', ?1)",
+            params![value],
+        )?;
         Ok(())
     }
 
@@ -1081,7 +1220,7 @@ impl Database {
     /// Get all file paths in a directory (including subdirectories)
     pub fn get_file_paths_in_dir(&self, dir_path: &str) -> Result<std::collections::HashSet<String>> {
         let pattern = format!("{}%", dir_path);
-        let mut stmt = self.conn.prepare("SELECT path FROM files WHERE path LIKE ?1")?;
+        let mut stmt = self.conn.prepare("SELECT path FROM files WHERE path LIKE ?1 AND deleted_at IS NULL")?;
         let paths: Vec<String> = stmt.query_map([&pattern], |row| row.get(0))?
             .filter_map(|r| r.ok())
             .collect();
@@ -1090,7 +1229,7 @@ impl Database {
 
     /// 获取每个文件夹的文件数量（高效批量查询）
     pub fn get_file_counts_by_folders(&self) -> Result<std::collections::HashMap<i64, i32>> {
-        let mut stmt = self.conn.prepare("SELECT folder_id, COUNT(*) as count FROM files WHERE folder_id IS NOT NULL GROUP BY folder_id")?;
+        let mut stmt = self.conn.prepare("SELECT folder_id, COUNT(*) as count FROM files WHERE folder_id IS NOT NULL AND deleted_at IS NULL GROUP BY folder_id")?;
         let counts: Vec<(i64, i32)> = stmt.query_map([], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?.filter_map(|r| r.ok()).collect();
@@ -1099,6 +1238,13 @@ impl Database {
             result.insert(folder_id, count);
         }
         Ok(result)
+    }
+
+    /// Get trash file count
+    pub fn get_trash_count(&self) -> Result<i32> {
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM files WHERE deleted_at IS NOT NULL")?;
+        let count: i32 = stmt.query_row([], |row| row.get(0))?;
+        Ok(count)
     }
 
     /// Check if file is unchanged (by size and modified_at)

@@ -159,6 +159,15 @@ pub fn run() {
             commands::open_file,
             commands::show_in_explorer,
             commands::show_folder_in_explorer,
+            commands::get_trash_files,
+            commands::restore_file,
+            commands::restore_files,
+            commands::permanent_delete_file,
+            commands::permanent_delete_files,
+            commands::empty_trash,
+            commands::get_delete_mode,
+            commands::set_delete_mode,
+            commands::get_trash_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
