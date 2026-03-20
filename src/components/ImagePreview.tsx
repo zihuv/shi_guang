@@ -1,7 +1,19 @@
 import { useEffect, useState, useCallback } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { readFile } from '@tauri-apps/plugin-fs'
-import { useFolderStore } from '@/stores/folderStore'
+import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
+} from '@/components/ui/ContextMenu'
+import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
 
 // 获取图片 src
 async function getImageSrc(path: string): Promise<string> {
@@ -34,7 +46,7 @@ export default function ImagePreview() {
     setSelectedFile
   } = useFileStore()
 
-  const { folders, selectedFolderId } = useFolderStore()
+  const { folders, selectedFolderId, loadFolders } = useFolderStore()
 
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [imageError, setImageError] = useState(false)
@@ -148,6 +160,75 @@ export default function ImagePreview() {
     window.addEventListener('wheel', handleWheel, { passive: false })
     return () => window.removeEventListener('wheel', handleWheel)
   }, [previewMode])
+
+  // 加载文件夹
+  useEffect(() => {
+    loadFolders()
+  }, [loadFolders])
+
+  // 扁平化文件夹树
+  const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {
+    let result: FolderNode[] = []
+    for (const node of nodes) {
+      result.push({ ...node, sortOrder: depth } as FolderNode)
+      if (node.children && node.children.length > 0) {
+        result = result.concat(flattenFolders(node.children, depth + 1))
+      }
+    }
+    return result
+  }
+
+  const flatFolders = flattenFolders(folders)
+  const menuItems = [
+    { id: null, name: '根目录', sortOrder: -1 as const },
+    ...flatFolders
+  ]
+
+  // 打开文件
+  const handleOpenFile = async () => {
+    try {
+      await invoke('open_file', { fileId: currentFile.id })
+    } catch (e) {
+      console.error('Failed to open file:', e)
+    }
+  }
+
+  // 在资源管理器中显示
+  const handleShowInExplorer = async () => {
+    try {
+      await invoke('show_in_explorer', { fileId: currentFile.id })
+    } catch (e) {
+      console.error('Failed to open directory:', e)
+    }
+  }
+
+  // 复制到
+  const handleCopyFile = async (targetFolderId: number | null) => {
+    try {
+      await invoke('copy_file', { fileId: currentFile.id, targetFolderId })
+    } catch (e) {
+      console.error('Failed to copy file:', e)
+    }
+  }
+
+  // 移动到
+  const handleMoveFile = async (targetFolderId: number | null) => {
+    try {
+      await invoke('move_file', { fileId: currentFile.id, targetFolderId })
+    } catch (e) {
+      console.error('Failed to move file:', e)
+    }
+  }
+
+  // 删除文件
+  const handleDeleteFile = async () => {
+    try {
+      await invoke('delete_file', { fileId: currentFile.id })
+      closePreview()
+    } catch (e) {
+      console.error('Failed to delete file:', e)
+    }
+  }
 
   // 切换上一张
   const goToPrev = useCallback(() => {
@@ -288,33 +369,93 @@ export default function ImagePreview() {
       </div>
 
       {/* 中间大图预览 */}
-      <div
-        className="preview-wheel-container flex-1 overflow-auto flex items-center justify-center p-4"
-        onClick={handleImageClick}
-      >
-        {isLoading ? (
-          <div className="flex items-center justify-center">
-            <svg className="w-10 h-10 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className="preview-wheel-container flex-1 overflow-auto flex items-center justify-center p-4"
+            onClick={handleImageClick}
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center">
+                <svg className="w-10 h-10 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+            ) : imageError ? (
+              <div className="flex flex-col items-center text-gray-400">
+                <svg className="w-16 h-16 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <p>无法加载图片</p>
+              </div>
+            ) : imageSrc ? (
+              <img
+                src={imageSrc}
+                alt={currentFile.name}
+                className={isFitMode ? 'max-w-full max-h-full object-contain' : 'max-w-none transition-transform duration-150'}
+                style={isFitMode ? {} : { transform: `scale(${zoom / 100})` }}
+              />
+            ) : null}
           </div>
-        ) : imageError ? (
-          <div className="flex flex-col items-center text-gray-400">
-            <svg className="w-16 h-16 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p>无法加载图片</p>
-          </div>
-        ) : imageSrc ? (
-          <img
-            src={imageSrc}
-            alt={currentFile.name}
-            className={isFitMode ? 'max-w-full max-h-full object-contain' : 'max-w-none transition-transform duration-150'}
-            style={isFitMode ? {} : { transform: `scale(${zoom / 100})` }}
-          />
-        ) : null}
-      </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={handleOpenFile}>
+            <ExternalLink className="w-4 h-4 mr-2" />
+            默认应用打开
+          </ContextMenuItem>
+          <ContextMenuItem onClick={handleShowInExplorer}>
+            <FolderOpen className="w-4 h-4 mr-2" />
+            在资源管理器中显示
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Copy className="w-4 h-4 mr-2" />
+              复制到
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {menuItems.map((folder) => (
+                <ContextMenuItem
+                  key={folder.id === null ? 'root' : folder.id}
+                  onClick={() => handleCopyFile(folder.id)}
+                  style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
+                >
+                  {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Move className="w-4 h-4 mr-2" />
+              移动到
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {menuItems.map((folder) => (
+                <ContextMenuItem
+                  key={folder.id === null ? 'root' : folder.id}
+                  onClick={() => handleMoveFile(folder.id)}
+                  style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
+                >
+                  {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onClick={handleDeleteFile}
+            className="text-red-600 dark:text-red-400"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            删除
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* 底部信息栏 */}
       <div className="px-4 py-1 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border text-xs flex items-center justify-between">
