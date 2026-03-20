@@ -304,6 +304,19 @@ function App() {
     }
   }, [theme]);
 
+  // Handle Ctrl+Z for undo delete operations
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        const { undo } = useFileStore.getState();
+        undo();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     <div
       className="flex flex-col h-screen bg-gray-50 dark:bg-dark-bg"

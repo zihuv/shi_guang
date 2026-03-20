@@ -50,6 +50,13 @@ export interface Tag {
   color: string
 }
 
+// Undo action types
+interface UndoAction {
+  type: 'delete'
+  fileIds: number[]
+  timestamp: number
+}
+
 interface FileStore {
   files: FileItem[]
   selectedFile: FileItem | null
@@ -57,6 +64,11 @@ interface FileStore {
   selectedFiles: number[]
   searchQuery: string
   isLoading: boolean
+  // Undo stack for delete operations
+  undoStack: UndoAction[]
+  addToUndoStack: (fileIds: number[]) => void
+  undo: () => Promise<void>
+  clearUndoStack: () => void
   // Internal drag state (to prevent showing drop overlay for internal drags)
   isDraggingInternal: boolean
   setIsDraggingInternal: (isDragging: boolean) => void
@@ -111,6 +123,40 @@ export const useFileStore = create<FileStore>((set, get) => ({
   searchQuery: '',
   isLoading: false,
   isDraggingInternal: false,
+
+  // Undo stack for delete operations (max 50 entries)
+  undoStack: [],
+
+  addToUndoStack: (fileIds: number[]) => {
+    const { undoStack } = get()
+    const newStack = [...undoStack, { type: 'delete' as const, fileIds, timestamp: Date.now() }]
+    // Limit stack size to 50
+    if (newStack.length > 50) {
+      newStack.shift()
+    }
+    set({ undoStack: newStack })
+  },
+
+  undo: async () => {
+    const { undoStack } = get()
+    if (undoStack.length === 0) return
+
+    const lastAction = undoStack[undoStack.length - 1]
+    if (lastAction.type === 'delete') {
+      console.log('[FileStore] Undoing delete for files:', lastAction.fileIds)
+      await invoke('restore_files', { fileIds: lastAction.fileIds })
+      // Refresh current view
+      const { selectedFolderId } = get()
+      await get().loadFilesInFolder(selectedFolderId)
+      useFolderStore.getState().loadFolders()
+      await get().loadTrashCount()
+    }
+
+    // Pop the last action from the stack
+    set({ undoStack: undoStack.slice(0, -1) })
+  },
+
+  clearUndoStack: () => set({ undoStack: [] }),
 
   setIsDraggingInternal: (isDragging) => set({ isDraggingInternal: isDragging }),
   // Preview mode defaults
@@ -230,6 +276,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
     console.log('[FileStore] deleteFile called, fileId:', fileId)
     const { selectedFolderId } = get()
     await invoke('delete_file', { fileId })
+    // Add to undo stack for Ctrl+Z restore
+    get().addToUndoStack([fileId])
     set({ selectedFile: null })
     await get().loadFilesInFolder(selectedFolderId)
     useFolderStore.getState().loadFolders()
@@ -240,6 +288,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
     console.log('[FileStore] deleteFiles called, fileIds:', fileIds)
     const { selectedFolderId } = get()
     await invoke('delete_files', { fileIds })
+    // Add to undo stack for Ctrl+Z restore
+    get().addToUndoStack(fileIds)
     set({ selectedFiles: [], selectedFile: null })
     await get().loadFilesInFolder(selectedFolderId)
     useFolderStore.getState().loadFolders()
