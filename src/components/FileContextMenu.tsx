@@ -42,8 +42,8 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
 
   const flatFolders = flattenFolders(folders)
 
-  // Add root option at the beginning
-  const menuItems = [
+  // Add root option at the beginning (for copy only)
+  const copyMenuItems = [
     { id: null, name: '根目录', sortOrder: -1 as const },
     ...flatFolders
   ]
@@ -121,7 +121,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
             复制到
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {menuItems.map((folder) => (
+            {copyMenuItems.map((folder) => (
               <ContextMenuItem
                 key={folder.id === null ? 'root' : folder.id}
                 onClick={() => handleCopyFile(folder.id)}
@@ -133,20 +133,20 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
           </ContextMenuSubContent>
         </ContextMenuSub>
 
-        {/* Move to submenu */}
+        {/* Move to submenu (no root option for files) */}
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <Move className="w-4 h-4 mr-2" />
             移动到
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {menuItems.map((folder) => (
+            {flatFolders.map((folder) => (
               <ContextMenuItem
-                key={folder.id === null ? 'root' : folder.id}
+                key={folder.id}
                 onClick={() => handleMoveFile(folder.id)}
-                style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
+                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
               >
-                {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+                {folder.name}
               </ContextMenuItem>
             ))}
           </ContextMenuSubContent>
