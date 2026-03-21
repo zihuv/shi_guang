@@ -1,6 +1,6 @@
 ---
 name: shiguang-debug
-description: 拾光桌面应用的调试技能。用于功能完成后检查、排查 bug 或验证功能是否正常工作。触发场景：完成功能后想检查、遇到 bug 需要排查、功能似乎有异常需要调试。调试手段：Rust 后端日志查看、MCP 工具（IPC 监控、日志读取、WebView 交互）、数据库数据查看。图片调试：不直接读取图片像素，而是使用 understand_image MCP 工具理解图片内容。
+description: 功能完成后检查、排查 bug 或验证功能是否正常工作
 ---
 
 # 拾光调试技能
