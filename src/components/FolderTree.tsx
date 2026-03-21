@@ -8,6 +8,7 @@ import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-
 import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
+import { useFilterStore } from '@/stores/filterStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import {
@@ -37,7 +38,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/AlertDialog'
-import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move, FolderOpen } from 'lucide-react'
+import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move, FolderOpen, Files } from 'lucide-react'
 
 // Helper functions for folder tree operations
 const findFolderParentId = (folders: FolderNode[], folderId: number, parentId: number | null): number | null => {
@@ -160,6 +161,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, uniqueContextId } = useFolderStore()
   const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
+  const { setFolderId, isFilterPanelOpen } = useFilterStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
   const isSelected = selectedFolderId === folder.id
   const hasChildren = folder.children && folder.children.length > 0
@@ -285,6 +287,11 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   }, [folder.id, canDrag, hasChildren, folders, uniqueContextId])
 
   const handleClick = async () => {
+    // When filter panel is open and switching folders, clear the folder filter
+    // so the filter follows the sidebar folder selection
+    if (isFilterPanelOpen) {
+      setFolderId(null)
+    }
     selectFolder(folder.id)
     setSelectedFolderId(folder.id)
     setSelectedFile(null)
@@ -479,7 +486,7 @@ export default function FolderTree() {
     setFolders,
     uniqueContextId,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
 
   // Drag state - simplified to track only what's needed
@@ -960,6 +967,29 @@ export default function FolderTree() {
           </div>
         ) : (
           <div className="space-y-1">
+            {/* Virtual "全部文件" (All Files) item - cannot be deleted */}
+            <div
+              className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+                selectedFolderId === null
+                  ? 'bg-primary-100 dark:bg-primary-900/30'
+                  : 'hover:bg-gray-100 dark:hover:bg-dark-border'
+              }`}
+              style={{ paddingLeft: '8px' }}
+              onClick={() => {
+                selectFolder(null)
+                setSelectedFolderId(null)
+                setSelectedFile(null)
+                loadFilesInFolder(null)
+                // Clear folder filter and reset type filter to "all"
+                useFilterStore.getState().setFolderId(null)
+                useFilterStore.getState().setFileType('all')
+              }}
+            >
+              <span className="w-5" />
+              <Files className="w-4 h-4 text-gray-500 flex-shrink-0" />
+              <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">全部文件</span>
+            </div>
+
             {memoizedFolders.map((folder) => (
               <FolderItem
                 key={folder.id}

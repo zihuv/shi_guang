@@ -4,6 +4,39 @@ use std::path::Path;
 use chrono::Local;
 use image::GenericImageView;
 
+/// Parse a hex color string (#RRGGBB) to RGB components
+fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some((r, g, b))
+}
+
+/// Calculate Euclidean distance between two colors in RGB space
+fn color_distance(c1: &str, c2: &str) -> f64 {
+    let (r1, g1, b1) = match parse_hex_color(c1) {
+        Some(c) => c,
+        None => return f64::MAX,
+    };
+    let (r2, g2, b2) = match parse_hex_color(c2) {
+        Some(c) => c,
+        None => return f64::MAX,
+    };
+    let dr = r1 as f64 - r2 as f64;
+    let dg = g1 as f64 - g2 as f64;
+    let db = b1 as f64 - b2 as f64;
+    (dr * dr + dg * dg + db * db).sqrt()
+}
+
+/// Check if two colors are similar (within threshold)
+fn colors_are_similar(color1: &str, color2: &str, threshold: f64) -> bool {
+    color_distance(color1, color2) <= threshold
+}
+
 /// Get image dimensions
 pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -1430,5 +1463,199 @@ impl Database {
             )?;
         }
         Ok(())
+    }
+
+    /// Filter files based on various criteria
+    pub fn filter_files(&self, filter: crate::commands::FileFilter) -> Result<Vec<FileWithTags>> {
+        // Build the SQL query dynamically
+        let mut sql = String::from(
+            "SELECT DISTINCT f.id, f.path, f.name, f.ext, f.size, f.width, f.height, f.folder_id, f.created_at, f.modified_at, f.imported_at, f.rating, f.description, f.source_url, f.dominant_color, f.color_distribution, f.deleted_at FROM files f"
+        );
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        // Join with file_tags if tag filtering is needed
+        if filter.tag_ids.is_some() && filter.tag_ids.as_ref().unwrap().len() > 0 {
+            sql.push_str(" INNER JOIN file_tags ft ON f.id = ft.file_id");
+        }
+
+        // deleted_at IS NULL - only show non-deleted files
+        conditions.push("f.deleted_at IS NULL".to_string());
+
+        // Query filter (search by name)
+        if let Some(ref query) = filter.query {
+            if !query.is_empty() {
+                conditions.push("f.name LIKE ?".to_string());
+                params_vec.push(Box::new(format!("%{}%", query)));
+            }
+        }
+
+        // Folder filter
+        if let Some(folder_id) = filter.folder_id {
+            conditions.push("f.folder_id = ?".to_string());
+            params_vec.push(Box::new(folder_id));
+        }
+
+        // File type filter (by extension)
+        if let Some(ref file_types) = filter.file_types {
+            if !file_types.is_empty() {
+                let ext_conditions: Vec<String> = file_types.iter().map(|ft| {
+                    let extensions: Vec<&str> = match ft.as_str() {
+                        "image" => vec!["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif", "psd", "ai", "eps", "raw", "cr2", "nef", "arw", "dng", "heic", "heif"],
+                        "video" => vec!["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"],
+                        "document" => vec!["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "ods"],
+                        _ => vec![],
+                    };
+                    let ext_list: Vec<String> = extensions.iter().map(|e| format!("'{}'", e.to_lowercase())).collect();
+                    format!("LOWER(f.ext) IN ({})", ext_list.join(", "))
+                }).collect();
+                if !ext_conditions.is_empty() {
+                    conditions.push(format!("({})", ext_conditions.join(" OR ")));
+                }
+            }
+        }
+
+        // Date range filter (by imported_at)
+        if let Some(ref date_start) = filter.date_start {
+            if !date_start.is_empty() {
+                conditions.push("f.imported_at >= ?".to_string());
+                params_vec.push(Box::new(date_start.clone()));
+            }
+        }
+        if let Some(ref date_end) = filter.date_end {
+            if !date_end.is_empty() {
+                conditions.push("f.imported_at <= ?".to_string());
+                params_vec.push(Box::new(date_end.clone()));
+            }
+        }
+
+        // Size range filter
+        if let Some(size_min) = filter.size_min {
+            conditions.push("f.size >= ?".to_string());
+            params_vec.push(Box::new(size_min));
+        }
+        if let Some(size_max) = filter.size_max {
+            conditions.push("f.size <= ?".to_string());
+            params_vec.push(Box::new(size_max));
+        }
+
+        // Rating filter
+        if let Some(min_rating) = filter.min_rating {
+            if min_rating > 0 {
+                conditions.push("f.rating >= ?".to_string());
+                params_vec.push(Box::new(min_rating));
+            }
+        }
+
+        // Favorites filter (rating > 0)
+        if let Some(favorites_only) = filter.favorites_only {
+            if favorites_only {
+                conditions.push("f.rating > 0".to_string());
+            }
+        }
+
+        // Tag filter (files that have ANY of the specified tags - OR logic)
+        if let Some(ref tag_ids) = filter.tag_ids {
+            if !tag_ids.is_empty() {
+                let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
+                conditions.push(format!("ft.tag_id IN ({})", placeholders.join(", ")));
+                for tag_id in tag_ids {
+                    params_vec.push(Box::new(*tag_id));
+                }
+            }
+        }
+
+        // Dominant color filter - don't filter in SQL, filter in Rust with approximate matching
+        // We still need to filter out empty colors in SQL
+        conditions.push("f.dominant_color != ''".to_string());
+
+        // Build the WHERE clause
+        if !conditions.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&conditions.join(" AND "));
+        }
+
+        sql.push_str(" ORDER BY f.imported_at DESC, f.id ASC");
+
+        // Prepare and execute the query
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let files: Vec<FileRecord> = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(FileRecord {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                ext: row.get(3)?,
+                size: row.get(4)?,
+                width: row.get(5)?,
+                height: row.get(6)?,
+                folder_id: row.get(7)?,
+                created_at: row.get(8)?,
+                modified_at: row.get(9)?,
+                imported_at: row.get(10)?,
+                rating: row.get(11)?,
+                description: row.get(12)?,
+                source_url: row.get(13)?,
+                dominant_color: row.get(14)?,
+                color_distribution: row.get(15)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+
+        // Apply approximate color filter in Rust
+        // Use threshold of 85 for approximate color matching (about 33% difference in RGB space)
+        let color_threshold = 85.0;
+        let files: Vec<FileRecord> = if let Some(ref target_color) = filter.dominant_color {
+            if !target_color.is_empty() {
+                files.into_iter()
+                    .filter(|f| colors_are_similar(&f.dominant_color, target_color, color_threshold))
+                    .collect()
+            } else {
+                files
+            }
+        } else {
+            files
+        };
+
+        // Batch fetch tags for all files
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        // Build result with tags
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let deleted_at: Option<String> = if let Ok(d) = self.conn.query_row(
+                "SELECT deleted_at FROM files WHERE id = ?",
+                params![file.id],
+                |row| row.get(0)
+            ) {
+                d
+            } else {
+                None
+            };
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
+                id: file.id,
+                path: file.path,
+                name: file.name,
+                ext: file.ext,
+                size: file.size,
+                width: file.width,
+                height: file.height,
+                folder_id: file.folder_id,
+                created_at: file.created_at,
+                modified_at: file.modified_at,
+                imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
+                tags,
+                deleted_at,
+            }
+        }).collect();
+
+        Ok(result)
     }
 }

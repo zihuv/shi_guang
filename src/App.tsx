@@ -7,12 +7,14 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useFolderStore } from "@/stores/folderStore";
+import { useFilterStore } from "@/stores/filterStore";
 import Header from "@/components/Header";
 import SidePanel from "@/components/SidePanel";
 import FileGrid from "@/components/FileGrid";
 import DetailPanel from "@/components/DetailPanel";
 import SettingsModal from "@/components/SettingsModal";
 import ImagePreview from "@/components/ImagePreview";
+import FilterPanel from "@/components/FilterPanel";
 
 // Module-level deduplication state - persists across component re-renders
 const dragDropState = {
@@ -69,6 +71,7 @@ function App() {
   } = useFileStore();
   const { loadTags } = useTagStore();
   const { dragOverFolderId, setDragOverFolderId } = useFolderStore();
+  const { isFilterPanelOpen } = useFilterStore();
   const { isDraggingInternal } = useFileStore();
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -352,7 +355,8 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         <SidePanel />
 
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden flex flex-col">
+          {isFilterPanelOpen && <FilterPanel />}
           {previewMode ? <ImagePreview /> : <FileGrid />}
         </main>
 

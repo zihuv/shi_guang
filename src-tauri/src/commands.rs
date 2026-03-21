@@ -1155,3 +1155,24 @@ pub fn get_trash_count(state: State<AppState>) -> Result<i32, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_trash_count().map_err(|e| e.to_string())
 }
+
+#[derive(Debug, Deserialize)]
+pub struct FileFilter {
+    pub query: Option<String>,
+    pub folder_id: Option<i64>,
+    pub file_types: Option<Vec<String>>,
+    pub date_start: Option<String>,
+    pub date_end: Option<String>,
+    pub size_min: Option<i64>,
+    pub size_max: Option<i64>,
+    pub tag_ids: Option<Vec<i64>>,
+    pub min_rating: Option<i32>,
+    pub favorites_only: Option<bool>,
+    pub dominant_color: Option<String>,
+}
+
+#[tauri::command]
+pub fn filter_files(state: State<AppState>, filter: FileFilter) -> Result<Vec<FileWithTags>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.filter_files(filter).map_err(|e| e.to_string())
+}

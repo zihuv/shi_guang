@@ -168,6 +168,7 @@ pub fn run() {
             commands::get_delete_mode,
             commands::set_delete_mode,
             commands::get_trash_count,
+            commands::filter_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

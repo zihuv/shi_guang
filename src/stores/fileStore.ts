@@ -90,6 +90,19 @@ interface FileStore {
   loadFiles: () => Promise<void>
   loadFilesInFolder: (folderId: number | null) => Promise<void>
   searchFiles: (query: string) => Promise<void>
+  filterFiles: (filter: {
+    query?: string
+    folderId?: number | null
+    fileTypes?: string[]
+    dateStart?: string | null
+    dateEnd?: string | null
+    sizeMin?: number | null
+    sizeMax?: number | null
+    tagIds?: number[]
+    minRating?: number
+    favoritesOnly?: boolean
+    dominantColor?: string
+  }) => Promise<void>
   addTagToFile: (fileId: number, tagId: number) => Promise<void>
   removeTagFromFile: (fileId: number, tagId: number) => Promise<void>
   deleteFile: (fileId: number) => Promise<void>
@@ -234,7 +247,28 @@ export const useFileStore = create<FileStore>((set, get) => ({
     console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
     set({ isLoading: true, selectedFile: null, selectedFiles: [] })
     try {
-      const files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
+      let files: FileItem[]
+      if (folderId === null) {
+        // When folderId is null, get ALL files (not just orphan files)
+        // Use filter_files with no folder filter
+        files = await invoke<FileItem[]>('filter_files', {
+          filter: {
+            query: null,
+            folder_id: null,
+            file_types: null,
+            date_start: null,
+            date_end: null,
+            size_min: null,
+            size_max: null,
+            tag_ids: null,
+            min_rating: null,
+            favorites_only: null,
+            dominant_color: null,
+          }
+        })
+      } else {
+        files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
+      }
       // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(files)
       console.log('[fileStore] Loaded files:', parsedFiles.length)
@@ -254,6 +288,33 @@ export const useFileStore = create<FileStore>((set, get) => ({
       set({ files: parsedFiles, isLoading: false })
     } catch (e) {
       console.error('Failed to search files:', e)
+      set({ isLoading: false })
+    }
+  },
+
+  filterFiles: async (filter) => {
+    set({ isLoading: true })
+    try {
+      const files = await invoke<FileItem[]>('filter_files', {
+        filter: {
+          query: filter.query || null,
+          folder_id: filter.folderId ?? null,
+          file_types: filter.fileTypes || null,
+          date_start: filter.dateStart || null,
+          date_end: filter.dateEnd || null,
+          size_min: filter.sizeMin ?? null,
+          size_max: filter.sizeMax ?? null,
+          tag_ids: filter.tagIds?.length ? filter.tagIds : null,
+          min_rating: filter.minRating ?? null,
+          favorites_only: filter.favoritesOnly ?? null,
+          dominant_color: filter.dominantColor || null,
+        }
+      })
+      // Parse colorDistribution from JSON string
+      const parsedFiles = parseFileList(files)
+      set({ files: parsedFiles, isLoading: false })
+    } catch (e) {
+      console.error('Failed to filter files:', e)
       set({ isLoading: false })
     }
   },
