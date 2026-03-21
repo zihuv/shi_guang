@@ -6,8 +6,90 @@ mod http_server;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::Manager;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
+use rusqlite::Connection;
+
+/// Get the default index path (Pictures/shiguang)
+fn get_default_index_path() -> PathBuf {
+    let pictures_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("."));
+    pictures_dir.join("shiguang")
+}
+
+/// Get the .shiguang directory path for a given index path
+fn get_shiguang_dir(index_path: &Path) -> PathBuf {
+    index_path.join(".shiguang")
+}
+
+/// Get the database path for a given index path
+fn get_db_path(index_path: &Path) -> PathBuf {
+    get_shiguang_dir(index_path).join("shiguang.db")
+}
+
+/// Ensure the .shiguang directory exists
+fn ensure_shiguang_dir(index_path: &Path) -> Result<(), String> {
+    let shiguang_dir = get_shiguang_dir(index_path);
+    if !shiguang_dir.exists() {
+        fs::create_dir_all(&shiguang_dir).map_err(|e| format!("Failed to create .shiguang directory: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Migrate database from old location to new location if needed
+/// Returns the path to the database to use
+fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
+    let old_db_path = app_data_dir.join("shiguang.db");
+
+    // Get index path from old database, or use default
+    let index_path = if old_db_path.exists() {
+        // Try to read index_path from old database
+        match Connection::open(&old_db_path) {
+            Ok(conn) => {
+                match conn.query_row("SELECT path FROM index_paths LIMIT 1", [], |row| row.get::<_, String>(0)) {
+                    Ok(path) => PathBuf::from(path),
+                    Err(_) => get_default_index_path(),
+                }
+            }
+            Err(_) => get_default_index_path(),
+        }
+    } else {
+        get_default_index_path()
+    };
+
+    // Ensure .shiguang directory exists
+    ensure_shiguang_dir(&index_path)?;
+
+    let new_db_path = get_db_path(&index_path);
+
+    // If old database exists but new one doesn't, copy it
+    if old_db_path.exists() && !new_db_path.exists() {
+        log::info!("Migrating database from {:?} to {:?}", old_db_path, new_db_path);
+        fs::copy(&old_db_path, &new_db_path)
+            .map_err(|e| format!("Failed to copy old database: {}", e))?;
+        log::info!("Database migration completed");
+    }
+
+    // If new database already exists (or was just migrated), use it
+    // Otherwise create a new one at the new location
+    if new_db_path.exists() || old_db_path.exists() {
+        Ok(new_db_path)
+    } else {
+        Ok(new_db_path)
+    }
+}
+
+/// Clean up folders and files that start with '.' from the database
+fn cleanup_dot_folders(db: &db::Database) -> Result<(), String> {
+    // Get all folders and delete those starting with '.'
+    let folders = db.get_all_folders().map_err(|e| e.to_string())?;
+    for folder in folders {
+        if folder.name.starts_with('.') {
+            log::info!("Removing dot-folder from database: {}", folder.name);
+            db.delete_folder(folder.id).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
 
 fn init_browser_collection_folder_internal(db: &db::Database) -> Result<(), String> {
     // Check if browser collection folder already exists
@@ -92,8 +174,18 @@ pub fn run() {
         let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
         std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
 
-        let db_path = app_data_dir.join("shiguang.db");
+        // Migrate database from old location to new location if needed
+        let db_path = migrate_or_get_db_path(&app_data_dir)
+            .expect("Failed to migrate or get database path");
+
+        log::info!("Using database at: {:?}", db_path);
+
         let database = db::Database::new(&db_path).expect("Failed to initialize database");
+
+        // Clean up dot-folders from database
+        if let Err(e) = cleanup_dot_folders(&database) {
+            log::warn!("Failed to cleanup dot-folders: {}", e);
+        }
 
         // Initialize browser collection folder (system folder) first
         if let Err(e) = init_browser_collection_folder_internal(&database) {
@@ -109,9 +201,10 @@ pub fn run() {
 
         // Start HTTP server in background
         let app_handle = app.handle().clone();
+        let http_db_path = db_path.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(http_server::start_http_server(db_path, app_handle));
+            rt.block_on(http_server::start_http_server(http_db_path, app_handle));
         });
 
         log::info!("Application started successfully");

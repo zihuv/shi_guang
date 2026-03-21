@@ -148,6 +148,12 @@ pub fn scan_folders(db: &Database, dir_path: &str) -> Result<usize, String> {
     {
         let dir_path = entry.path();
         if dir_path.is_dir() {
+            // Skip directories starting with '.'
+            if let Some(name) = dir_path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') {
+                    continue;
+                }
+            }
             let dir_str = dir_path.to_string_lossy().to_string();
             if let Ok(Some(_)) = db.get_or_create_folder(&dir_str, &index_paths) {
                 count += 1;

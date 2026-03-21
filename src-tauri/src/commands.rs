@@ -288,9 +288,13 @@ pub fn get_default_index_path() -> Result<String, String> {
     let pictures_dir = dirs::picture_dir()
         .ok_or_else(|| "Could not find Pictures directory".to_string())?;
     let shiguang_dir = pictures_dir.join("shiguang");
-    // Create the directory if it doesn't exist
+    // Create the directory and .shiguang subdirectory if they don't exist
     if !shiguang_dir.exists() {
         fs::create_dir_all(&shiguang_dir).map_err(|e| e.to_string())?;
+    }
+    let shiguang_db_dir = shiguang_dir.join(".shiguang");
+    if !shiguang_db_dir.exists() {
+        fs::create_dir_all(&shiguang_db_dir).map_err(|e| e.to_string())?;
     }
     Ok(shiguang_dir.to_string_lossy().to_string())
 }
