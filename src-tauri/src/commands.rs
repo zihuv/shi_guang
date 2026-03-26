@@ -1,6 +1,7 @@
 use crate::db::{Database, FileWithTags, Folder, Tag};
 use crate::indexer;
 use crate::path_utils::{join_path, normalize_path, path_has_prefix};
+use crate::storage;
 use crate::AppState;
 use base64::Engine;
 use chrono::{DateTime, Local};
@@ -304,6 +305,7 @@ pub fn delete_file(state: State<AppState>, file_id: i64) -> Result<(), String> {
         // Permanent delete - get file info first
         let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
         if let Some(file) = file {
+            remove_thumbnail_for_path(&db, &file.path)?;
             // Delete from database
             db.permanent_delete_file(file_id)
                 .map_err(|e| e.to_string())?;
@@ -333,6 +335,7 @@ pub fn delete_files(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), St
             // Permanent delete
             let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
             if let Some(file) = file {
+                remove_thumbnail_for_path(&db, &file.path)?;
                 db.permanent_delete_file(file_id)
                     .map_err(|e| e.to_string())?;
                 let path = std::path::Path::new(&file.path);
@@ -368,25 +371,37 @@ pub fn get_index_paths(state: State<AppState>) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn get_default_index_path() -> Result<String, String> {
-    // Use Pictures/shiguang directory as default
-    let pictures_dir =
-        dirs::picture_dir().ok_or_else(|| "Could not find Pictures directory".to_string())?;
-    let shiguang_dir = pictures_dir.join("shiguang");
-    // Create the directory and .shiguang subdirectory if they don't exist
-    if !shiguang_dir.exists() {
-        fs::create_dir_all(&shiguang_dir).map_err(|e| e.to_string())?;
+    let index_path = storage::get_default_index_path();
+    if !index_path.exists() {
+        fs::create_dir_all(&index_path).map_err(|e| e.to_string())?;
     }
-    let shiguang_db_dir = shiguang_dir.join(".shiguang");
-    if !shiguang_db_dir.exists() {
-        fs::create_dir_all(&shiguang_db_dir).map_err(|e| e.to_string())?;
-    }
-    Ok(shiguang_dir.to_string_lossy().to_string())
+    storage::ensure_storage_dirs(&index_path)?;
+    Ok(index_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 pub fn add_index_path(state: State<AppState>, path: String) -> Result<(), String> {
+    let index_path = Path::new(&path);
+    if !index_path.exists() {
+        fs::create_dir_all(index_path).map_err(|e| e.to_string())?;
+    }
+    storage::ensure_storage_dirs(index_path)?;
+
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.add_index_path(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_thumbnail_path(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<Option<String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    drop(db);
+
+    let thumbnail = storage::get_or_create_thumbnail(&index_paths, Path::new(&file_path))?;
+    Ok(thumbnail.map(|path| path.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -463,6 +478,11 @@ fn build_folder_tree(folders: &[Folder], file_counts: &HashMap<i64, i32>) -> Vec
         .iter()
         .map(|f| build_node(f, &children_map, file_counts))
         .collect()
+}
+
+fn remove_thumbnail_for_path(db: &Database, file_path: &str) -> Result<(), String> {
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    storage::remove_thumbnail_for_file(&index_paths, Path::new(file_path))
 }
 
 #[tauri::command]
@@ -724,6 +744,7 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
         // Step 2: Delete all files whose path starts with this folder's path
         for file in &files {
             if path_has_prefix(&file.path, &folder_path) {
+                remove_thumbnail_for_path(&db, &file.path)?;
                 db.delete_file(&file.path).map_err(|e| e.to_string())?;
             }
         }
@@ -1268,6 +1289,7 @@ pub fn permanent_delete_file(state: State<AppState>, file_id: i64) -> Result<(),
     let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
 
     if let Some(file) = file {
+        remove_thumbnail_for_path(&db, &file.path)?;
         // Delete from database
         db.permanent_delete_file(file_id)
             .map_err(|e| e.to_string())?;
@@ -1289,6 +1311,7 @@ pub fn permanent_delete_files(state: State<AppState>, file_ids: Vec<i64>) -> Res
     for file_id in file_ids {
         let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
         if let Some(file) = file {
+            remove_thumbnail_for_path(&db, &file.path)?;
             db.permanent_delete_file(file_id)
                 .map_err(|e| e.to_string())?;
             let path = std::path::Path::new(&file.path);
@@ -1310,6 +1333,7 @@ pub fn empty_trash(state: State<AppState>) -> Result<(), String> {
 
     // Delete all trash files permanently
     for file in trash_files {
+        remove_thumbnail_for_path(&db, &file.path)?;
         // Delete from database
         db.permanent_delete_file(file.id)
             .map_err(|e| e.to_string())?;

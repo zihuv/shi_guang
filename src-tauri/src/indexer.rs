@@ -7,7 +7,7 @@ use serde_json;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorInfo {
@@ -40,11 +40,16 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
     for entry in WalkDir::new(path)
         .follow_links(true)
         .into_iter()
+        .filter_entry(|entry| !should_skip_entry(entry))
         .filter_map(|e| e.ok())
     {
         let file_path = entry.path();
 
         if !file_path.is_file() {
+            continue;
+        }
+
+        if should_skip_path(file_path) {
             continue;
         }
 
@@ -156,15 +161,13 @@ pub fn scan_folders(db: &Database, dir_path: &str) -> Result<usize, String> {
         .follow_links(true)
         .min_depth(1)
         .into_iter()
+        .filter_entry(|entry| !should_skip_entry(entry))
         .filter_map(|e| e.ok())
     {
         let dir_path = entry.path();
         if dir_path.is_dir() {
-            // Skip directories starting with '.'
-            if let Some(name) = dir_path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') {
-                    continue;
-                }
+            if should_skip_path(dir_path) {
+                continue;
             }
             let dir_str = dir_path.to_string_lossy().to_string();
             if let Ok(Some(_)) = db.get_or_create_folder(&dir_str, &index_paths) {
@@ -230,6 +233,28 @@ fn process_file(path: &Path, ext: &str, folder_id: Option<i64>) -> Result<FileRe
         source_url: String::new(),
         dominant_color,
         color_distribution: color_distribution_json,
+    })
+}
+
+fn should_skip_entry(entry: &DirEntry) -> bool {
+    if entry.depth() == 0 {
+        return false;
+    }
+
+    entry
+        .file_name()
+        .to_str()
+        .map(crate::storage::is_hidden_name)
+        .unwrap_or(false)
+}
+
+fn should_skip_path(path: &Path) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(crate::storage::is_hidden_name)
+            .unwrap_or(false)
     })
 }
 

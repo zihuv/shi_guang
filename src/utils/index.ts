@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { FolderNode } from '@/stores/folderStore'
 
@@ -13,6 +14,23 @@ export async function getImageSrc(path: string): Promise<string> {
       return ''
     }
     console.error('Failed to read file:', e)
+    return ''
+  }
+}
+
+export async function getThumbnailImageSrc(path: string): Promise<string> {
+  try {
+    const thumbnailPath = await invoke<string | null>('get_thumbnail_path', {
+      filePath: path,
+    })
+
+    if (!thumbnailPath) {
+      return ''
+    }
+
+    return await getImageSrc(thumbnailPath)
+  } catch (e) {
+    console.error('Failed to get thumbnail path:', e)
     return ''
   }
 }

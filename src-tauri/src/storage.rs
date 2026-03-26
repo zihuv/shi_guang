@@ -1,0 +1,264 @@
+use rusqlite::Connection;
+use image::{imageops::FilterType, codecs::jpeg::JpegEncoder, ColorType, DynamicImage};
+use std::collections::hash_map::DefaultHasher;
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::io::BufWriter;
+use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
+
+const DB_FILE_NAME: &str = "shiguang.db";
+const THUMBNAIL_QUALITY: u8 = 82;
+pub const THUMBNAIL_SIZE: u32 = 320;
+
+pub fn get_default_index_path() -> PathBuf {
+    let pictures_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("."));
+    pictures_dir.join("shiguang")
+}
+
+pub fn get_shiguang_dir(index_path: &Path) -> PathBuf {
+    index_path.join(".shiguang")
+}
+
+pub fn get_db_dir(index_path: &Path) -> PathBuf {
+    get_shiguang_dir(index_path).join("db")
+}
+
+pub fn get_thumbnail_dir(index_path: &Path) -> PathBuf {
+    get_shiguang_dir(index_path).join("thumbnails")
+}
+
+pub fn get_db_path(index_path: &Path) -> PathBuf {
+    get_db_dir(index_path).join(DB_FILE_NAME)
+}
+
+pub fn get_legacy_index_db_path(index_path: &Path) -> PathBuf {
+    get_shiguang_dir(index_path).join(DB_FILE_NAME)
+}
+
+pub fn is_hidden_name(name: &str) -> bool {
+    name.starts_with('.')
+}
+
+fn get_legacy_app_db_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(DB_FILE_NAME)
+}
+
+pub fn ensure_storage_dirs(index_path: &Path) -> Result<(), String> {
+    let shiguang_dir = get_shiguang_dir(index_path);
+    let db_dir = get_db_dir(index_path);
+    let thumbnail_dir = get_thumbnail_dir(index_path);
+
+    if !shiguang_dir.exists() {
+        fs::create_dir_all(&shiguang_dir)
+            .map_err(|e| format!("Failed to create .shiguang directory: {}", e))?;
+    }
+
+    if !db_dir.exists() {
+        fs::create_dir_all(&db_dir)
+            .map_err(|e| format!("Failed to create db directory: {}", e))?;
+    }
+
+    if !thumbnail_dir.exists() {
+        fs::create_dir_all(&thumbnail_dir)
+            .map_err(|e| format!("Failed to create thumbnails directory: {}", e))?;
+    }
+
+    Ok(())
+}
+
+pub fn find_matching_index_path<'a>(index_paths: &'a [String], file_path: &str) -> Option<&'a str> {
+    let mut best_match: Option<&str> = None;
+
+    for index_path in index_paths {
+        if crate::path_utils::path_has_prefix(file_path, index_path) {
+            match best_match {
+                Some(current) if current.len() >= index_path.len() => {}
+                _ => best_match = Some(index_path.as_str()),
+            }
+        }
+    }
+
+    best_match
+}
+
+fn hash_thumbnail_key(file_path: &Path, metadata: &fs::Metadata) -> String {
+    let mut hasher = DefaultHasher::new();
+    file_path.to_string_lossy().hash(&mut hasher);
+    THUMBNAIL_SIZE.hash(&mut hasher);
+    metadata.len().hash(&mut hasher);
+
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    modified.hash(&mut hasher);
+
+    format!("{:016x}", hasher.finish())
+}
+
+fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<PathBuf, String> {
+    let metadata = fs::metadata(file_path).map_err(|e| e.to_string())?;
+    let hash = hash_thumbnail_key(file_path, &metadata);
+    let shard = &hash[0..2];
+    let shard_dir = get_thumbnail_dir(index_path).join(shard);
+    if !shard_dir.exists() {
+        fs::create_dir_all(&shard_dir).map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
+    }
+    Ok(shard_dir.join(format!("{}.jpg", hash)))
+}
+
+fn flatten_on_white(image: DynamicImage) -> image::RgbImage {
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let mut rgb = image::RgbImage::new(width, height);
+
+    for (x, y, pixel) in rgba.enumerate_pixels() {
+        let alpha = pixel[3] as u16;
+        let inv_alpha = 255u16.saturating_sub(alpha);
+        let r = ((pixel[0] as u16 * alpha) + (255 * inv_alpha)) / 255;
+        let g = ((pixel[1] as u16 * alpha) + (255 * inv_alpha)) / 255;
+        let b = ((pixel[2] as u16 * alpha) + (255 * inv_alpha)) / 255;
+        rgb.put_pixel(x, y, image::Rgb([r as u8, g as u8, b as u8]));
+    }
+
+    rgb
+}
+
+pub fn get_or_create_thumbnail(
+    index_paths: &[String],
+    file_path: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let file_path_str = file_path.to_string_lossy().to_string();
+    let Some(index_path) = find_matching_index_path(index_paths, &file_path_str) else {
+        return Ok(None);
+    };
+
+    ensure_storage_dirs(Path::new(index_path))?;
+
+    let output_path = get_thumbnail_output_path(Path::new(index_path), file_path)?;
+    if output_path.exists() {
+        return Ok(Some(output_path));
+    }
+
+    let image = match image::open(file_path) {
+        Ok(img) => img,
+        Err(_) => return Ok(None),
+    };
+
+    let thumbnail = image.resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, FilterType::Lanczos3);
+    let rgb = flatten_on_white(thumbnail);
+
+    let file = fs::File::create(&output_path)
+        .map_err(|e| format!("Failed to create thumbnail file {:?}: {}", output_path, e))?;
+    let mut writer = BufWriter::new(file);
+    let mut encoder = JpegEncoder::new_with_quality(&mut writer, THUMBNAIL_QUALITY);
+    encoder
+        .encode(&rgb, rgb.width(), rgb.height(), ColorType::Rgb8.into())
+        .map_err(|e| format!("Failed to encode thumbnail {:?}: {}", output_path, e))?;
+
+    Ok(Some(output_path))
+}
+
+pub fn remove_thumbnail_for_file(
+    index_paths: &[String],
+    file_path: &Path,
+) -> Result<(), String> {
+    if !file_path.exists() {
+        return Ok(());
+    }
+
+    let file_path_str = file_path.to_string_lossy().to_string();
+    let Some(index_path) = find_matching_index_path(index_paths, &file_path_str) else {
+        return Ok(());
+    };
+
+    let output_path = get_thumbnail_output_path(Path::new(index_path), file_path)?;
+    if output_path.exists() {
+        fs::remove_file(&output_path)
+            .map_err(|e| format!("Failed to remove thumbnail {:?}: {}", output_path, e))?;
+    }
+
+    Ok(())
+}
+
+fn read_index_path_from_db(db_path: &Path) -> Option<PathBuf> {
+    if !db_path.exists() {
+        return None;
+    }
+
+    let conn = Connection::open(db_path).ok()?;
+    conn.query_row("SELECT path FROM index_paths LIMIT 1", [], |row| {
+        row.get::<_, String>(0)
+    })
+    .ok()
+    .map(PathBuf::from)
+}
+
+fn move_file_with_fallback(from: &Path, to: &Path) -> Result<(), String> {
+    match fs::rename(from, to) {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            fs::copy(from, to).map_err(|e| format!("Failed to copy {:?} to {:?}: {}", from, to, e))?;
+            fs::remove_file(from)
+                .map_err(|e| format!("Failed to remove old file {:?}: {}", from, e))?;
+            Ok(())
+        }
+    }
+}
+
+fn move_sqlite_bundle(from: &Path, to: &Path) -> Result<(), String> {
+    if !from.exists() || to.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create database directory {:?}: {}", parent, e))?;
+    }
+
+    move_file_with_fallback(from, to)?;
+
+    for suffix in [".wal", "-wal", ".shm", "-shm"] {
+        let sidecar_from = PathBuf::from(format!("{}{}", from.to_string_lossy(), suffix));
+        if sidecar_from.exists() {
+            let sidecar_to = PathBuf::from(format!("{}{}", to.to_string_lossy(), suffix));
+            move_file_with_fallback(&sidecar_from, &sidecar_to)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
+    let legacy_app_db_path = get_legacy_app_db_path(app_data_dir);
+
+    let index_path = read_index_path_from_db(&legacy_app_db_path).unwrap_or_else(|| get_default_index_path());
+
+    ensure_storage_dirs(&index_path)?;
+
+    let new_db_path = get_db_path(&index_path);
+    let legacy_index_db_path = get_legacy_index_db_path(&index_path);
+
+    if legacy_index_db_path.exists() && !new_db_path.exists() {
+        log::info!(
+            "Migrating database from legacy index path {:?} to {:?}",
+            legacy_index_db_path,
+            new_db_path
+        );
+        move_sqlite_bundle(&legacy_index_db_path, &new_db_path)?;
+    }
+
+    if legacy_app_db_path.exists() && !new_db_path.exists() {
+        log::info!(
+            "Migrating database from app data {:?} to {:?}",
+            legacy_app_db_path,
+            new_db_path
+        );
+        move_sqlite_bundle(&legacy_app_db_path, &new_db_path)?;
+    }
+
+    Ok(new_db_path)
+}

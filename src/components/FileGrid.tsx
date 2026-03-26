@@ -4,7 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useTagStore } from "@/stores/tagStore"
 import { useFolderStore } from "@/stores/folderStore"
-import { getImageSrc, formatSize } from "@/utils"
+import { getImageSrc, getThumbnailImageSrc, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
 
 const GRID_MIN_WIDTH = 180
@@ -15,6 +15,46 @@ const ADAPTIVE_MIN_WIDTH = 220
 const ADAPTIVE_CARD_FOOTER_HEIGHT = 48
 const ADAPTIVE_CARD_SCALE = 0.96
 const VIEWPORT_OVERSCAN_PX = 600
+const IMAGE_SRC_CACHE_LIMIT = 300
+
+const imageSrcCache = new Map<string, string>()
+
+function getCachedImageSrc(cacheKey: string) {
+  const cached = imageSrcCache.get(cacheKey)
+  if (!cached) {
+    return null
+  }
+
+  imageSrcCache.delete(cacheKey)
+  imageSrcCache.set(cacheKey, cached)
+  return cached
+}
+
+function cacheImageSrc(cacheKey: string, src: string) {
+  if (!src.startsWith("blob:")) {
+    return
+  }
+
+  const existing = imageSrcCache.get(cacheKey)
+  if (existing && existing !== src && existing.startsWith("blob:")) {
+    URL.revokeObjectURL(existing)
+  }
+
+  imageSrcCache.set(cacheKey, src)
+
+  while (imageSrcCache.size > IMAGE_SRC_CACHE_LIMIT) {
+    const oldestKey = imageSrcCache.keys().next().value
+    if (!oldestKey) {
+      break
+    }
+
+    const oldestSrc = imageSrcCache.get(oldestKey)
+    if (oldestSrc?.startsWith("blob:")) {
+      URL.revokeObjectURL(oldestSrc)
+    }
+    imageSrcCache.delete(oldestKey)
+  }
+}
 
 export default function FileGrid() {
   const {
@@ -197,7 +237,7 @@ export default function FileGrid() {
     setShowBatchDeleteConfirm(false)
   }
 
-  if (isLoading) {
+  if (isLoading && files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-gray-500 dark:text-gray-400">加载中...</div>
@@ -270,7 +310,7 @@ export default function FileGrid() {
           <div className="relative" style={{ height: `${adaptiveLayout.totalHeight}px` }}>
             {adaptiveVisibleItems.map(({ file, index, left, top, width }) => (
               <div
-                key={file.id}
+                key={`adaptive-${index}`}
                 className="absolute"
                 style={{
                   left: `${left}px`,
@@ -312,7 +352,7 @@ export default function FileGrid() {
                   >
                     {rowFiles.map((file, offset) => (
                       <FileCard
-                        key={file.id}
+                        key={`grid-${rowIndex}-${offset}`}
                         file={file}
                         isMultiSelected={selectedFiles.includes(file.id)}
                         isDragging={draggingFileId === file.id}
@@ -369,6 +409,14 @@ export default function FileGrid() {
               height: Math.abs(selectionBox.endY - selectionBox.startY),
             }}
           />
+        )}
+
+        {isLoading && files.length > 0 && (
+          <div className="pointer-events-none absolute inset-0 z-10 bg-white/35 dark:bg-black/20">
+            <div className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs text-gray-600 shadow-sm dark:bg-dark-surface/90 dark:text-gray-300">
+              加载中...
+            </div>
+          </div>
         )}
       </div>
 
@@ -540,38 +588,37 @@ function useVisibility(rootRef: RefObject<HTMLElement | null>) {
   return { ref, isVisible }
 }
 
-function useLazyImageSrc(path: string, isVisible: boolean) {
+function useLazyImageSrc(path: string, cacheKey: string, isVisible: boolean) {
   const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const [imageSrc, setImageSrc] = useState<string | null>(() => getCachedImageSrc(cacheKey))
 
   useEffect(() => {
     if (!isVisible) return
 
+    const cached = getCachedImageSrc(cacheKey)
+    if (cached) {
+      setImageError(false)
+      setImageSrc(cached)
+      return
+    }
+
     let active = true
-    let objectUrl = ""
-
     setImageError(false)
-    setImageSrc(null)
 
-    getImageSrc(path).then((src) => {
+    getThumbnailImageSrc(path).then(async (thumbnailSrc) => {
+      const src = thumbnailSrc || await getImageSrc(path)
       if (!active) {
-        if (src.startsWith("blob:")) {
-          URL.revokeObjectURL(src)
-        }
         return
       }
 
-      objectUrl = src
+      cacheImageSrc(cacheKey, src)
       setImageSrc(src)
     })
 
     return () => {
       active = false
-      if (objectUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(objectUrl)
-      }
     }
-  }, [path, isVisible])
+  }, [cacheKey, isVisible, path])
 
   return {
     imageSrc,
@@ -595,7 +642,8 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
   const { uniqueContextId } = useFolderStore()
   const dragRef = useRef<HTMLDivElement>(null)
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
-  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, isVisible)
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
 
   useEffect(() => {
     const element = dragRef.current
@@ -685,7 +733,8 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
   const { uniqueContextId } = useFolderStore()
   const dragRef = useRef<HTMLDivElement>(null)
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
-  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, isVisible)
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
 
   useEffect(() => {
     const element = dragRef.current
@@ -768,7 +817,8 @@ function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, on
   const { uniqueContextId } = useFolderStore()
   const dragRef = useRef<HTMLDivElement>(null)
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
-  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, isVisible)
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
 
   useEffect(() => {
     const element = dragRef.current

@@ -13,6 +13,14 @@ export interface FolderNode {
   parentId?: number | null
 }
 
+const removeHiddenFolders = (folders: FolderNode[]): FolderNode[] =>
+  folders
+    .filter((folder) => !folder.name.startsWith('.'))
+    .map((folder) => ({
+      ...folder,
+      children: removeHiddenFolders(folder.children || []),
+    }))
+
 interface FolderStore {
   folders: FolderNode[]
   selectedFolderId: number | null
@@ -62,7 +70,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     set({ isLoading: true })
     try {
       const folders = await invoke<FolderNode[]>('get_folder_tree')
-      set({ folders, isLoading: false })
+      set({ folders: removeHiddenFolders(folders), isLoading: false })
     } catch (e) {
       console.error('Failed to load folders:', e)
       set({ isLoading: false })

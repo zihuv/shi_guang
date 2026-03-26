@@ -159,7 +159,7 @@ interface FolderItemProps {
 
 function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
   const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile } = useFileStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
   const { setFolderId, isFilterPanelOpen } = useFilterStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
@@ -293,6 +293,14 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     if (isFilterPanelOpen) {
       setFolderId(null)
     }
+
+    if (selectedFolderId === folder.id) {
+      if (selectedFile) {
+        setSelectedFile(null)
+      }
+      return
+    }
+
     selectFolder(folder.id)
     setSelectedFolderId(folder.id)
     setSelectedFile(null)
@@ -535,7 +543,7 @@ export default function FolderTree() {
     setFolders,
     uniqueContextId,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
 
   // Drag state - simplified to track only what's needed
@@ -1005,9 +1013,9 @@ export default function FolderTree() {
 
       <div
         id="folder-tree-container"
-        className="flex-1 overflow-auto p-2"
+        className="relative flex-1 overflow-auto p-2"
       >
-        {isLoading ? (
+        {isLoading && folders.length === 0 ? (
           <div className="flex items-center justify-center p-4">
             <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -1025,6 +1033,15 @@ export default function FolderTree() {
               }`}
               style={{ paddingLeft: '8px' }}
               onClick={() => {
+                if (selectedFolderId === null) {
+                  if (selectedFile) {
+                    setSelectedFile(null)
+                  }
+                  useFilterStore.getState().setFolderId(null)
+                  useFilterStore.getState().setFileType('all')
+                  return
+                }
+
                 selectFolder(null)
                 setSelectedFolderId(null)
                 setSelectedFile(null)
