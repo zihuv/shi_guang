@@ -172,7 +172,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
     exportFile,
     updateFileName,
   } = useFileStore();
-  const { tags } = useTagStore();
+  const { flatTags } = useTagStore();
   const { folders } = useFolderStore();
 
   // Find folder by file's folderId
@@ -212,13 +212,13 @@ function FileDetailPanel({ file }: { file: FileItem }) {
   }, [file.rating, file.description, file.sourceUrl, file.name]);
 
   const fileTags = file.tags;
-  const availableTags = tags.filter(
+  const availableTags = flatTags.filter(
     (t) => !fileTags.some((ft) => ft.id === t.id),
   );
 
   // Filter tags based on input
   const filteredTags = tagInput
-    ? tags.filter(
+    ? flatTags.filter(
         (t) =>
           t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
           !fileTags.some((ft) => ft.id === t.id),
@@ -290,7 +290,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
     await useTagStore.getState().loadTags();
     const newTag = useTagStore
       .getState()
-      .tags.find((t) => t.name === tagInput.trim());
+      .flatTags.find((t) => t.name === tagInput.trim());
     if (newTag) {
       await addTagToFile(file.id, newTag.id);
     }
@@ -662,4 +662,3 @@ function FileDetailPanel({ file }: { file: FileItem }) {
     </div>
   );
 }
-

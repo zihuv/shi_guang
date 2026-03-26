@@ -1,64 +1,141 @@
-import { create } from 'zustand'
-import { invoke } from '@tauri-apps/api/core'
+import { create } from "zustand"
+import { invoke } from "@tauri-apps/api/core"
 
 export interface Tag {
   id: number
   name: string
   color: string
   count: number
+  parentId: number | null
   sortOrder?: number
+  children: Tag[]
+}
+
+type RawTag = Omit<Tag, "children">
+
+export function buildTagTree(rawTags: RawTag[]): Tag[] {
+  const tagMap = new Map<number, Tag>()
+
+  rawTags.forEach((tag) => {
+    tagMap.set(tag.id, {
+      ...tag,
+      children: [],
+    })
+  })
+
+  const roots: Tag[] = []
+
+  rawTags.forEach((tag) => {
+    const node = tagMap.get(tag.id)
+    if (!node) return
+
+    if (tag.parentId === null) {
+      roots.push(node)
+      return
+    }
+
+    const parent = tagMap.get(tag.parentId)
+    if (parent) {
+      parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+
+  const sortNodes = (nodes: Tag[]) => {
+    nodes.sort((a, b) => {
+      const orderDiff = (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+      if (orderDiff !== 0) return orderDiff
+      return a.name.localeCompare(b.name, "zh-CN")
+    })
+    nodes.forEach((node) => sortNodes(node.children))
+  }
+
+  sortNodes(roots)
+  return roots
+}
+
+export function flattenTagTree(tags: Tag[], depth = 0): Array<Tag & { depth: number }> {
+  return tags.flatMap((tag) => [
+    { ...tag, depth },
+    ...flattenTagTree(tag.children, depth + 1),
+  ])
+}
+
+export function collectTagIds(tag: Tag): number[] {
+  return [tag.id, ...tag.children.flatMap((child) => collectTagIds(child))]
 }
 
 interface TagStore {
   tags: Tag[]
+  flatTags: Array<Tag & { depth: number }>
   selectedTagId: number | null
   loadTags: () => Promise<void>
-  addTag: (name: string, color: string) => Promise<void>
+  addTag: (name: string, color: string, parentId?: number | null) => Promise<void>
   deleteTag: (id: number) => Promise<void>
   updateTag: (id: number, name: string, color: string) => Promise<void>
-  reorderTags: (tagIds: number[]) => Promise<void>
+  reorderTags: (tagIds: number[], parentId?: number | null) => Promise<void>
+  moveTag: (tagId: number, newParentId: number | null, sortOrder?: number) => Promise<void>
   setTags: (tags: Tag[]) => void
   setSelectedTagId: (id: number | null) => void
 }
 
+const syncTags = (set: (partial: Partial<TagStore>) => void, rawTags: RawTag[]) => {
+  const tree = buildTagTree(rawTags)
+  set({
+    tags: tree,
+    flatTags: flattenTagTree(tree),
+  })
+}
+
 export const useTagStore = create<TagStore>((set, get) => ({
   tags: [],
+  flatTags: [],
   selectedTagId: null,
 
   loadTags: async () => {
     try {
-      const tags = await invoke<Tag[]>('get_all_tags')
-      set({ tags })
+      const tags = await invoke<RawTag[]>("get_all_tags")
+      syncTags(set, tags)
     } catch (e) {
-      console.error('Failed to load tags:', e)
+      console.error("Failed to load tags:", e)
     }
   },
 
-  addTag: async (name, color) => {
-    await invoke('create_tag', { name, color })
-    get().loadTags()
+  addTag: async (name, color, parentId = null) => {
+    await invoke("create_tag", { name, color, parentId })
+    await get().loadTags()
   },
 
   deleteTag: async (id) => {
-    await invoke('delete_tag', { id })
-    get().loadTags()
+    await invoke("delete_tag", { id })
+    await get().loadTags()
   },
 
   updateTag: async (id, name, color) => {
-    await invoke('update_tag', { id, name, color })
-    get().loadTags()
+    await invoke("update_tag", { id, name, color })
+    await get().loadTags()
   },
 
-  reorderTags: async (tagIds) => {
+  reorderTags: async (tagIds, parentId = null) => {
     try {
-      await invoke('reorder_tags', { tagIds })
+      await invoke("reorder_tags", { tagIds, parentId })
       await get().loadTags()
     } catch (e) {
-      console.error('Failed to reorder tags:', e)
+      console.error("Failed to reorder tags:", e)
+    }
+  },
+
+  moveTag: async (tagId, newParentId, sortOrder = 0) => {
+    try {
+      await invoke("move_tag", { tagId, newParentId, sortOrder })
+      await get().loadTags()
+    } catch (e) {
+      console.error("Failed to move tag:", e)
     }
   },
 
   setSelectedTagId: (id) => set({ selectedTagId: id }),
 
-  setTags: (tags) => set({ tags }),
+  setTags: (tags) => set({ tags, flatTags: flattenTagTree(tags) }),
 }))

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "re
 import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
-import { useTagStore } from "@/stores/tagStore"
+import { collectTagIds, useTagStore } from "@/stores/tagStore"
 import { useFolderStore } from "@/stores/folderStore"
 import { getImageSrc, getThumbnailImageSrc, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -71,7 +71,7 @@ export default function FileGrid() {
     setPage,
     setPageSize,
   } = useFileStore()
-  const { selectedTagId } = useTagStore()
+  const { selectedTagId, flatTags } = useTagStore()
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
   const [viewMode, setViewMode] = useState<"grid" | "list" | "adaptive">("grid")
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
@@ -87,11 +87,13 @@ export default function FileGrid() {
 
   useEffect(() => {
     if (selectedTagId) {
-      setFilteredFiles(files.filter((f) => f.tags.some((t) => t.id === selectedTagId)))
+      const selectedTag = flatTags.find((tag) => tag.id === selectedTagId)
+      const selectedIds = selectedTag ? new Set(collectTagIds(selectedTag)) : new Set([selectedTagId])
+      setFilteredFiles(files.filter((f) => f.tags.some((t) => selectedIds.has(t.id))))
     } else {
       setFilteredFiles(files)
     }
-  }, [files, selectedTagId])
+  }, [files, selectedTagId, flatTags])
 
   useEffect(() => {
     const element = scrollParentRef.current

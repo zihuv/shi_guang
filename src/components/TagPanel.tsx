@@ -1,103 +1,200 @@
-import { useState, useRef, useEffect } from 'react'
-import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
-import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
-import { useTagStore, Tag } from '@/stores/tagStore'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { useEffect, useMemo, useRef, useState } from "react"
+import { draggable, dropTargetForElements, monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter"
+import { attachClosestEdge, extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge"
+import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine"
+import { Button } from "@/components/ui/Button"
+import { Input } from "@/components/ui/Input"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/Dialog'
+} from "@/components/ui/Dialog"
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
-} from '@/components/ui/ContextMenu'
-import { Plus, X, Pencil, Trash2, GripVertical } from 'lucide-react'
+} from "@/components/ui/ContextMenu"
+import { flattenTagTree, Tag, useTagStore } from "@/stores/tagStore"
+import { ChevronRight, Move, Pencil, Plus, Tag as TagIcon, Tags, Trash2, X } from "lucide-react"
 
 const TAG_COLORS = [
-  '#ef4444', '#f97316', '#f59e0b', '#84cc16',
-  '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
-  '#6366f1', '#8b5cf6', '#a855f7', '#ec4899'
+  "#ef4444", "#f97316", "#f59e0b", "#84cc16",
+  "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6",
+  "#6366f1", "#8b5cf6", "#a855f7", "#ec4899",
 ]
 
-interface SortableTagProps {
-  tag: Tag
-  selectedTagId: number | null
-  onSelect: (id: number) => void
-  onClear: (id: number) => void
-  onEdit: (tag: Tag) => void
-  onDelete: (id: number) => void
-  isOverId: number | null
-  onDragStart: () => void
-  onDragEnd: () => void
+type DragPosition =
+  | { type: "none" }
+  | { type: "sort"; targetId: number; before: boolean }
+
+const findTagParentId = (tags: Tag[], tagId: number, parentId: number | null = null): number | null => {
+  for (const tag of tags) {
+    if (tag.id === tagId) return parentId
+    if (tag.children.length > 0) {
+      const found = findTagParentId(tag.children, tagId, tag.id)
+      if (found !== null) return found
+    }
+  }
+  return null
 }
 
-function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, isOverId, onDragStart, onDragEnd }: SortableTagProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [isDragging, setIsDragging] = useState(false)
+const findTagById = (tags: Tag[], tagId: number): Tag | null => {
+  for (const tag of tags) {
+    if (tag.id === tagId) return tag
+    const found = findTagById(tag.children, tagId)
+    if (found) return found
+  }
+  return null
+}
 
-  // @atlaskit draggable
+const findTagSiblings = (tags: Tag[], parentId: number | null): Tag[] => {
+  if (parentId === null) return tags
+  const parent = findTagById(tags, parentId)
+  return parent?.children ?? []
+}
+
+const isDescendant = (tags: Tag[], parentId: number, childId: number): boolean => {
+  const parent = findTagById(tags, parentId)
+  if (!parent) return false
+
+  const check = (nodes: Tag[]): boolean => {
+    for (const node of nodes) {
+      if (node.id === childId) return true
+      if (check(node.children)) return true
+    }
+    return false
+  }
+
+  return check(parent.children)
+}
+
+interface TagItemProps {
+  tag: Tag
+  depth: number
+  activeId: number | null
+  dragPosition: DragPosition
+  expandedIds: number[]
+  onToggle: (id: number) => void
+  onSelect: (id: number | null) => void
+  onEdit: (tag: Tag) => void
+  onDelete: (tag: Tag) => void
+  onAddChild: (tag: Tag) => void
+}
+
+function TagItem({
+  tag,
+  depth,
+  activeId,
+  dragPosition,
+  expandedIds,
+  onToggle,
+  onSelect,
+  onEdit,
+  onDelete,
+  onAddChild,
+}: TagItemProps) {
+  const { selectedTagId } = useTagStore()
+  const elementRef = useRef<HTMLDivElement>(null)
+  const isExpanded = expandedIds.includes(tag.id)
+  const isSelected = selectedTagId === tag.id
+  const hasChildren = tag.children.length > 0
+  const isDragging = activeId === tag.id
+  const isSortTarget = dragPosition.type === "sort" && dragPosition.targetId === tag.id && !isDragging
+
   useEffect(() => {
-    const element = ref.current
+    const element = elementRef.current
     if (!element) return
 
-    return draggable({
-      element,
-      getInitialData: () => ({
-        type: 'tag',
-        tagId: tag.id,
+    return combine(
+      draggable({
+        element,
+        getInitialData: () => ({
+          type: "tag",
+          tagId: tag.id,
+        }),
       }),
-      onDragStart: () => {
-        setIsDragging(true)
-        onDragStart()
-      },
-      onDrop: () => {
-        setIsDragging(false)
-        onDragEnd()
-      },
-    })
-  }, [tag.id, onDragStart, onDragEnd])
-
-  // Show insertion line when another item is being dragged over this item
-  const showInsertLine = isOverId !== null && isOverId !== tag.id
+      dropTargetForElements({
+        element,
+        getData: ({ input, element }) =>
+          attachClosestEdge(
+            {
+              type: "tag" as const,
+              tagId: tag.id,
+            },
+            {
+              input,
+              element,
+              allowedEdges: ["top", "bottom"],
+            },
+          ),
+        canDrop: ({ source }) => source.data.type === "tag" && source.data.tagId !== tag.id,
+      }),
+    )
+  }, [tag.id])
 
   return (
-    <div ref={ref} data-tag-id={tag.id}>
-      {/* Insertion line - top */}
-      {showInsertLine && (
-        <div className="h-0.5 bg-primary-500 rounded-full my-0.5" />
+    <div>
+      {isSortTarget && dragPosition.before && (
+        <div
+          className="h-0.5 bg-blue-500 rounded-full my-0.5 relative"
+          style={{ marginLeft: `${depth * 12 + 8}px` }}
+        >
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full" />
+        </div>
       )}
+
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className={`group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm cursor-grab active:cursor-grabbing transition-colors h-8 ${
-              selectedTagId === tag.id
-                ? 'bg-primary-100 dark:bg-primary-900/30'
-                : isDragging
-                  ? 'opacity-50 bg-gray-100 dark:bg-dark-border'
-                  : 'hover:bg-gray-100 dark:hover:bg-dark-border'
+            ref={elementRef}
+            className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+              isDragging
+                ? "opacity-50"
+                : isSelected
+                  ? "bg-primary-100 dark:bg-primary-900/30"
+                  : "hover:bg-gray-100 dark:hover:bg-dark-border"
             }`}
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
             onClick={() => onSelect(tag.id)}
           >
-            <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0" />
-            <span
-              className="w-3 h-3 rounded-full flex-shrink-0"
-              style={{ backgroundColor: tag.color }}
-            />
-            <span className="min-w-0 flex-1 text-gray-700 dark:text-gray-300 truncate">{tag.name}</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">{tag.count}</span>
-            {selectedTagId === tag.id && (
+            {hasChildren ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 p-0"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggle(tag.id)
+                }}
+              >
+                <ChevronRight
+                  className={`w-3 h-3 text-gray-500 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                />
+              </Button>
+            ) : (
+              <span className="w-5" />
+            )}
+
+            <TagIcon className="w-4 h-4 flex-shrink-0" style={{ color: tag.color }} />
+            <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{tag.name}</span>
+            {tag.count > 0 && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">{tag.count}</span>
+            )}
+            {isSelected && (
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-5 w-5 flex-shrink-0"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onClear(tag.id)
+                  onSelect(null)
                 }}
               >
                 <X className="w-3 h-3 text-gray-400 hover:text-red-500" />
@@ -105,15 +202,20 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, 
             )}
           </div>
         </ContextMenuTrigger>
+
         <ContextMenuContent>
-          <ContextMenuItem
-            onClick={() => onEdit(tag)}
-          >
+          <ContextMenuItem onClick={() => onAddChild(tag)}>
+            <Plus className="w-4 h-4 mr-2" />
+            创建子标签
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => onEdit(tag)}>
             <Pencil className="w-4 h-4 mr-2" />
             重命名
           </ContextMenuItem>
+          <MoveTagMenu tag={tag} />
+          <ContextMenuSeparator />
           <ContextMenuItem
-            onClick={() => onDelete(tag.id)}
+            onClick={() => onDelete(tag)}
             className="text-red-600 dark:text-red-400"
           >
             <Trash2 className="w-4 h-4 mr-2" />
@@ -121,104 +223,208 @@ function SortableTag({ tag, selectedTagId, onSelect, onClear, onEdit, onDelete, 
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      {/* Insertion line - bottom (show when this is the last item before insertion point) */}
-      {showInsertLine && (
-        <div className="h-0.5 bg-primary-500 rounded-full my-0.5" />
+
+      {hasChildren && isExpanded && (
+        <div className="space-y-1">
+          {tag.children.map((child) => (
+            <TagItem
+              key={child.id}
+              tag={child}
+              depth={depth + 1}
+              activeId={activeId}
+              dragPosition={dragPosition}
+              expandedIds={expandedIds}
+              onToggle={onToggle}
+              onSelect={onSelect}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onAddChild={onAddChild}
+            />
+          ))}
+        </div>
+      )}
+
+      {isSortTarget && !dragPosition.before && (
+        <div
+          className="h-0.5 bg-blue-500 rounded-full my-0.5 relative"
+          style={{ marginLeft: `${depth * 12 + 8}px` }}
+        >
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full" />
+        </div>
       )}
     </div>
+  )
+}
+
+function MoveTagMenu({ tag }: { tag: Tag }) {
+  const { tags, moveTag, reorderTags } = useTagStore()
+  const flatTags = useMemo(() => flattenTagTree(tags), [tags])
+
+  const options = flatTags.filter((item) => item.id !== tag.id && !isDescendant(tags, tag.id, item.id))
+
+  const moveTo = async (newParentId: number | null) => {
+    const currentParentId = findTagParentId(tags, tag.id)
+    const oldSiblings = findTagSiblings(tags, currentParentId).filter((item) => item.id !== tag.id)
+    const newSiblings = [...findTagSiblings(tags, newParentId).filter((item) => item.id !== tag.id), tag]
+
+    await moveTag(tag.id, newParentId, newSiblings.length - 1)
+
+    if (currentParentId !== newParentId && oldSiblings.length > 0) {
+      await reorderTags(oldSiblings.map((item) => item.id), currentParentId)
+    }
+  }
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        <Move className="w-4 h-4 mr-2" />
+        移动到
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <ContextMenuItem onClick={() => moveTo(null)}>根标签</ContextMenuItem>
+        {options.map((item) => (
+          <ContextMenuItem
+            key={item.id}
+            onClick={() => moveTo(item.id)}
+            style={{ paddingLeft: `${item.depth * 12 + 8}px` }}
+          >
+            {item.name}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   )
 }
 
 export default function TagPanel() {
   const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } = useTagStore()
   const [isAdding, setIsAdding] = useState(false)
-  const [newTagName, setNewTagName] = useState('')
+  const [addingParent, setAddingParent] = useState<Tag | null>(null)
+  const [newTagName, setNewTagName] = useState("")
   const [selectedColor, setSelectedColor] = useState(TAG_COLORS[0])
-
-  // Edit tag dialog state
   const [editingTag, setEditingTag] = useState<Tag | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editColor, setEditColor] = useState('')
+  const [editName, setEditName] = useState("")
+  const [editColor, setEditColor] = useState("")
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" })
+  const [expandedIds, setExpandedIds] = useState<number[]>([])
 
-  // Drag state - activeId is only set, not read (used for tracking drag source)
-  const [, setActiveId] = useState<number | null>(null)
-  const [overId, setOverId] = useState<number | null>(null)
-  const [localTags, setLocalTags] = useState(tags)
-
-  // Keep localTags in sync with tags prop
   useEffect(() => {
-    setLocalTags(tags)
+    setExpandedIds((prev) => {
+      const validIds = new Set(flattenTagTree(tags).map((tag) => tag.id))
+      const next = prev.filter((id) => validIds.has(id))
+      const parents = flattenTagTree(tags).filter((tag) => tag.children.length > 0).map((tag) => tag.id)
+      return Array.from(new Set([...next, ...parents]))
+    })
   }, [tags])
 
-  // Monitor drag events for tag reordering
   useEffect(() => {
     return monitorForElements({
       onDragStart: ({ source }) => {
-        if (source.data.type === 'tag') {
+        if (source.data.type === "tag") {
           setActiveId(source.data.tagId as number)
         }
       },
       onDrag: ({ source, location }) => {
-        if (source.data.type !== 'tag') return
-
-        const dropTargets = location.current.dropTargets
-        if (dropTargets.length === 0) {
-          setOverId(null)
+        if (source.data.type !== "tag") return
+        const target = location.current.dropTargets[0]
+        if (!target || target.data.type !== "tag") {
+          setDragPosition({ type: "none" })
           return
         }
 
-        const target = dropTargets[0]
-        if (target.data.type === 'tag') {
-          setOverId(target.data.tagId as number)
+        const closestEdge = extractClosestEdge(target.data)
+        if (!closestEdge) {
+          setDragPosition({ type: "none" })
+          return
         }
+
+        setDragPosition({
+          type: "sort",
+          targetId: target.data.tagId as number,
+          before: closestEdge === "top",
+        })
       },
-      onDrop: ({ source, location }) => {
-        if (source.data.type !== 'tag') return
-
-        const sourceTagId = source.data.tagId as number
-        const dropTargets = location.current.dropTargets
-
-        if (dropTargets.length === 0) {
+      onDrop: async ({ source, location }) => {
+        if (source.data.type !== "tag") {
           setActiveId(null)
-          setOverId(null)
+          setDragPosition({ type: "none" })
           return
         }
 
-        const target = dropTargets[0]
-        if (target.data.type === 'tag') {
-          const targetTagId = target.data.tagId as number
+        const activeTagId = source.data.tagId as number
+        const target = location.current.dropTargets[0]
 
-          if (sourceTagId !== targetTagId) {
-            const oldIndex = localTags.findIndex(t => t.id === sourceTagId)
-            const newIndex = localTags.findIndex(t => t.id === targetTagId)
+        if (!target || target.data.type !== "tag") {
+          setActiveId(null)
+          setDragPosition({ type: "none" })
+          return
+        }
 
-            if (oldIndex !== -1 && newIndex !== -1) {
-              // Optimistic update: update local state first
-              const newTags = [...localTags]
-              const [movedTag] = newTags.splice(oldIndex, 1)
-              newTags.splice(newIndex, 0, movedTag)
-              setLocalTags(newTags)
+        const targetTagId = target.data.tagId as number
+        if (activeTagId === targetTagId) {
+          setActiveId(null)
+          setDragPosition({ type: "none" })
+          return
+        }
 
-              // Then call API
-              const tagIds = newTags.map(t => t.id)
-              reorderTags(tagIds)
-            }
+        const before = extractClosestEdge(target.data) === "top"
+        const activeParentId = findTagParentId(tags, activeTagId)
+        const targetParentId = findTagParentId(tags, targetTagId)
+
+        const targetSiblings = [...findTagSiblings(tags, targetParentId)]
+        const activeIndexInTarget = targetSiblings.findIndex((item) => item.id === activeTagId)
+        if (activeIndexInTarget !== -1) {
+          targetSiblings.splice(activeIndexInTarget, 1)
+        }
+
+        const targetIndex = targetSiblings.findIndex((item) => item.id === targetTagId)
+        const insertIndex = before ? targetIndex : targetIndex + 1
+        const movedTag = findTagById(tags, activeTagId)
+
+        if (targetIndex === -1 || !movedTag) {
+          setActiveId(null)
+          setDragPosition({ type: "none" })
+          return
+        }
+
+        targetSiblings.splice(insertIndex, 0, movedTag)
+        await reorderTags(targetSiblings.map((item) => item.id), targetParentId)
+
+        if (activeParentId !== targetParentId) {
+          const oldSiblings = findTagSiblings(tags, activeParentId).filter((item) => item.id !== activeTagId)
+          if (oldSiblings.length > 0) {
+            await reorderTags(oldSiblings.map((item) => item.id), activeParentId)
           }
         }
 
         setActiveId(null)
-        setOverId(null)
-      }
+        setDragPosition({ type: "none" })
+      },
     })
-  }, [localTags, reorderTags])
+  }, [tags, reorderTags])
+
+  const handleToggle = (id: number) => {
+    setExpandedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
+  }
+
+  const openAddDialog = (parent: Tag | null = null) => {
+    setAddingParent(parent)
+    setIsAdding(true)
+    setNewTagName("")
+    setSelectedColor(TAG_COLORS[0])
+  }
 
   const handleAddTag = async () => {
-    if (newTagName.trim()) {
-      await addTag(newTagName.trim(), selectedColor)
-      setNewTagName('')
-      setIsAdding(false)
-      setSelectedColor(TAG_COLORS[0])
+    if (!newTagName.trim()) return
+    await addTag(newTagName.trim(), selectedColor, addingParent?.id ?? null)
+    if (addingParent) {
+      setExpandedIds((prev) => Array.from(new Set([...prev, addingParent.id])))
     }
+    setIsAdding(false)
+    setAddingParent(null)
+    setNewTagName("")
+    setSelectedColor(TAG_COLORS[0])
   }
 
   const handleEditTag = (tag: Tag) => {
@@ -227,21 +433,19 @@ export default function TagPanel() {
     setEditColor(tag.color)
   }
 
-  const handleSaveTag = () => {
-    if (editingTag && editName.trim()) {
-      updateTag(editingTag.id, editName.trim(), editColor)
-      setEditingTag(null)
-      setEditName('')
-      setEditColor('')
+  const handleSaveTag = async () => {
+    if (!editingTag || !editName.trim()) return
+    await updateTag(editingTag.id, editName.trim(), editColor)
+    setEditingTag(null)
+    setEditName("")
+    setEditColor("")
+  }
+
+  const handleDeleteTag = async (tag: Tag) => {
+    if (tag.id === selectedTagId) {
+      setSelectedTagId(null)
     }
-  }
-
-  const handleClearTag = (_id: number) => {
-    setSelectedTagId(null)
-  }
-
-  const handleDeleteTag = (id: number) => {
-    deleteTag(id)
+    await deleteTag(tag.id)
   }
 
   return (
@@ -249,11 +453,7 @@ export default function TagPanel() {
       <div className="p-3 border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">标签</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsAdding(true)}
-          >
+          <Button variant="ghost" size="icon" onClick={() => openAddDialog()}>
             <Plus className="w-4 h-4" />
           </Button>
         </div>
@@ -261,40 +461,69 @@ export default function TagPanel() {
 
       <div className="flex-1 overflow-auto p-2">
         <div className="space-y-1">
-          {localTags.map((tag) => (
-            <SortableTag
+          <div
+            className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+              selectedTagId === null
+                ? "bg-primary-100 dark:bg-primary-900/30"
+                : "hover:bg-gray-100 dark:hover:bg-dark-border"
+            }`}
+            style={{ paddingLeft: "8px" }}
+            onClick={() => setSelectedTagId(null)}
+          >
+            <span className="w-5" />
+            <Tags className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">全部标签</span>
+          </div>
+
+          {tags.map((tag) => (
+            <TagItem
               key={tag.id}
               tag={tag}
-              selectedTagId={selectedTagId}
+              depth={0}
+              activeId={activeId}
+              dragPosition={dragPosition}
+              expandedIds={expandedIds}
+              onToggle={handleToggle}
               onSelect={setSelectedTagId}
-              onClear={handleClearTag}
               onEdit={handleEditTag}
               onDelete={handleDeleteTag}
-              isOverId={overId}
-              onDragStart={() => {}}
-              onDragEnd={() => {}}
+              onAddChild={openAddDialog}
             />
           ))}
+
+          {tags.length === 0 && (
+            <div className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+              暂无标签
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Add Tag Dialog */}
-      <Dialog open={isAdding} onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          setIsAdding(false)
-          setNewTagName('')
-          setSelectedColor(TAG_COLORS[0])
-        }
-      }}>
+      <Dialog
+        open={isAdding}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setIsAdding(false)
+            setAddingParent(null)
+            setNewTagName("")
+            setSelectedColor(TAG_COLORS[0])
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>创建标签</DialogTitle>
+            <DialogTitle>{addingParent ? "创建子标签" : "创建标签"}</DialogTitle>
+            {addingParent && (
+              <DialogDescription>
+                在 "{addingParent.name}" 下创建子标签
+              </DialogDescription>
+            )}
           </DialogHeader>
           <div className="space-y-4 py-4">
             <Input
               value={newTagName}
               onChange={(e) => setNewTagName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+              onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
               placeholder="标签名称"
               autoFocus
             />
@@ -304,7 +533,7 @@ export default function TagPanel() {
                   key={color}
                   onClick={() => setSelectedColor(color)}
                   className={`w-6 h-6 rounded-full transition-transform ${
-                    selectedColor === color ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
+                    selectedColor === color ? "ring-2 ring-offset-2 ring-gray-400 scale-110" : ""
                   }`}
                   style={{ backgroundColor: color }}
                 />
@@ -312,11 +541,15 @@ export default function TagPanel() {
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => {
-              setIsAdding(false)
-              setNewTagName('')
-              setSelectedColor(TAG_COLORS[0])
-            }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAdding(false)
+                setAddingParent(null)
+                setNewTagName("")
+                setSelectedColor(TAG_COLORS[0])
+              }}
+            >
               取消
             </Button>
             <Button onClick={handleAddTag}>添加</Button>
@@ -324,14 +557,16 @@ export default function TagPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Tag Dialog */}
-      <Dialog open={!!editingTag} onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          setEditingTag(null)
-          setEditName('')
-          setEditColor('')
-        }
-      }}>
+      <Dialog
+        open={!!editingTag}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setEditingTag(null)
+            setEditName("")
+            setEditColor("")
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑标签</DialogTitle>
@@ -340,8 +575,8 @@ export default function TagPanel() {
             <Input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSaveTag()}
-              placeholder="标签名称"
+              onKeyDown={(e) => e.key === "Enter" && handleSaveTag()}
+              placeholder="新名称"
               autoFocus
             />
             <div className="flex flex-wrap gap-2">
@@ -350,7 +585,7 @@ export default function TagPanel() {
                   key={color}
                   onClick={() => setEditColor(color)}
                   className={`w-6 h-6 rounded-full transition-transform ${
-                    editColor === color ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
+                    editColor === color ? "ring-2 ring-offset-2 ring-gray-400 scale-110" : ""
                   }`}
                   style={{ backgroundColor: color }}
                 />
@@ -358,11 +593,14 @@ export default function TagPanel() {
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => {
-              setEditingTag(null)
-              setEditName('')
-              setEditColor('')
-            }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditingTag(null)
+                setEditName("")
+                setEditColor("")
+              }}
+            >
               取消
             </Button>
             <Button onClick={handleSaveTag}>保存</Button>

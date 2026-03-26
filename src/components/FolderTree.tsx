@@ -5,7 +5,6 @@ import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
 import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
-import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
 import { useFilterStore } from '@/stores/filterStore'
@@ -403,7 +402,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
               isBeingDragged
                 ? 'opacity-50'
                 : canDrag
-                  ? 'cursor-grab active:cursor-grabbing'
+                  ? 'cursor-pointer'
                   : 'cursor-default'
             } ${
               isSelected
@@ -709,12 +708,6 @@ export default function FolderTree() {
             // Cross-parent move
             moveFolder(activeFolderId, targetParentId)
 
-            // Trigger flash effect
-            const { element } = registry.get(activeFolderId.toString()) ?? {};
-            if (element) {
-              triggerPostMoveFlash(element);
-            }
-
             setDragPosition({ type: 'none' })
             setActiveId(null)
             return
@@ -781,11 +774,6 @@ export default function FolderTree() {
               reorderFolders(folderIds)
             }
 
-            // Trigger flash effect on the moved item
-            const { element } = registry.get(movedFolder.id.toString()) ?? {};
-            if (element) {
-              triggerPostMoveFlash(element);
-            }
           }
 
           setDragPosition({ type: 'none' })
@@ -823,11 +811,6 @@ export default function FolderTree() {
           if (activeFolderId !== targetFolderId && !isDescendant(folders, activeFolderId, targetFolderId)) {
             moveFolder(activeFolderId, targetFolderId)
 
-            // Trigger flash effect on the moved item
-            const { element } = registry.get(activeFolderId.toString()) ?? {};
-            if (element) {
-              triggerPostMoveFlash(element);
-            }
           }
         }
 
@@ -862,11 +845,6 @@ export default function FolderTree() {
             // Cross-parent move
             moveFolder(activeFolderId, targetParentId)
 
-            // Trigger flash effect
-            const { element } = registry.get(activeFolderId.toString()) ?? {};
-            if (element) {
-              triggerPostMoveFlash(element);
-            }
           } else {
             // Same parent - just reorder
             const siblings = findSiblings(folders, activeParentId)
@@ -930,11 +908,6 @@ export default function FolderTree() {
               reorderFolders(folderIds)
             }
 
-            // Trigger flash effect on the moved item
-            const { element } = registry.get(movedFolder.id.toString()) ?? {};
-            if (element) {
-              triggerPostMoveFlash(element);
-            }
           }
         }
 

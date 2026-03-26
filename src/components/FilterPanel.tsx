@@ -43,7 +43,7 @@ const getFileTypeDisplay = (type: string) => {
 export default function FilterPanel() {
   const { criteria, setFileType, setDominantColor, setKeyword, setFolderId, clearFilters } = useFilterStore()
   const { filterFiles, selectedFolderId } = useFileStore()
-  const { tags } = useTagStore()
+  const { flatTags } = useTagStore()
   const { folders } = useFolderStore()
 
   // Apply filters automatically when any filter changes
@@ -97,7 +97,7 @@ export default function FilterPanel() {
   const getTagDisplay = () => {
     if (criteria.tagIds.length === 0) return "标签"
     if (criteria.tagIds.length === 1) {
-      const tag = tags.find(t => t.id === criteria.tagIds[0])
+      const tag = flatTags.find(t => t.id === criteria.tagIds[0])
       return tag ? tag.name : "标签"
     }
     return `${criteria.tagIds.length} 个标签`
@@ -209,14 +209,14 @@ export default function FilterPanel() {
         >
           <SelectContent>
             <SelectItem value="none">全部</SelectItem>
-            {tags.map((tag) => (
+            {flatTags.map((tag) => (
               <SelectItem key={tag.id} value={tag.id.toString()}>
                 <div className="flex items-center gap-1">
                   <div
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: tag.color }}
                   />
-                  <span>{tag.name}</span>
+                  <span>{"　".repeat(tag.depth)}{tag.name}</span>
                 </div>
               </SelectItem>
             ))}

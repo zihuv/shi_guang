@@ -50,6 +50,8 @@ interface FolderStore {
   setDragOverFolderId: (folderId: number | null) => void
 }
 
+let loadFoldersRequestId = 0
+
 export const useFolderStore = create<FolderStore>((set, get) => ({
   folders: [],
   selectedFolderId: null,
@@ -67,13 +69,19 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
   setFolders: (folders) => set({ folders }),
 
   loadFolders: async () => {
+    const requestId = ++loadFoldersRequestId
     set({ isLoading: true })
     try {
       const folders = await invoke<FolderNode[]>('get_folder_tree')
+      if (requestId !== loadFoldersRequestId) {
+        return
+      }
       set({ folders: removeHiddenFolders(folders), isLoading: false })
     } catch (e) {
       console.error('Failed to load folders:', e)
-      set({ isLoading: false })
+      if (requestId === loadFoldersRequestId) {
+        set({ isLoading: false })
+      }
     }
   },
 

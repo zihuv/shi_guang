@@ -46,7 +46,7 @@ export default function ImagePreview() {
     setSelectedFile
   } = useFileStore()
 
-  const { folders, selectedFolderId, loadFolders } = useFolderStore()
+  const { folders, selectedFolderId } = useFolderStore()
 
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [imageError, setImageError] = useState(false)
@@ -160,11 +160,6 @@ export default function ImagePreview() {
     window.addEventListener('wheel', handleWheel, { passive: false })
     return () => window.removeEventListener('wheel', handleWheel)
   }, [previewMode])
-
-  // 加载文件夹
-  useEffect(() => {
-    loadFolders()
-  }, [loadFolders])
 
   // 扁平化文件夹树
   const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {

@@ -150,6 +150,8 @@ pub struct Tag {
     pub name: String,
     pub color: String,
     pub count: i64,
+    #[serde(rename = "parentId")]
+    pub parent_id: Option<i64>,
     #[serde(rename = "sortOrder")]
     pub sort_order: i32,
 }
@@ -249,7 +251,9 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
                 color TEXT NOT NULL,
-                sort_order INTEGER DEFAULT 0
+                parent_id INTEGER,
+                sort_order INTEGER DEFAULT 0,
+                FOREIGN KEY (parent_id) REFERENCES tags(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS file_tags (
@@ -390,6 +394,15 @@ impl Database {
                 "ALTER TABLE tags ADD COLUMN sort_order INTEGER DEFAULT 0",
                 [],
             )?;
+        }
+
+        let has_tag_parent_id: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tags') WHERE name = 'parent_id'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_tag_parent_id == 0 {
+            self.conn.execute("ALTER TABLE tags ADD COLUMN parent_id INTEGER", [])?;
         }
 
         // Add deleted_at column to files if it doesn't exist (for migration)
@@ -555,7 +568,8 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
             CREATE INDEX IF NOT EXISTS idx_folders_parent_sort_order ON folders(parent_id, sort_order, name);
-            CREATE INDEX IF NOT EXISTS idx_tags_sort_order ON tags(sort_order, name);
+            CREATE INDEX IF NOT EXISTS idx_tags_parent_id ON tags(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_tags_parent_sort_order ON tags(parent_id, sort_order, name);
             CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id_file_id ON file_tags(tag_id, file_id);
             "
         )?;
@@ -1415,12 +1429,12 @@ impl Database {
 
     pub fn get_all_tags(&self) -> Result<Vec<Tag>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.name, t.color, COUNT(f.id) as count, t.sort_order
+            "SELECT t.id, t.name, t.color, COUNT(f.id) as count, t.parent_id, t.sort_order
              FROM tags t
              LEFT JOIN file_tags ft ON t.id = ft.tag_id
              LEFT JOIN files f ON f.id = ft.file_id AND f.deleted_at IS NULL
              GROUP BY t.id
-             ORDER BY t.sort_order ASC, t.name ASC",
+             ORDER BY COALESCE(t.parent_id, t.id), t.sort_order ASC, t.name ASC",
         )?;
         let tags = stmt
             .query_map([], |row| {
@@ -1429,7 +1443,8 @@ impl Database {
                     name: row.get(1)?,
                     color: row.get(2)?,
                     count: row.get(3)?,
-                    sort_order: row.get(4)?,
+                    parent_id: row.get(4)?,
+                    sort_order: row.get(5)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -1437,10 +1452,10 @@ impl Database {
         Ok(tags)
     }
 
-    pub fn create_tag(&self, name: &str, color: &str) -> Result<i64> {
+    pub fn create_tag(&self, name: &str, color: &str, parent_id: Option<i64>) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO tags (name, color) VALUES (?1, ?2)",
-            params![name, color],
+            "INSERT INTO tags (name, color, parent_id) VALUES (?1, ?2, ?3)",
+            params![name, color, parent_id],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -1470,7 +1485,7 @@ impl Database {
         // 构建 IN 查询
         let placeholders: Vec<String> = file_ids.iter().map(|_| "?".to_string()).collect();
         let query = format!(
-            "SELECT ft.file_id, t.id, t.name, t.color, t.sort_order FROM tags t
+            "SELECT ft.file_id, t.id, t.name, t.color, t.parent_id, t.sort_order FROM tags t
              INNER JOIN file_tags ft ON t.id = ft.tag_id
              WHERE ft.file_id IN ({})
              ORDER BY t.sort_order ASC, t.name ASC",
@@ -1496,7 +1511,8 @@ impl Database {
                     name: row.get(2)?,
                     color: row.get(3)?,
                     count: 1,
-                    sort_order: row.get(4)?,
+                    parent_id: row.get(4)?,
+                    sort_order: row.get(5)?,
                 },
             ))
         })?;
@@ -1511,7 +1527,7 @@ impl Database {
 
     pub fn get_file_tags(&self, file_id: i64) -> Result<Vec<Tag>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.name, t.color, t.sort_order FROM tags t
+            "SELECT t.id, t.name, t.color, t.parent_id, t.sort_order FROM tags t
              INNER JOIN file_tags ft ON t.id = ft.tag_id
              WHERE ft.file_id = ?1
              ORDER BY t.sort_order ASC, t.name ASC",
@@ -1523,7 +1539,8 @@ impl Database {
                     name: row.get(1)?,
                     color: row.get(2)?,
                     count: 1,
-                    sort_order: row.get(3)?,
+                    parent_id: row.get(3)?,
+                    sort_order: row.get(4)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -1909,13 +1926,21 @@ impl Database {
     }
 
     /// Reorder tags by updating their sort_order values
-    pub fn reorder_tags(&self, tag_ids: &[i64]) -> Result<()> {
+    pub fn reorder_tags(&self, tag_ids: &[i64], parent_id: Option<i64>) -> Result<()> {
         for (index, tag_id) in tag_ids.iter().enumerate() {
             self.conn.execute(
-                "UPDATE tags SET sort_order = ?1 WHERE id = ?2",
-                params![index as i64, tag_id],
+                "UPDATE tags SET sort_order = ?1, parent_id = ?2 WHERE id = ?3",
+                params![index as i64, parent_id, tag_id],
             )?;
         }
+        Ok(())
+    }
+
+    pub fn move_tag(&self, tag_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tags SET parent_id = ?1, sort_order = ?2 WHERE id = ?3",
+            params![new_parent_id, sort_order, tag_id],
+        )?;
         Ok(())
     }
 

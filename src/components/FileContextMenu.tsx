@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
@@ -21,12 +20,7 @@ interface FileContextMenuProps {
 
 export default function FileContextMenu({ file, children }: FileContextMenuProps) {
   const { deleteFile, loadFilesInFolder, setSelectedFile } = useFileStore()
-  const { folders, loadFolders, selectedFolderId } = useFolderStore()
-
-  // Load folders when component mounts
-  useEffect(() => {
-    loadFolders()
-  }, [loadFolders])
+  const { folders, selectedFolderId } = useFolderStore()
 
   // Flatten folder tree for display in submenu
   const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {

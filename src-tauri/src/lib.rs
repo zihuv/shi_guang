@@ -193,6 +193,7 @@ pub fn run() {
             commands::get_browser_collection_folder,
             commands::reorder_folders,
             commands::reorder_tags,
+            commands::move_tag,
             commands::move_folder,
             commands::copy_file,
             commands::open_file,
