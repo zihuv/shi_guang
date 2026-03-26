@@ -239,14 +239,6 @@ export default function FileGrid() {
     setShowBatchDeleteConfirm(false)
   }
 
-  if (isLoading && files.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-gray-500 dark:text-gray-400">加载中...</div>
-      </div>
-    )
-  }
-
   if (files.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-gray-500 dark:text-gray-400">
@@ -413,13 +405,6 @@ export default function FileGrid() {
           />
         )}
 
-        {isLoading && files.length > 0 && (
-          <div className="pointer-events-none absolute inset-0 z-10 bg-white/35 dark:bg-black/20">
-            <div className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs text-gray-600 shadow-sm dark:bg-dark-surface/90 dark:text-gray-300">
-              加载中...
-            </div>
-          </div>
-        )}
       </div>
 
       {pagination.totalPages > 1 && (
