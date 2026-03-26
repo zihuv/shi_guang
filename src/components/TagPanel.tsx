@@ -21,6 +21,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/ContextMenu"
+import { useFileStore } from "@/stores/fileStore"
 import { flattenTagTree, Tag, useTagStore } from "@/stores/tagStore"
 import { ChevronRight, Move, Pencil, Plus, Tag as TagIcon, Tags, Trash2, X } from "lucide-react"
 
@@ -298,6 +299,7 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
 
 export default function TagPanel() {
   const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } = useTagStore()
+  const { loadFilesInFolder, selectedFolderId } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
   const [addingParent, setAddingParent] = useState<Tag | null>(null)
   const [newTagName, setNewTagName] = useState("")
@@ -308,6 +310,7 @@ export default function TagPanel() {
   const [activeId, setActiveId] = useState<number | null>(null)
   const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" })
   const [expandedIds, setExpandedIds] = useState<number[]>([])
+  const [deletingTag, setDeletingTag] = useState<Tag | null>(null)
 
   useEffect(() => {
     setExpandedIds((prev) => {
@@ -442,10 +445,18 @@ export default function TagPanel() {
   }
 
   const handleDeleteTag = async (tag: Tag) => {
-    if (tag.id === selectedTagId) {
+    setDeletingTag(tag)
+  }
+
+  const confirmDeleteTag = async () => {
+    if (!deletingTag) return
+
+    if (deletingTag.id === selectedTagId) {
       setSelectedTagId(null)
     }
-    await deleteTag(tag.id)
+    await deleteTag(deletingTag.id)
+    await loadFilesInFolder(selectedFolderId)
+    setDeletingTag(null)
   }
 
   return (
@@ -604,6 +615,37 @@ export default function TagPanel() {
               取消
             </Button>
             <Button onClick={handleSaveTag}>保存</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deletingTag}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setDeletingTag(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除标签</DialogTitle>
+            <DialogDescription>
+              {deletingTag
+                ? `删除“${deletingTag.name}”后，该标签及其子标签会从所有已关联图片中移除，且无法恢复。`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeletingTag(null)}>
+              取消
+            </Button>
+            <Button
+              onClick={confirmDeleteTag}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              删除
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -285,8 +285,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   loadFilesInFolder: async (folderId) => {
     console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
-    const { pagination } = get()
-    set({ isLoading: true, selectedFile: null, selectedFiles: [] })
+    const { pagination, selectedFile, selectedFiles } = get()
+    set({ isLoading: true })
     try {
       let result: { files: FileItem[], total: number, page: number, page_size: number, total_pages: number }
       if (folderId === null) {
@@ -318,10 +318,17 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
       // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
+      const visibleFileIds = new Set(parsedFiles.map((file) => file.id))
+      const newSelectedFile = selectedFile
+        ? parsedFiles.find((file) => file.id === selectedFile.id) || null
+        : null
+      const newSelectedFiles = selectedFiles.filter((fileId) => visibleFileIds.has(fileId))
       console.log('[fileStore] Loaded files:', parsedFiles.length)
       set({
         files: parsedFiles,
         isLoading: false,
+        selectedFile: newSelectedFile,
+        selectedFiles: newSelectedFiles,
         pagination: {
           page: result.page,
           pageSize: result.page_size,
