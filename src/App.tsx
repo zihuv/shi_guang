@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -34,6 +34,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
+  const dragCounterRef = useRef(0);
 
   useAppInitialization();
   useInternalFileDrag(setDraggingFileId);
@@ -47,26 +48,134 @@ function App() {
   useDocumentTheme(theme);
   useUndoHotkey();
 
-  // Handle drag and drop to import files (prevent default behavior)
+  const isExternalFileDrag = useCallback((e: React.DragEvent) => {
+    return Array.from(e.dataTransfer.types).includes("Files");
+  }, []);
+
+  const getDroppedPaths = useCallback((e: React.DragEvent) => {
+    return Array.from(e.dataTransfer.files)
+      .map((file) => (file as File & { path?: string }).path)
+      .filter((path): path is string => Boolean(path));
+  }, []);
+
+  const getFileExt = useCallback((file: File) => {
+    const nameParts = file.name.split(".");
+    const extFromName = nameParts.length > 1 ? nameParts.pop() : undefined;
+    if (extFromName) {
+      return extFromName.toLowerCase();
+    }
+
+    const mimePart = file.type.split("/")[1];
+    return mimePart ? mimePart.toLowerCase() : "png";
+  }, []);
+
+  const fileToBase64 = useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result !== "string") {
+          reject(new Error("Failed to read dropped file as base64"));
+          return;
+        }
+
+        const base64 = result.includes(",") ? result.split(",")[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // Handle drag and drop to import files while keeping internal DnD enabled.
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  }, []);
+
+    if (!isDraggingInternal && isExternalFileDrag(e)) {
+      e.dataTransfer.dropEffect = "copy";
+      dragCounterRef.current = 1;
+      setIsDragging(true);
+    }
+  }, [isDraggingInternal, isExternalFileDrag]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+    if (isDraggingInternal || !isExternalFileDrag(e)) {
+      return;
+    }
+
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }, [isDraggingInternal, isExternalFileDrag]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Drop handling is done via Tauri events now
-  }, []);
+
+    if (isDraggingInternal || !isExternalFileDrag(e)) {
+      return;
+    }
+
+    dragCounterRef.current += 1;
+    setIsDragging(true);
+  }, [isDraggingInternal, isExternalFileDrag]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+
+    if (isDraggingInternal || !isExternalFileDrag(e)) {
+      return;
+    }
+
+    const targetFolderId =
+      dragOverFolderId !== null ? dragOverFolderId : undefined;
+    const paths = getDroppedPaths(e);
+
+    if (paths.length > 0) {
+      for (const path of paths) {
+        await importFileFn(path, true, targetFolderId);
+      }
+    } else {
+      const items = await Promise.all(
+        Array.from(e.dataTransfer.files).map(async (file) => ({
+          base64Data: await fileToBase64(file),
+          ext: getFileExt(file),
+        })),
+      );
+
+      if (items.length > 0) {
+        await importImagesFromBase64(items);
+      }
+    }
+
+    if (dragOverFolderId !== null) {
+      setDragOverFolderId(null);
+    }
+  }, [
+    dragOverFolderId,
+    fileToBase64,
+    getFileExt,
+    getDroppedPaths,
+    importFileFn,
+    importImagesFromBase64,
+    isDraggingInternal,
+    isExternalFileDrag,
+    setDragOverFolderId,
+  ]);
 
   return (
     <div
       className="flex flex-col h-screen bg-gray-50 dark:bg-dark-bg"
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
