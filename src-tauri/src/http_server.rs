@@ -14,6 +14,7 @@ use tauri::Emitter;
 
 use crate::db::{Database, FileRecord};
 use crate::indexer;
+use crate::path_utils::join_path;
 use chrono::Local;
 use image::GenericImageView;
 use reqwest::Client;
@@ -210,7 +211,7 @@ async fn import_image(
             // Create browser collection folder
             let index_path = &index_paths[0];
             let folder_name = "浏览器采集";
-            let folder_path = format!("{}/{}", index_path, folder_name);
+            let folder_path = join_path(index_path, folder_name);
 
             // Create directory in file system
             let path = std::path::Path::new(&folder_path);
@@ -512,7 +513,7 @@ async fn import_image_from_url(
             // Create browser collection folder
             let index_path = &index_paths[0];
             let folder_name = "浏览器采集";
-            let folder_path = format!("{}/{}", index_path, folder_name);
+            let folder_path = join_path(index_path, folder_name);
 
             // Create directory in file system
             let path = std::path::Path::new(&folder_path);

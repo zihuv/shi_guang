@@ -64,6 +64,15 @@ interface FileStore {
   selectedFiles: number[]
   searchQuery: string
   isLoading: boolean
+  // Pagination state
+  pagination: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
+  setPage: (page: number) => void
+  setPageSize: (pageSize: number) => void
   // Undo stack for delete operations
   undoStack: UndoAction[]
   addToUndoStack: (fileIds: number[]) => void
@@ -135,6 +144,24 @@ export const useFileStore = create<FileStore>((set, get) => ({
   selectedFiles: [],
   searchQuery: '',
   isLoading: false,
+
+  // Pagination defaults
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    total: 0,
+    totalPages: 0,
+  },
+
+  setPage: (page) => {
+    set((state) => ({ pagination: { ...state.pagination, page } }))
+    get().loadFilesInFolder(get().selectedFolderId)
+  },
+
+  setPageSize: (pageSize) => {
+    set((state) => ({ pagination: { ...state.pagination, pageSize, page: 1 } }))
+    get().loadFilesInFolder(get().selectedFolderId)
+  },
   isDraggingInternal: false,
 
   // Undo stack for delete operations (max 50 entries)
@@ -225,18 +252,31 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   loadFiles: async () => {
-    const { selectedFile } = get()
+    const { selectedFile, pagination } = get()
     set({ isLoading: true })
     try {
-      const files = await invoke<FileItem[]>('get_all_files')
+      const result = await invoke<{ files: FileItem[], total: number, page: number, page_size: number, total_pages: number }>('get_all_files', {
+        page: pagination.page,
+        pageSize: pagination.pageSize
+      })
       // Parse colorDistribution from JSON string
-      const parsedFiles = parseFileList(files)
+      const parsedFiles = parseFileList(result.files)
       // Update selectedFile if it exists in the new files list
       let newSelectedFile = selectedFile
       if (selectedFile) {
         newSelectedFile = parsedFiles.find(f => f.id === selectedFile.id) || null
       }
-      set({ files: parsedFiles, isLoading: false, selectedFile: newSelectedFile })
+      set({
+        files: parsedFiles,
+        isLoading: false,
+        selectedFile: newSelectedFile,
+        pagination: {
+          page: result.page,
+          pageSize: result.page_size,
+          total: result.total,
+          totalPages: result.total_pages,
+        }
+      })
     } catch (e) {
       console.error('Failed to load files:', e)
       set({ isLoading: false })
@@ -245,13 +285,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   loadFilesInFolder: async (folderId) => {
     console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
+    const { pagination } = get()
     set({ isLoading: true, selectedFile: null, selectedFiles: [] })
     try {
-      let files: FileItem[]
+      let result: { files: FileItem[], total: number, page: number, page_size: number, total_pages: number }
       if (folderId === null) {
         // When folderId is null, get ALL files (not just orphan files)
         // Use filter_files with no folder filter
-        files = await invoke<FileItem[]>('filter_files', {
+        result = await invoke('filter_files', {
           filter: {
             query: null,
             folder_id: null,
@@ -264,15 +305,30 @@ export const useFileStore = create<FileStore>((set, get) => ({
             min_rating: null,
             favorites_only: null,
             dominant_color: null,
-          }
+          },
+          page: pagination.page,
+          pageSize: pagination.pageSize
         })
       } else {
-        files = await invoke<FileItem[]>('get_files_in_folder', { folderId })
+        result = await invoke('get_files_in_folder', {
+          folderId,
+          page: pagination.page,
+          pageSize: pagination.pageSize
+        })
       }
       // Parse colorDistribution from JSON string
-      const parsedFiles = parseFileList(files)
+      const parsedFiles = parseFileList(result.files)
       console.log('[fileStore] Loaded files:', parsedFiles.length)
-      set({ files: parsedFiles, isLoading: false })
+      set({
+        files: parsedFiles,
+        isLoading: false,
+        pagination: {
+          page: result.page,
+          pageSize: result.page_size,
+          total: result.total,
+          totalPages: result.total_pages,
+        }
+      })
     } catch (e) {
       console.error('[fileStore] Failed to load files in folder:', e)
       set({ isLoading: false })
@@ -280,12 +336,26 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   searchFiles: async (query) => {
+    const { pagination } = get()
     set({ isLoading: true })
     try {
-      const files = await invoke<FileItem[]>('search_files', { query })
+      const result = await invoke<{ files: FileItem[], total: number, page: number, page_size: number, total_pages: number }>('search_files', {
+        query,
+        page: pagination.page,
+        pageSize: pagination.pageSize
+      })
       // Parse colorDistribution from JSON string
-      const parsedFiles = parseFileList(files)
-      set({ files: parsedFiles, isLoading: false })
+      const parsedFiles = parseFileList(result.files)
+      set({
+        files: parsedFiles,
+        isLoading: false,
+        pagination: {
+          page: result.page,
+          pageSize: result.page_size,
+          total: result.total,
+          totalPages: result.total_pages,
+        }
+      })
     } catch (e) {
       console.error('Failed to search files:', e)
       set({ isLoading: false })
@@ -293,9 +363,10 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   filterFiles: async (filter) => {
+    const { pagination } = get()
     set({ isLoading: true })
     try {
-      const files = await invoke<FileItem[]>('filter_files', {
+      const result = await invoke<{ files: FileItem[], total: number, page: number, page_size: number, total_pages: number }>('filter_files', {
         filter: {
           query: filter.query || null,
           folder_id: filter.folderId ?? null,
@@ -308,11 +379,22 @@ export const useFileStore = create<FileStore>((set, get) => ({
           min_rating: filter.minRating ?? null,
           favorites_only: filter.favoritesOnly ?? null,
           dominant_color: filter.dominantColor || null,
-        }
+        },
+        page: pagination.page,
+        pageSize: pagination.pageSize
       })
       // Parse colorDistribution from JSON string
-      const parsedFiles = parseFileList(files)
-      set({ files: parsedFiles, isLoading: false })
+      const parsedFiles = parseFileList(result.files)
+      set({
+        files: parsedFiles,
+        isLoading: false,
+        pagination: {
+          page: result.page,
+          pageSize: result.page_size,
+          total: result.total,
+          totalPages: result.total_pages,
+        }
+      })
     } catch (e) {
       console.error('Failed to filter files:', e)
       set({ isLoading: false })

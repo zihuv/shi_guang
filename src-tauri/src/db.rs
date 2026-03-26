@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use chrono::Local;
 use image::GenericImageView;
+use crate::path_utils::{join_path, normalize_path, path_has_prefix, replace_path_prefix};
 
 /// Parse a hex color string (#RRGGBB) to RGB components
 fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
@@ -381,143 +382,40 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_all_files(&self) -> Result<Vec<FileWithTags>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC"
-        )?;
-
-        let files: Vec<FileRecord> = stmt.query_map([], |row| {
-            Ok(FileRecord {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                ext: row.get(3)?,
-                size: row.get(4)?,
-                width: row.get(5)?,
-                height: row.get(6)?,
-                folder_id: row.get(7)?,
-                created_at: row.get(8)?,
-                modified_at: row.get(9)?,
-                imported_at: row.get(10)?,
-                rating: row.get(11)?,
-                description: row.get(12)?,
-                source_url: row.get(13)?,
-                dominant_color: row.get(14)?,
-                color_distribution: row.get(15)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
-
-        // 批量获取所有文件的 tags
-        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
-        let tags_map = self.get_tags_for_files(&file_ids)?;
-
-        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
-            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
-            FileWithTags {
-                id: file.id,
-                path: file.path,
-                name: file.name,
-                ext: file.ext,
-                size: file.size,
-                width: file.width,
-                height: file.height,
-                folder_id: file.folder_id,
-                created_at: file.created_at,
-                modified_at: file.modified_at,
-                imported_at: file.imported_at,
-                rating: file.rating,
-                description: file.description,
-                source_url: file.source_url,
-                dominant_color: file.dominant_color,
-                color_distribution: file.color_distribution,
-                tags,
-                deleted_at: None,
-            }
-        }).collect();
-
-        Ok(result)
-    }
-
-    pub fn search_files(&self, query: &str) -> Result<Vec<FileWithTags>> {
-        let search_pattern = format!("%{}%", query);
-        let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
-             FROM files
-             WHERE name LIKE ?1 AND deleted_at IS NULL
-             ORDER BY imported_at ASC, id ASC"
-        )?;
-
-        let files: Vec<FileRecord> = stmt.query_map([&search_pattern], |row| {
-            Ok(FileRecord {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                ext: row.get(3)?,
-                size: row.get(4)?,
-                width: row.get(5)?,
-                height: row.get(6)?,
-                folder_id: row.get(7)?,
-                created_at: row.get(8)?,
-                modified_at: row.get(9)?,
-                imported_at: row.get(10)?,
-                rating: row.get(11)?,
-                description: row.get(12)?,
-                source_url: row.get(13)?,
-                dominant_color: row.get(14)?,
-                color_distribution: row.get(15)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
-
-        // 批量获取所有文件的 tags
-        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
-        let tags_map = self.get_tags_for_files(&file_ids)?;
-
-        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
-            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
-            FileWithTags {
-                id: file.id,
-                path: file.path,
-                name: file.name,
-                ext: file.ext,
-                size: file.size,
-                width: file.width,
-                height: file.height,
-                folder_id: file.folder_id,
-                created_at: file.created_at,
-                modified_at: file.modified_at,
-                imported_at: file.imported_at,
-                rating: file.rating,
-                description: file.description,
-                source_url: file.source_url,
-                dominant_color: file.dominant_color,
-                color_distribution: file.color_distribution,
-                tags,
-                deleted_at: None,
-            }
-        }).collect();
-
-        Ok(result)
-    }
-
-    pub fn get_files_in_folder(&self, folder_id: Option<i64>) -> Result<Vec<FileWithTags>> {
-        let mut stmt = if folder_id.is_some() {
-            self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
-                 FROM files
-                 WHERE folder_id = ?1 AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC"
-            )?
+    pub fn get_all_files(&self, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<FileWithTags>> {
+        let sql = if limit.is_some() && offset.is_some() {
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC LIMIT ?1 OFFSET ?2"
+        } else if limit.is_some() {
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC LIMIT ?1"
         } else {
-            self.conn.prepare(
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
-                 FROM files
-                 WHERE folder_id IS NULL AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC"
-            )?
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC"
         };
 
-        let files: Vec<FileRecord> = if let Some(fid) = folder_id {
-            stmt.query_map([fid], |row| {
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let files: Vec<FileRecord> = if let (Some(l), Some(o)) = (limit, offset) {
+            stmt.query_map(params![l, o], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else if let Some(l) = limit {
+            stmt.query_map(params![l], |row| {
                 Ok(FileRecord {
                     id: row.get(0)?,
                     path: row.get(1)?,
@@ -589,6 +487,354 @@ impl Database {
         }).collect();
 
         Ok(result)
+    }
+
+    pub fn get_files_count(&self) -> Result<i64> {
+        self.conn.query_row(
+            "SELECT COUNT(*) FROM files WHERE deleted_at IS NULL",
+            [],
+            |row| row.get(0)
+        )
+    }
+
+    pub fn search_files(&self, query: &str, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<FileWithTags>> {
+        let search_pattern = format!("%{}%", query);
+        let sql = if limit.is_some() && offset.is_some() {
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+             FROM files
+             WHERE name LIKE ?1 AND deleted_at IS NULL
+             ORDER BY imported_at ASC, id ASC LIMIT ?2 OFFSET ?3"
+        } else if limit.is_some() {
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+             FROM files
+             WHERE name LIKE ?1 AND deleted_at IS NULL
+             ORDER BY imported_at ASC, id ASC LIMIT ?2"
+        } else {
+            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+             FROM files
+             WHERE name LIKE ?1 AND deleted_at IS NULL
+             ORDER BY imported_at ASC, id ASC"
+        };
+
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let files: Vec<FileRecord> = if let (Some(l), Some(o)) = (limit, offset) {
+            stmt.query_map(params![&search_pattern, l, o], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else if let Some(l) = limit {
+            stmt.query_map(params![&search_pattern, l], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else {
+            stmt.query_map([&search_pattern], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        };
+
+        // 批量获取所有文件的 tags
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
+                id: file.id,
+                path: file.path,
+                name: file.name,
+                ext: file.ext,
+                size: file.size,
+                width: file.width,
+                height: file.height,
+                folder_id: file.folder_id,
+                created_at: file.created_at,
+                modified_at: file.modified_at,
+                imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
+                tags,
+                deleted_at: None,
+            }
+        }).collect();
+
+        Ok(result)
+    }
+
+    pub fn search_files_count(&self, query: &str) -> Result<i64> {
+        let search_pattern = format!("%{}%", query);
+        self.conn.query_row(
+            "SELECT COUNT(*) FROM files WHERE name LIKE ?1 AND deleted_at IS NULL",
+            params![&search_pattern],
+            |row| row.get(0)
+        )
+    }
+
+    pub fn get_files_in_folder(&self, folder_id: Option<i64>, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<FileWithTags>> {
+        let sql = if folder_id.is_some() {
+            if limit.is_some() && offset.is_some() {
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                 FROM files
+                 WHERE folder_id = ?1 AND deleted_at IS NULL
+                 ORDER BY imported_at ASC, id ASC LIMIT ?2 OFFSET ?3"
+            } else if limit.is_some() {
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                 FROM files
+                 WHERE folder_id = ?1 AND deleted_at IS NULL
+                 ORDER BY imported_at ASC, id ASC LIMIT ?2"
+            } else {
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                 FROM files
+                 WHERE folder_id = ?1 AND deleted_at IS NULL
+                 ORDER BY imported_at ASC, id ASC"
+            }
+        } else {
+            if limit.is_some() && offset.is_some() {
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                 FROM files
+                 WHERE folder_id IS NULL AND deleted_at IS NULL
+                 ORDER BY imported_at ASC, id ASC LIMIT ?1 OFFSET ?2"
+            } else if limit.is_some() {
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                 FROM files
+                 WHERE folder_id IS NULL AND deleted_at IS NULL
+                 ORDER BY imported_at ASC, id ASC LIMIT ?1"
+            } else {
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                 FROM files
+                 WHERE folder_id IS NULL AND deleted_at IS NULL
+                 ORDER BY imported_at ASC, id ASC"
+            }
+        };
+
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let files: Vec<FileRecord> = if let (Some(fid), Some(l), Some(o)) = (folder_id, limit, offset) {
+            stmt.query_map(params![fid, l, o], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else if let (Some(fid), Some(l)) = (folder_id, limit) {
+            stmt.query_map(params![fid, l], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else if let Some(fid) = folder_id {
+            stmt.query_map([fid], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else if let (Some(l), Some(o)) = (limit, offset) {
+            stmt.query_map(params![l, o], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else if let Some(l) = limit {
+            stmt.query_map(params![l], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        } else {
+            stmt.query_map([], |row| {
+                Ok(FileRecord {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    ext: row.get(3)?,
+                    size: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    folder_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    modified_at: row.get(9)?,
+                    imported_at: row.get(10)?,
+                    rating: row.get(11)?,
+                    description: row.get(12)?,
+                    source_url: row.get(13)?,
+                    dominant_color: row.get(14)?,
+                    color_distribution: row.get(15)?,
+                })
+            })?.filter_map(|r| r.ok()).collect()
+        };
+
+        // 批量获取所有文件的 tags
+        let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        let result: Vec<FileWithTags> = files.into_iter().map(|file| {
+            let tags = tags_map.get(&file.id).cloned().unwrap_or_default();
+            FileWithTags {
+                id: file.id,
+                path: file.path,
+                name: file.name,
+                ext: file.ext,
+                size: file.size,
+                width: file.width,
+                height: file.height,
+                folder_id: file.folder_id,
+                created_at: file.created_at,
+                modified_at: file.modified_at,
+                imported_at: file.imported_at,
+                rating: file.rating,
+                description: file.description,
+                source_url: file.source_url,
+                dominant_color: file.dominant_color,
+                color_distribution: file.color_distribution,
+                tags,
+                deleted_at: None,
+            }
+        }).collect();
+
+        Ok(result)
+    }
+
+    pub fn get_files_in_folder_count(&self, folder_id: Option<i64>) -> Result<i64> {
+        if let Some(fid) = folder_id {
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM files WHERE folder_id = ?1 AND deleted_at IS NULL",
+                params![fid],
+                |row| row.get(0)
+            )
+        } else {
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM files WHERE folder_id IS NULL AND deleted_at IS NULL",
+                [],
+                |row| row.get(0)
+            )
+        }
     }
 
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<FileWithTags>> {
@@ -1097,7 +1343,7 @@ impl Database {
     pub fn get_or_create_folder(&self, folder_path: &str, index_paths: &[String]) -> Result<Option<i64>> {
         // Find which index_path this folder is under
         for index_path in index_paths {
-            if folder_path.starts_with(index_path) {
+            if path_has_prefix(folder_path, index_path) {
                 // Get parent folder path
                 let parent = std::path::Path::new(folder_path);
                 let folder_name = parent.file_name()
@@ -1105,7 +1351,7 @@ impl Database {
                     .unwrap_or("")
                     .to_string();
 
-                if folder_path == index_path {
+                if std::path::Path::new(folder_path) == std::path::Path::new(index_path) {
                     // This is the root index path, return None (root folder)
                     return Ok(None);
                 }
@@ -1142,15 +1388,16 @@ impl Database {
         // Get current folder path
         let folder = self.get_folder_by_id(id)?;
         if let Some(folder) = folder {
-            let parent_path = std::path::Path::new(&folder.path)
-                .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
             let old_folder_path = folder.path.clone();
-            let new_folder_path = format!("{}/{}", parent_path, name);
+            let old_path = std::path::Path::new(&old_folder_path);
+            let new_folder_path = normalize_path(
+                old_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new(""))
+                    .join(name)
+            );
 
             // Rename folder in file system
-            let old_path = std::path::Path::new(&old_folder_path);
             let new_path_obj = std::path::Path::new(&new_folder_path);
             if old_path.exists() {
                 std::fs::rename(old_path, new_path_obj).map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
@@ -1163,14 +1410,15 @@ impl Database {
             )?;
 
             // Update all subfolder paths (recursive)
-            let mut stmt = self.conn.prepare("SELECT id, path FROM folders WHERE path LIKE ?1")?;
-            let pattern = format!("{}/%", old_folder_path);
-            let subfolders: Vec<(i64, String)> = stmt
-                .query_map([pattern], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .filter_map(|r| r.ok())
+            let subfolders: Vec<(i64, String)> = self.get_all_folders()?
+                .into_iter()
+                .filter(|subfolder| subfolder.id != id && path_has_prefix(&subfolder.path, &old_folder_path))
+                .map(|subfolder| (subfolder.id, subfolder.path))
                 .collect();
             for (subfolder_id, subfolder_old_path) in subfolders {
-                let new_subfolder_path = subfolder_old_path.replacen(&old_folder_path, &new_folder_path, 1);
+                let Some(new_subfolder_path) = replace_path_prefix(&subfolder_old_path, &old_folder_path, &new_folder_path) else {
+                    continue;
+                };
                 self.conn.execute(
                     "UPDATE folders SET path = ?1 WHERE id = ?2",
                     params![new_subfolder_path, subfolder_id],
@@ -1178,14 +1426,15 @@ impl Database {
             }
 
             // Update all file paths
-            let mut stmt = self.conn.prepare("SELECT id, path FROM files WHERE path LIKE ?1")?;
-            let pattern = format!("{}/%", old_folder_path);
-            let files: Vec<(i64, String)> = stmt
-                .query_map([pattern], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .filter_map(|r| r.ok())
+            let files: Vec<(i64, String)> = self.get_all_files(None, None)?
+                .into_iter()
+                .filter(|file| path_has_prefix(&file.path, &old_folder_path))
+                .map(|file| (file.id, file.path))
                 .collect();
             for (file_id, file_old_path) in files {
-                let new_file_path = file_old_path.replacen(&old_folder_path, &new_folder_path, 1);
+                let Some(new_file_path) = replace_path_prefix(&file_old_path, &old_folder_path, &new_folder_path) else {
+                    continue;
+                };
                 self.conn.execute(
                     "UPDATE files SET path = ?1 WHERE id = ?2",
                     params![new_file_path, file_id],
@@ -1252,10 +1501,10 @@ impl Database {
 
     /// Get all file paths in a directory (including subdirectories)
     pub fn get_file_paths_in_dir(&self, dir_path: &str) -> Result<std::collections::HashSet<String>> {
-        let pattern = format!("{}%", dir_path);
-        let mut stmt = self.conn.prepare("SELECT path FROM files WHERE path LIKE ?1 AND deleted_at IS NULL")?;
-        let paths: Vec<String> = stmt.query_map([&pattern], |row| row.get(0))?
-            .filter_map(|r| r.ok())
+        let paths: Vec<String> = self.get_all_files(None, None)?
+            .into_iter()
+            .filter(|file| path_has_prefix(&file.path, dir_path))
+            .map(|file| file.path)
             .collect();
         Ok(paths.into_iter().collect())
     }
@@ -1327,37 +1576,25 @@ impl Database {
         Ok(())
     }
 
-    /// Normalize path separators to OS-native format
-    fn normalize_path(path: &str) -> String {
-        std::path::Path::new(path)
-            .to_string_lossy()
-            .to_string()
-    }
-
     /// Move a folder to a new parent and/or position
     pub fn move_folder(&self, folder_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<()> {
         // Get current folder info
         let folder = self.get_folder_by_id(folder_id)?;
         if let Some(folder) = folder {
-            let old_folder_path = Self::normalize_path(&folder.path);
+            let old_folder_path = normalize_path(&folder.path);
 
             // Get new parent folder path (normalize to handle mixed separators from database)
             let new_parent_path = if let Some(parent_id) = new_parent_id {
                 // Moving to a specific parent folder
                 let parent = self.get_folder_by_id(parent_id)?;
-                Self::normalize_path(&parent.map(|p| p.path.clone()).unwrap_or_default())
+                normalize_path(parent.map(|p| p.path.clone()).unwrap_or_default())
             } else {
                 // Root level - use the first index path as root
                 let index_paths = self.get_index_paths()?;
                 index_paths.first().cloned().unwrap_or_default()
             };
 
-            let new_folder_path = Self::normalize_path(
-                &std::path::Path::new(&new_parent_path)
-                    .join(&folder.name)
-                    .to_string_lossy()
-                    .to_string()
-            );
+            let new_folder_path = join_path(&new_parent_path, &folder.name);
 
             // Move folder in file system - source must exist
             let old_path = std::path::Path::new(&old_folder_path);
@@ -1402,32 +1639,35 @@ impl Database {
             )?;
 
             // Update all subfolder paths (recursive)
-            let mut stmt = self.conn.prepare("SELECT id, path FROM folders WHERE path LIKE ?1")?;
-            let pattern = format!("{}/%", old_folder_path);
-            let subfolders: Vec<(i64, String)> = stmt
-                .query_map([pattern], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .filter_map(|r| r.ok())
+            // Use forward slashes for SQL LIKE pattern
+            let subfolders: Vec<(i64, String)> = self.get_all_folders()?
+                .into_iter()
+                .filter(|subfolder| subfolder.id != folder_id && path_has_prefix(&subfolder.path, &old_folder_path))
+                .map(|subfolder| (subfolder.id, subfolder.path))
                 .collect();
             for (subfolder_id, subfolder_old_path) in subfolders {
-                let new_subfolder_path = subfolder_old_path.replacen(&old_folder_path, &new_folder_path, 1);
+                let Some(new_subfolder_path_native) = replace_path_prefix(&subfolder_old_path, &old_folder_path, &new_folder_path) else {
+                    continue;
+                };
                 self.conn.execute(
                     "UPDATE folders SET path = ?1 WHERE id = ?2",
-                    params![new_subfolder_path, subfolder_id],
+                    params![new_subfolder_path_native, subfolder_id],
                 )?;
             }
 
             // Update all file paths
-            let mut stmt = self.conn.prepare("SELECT id, path FROM files WHERE path LIKE ?1")?;
-            let pattern = format!("{}/%", old_folder_path);
-            let files: Vec<(i64, String)> = stmt
-                .query_map([pattern], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .filter_map(|r| r.ok())
+            let files: Vec<(i64, String)> = self.get_all_files(None, None)?
+                .into_iter()
+                .filter(|file| path_has_prefix(&file.path, &old_folder_path))
+                .map(|file| (file.id, file.path))
                 .collect();
             for (file_id, file_old_path) in files {
-                let new_file_path = file_old_path.replacen(&old_folder_path, &new_folder_path, 1);
+                let Some(new_file_path_native) = replace_path_prefix(&file_old_path, &old_folder_path, &new_folder_path) else {
+                    continue;
+                };
                 self.conn.execute(
                     "UPDATE files SET path = ?1 WHERE id = ?2",
-                    params![new_file_path, file_id],
+                    params![new_file_path_native, file_id],
                 )?;
             }
         }
@@ -1466,7 +1706,7 @@ impl Database {
     }
 
     /// Filter files based on various criteria
-    pub fn filter_files(&self, filter: crate::commands::FileFilter) -> Result<Vec<FileWithTags>> {
+    pub fn filter_files(&self, filter: crate::commands::FileFilter, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<FileWithTags>> {
         // Build the SQL query dynamically
         let mut sql = String::from(
             "SELECT DISTINCT f.id, f.path, f.name, f.ext, f.size, f.width, f.height, f.folder_id, f.created_at, f.modified_at, f.imported_at, f.rating, f.description, f.source_url, f.dominant_color, f.color_distribution, f.deleted_at FROM files f"
@@ -1577,6 +1817,13 @@ impl Database {
 
         sql.push_str(" ORDER BY f.imported_at DESC, f.id ASC");
 
+        // Add LIMIT and OFFSET if provided
+        if let (Some(l), Some(o)) = (limit, offset) {
+            sql.push_str(&format!(" LIMIT {} OFFSET {}", l, o));
+        } else if let Some(l) = limit {
+            sql.push_str(&format!(" LIMIT {}", l));
+        }
+
         // Prepare and execute the query
         let mut stmt = self.conn.prepare(&sql)?;
 
@@ -1657,5 +1904,121 @@ impl Database {
         }).collect();
 
         Ok(result)
+    }
+
+    /// Get count of filtered files (approximation, excludes color filtering)
+    pub fn filter_files_count(&self, filter: &crate::commands::FileFilter) -> Result<i64> {
+        // Build the SQL query dynamically (similar to filter_files but without LIMIT/OFFSET)
+        let mut sql = String::from(
+            "SELECT COUNT(DISTINCT f.id) FROM files f"
+        );
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        // Join with file_tags if tag filtering is needed
+        if filter.tag_ids.is_some() && filter.tag_ids.as_ref().unwrap().len() > 0 {
+            sql.push_str(" INNER JOIN file_tags ft ON f.id = ft.file_id");
+        }
+
+        // deleted_at IS NULL - only show non-deleted files
+        conditions.push("f.deleted_at IS NULL".to_string());
+
+        // Query filter (search by name)
+        if let Some(ref query) = filter.query {
+            if !query.is_empty() {
+                conditions.push("f.name LIKE ?".to_string());
+                params_vec.push(Box::new(format!("%{}%", query)));
+            }
+        }
+
+        // Folder filter
+        if let Some(folder_id) = filter.folder_id {
+            conditions.push("f.folder_id = ?".to_string());
+            params_vec.push(Box::new(folder_id));
+        }
+
+        // File type filter (by extension)
+        if let Some(ref file_types) = filter.file_types {
+            if !file_types.is_empty() {
+                let ext_conditions: Vec<String> = file_types.iter().map(|ft| {
+                    let extensions: Vec<&str> = match ft.as_str() {
+                        "image" => vec!["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif", "psd", "ai", "eps", "raw", "cr2", "nef", "arw", "dng", "heic", "heif"],
+                        "video" => vec!["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"],
+                        "document" => vec!["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "ods"],
+                        _ => vec![],
+                    };
+                    let ext_list: Vec<String> = extensions.iter().map(|e| format!("'{}'", e.to_lowercase())).collect();
+                    format!("LOWER(f.ext) IN ({})", ext_list.join(", "))
+                }).collect();
+                if !ext_conditions.is_empty() {
+                    conditions.push(format!("({})", ext_conditions.join(" OR ")));
+                }
+            }
+        }
+
+        // Date range filter (by imported_at)
+        if let Some(ref date_start) = filter.date_start {
+            if !date_start.is_empty() {
+                conditions.push("f.imported_at >= ?".to_string());
+                params_vec.push(Box::new(date_start.clone()));
+            }
+        }
+        if let Some(ref date_end) = filter.date_end {
+            if !date_end.is_empty() {
+                conditions.push("f.imported_at <= ?".to_string());
+                params_vec.push(Box::new(date_end.clone()));
+            }
+        }
+
+        // Size range filter
+        if let Some(size_min) = filter.size_min {
+            conditions.push("f.size >= ?".to_string());
+            params_vec.push(Box::new(size_min));
+        }
+        if let Some(size_max) = filter.size_max {
+            conditions.push("f.size <= ?".to_string());
+            params_vec.push(Box::new(size_max));
+        }
+
+        // Rating filter
+        if let Some(min_rating) = filter.min_rating {
+            if min_rating > 0 {
+                conditions.push("f.rating >= ?".to_string());
+                params_vec.push(Box::new(min_rating));
+            }
+        }
+
+        // Favorites filter (rating > 0)
+        if let Some(favorites_only) = filter.favorites_only {
+            if favorites_only {
+                conditions.push("f.rating > 0".to_string());
+            }
+        }
+
+        // Tag filter (files that have ANY of the specified tags - OR logic)
+        if let Some(ref tag_ids) = filter.tag_ids {
+            if !tag_ids.is_empty() {
+                let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
+                conditions.push(format!("ft.tag_id IN ({})", placeholders.join(", ")));
+                for tag_id in tag_ids {
+                    params_vec.push(Box::new(*tag_id));
+                }
+            }
+        }
+
+        // Dominant color filter - exclude empty colors
+        conditions.push("f.dominant_color != ''".to_string());
+
+        // Build the WHERE clause
+        if !conditions.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&conditions.join(" AND "));
+        }
+
+        // Prepare and execute the query
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+        stmt.query_row(params_refs.as_slice(), |row| row.get(0))
     }
 }

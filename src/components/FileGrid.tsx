@@ -1,118 +1,180 @@
-import { useEffect, useState, useRef } from 'react'
-import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
-import { useFileStore, FileItem, getNameWithoutExt } from '@/stores/fileStore'
-import { useTagStore } from '@/stores/tagStore'
-import { useFolderStore } from '@/stores/folderStore'
-import { getImageSrc, formatSize } from '@/utils'
-import FileContextMenu from './FileContextMenu'
+import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react"
+import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter"
+import { useVirtualizer } from "@tanstack/react-virtual"
+import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
+import { useTagStore } from "@/stores/tagStore"
+import { useFolderStore } from "@/stores/folderStore"
+import { getImageSrc, formatSize } from "@/utils"
+import FileContextMenu from "./FileContextMenu"
+
+const GRID_MIN_WIDTH = 180
+const GRID_GAP = 16
+const GRID_ROW_ESTIMATE = 300
+const LIST_ROW_HEIGHT = 56
+const OBSERVER_ROOT_MARGIN = "300px"
+const ADAPTIVE_MIN_WIDTH = 220
+const ADAPTIVE_CARD_FOOTER_HEIGHT = 48
+const VIEWPORT_OVERSCAN_PX = 600
 
 export default function FileGrid() {
-  const { files, selectedFile, setSelectedFile, isLoading, selectedFiles, toggleFileSelection, clearSelection, deleteFiles, openPreview } = useFileStore()
+  const {
+    files,
+    selectedFile,
+    setSelectedFile,
+    isLoading,
+    selectedFiles,
+    toggleFileSelection,
+    clearSelection,
+    deleteFiles,
+    openPreview,
+    pagination,
+    setPage,
+    setPageSize,
+  } = useFileStore()
   const { selectedTagId } = useTagStore()
   const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'adaptive'>('grid')
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "adaptive">("grid")
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
 
-  // Box selection state
+  const scrollParentRef = useRef<HTMLDivElement>(null)
+
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
-  const selectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (selectedTagId) {
-      setFilteredFiles(files.filter(f => f.tags.some(t => t.id === selectedTagId)))
+      setFilteredFiles(files.filter((f) => f.tags.some((t) => t.id === selectedTagId)))
     } else {
       setFilteredFiles(files)
     }
   }, [files, selectedTagId])
 
-  // Handle Ctrl+click for multi-selection
-  const handleFileClick = (file: FileItem, event: React.MouseEvent) => {
+  useEffect(() => {
+    const element = scrollParentRef.current
+    if (!element) return
+
+    const updateWidth = () => {
+      setContainerWidth(element.clientWidth)
+      setViewportHeight(element.clientHeight)
+      setScrollTop(element.scrollTop)
+    }
+
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(element)
+
+    const handleScroll = () => {
+      setScrollTop(element.scrollTop)
+    }
+
+    element.addEventListener("scroll", handleScroll, { passive: true })
+
+    return () => {
+      observer.disconnect()
+      element.removeEventListener("scroll", handleScroll)
+    }
+  }, [])
+
+  const gridColumns = Math.max(1, Math.floor((Math.max(containerWidth, GRID_MIN_WIDTH) + GRID_GAP) / (GRID_MIN_WIDTH + GRID_GAP)))
+  const gridItemWidth = Math.max(0, (Math.max(containerWidth, GRID_MIN_WIDTH) - GRID_GAP * (gridColumns - 1)) / gridColumns)
+  const gridRowHeight = Math.ceil(gridItemWidth + 96)
+  const gridRowCount = Math.ceil(filteredFiles.length / gridColumns)
+  const adaptiveColumns = Math.max(1, Math.floor((Math.max(containerWidth, ADAPTIVE_MIN_WIDTH) + GRID_GAP) / (ADAPTIVE_MIN_WIDTH + GRID_GAP)))
+  const adaptiveColumnWidth = Math.max(0, (Math.max(containerWidth, ADAPTIVE_MIN_WIDTH) - GRID_GAP * (adaptiveColumns - 1)) / adaptiveColumns)
+  const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth)
+  const adaptiveVisibleItems = adaptiveLayout.items.filter(
+    (item) =>
+      item.top + item.height >= scrollTop - VIEWPORT_OVERSCAN_PX &&
+      item.top <= scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX,
+  )
+
+  const listRowVirtualizer = useVirtualizer({
+    count: filteredFiles.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => LIST_ROW_HEIGHT,
+    overscan: 8,
+  })
+
+  const gridRowVirtualizer = useVirtualizer({
+    count: gridRowCount,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => (containerWidth > 0 ? gridRowHeight : GRID_ROW_ESTIMATE),
+    overscan: 3,
+  })
+
+  const handleFileClick = (file: FileItem, event: MouseEvent) => {
     if (event.ctrlKey || event.metaKey) {
-      // Ctrl+click toggles selection
       toggleFileSelection(file.id)
     } else {
-      // Normal click selects single file
       setSelectedFile(file)
     }
   }
 
-  // Handle double-click to open preview
   const handleFileDoubleClick = (index: number) => {
     openPreview(index, filteredFiles)
   }
 
-  // Handle box selection start
-  const handleSelectionStart = (event: React.MouseEvent) => {
-    // Only start box selection when clicking on the background, not on files
+  const handleSelectionStart = (event: MouseEvent) => {
     const target = event.target as HTMLElement
-    if (target.closest('.file-card')) {
-      // Clicking on a file card - don't clear selection
+    if (target.closest(".file-card")) {
       return
     }
 
-    // Click on empty space - clear selection first, then start selection
     if (selectedFiles.length > 0) {
       clearSelection()
     }
-    // Also clear the selected file
     if (selectedFile) {
       setSelectedFile(null)
     }
 
     setIsSelecting(true)
-    const rect = selectionRef.current?.getBoundingClientRect()
+    const rect = scrollParentRef.current?.getBoundingClientRect()
     if (rect) {
       setSelectionBox({
-        startX: event.clientX - rect.left,
-        startY: event.clientY - rect.top,
-        endX: event.clientX - rect.left,
-        endY: event.clientY - rect.top,
+        startX: event.clientX - rect.left + scrollParentRef.current!.scrollLeft,
+        startY: event.clientY - rect.top + scrollParentRef.current!.scrollTop,
+        endX: event.clientX - rect.left + scrollParentRef.current!.scrollLeft,
+        endY: event.clientY - rect.top + scrollParentRef.current!.scrollTop,
       })
     }
   }
 
-  // Handle box selection move
-  const handleSelectionMove = (event: React.MouseEvent) => {
-    if (!isSelecting || !selectionBox || !selectionRef.current) return
+  const handleSelectionMove = (event: MouseEvent) => {
+    if (!isSelecting || !selectionBox || !scrollParentRef.current) return
 
-    const rect = selectionRef.current.getBoundingClientRect()
+    const rect = scrollParentRef.current.getBoundingClientRect()
     setSelectionBox({
       ...selectionBox,
-      endX: event.clientX - rect.left,
-      endY: event.clientY - rect.top,
+      endX: event.clientX - rect.left + scrollParentRef.current.scrollLeft,
+      endY: event.clientY - rect.top + scrollParentRef.current.scrollTop,
     })
   }
 
-  // Handle box selection end
   const handleSelectionEnd = () => {
-    if (!isSelecting || !selectionBox || !selectionRef.current) {
+    if (!isSelecting || !selectionBox || !scrollParentRef.current) {
       setIsSelecting(false)
       return
     }
 
-    // Calculate the selection rectangle
     const minX = Math.min(selectionBox.startX, selectionBox.endX)
     const maxX = Math.max(selectionBox.startX, selectionBox.endX)
     const minY = Math.min(selectionBox.startY, selectionBox.endY)
     const maxY = Math.max(selectionBox.startY, selectionBox.endY)
 
-    // Only select if the box is large enough (at least 10px)
     if (maxX - minX > 10 && maxY - minY > 10) {
-      // Get all file card elements and check which ones intersect with the selection box
-      const cards = selectionRef.current.querySelectorAll('.file-card')
+      const cards = scrollParentRef.current.querySelectorAll(".file-card")
+      const containerRect = scrollParentRef.current.getBoundingClientRect()
       cards.forEach((card) => {
         const rect = card.getBoundingClientRect()
-        const containerRect = selectionRef.current!.getBoundingClientRect()
+        const cardX = rect.left - containerRect.left + scrollParentRef.current!.scrollLeft + rect.width / 2
+        const cardY = rect.top - containerRect.top + scrollParentRef.current!.scrollTop + rect.height / 2
 
-        // Calculate card position relative to container
-        const cardX = rect.left - containerRect.left + rect.width / 2
-        const cardY = rect.top - containerRect.top + rect.height / 2
-
-        // Check if card center is within selection box
         if (cardX >= minX && cardX <= maxX && cardY >= minY && cardY <= maxY) {
-          const fileId = parseInt(card.getAttribute('data-file-id') || '0')
+          const fileId = parseInt(card.getAttribute("data-file-id") || "0", 10)
           if (fileId && !selectedFiles.includes(fileId)) {
             toggleFileSelection(fileId)
           }
@@ -124,7 +186,6 @@ export default function FileGrid() {
     setSelectionBox(null)
   }
 
-  // Handle batch delete
   const handleBatchDelete = async () => {
     await deleteFiles(selectedFiles)
     setShowBatchDeleteConfirm(false)
@@ -132,7 +193,7 @@ export default function FileGrid() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex h-full items-center justify-center">
         <div className="text-gray-500 dark:text-gray-400">加载中...</div>
       </div>
     )
@@ -140,49 +201,51 @@ export default function FileGrid() {
 
   if (files.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-        <svg className="w-16 h-16 mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex h-full flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+        <svg className="mb-4 h-16 w-16 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
         <p className="text-lg font-medium">暂无文件</p>
-        <p className="text-sm mt-1">请在设置中添加索引目录</p>
+        <p className="mt-1 text-sm">请在设置中添加索引目录</p>
       </div>
     )
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-dark-border">
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-dark-border">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            {selectedFiles.length > 0 ? `已选择 ${selectedFiles.length} / ` : ''}{filteredFiles.length} 个文件
+            {selectedFiles.length > 0 ? `已选择 ${selectedFiles.length} / ` : ""}
+            {filteredFiles.length} 个文件
+            {pagination.totalPages > 1 && ` (第 ${pagination.page}/${pagination.totalPages} 页)`}
           </span>
         </div>
         <div className="flex gap-1">
           <button
-            onClick={() => setViewMode('adaptive')}
-            className={`p-1.5 rounded ${viewMode === 'adaptive' ? 'bg-gray-200 dark:bg-dark-border' : 'hover:bg-gray-100 dark:hover:bg-dark-border'}`}
+            onClick={() => setViewMode("adaptive")}
+            className={`rounded p-1.5 ${viewMode === "adaptive" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
             title="自适应大小"
           >
-            <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </button>
           <button
-            onClick={() => setViewMode('grid')}
-            className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-gray-200 dark:bg-dark-border' : 'hover:bg-gray-100 dark:hover:bg-dark-border'}`}
+            onClick={() => setViewMode("grid")}
+            className={`rounded p-1.5 ${viewMode === "grid" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
             title="网格视图"
           >
-            <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
             </svg>
           </button>
           <button
-            onClick={() => setViewMode('list')}
-            className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-gray-200 dark:bg-dark-border' : 'hover:bg-gray-100 dark:hover:bg-dark-border'}`}
+            onClick={() => setViewMode("list")}
+            className={`rounded p-1.5 ${viewMode === "list" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
             title="列表视图"
           >
-            <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
@@ -190,23 +253,31 @@ export default function FileGrid() {
       </div>
 
       <div
-        ref={selectionRef}
-        className="flex-1 overflow-auto p-4 relative select-none"
+        ref={scrollParentRef}
+        className="relative flex-1 overflow-auto p-4 select-none"
         onMouseDown={handleSelectionStart}
         onMouseMove={handleSelectionMove}
         onMouseUp={handleSelectionEnd}
         onMouseLeave={handleSelectionEnd}
       >
-        {viewMode === 'adaptive' ? (
-          <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
-            {filteredFiles.map((file, index) => (
-              <div key={file.id} className="break-inside-avoid">
+        {viewMode === "adaptive" ? (
+          <div className="relative" style={{ height: `${adaptiveLayout.totalHeight}px` }}>
+            {adaptiveVisibleItems.map(({ file, index, left, top, width }) => (
+              <div
+                key={file.id}
+                className="absolute"
+                style={{
+                  left: `${left}px`,
+                  top: `${top}px`,
+                  width: `${width}px`,
+                }}
+              >
                 <AdaptiveFileCard
                   file={file}
-                  isSelected={selectedFile?.id === file.id}
                   isMultiSelected={selectedFiles.includes(file.id)}
                   isDragging={draggingFileId === file.id}
-                  onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
+                  scrollRootRef={scrollParentRef}
+                  onClick={(e: MouseEvent) => handleFileClick(file, e)}
                   onDoubleClick={() => handleFileDoubleClick(index)}
                   onDragStart={() => setDraggingFileId(file.id)}
                   onDragEnd={() => setDraggingFileId(null)}
@@ -214,44 +285,77 @@ export default function FileGrid() {
               </div>
             ))}
           </div>
-        ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
-            {filteredFiles.map((file, index) => (
-              <FileCard
-                key={file.id}
-                file={file}
-                isSelected={selectedFile?.id === file.id}
-                isMultiSelected={selectedFiles.includes(file.id)}
-                isDragging={draggingFileId === file.id}
-                onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
-                onDoubleClick={() => handleFileDoubleClick(index)}
-                onDragStart={() => setDraggingFileId(file.id)}
-                onDragEnd={() => setDraggingFileId(null)}
-              />
-            ))}
+        ) : viewMode === "grid" ? (
+          <div className="relative" style={{ height: `${gridRowVirtualizer.getTotalSize()}px` }}>
+            {gridRowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const startIndex = virtualRow.index * gridColumns
+              const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns)
+
+              return (
+                <div
+                  key={virtualRow.key}
+                  className="absolute left-0 top-0 w-full"
+                  style={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div
+                    className="grid gap-4"
+                    style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+                  >
+                    {rowFiles.map((file, offset) => (
+                      <FileCard
+                        key={file.id}
+                        file={file}
+                        isMultiSelected={selectedFiles.includes(file.id)}
+                        isDragging={draggingFileId === file.id}
+                        scrollRootRef={scrollParentRef}
+                        onClick={(e: MouseEvent) => handleFileClick(file, e)}
+                        onDoubleClick={() => handleFileDoubleClick(startIndex + offset)}
+                        onDragStart={() => setDraggingFileId(file.id)}
+                        onDragEnd={() => setDraggingFileId(null)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         ) : (
-          <div className="space-y-1">
-            {filteredFiles.map((file, index) => (
-              <FileRow
-                key={file.id}
-                file={file}
-                isSelected={selectedFile?.id === file.id}
-                isMultiSelected={selectedFiles.includes(file.id)}
-                isDragging={draggingFileId === file.id}
-                onClick={(e: React.MouseEvent) => handleFileClick(file, e)}
-                onDoubleClick={() => handleFileDoubleClick(index)}
-                onDragStart={() => setDraggingFileId(file.id)}
-                onDragEnd={() => setDraggingFileId(null)}
-              />
-            ))}
+          <div className="relative" style={{ height: `${listRowVirtualizer.getTotalSize()}px` }}>
+            {listRowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const file = filteredFiles[virtualRow.index]
+              if (!file) return null
+
+              return (
+                <div
+                  key={virtualRow.key}
+                  className="absolute left-0 top-0 w-full"
+                  style={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <FileRow
+                    file={file}
+                    isMultiSelected={selectedFiles.includes(file.id)}
+                    isDragging={draggingFileId === file.id}
+                    scrollRootRef={scrollParentRef}
+                    onClick={(e: MouseEvent) => handleFileClick(file, e)}
+                    onDoubleClick={() => handleFileDoubleClick(virtualRow.index)}
+                    onDragStart={() => setDraggingFileId(file.id)}
+                    onDragEnd={() => setDraggingFileId(null)}
+                  />
+                </div>
+              )
+            })}
           </div>
         )}
 
-        {/* Selection box overlay */}
         {selectionBox && (
           <div
-            className="absolute border-2 border-primary-500 bg-primary-500/10 pointer-events-none"
+            className="pointer-events-none absolute border-2 border-primary-500 bg-primary-500/10"
             style={{
               left: Math.min(selectionBox.startX, selectionBox.endX),
               top: Math.min(selectionBox.startY, selectionBox.endY),
@@ -262,16 +366,59 @@ export default function FileGrid() {
         )}
       </div>
 
-      {/* Batch action bar */}
-      {selectedFiles.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg shadow-lg px-4 py-2 flex items-center gap-4 z-50">
-          <span className="text-sm text-gray-700 dark:text-gray-200">
-            已选择 {selectedFiles.length} 个文件
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 border-t border-gray-200 py-2 dark:border-dark-border">
+          <button
+            onClick={() => setPage(1)}
+            disabled={pagination.page <= 1}
+            className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+          >
+            首页
+          </button>
+          <button
+            onClick={() => setPage(pagination.page - 1)}
+            disabled={pagination.page <= 1}
+            className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+          >
+            上一页
+          </button>
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            第 {pagination.page} / {pagination.totalPages} 页
           </span>
+          <button
+            onClick={() => setPage(pagination.page + 1)}
+            disabled={pagination.page >= pagination.totalPages}
+            className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+          >
+            下一页
+          </button>
+          <button
+            onClick={() => setPage(pagination.totalPages)}
+            disabled={pagination.page >= pagination.totalPages}
+            className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+          >
+            末页
+          </button>
+          <select
+            value={pagination.pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            className="ml-2 rounded border px-2 py-1 text-sm hover:bg-gray-50 dark:hover:bg-dark-border"
+          >
+            <option value={50}>50/页</option>
+            <option value={100}>100/页</option>
+            <option value={200}>200/页</option>
+            <option value={500}>500/页</option>
+          </select>
+        </div>
+      )}
+
+      {selectedFiles.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 transform items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-lg dark:border-dark-border dark:bg-dark-surface">
+          <span className="text-sm text-gray-700 dark:text-gray-200">已选择 {selectedFiles.length} 个文件</span>
           <div className="flex gap-2">
             <button
               onClick={() => clearSelection()}
-              className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded"
+              className="rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
             >
               取消选择
             </button>
@@ -279,13 +426,13 @@ export default function FileGrid() {
               <>
                 <button
                   onClick={handleBatchDelete}
-                  className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded"
+                  className="rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
                 >
                   确认删除
                 </button>
                 <button
                   onClick={() => setShowBatchDeleteConfirm(false)}
-                  className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded"
+                  className="rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
                 >
                   取消
                 </button>
@@ -293,7 +440,7 @@ export default function FileGrid() {
             ) : (
               <button
                 onClick={() => setShowBatchDeleteConfirm(true)}
-                className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded"
+                className="rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
               >
                 批量删除
               </button>
@@ -305,31 +452,151 @@ export default function FileGrid() {
   )
 }
 
-function FileCard({ file, isSelected: _isSelected, isMultiSelected, isDragging, onClick, onDoubleClick, onDragStart, onDragEnd }: {
+type AdaptiveLayoutItem = {
   file: FileItem
-  isSelected: boolean
+  index: number
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: number) {
+  if (files.length === 0 || columnWidth <= 0) {
+    return { items: [] as AdaptiveLayoutItem[], totalHeight: 0 }
+  }
+
+  const heights = Array.from({ length: columns }, () => 0)
+  const items: AdaptiveLayoutItem[] = files.map((file, index) => {
+    const imageHeight = getAdaptiveImageHeight(file, columnWidth)
+    const totalHeight = imageHeight + ADAPTIVE_CARD_FOOTER_HEIGHT
+    let columnIndex = 0
+
+    for (let i = 1; i < heights.length; i += 1) {
+      if (heights[i] < heights[columnIndex]) {
+        columnIndex = i
+      }
+    }
+
+    const top = heights[columnIndex]
+    const left = columnIndex * (columnWidth + GRID_GAP)
+    heights[columnIndex] += totalHeight + GRID_GAP
+
+    return {
+      file,
+      index,
+      left,
+      top,
+      width: columnWidth,
+      height: totalHeight,
+    }
+  })
+
+  return {
+    items,
+    totalHeight: Math.max(0, ...heights) - GRID_GAP,
+  }
+}
+
+function getAdaptiveImageHeight(file: FileItem, width: number) {
+  if (!file.width || !file.height || file.width <= 0 || file.height <= 0) {
+    return width
+  }
+
+  return Math.max(80, Math.round((file.height / file.width) * width))
+}
+
+function useVisibility(rootRef: RefObject<HTMLElement | null>) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [isVisible, setIsVisible] = useState(false)
+
+  useEffect(() => {
+    const element = ref.current
+    const root = rootRef.current
+    if (!element || !root) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setIsVisible(entries.some((entry) => entry.isIntersecting))
+      },
+      {
+        root,
+        rootMargin: OBSERVER_ROOT_MARGIN,
+      },
+    )
+
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [rootRef])
+
+  return { ref, isVisible }
+}
+
+function useLazyImageSrc(path: string, isVisible: boolean) {
+  const [imageError, setImageError] = useState(false)
+  const [imageSrc, setImageSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isVisible) return
+
+    let active = true
+    let objectUrl = ""
+
+    setImageError(false)
+    setImageSrc(null)
+
+    getImageSrc(path).then((src) => {
+      if (!active) {
+        if (src.startsWith("blob:")) {
+          URL.revokeObjectURL(src)
+        }
+        return
+      }
+
+      objectUrl = src
+      setImageSrc(src)
+    })
+
+    return () => {
+      active = false
+      if (objectUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }
+  }, [path, isVisible])
+
+  return {
+    imageSrc,
+    imageError,
+    setImageError,
+  }
+}
+
+type FileCardBaseProps = {
+  file: FileItem
   isMultiSelected: boolean
   isDragging: boolean
-  onClick: (e: React.MouseEvent) => void
+  scrollRootRef: RefObject<HTMLDivElement | null>
+  onClick: (e: MouseEvent) => void
   onDoubleClick?: () => void
   onDragStart: () => void
   onDragEnd: () => void
-}) {
-  const { files } = useFileStore()
-  const { uniqueContextId } = useFolderStore()
-  const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState<string | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+}
 
-  // @atlaskit draggable
+function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+  const { uniqueContextId } = useFolderStore()
+  const dragRef = useRef<HTMLDivElement>(null)
+  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, isVisible)
+
   useEffect(() => {
-    const element = ref.current
+    const element = dragRef.current
     if (!element) return
 
     return draggable({
       element,
       getInitialData: () => ({
-        type: 'app-file',
+        type: "app-file",
         fileId: file.id,
         fileName: file.name,
         uniqueContextId,
@@ -341,112 +608,85 @@ function FileCard({ file, isSelected: _isSelected, isMultiSelected, isDragging, 
         onDragEnd()
       },
     })
-  }, [file.id, uniqueContextId, onDragStart, onDragEnd])
-
-  // 检查文件是否还存在
-  const fileExists = files.some(f => f.id === file.id)
-
-  useEffect(() => {
-    if (!fileExists) return
-    let mounted = true
-    setImageSrc(null)
-    getImageSrc(file.path).then(src => {
-      if (mounted) setImageSrc(src)
-    })
-    return () => { mounted = false }
-  }, [file.path, file.id, fileExists])
-
-  // 强制正方形格子
-  const getContainerStyle = () => {
-    return { paddingBottom: '100%' }
-  }
+  }, [file.id, file.name, uniqueContextId, onDragStart, onDragEnd])
 
   return (
     <FileContextMenu file={file}>
-      <div
-        ref={ref}
-        data-file-id={file.id}
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-        className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
-          isMultiSelected
-            ? 'ring-2 ring-primary-500 shadow-lg'
-            : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
-        }`}
-      >
-        <div className="relative bg-gray-100 dark:bg-dark-bg" style={getContainerStyle()}>
-          {imageSrc === null ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-          ) : imageSrc && !imageError ? (
-            <img
-              src={imageSrc}
-              alt={file.name}
-              className="absolute inset-0 w-full h-full object-contain"
-              onError={() => setImageError(true)}
-              loading="lazy"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-          )}
-        </div>
-        <div className="p-2 bg-white dark:bg-dark-surface">
-          <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
-          {file.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {file.tags.slice(0, 3).map(tag => (
-                <span
-                  key={tag.id}
-                  className="px-1.5 py-0.5 text-[10px] rounded-full text-white"
-                  style={{ backgroundColor: tag.color }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-              {file.tags.length > 3 && (
-                <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>
-              )}
-            </div>
-          )}
+      <div ref={visibilityRef} className="h-full">
+        <div
+          ref={dragRef}
+          data-file-id={file.id}
+          onClick={onClick}
+          onDoubleClick={onDoubleClick}
+          className={`file-card group relative flex h-full flex-col overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+            isMultiSelected
+              ? "ring-2 ring-primary-500 shadow-lg"
+              : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
+          }`}
+        >
+          <div className="relative bg-gray-100 pb-[100%] dark:bg-dark-bg">
+            {!isVisible || imageSrc === null ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            ) : imageSrc && !imageError ? (
+              <img
+                src={imageSrc}
+                alt={file.name}
+                className="absolute inset-0 h-full w-full object-contain"
+                onError={() => setImageError(true)}
+                loading="lazy"
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg className="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            )}
+          </div>
+          <div className="bg-white p-2 dark:bg-dark-surface">
+            <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            <p className="mt-0.5 text-xs text-gray-400">
+              {file.ext.toUpperCase()} · {formatSize(file.size)}
+            </p>
+            {file.tags.length > 0 && (
+              <div className="mt-1.5 flex max-h-10 flex-wrap gap-1 overflow-hidden">
+                {file.tags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                    style={{ backgroundColor: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {file.tags.length > 3 && <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </FileContextMenu>
   )
 }
 
-function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, isDragging, onClick, onDoubleClick, onDragStart, onDragEnd }: {
-  file: FileItem
-  isSelected: boolean
-  isMultiSelected: boolean
-  isDragging: boolean
-  onClick: (e: React.MouseEvent) => void
-  onDoubleClick?: () => void
-  onDragStart: () => void
-  onDragEnd: () => void
-}) {
-  const { files } = useFileStore()
+function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { uniqueContextId } = useFolderStore()
-  const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState<string | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<HTMLDivElement>(null)
+  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, isVisible)
 
-  // @atlaskit draggable
   useEffect(() => {
-    const element = ref.current
+    const element = dragRef.current
     if (!element) return
 
     return draggable({
       element,
       getInitialData: () => ({
-        type: 'app-file',
+        type: "app-file",
         fileId: file.id,
         fileName: file.name,
         uniqueContextId,
@@ -458,99 +698,78 @@ function AdaptiveFileCard({ file, isSelected: _isSelected, isMultiSelected, isDr
         onDragEnd()
       },
     })
-  }, [file.id, uniqueContextId, onDragStart, onDragEnd])
+  }, [file.id, file.name, uniqueContextId, onDragStart, onDragEnd])
 
-  const fileExists = files.some(f => f.id === file.id)
-
-  useEffect(() => {
-    if (!fileExists) return
-    let mounted = true
-    setImageSrc(null)
-    getImageSrc(file.path).then(src => {
-      if (mounted) setImageSrc(src)
-    })
-    return () => { mounted = false }
-  }, [file.path, fileExists])
-
-  // 瀑布流布局：使用 aspect-ratio 让高度按原始比例自动计算
-  // 宽度由 CSS columns 控制（100% 适应列宽）
   const getAspectRatio = () => {
     if (!file.width || !file.height || file.width === 0) {
-      return '100%'
+      return "100%"
     }
     return `${(file.height / file.width) * 100}%`
   }
 
   return (
     <FileContextMenu file={file}>
-      <div
-        ref={ref}
-        data-file-id={file.id}
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-        className={`group relative rounded-lg overflow-hidden transition-all file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
-          isMultiSelected
-            ? 'ring-2 ring-primary-500 shadow-lg'
-            : 'hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600'
-        }`}
-      >
+      <div ref={visibilityRef}>
         <div
-          className="relative bg-gray-100 dark:bg-dark-bg"
-          style={{ paddingBottom: getAspectRatio() }}
+          ref={dragRef}
+          data-file-id={file.id}
+          onClick={onClick}
+          onDoubleClick={onDoubleClick}
+          className={`file-card group relative overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+            isMultiSelected
+              ? "ring-2 ring-primary-500 shadow-lg"
+              : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
+          }`}
         >
-          {imageSrc === null ? (
-            <svg className="w-8 h-8 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          ) : imageSrc && !imageError ? (
-            <img
-              src={imageSrc}
-              alt={file.name}
-              className="absolute inset-0 w-full h-full object-contain"
-              onError={() => setImageError(true)}
-              loading="lazy"
-            />
-          ) : (
-            <svg className="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          )}
-        </div>
-        {/* 始终显示文件名 */}
-        <div className="p-2 bg-white dark:bg-dark-surface">
-          <p className="text-xs text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
-          <p className="text-[10px] text-gray-400">{file.ext.toUpperCase()} · {formatSize(file.size)}</p>
+          <div className="relative bg-gray-100 dark:bg-dark-bg" style={{ paddingBottom: getAspectRatio() }}>
+            {!isVisible || imageSrc === null ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            ) : imageSrc && !imageError ? (
+              <img
+                src={imageSrc}
+                alt={file.name}
+                className="absolute inset-0 h-full w-full object-contain"
+                onError={() => setImageError(true)}
+                loading="lazy"
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg className="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            )}
+          </div>
+          <div className="bg-white p-2 dark:bg-dark-surface">
+            <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            <p className="text-[10px] text-gray-400">
+              {file.ext.toUpperCase()} · {formatSize(file.size)}
+            </p>
+          </div>
         </div>
       </div>
     </FileContextMenu>
   )
 }
 
-function FileRow({ file, isSelected: _isSelected, isMultiSelected, isDragging, onClick, onDoubleClick, onDragStart, onDragEnd }: {
-  file: FileItem
-  isSelected: boolean
-  isMultiSelected: boolean
-  isDragging: boolean
-  onClick: (e: React.MouseEvent) => void
-  onDoubleClick?: () => void
-  onDragStart: () => void
-  onDragEnd: () => void
-}) {
-  const { files } = useFileStore()
+function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { uniqueContextId } = useFolderStore()
-  const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState<string | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<HTMLDivElement>(null)
+  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, isVisible)
 
-  // @atlaskit draggable
   useEffect(() => {
-    const element = ref.current
+    const element = dragRef.current
     if (!element) return
 
     return draggable({
       element,
       getInitialData: () => ({
-        type: 'app-file',
+        type: "app-file",
         fileId: file.id,
         fileName: file.name,
         uniqueContextId,
@@ -562,62 +781,52 @@ function FileRow({ file, isSelected: _isSelected, isMultiSelected, isDragging, o
         onDragEnd()
       },
     })
-  }, [file.id, uniqueContextId, onDragStart, onDragEnd])
-
-  // 检查文件是否还存在
-  const fileExists = files.some(f => f.id === file.id)
-
-  useEffect(() => {
-    if (!fileExists) return
-    let mounted = true
-    setImageSrc(null)
-    getImageSrc(file.path).then(src => {
-      if (mounted) setImageSrc(src)
-    })
-    return () => { mounted = false }
-  }, [file.path, file.id, fileExists])
+  }, [file.id, file.name, uniqueContextId, onDragStart, onDragEnd])
 
   return (
     <FileContextMenu file={file}>
-      <div
-        ref={ref}
-        data-file-id={file.id}
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-        className={`flex items-center gap-3 p-2 rounded-lg transition-colors file-card ${isDragging ? 'opacity-50' : 'cursor-pointer'} ${
-          isMultiSelected
-            ? 'bg-primary-50 dark:bg-primary-900/20'
-            : 'hover:bg-gray-100 dark:hover:bg-dark-border'
-        }`}
-      >
+      <div ref={visibilityRef}>
         <div
-          className="rounded bg-gray-100 dark:bg-dark-bg flex-shrink-0 overflow-hidden flex items-center justify-center"
-          style={{ width: 40, height: 40 }}
+          ref={dragRef}
+          data-file-id={file.id}
+          onClick={onClick}
+          onDoubleClick={onDoubleClick}
+          className={`file-card flex items-center gap-3 rounded-lg p-2 transition-colors ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+            isMultiSelected
+              ? "bg-primary-50 dark:bg-primary-900/20"
+              : "hover:bg-gray-100 dark:hover:bg-dark-border"
+          }`}
         >
-          {imageSrc === null ? (
-            <svg className="w-5 h-5 text-gray-300 dark:text-gray-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          ) : imageSrc && !imageError ? (
-            <img
-              src={imageSrc}
-              alt={file.name}
-              className="max-w-full max-h-full object-contain"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <svg className="w-5 h-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-700 dark:text-gray-200 truncate">{getNameWithoutExt(file.name)}</p>
-          <p className="text-xs text-gray-400">{file.width} x {file.height}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
-          <span className="text-xs text-gray-400">{file.ext.toUpperCase()}</span>
+          <div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+          >
+            {!isVisible || imageSrc === null ? (
+              <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            ) : imageSrc && !imageError ? (
+              <img
+                src={imageSrc}
+                alt={file.name}
+                className="max-h-full max-w-full object-contain"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <svg className="h-5 w-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            <p className="text-xs text-gray-400">
+              {file.width} x {file.height}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
+            <span className="text-xs text-gray-400">{file.ext.toUpperCase()}</span>
+          </div>
         </div>
       </div>
     </FileContextMenu>

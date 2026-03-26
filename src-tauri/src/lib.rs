@@ -2,6 +2,7 @@ mod db;
 mod indexer;
 mod commands;
 mod http_server;
+mod path_utils;
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -9,6 +10,7 @@ use tauri::Manager;
 use std::path::{Path, PathBuf};
 use std::fs;
 use rusqlite::Connection;
+use crate::path_utils::join_path;
 
 /// Get the default index path (Pictures/shiguang)
 fn get_default_index_path() -> PathBuf {
@@ -102,7 +104,7 @@ fn init_browser_collection_folder_internal(db: &db::Database) -> Result<(), Stri
 
     if let Some(index_path) = index_paths.first() {
         let folder_name = "浏览器采集";
-        let folder_path = format!("{}/{}", index_path, folder_name);
+        let folder_path = join_path(index_path, folder_name);
 
         // Create directory in file system
         let path = Path::new(&folder_path);

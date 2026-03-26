@@ -1,5 +1,6 @@
 use crate::db::{Database, FileWithTags, Tag, Folder};
 use crate::indexer;
+use crate::path_utils::{join_path, normalize_path, path_has_prefix};
 use crate::AppState;
 use tauri::State;
 use serde::{Deserialize, Serialize};
@@ -160,16 +161,53 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
         .ok_or_else(|| "Failed to retrieve imported file".to_string())
 }
 
-#[tauri::command]
-pub fn get_all_files(state: State<AppState>) -> Result<Vec<FileWithTags>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.get_all_files().map_err(|e| e.to_string())
+#[derive(Debug, Serialize)]
+pub struct PaginatedFiles {
+    pub files: Vec<FileWithTags>,
+    pub total: i64,
+    pub page: u32,
+    pub page_size: u32,
+    pub total_pages: u32,
 }
 
 #[tauri::command]
-pub fn search_files(state: State<AppState>, query: String) -> Result<Vec<FileWithTags>, String> {
+pub fn get_all_files(state: State<AppState>, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.search_files(&query).map_err(|e| e.to_string())
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
+    let offset = (page - 1) as i64 * page_size;
+
+    let files = db.get_all_files(Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let total = db.get_files_count().map_err(|e| e.to_string())?;
+    let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
+
+    Ok(PaginatedFiles {
+        files,
+        total,
+        page,
+        page_size: page_size as u32,
+        total_pages,
+    })
+}
+
+#[tauri::command]
+pub fn search_files(state: State<AppState>, query: String, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
+    let offset = (page - 1) as i64 * page_size;
+
+    let files = db.search_files(&query, Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let total = db.search_files_count(&query).map_err(|e| e.to_string())?;
+    let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
+
+    Ok(PaginatedFiles {
+        files,
+        total,
+        page,
+        page_size: page_size as u32,
+        total_pages,
+    })
 }
 
 #[tauri::command]
@@ -387,9 +425,23 @@ pub fn get_folder_tree(state: State<AppState>) -> Result<Vec<FolderTreeNode>, St
 }
 
 #[tauri::command]
-pub fn get_files_in_folder(state: State<AppState>, folder_id: Option<i64>) -> Result<Vec<FileWithTags>, String> {
+pub fn get_files_in_folder(state: State<AppState>, folder_id: Option<i64>, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.get_files_in_folder(folder_id).map_err(|e| e.to_string())
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
+    let offset = (page - 1) as i64 * page_size;
+
+    let files = db.get_files_in_folder(folder_id, Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let total = db.get_files_in_folder_count(folder_id).map_err(|e| e.to_string())?;
+    let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
+
+    Ok(PaginatedFiles {
+        files,
+        total,
+        page,
+        page_size: page_size as u32,
+        total_pages,
+    })
 }
 
 #[tauri::command]
@@ -417,7 +469,7 @@ pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64
     };
 
     let full_path = if let Some(parent) = parent_path {
-        format!("{}/{}", parent, name)
+        join_path(&parent, &name)
     } else {
         return Err("No index path configured".to_string());
     };
@@ -471,7 +523,7 @@ pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
         .ok_or_else(|| "Invalid file path".to_string())?;
 
     // Build new path
-    let new_path = format!("{}/{}", target_path, file_name);
+    let new_path = join_path(&target_path, file_name);
 
     // Move file in file system
     let old_path = Path::new(&file.path);
@@ -530,7 +582,7 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
 
     if let Some(index_path) = paths.first() {
         let default_folder_name = "默认文件夹";
-        let folder_path = format!("{}/{}", index_path, default_folder_name);
+        let folder_path = join_path(index_path, default_folder_name);
 
         // Create directory in file system
         let path = Path::new(&folder_path);
@@ -571,7 +623,7 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
         let folder_path = folder.path.clone();
 
         // Get all files
-        let files = db.get_all_files().map_err(|e| e.to_string())?;
+        let files = db.get_all_files(None, None).map_err(|e| e.to_string())?;
 
         // Get all folders (for finding subfolders)
         let all_folders = db.get_all_folders().map_err(|e| e.to_string())?;
@@ -579,7 +631,7 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
         // Collect all subfolder IDs (folders whose path starts with this folder's path)
         let subfolder_ids: Vec<i64> = all_folders
             .iter()
-            .filter(|f| f.path.starts_with(&folder_path) && f.id != id)
+            .filter(|f| path_has_prefix(&f.path, &folder_path) && f.id != id)
             .map(|f| f.id)
             .collect();
 
@@ -593,7 +645,7 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
 
         // Step 2: Delete all files whose path starts with this folder's path
         for file in &files {
-            if file.path.starts_with(&folder_path) {
+            if path_has_prefix(&file.path, &folder_path) {
                 db.delete_file(&file.path).map_err(|e| e.to_string())?;
             }
         }
@@ -747,7 +799,7 @@ pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, 
 
     if let Some(index_path) = index_paths.first() {
         let folder_name = "浏览器采集";
-        let folder_path = format!("{}/{}", index_path, folder_name);
+        let folder_path = join_path(index_path, folder_name);
 
         // Create directory in file system
         let path = Path::new(&folder_path);
@@ -825,7 +877,7 @@ pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
         .ok_or_else(|| "Invalid file path".to_string())?;
 
     // Build new path
-    let new_path = format!("{}/{}", target_path, file_name);
+    let new_path = join_path(&target_path, file_name);
     let new_path_obj = Path::new(&new_path);
 
     // Copy file in file system (only if source and destination are different)
@@ -968,7 +1020,7 @@ pub fn show_folder_in_explorer(state: State<AppState>, folder_id: i64) -> Result
     {
         // Use /select to open explorer with the folder selected
         // Convert path separators to Windows format
-        let path = folder.path.replace('/', "\\");
+        let path = normalize_path(&folder.path);
         std::process::Command::new("explorer")
             .arg(&format!("/select,{}", path))
             .spawn()
@@ -1017,7 +1069,7 @@ pub fn restore_file(state: State<AppState>, file_id: i64) -> Result<(), String> 
         if let Some(index_path) = index_paths.first() {
             let old_path = std::path::Path::new(&file.path);
             if let Some(file_name) = old_path.file_name() {
-                let new_path = format!("{}/{}", index_path, file_name.to_string_lossy());
+                let new_path = join_path(index_path, file_name);
                 let new_path_obj = std::path::Path::new(&new_path);
 
                 // Move file if it exists
@@ -1060,7 +1112,7 @@ pub fn restore_files(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), S
                 if let Some(index_path) = index_paths.first() {
                     let old_path = std::path::Path::new(&file.path);
                     if let Some(file_name) = old_path.file_name() {
-                        let new_path = format!("{}/{}", index_path, file_name.to_string_lossy());
+                        let new_path = join_path(index_path, file_name);
                         let new_path_obj = std::path::Path::new(&new_path);
 
                         if old_path.exists() && old_path != new_path_obj {
@@ -1160,7 +1212,7 @@ pub fn get_trash_count(state: State<AppState>) -> Result<i32, String> {
     db.get_trash_count().map_err(|e| e.to_string())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct FileFilter {
     pub query: Option<String>,
     pub folder_id: Option<i64>,
@@ -1176,7 +1228,21 @@ pub struct FileFilter {
 }
 
 #[tauri::command]
-pub fn filter_files(state: State<AppState>, filter: FileFilter) -> Result<Vec<FileWithTags>, String> {
+pub fn filter_files(state: State<AppState>, filter: FileFilter, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.filter_files(filter).map_err(|e| e.to_string())
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
+    let offset = (page - 1) as i64 * page_size;
+
+    let files = db.filter_files(filter.clone(), Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let total = db.filter_files_count(&filter).map_err(|e| e.to_string())?;
+    let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
+
+    Ok(PaginatedFiles {
+        files,
+        total,
+        page,
+        page_size: page_size as u32,
+        total_pages,
+    })
 }

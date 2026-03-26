@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { useFileStore } from './fileStore'
 
 export interface FolderNode {
   id: number
@@ -133,6 +134,9 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     try {
       await invoke('move_folder', { folderId, newParentId, sortOrder: 0 })
       await get().loadFolders()
+      // Reload files to reflect the new paths after folder move
+      const { selectedFolderId } = useFileStore.getState()
+      await useFileStore.getState().loadFilesInFolder(selectedFolderId)
     } catch (e) {
       console.error('Failed to move folder:', e)
     }

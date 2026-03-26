@@ -1,14 +1,9 @@
-import { readFile, exists } from '@tauri-apps/plugin-fs'
+import { readFile } from '@tauri-apps/plugin-fs'
 import { FolderNode } from '@/stores/folderStore'
 
 // Helper to get image URL from file path using fs plugin
 export async function getImageSrc(path: string): Promise<string> {
   try {
-    // First check if file exists to avoid unnecessary read errors
-    const fileExists = await exists(path)
-    if (!fileExists) {
-      return ''
-    }
     const contents = await readFile(path)
     const blob = new Blob([contents])
     return URL.createObjectURL(blob)
