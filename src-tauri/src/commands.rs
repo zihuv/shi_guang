@@ -39,13 +39,22 @@ fn get_import_dir() -> Result<std::path::PathBuf, String> {
 
 /// 获取导入目标目录：如果指定了 folder_id，使用该文件夹路径；否则使用默认导入目录
 fn get_target_dir(db: &Database, folder_id: Option<i64>) -> Result<std::path::PathBuf, String> {
-    if let Some(fid) = folder_id {
+    let target_dir = if let Some(fid) = folder_id {
         let folders = db.get_all_folders().map_err(|e| e.to_string())?;
         if let Some(folder) = folders.iter().find(|f| f.id == fid) {
-            return Ok(Path::new(&folder.path).to_path_buf());
+            Path::new(&folder.path).to_path_buf()
+        } else {
+            get_import_dir()?
         }
+    } else {
+        get_import_dir()?
+    };
+
+    if !target_dir.exists() {
+        fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     }
-    get_import_dir()
+
+    Ok(target_dir)
 }
 
 /// 生成简单的 UUID 字符串

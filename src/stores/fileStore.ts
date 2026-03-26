@@ -118,8 +118,8 @@ interface FileStore {
   deleteFiles: (fileIds: number[]) => Promise<void>
   importFile: (sourcePath: string, refresh?: boolean, targetFolderId?: number | null) => Promise<FileItem | null>
   importFiles: (sourcePaths: string[]) => Promise<FileItem[]>
-  importImageFromBase64: (base64Data: string, ext: string, refresh?: boolean) => Promise<FileItem | null>
-  importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<FileItem[]>
+  importImageFromBase64: (base64Data: string, ext: string, refresh?: boolean, targetFolderId?: number | null) => Promise<FileItem | null>
+  importImagesFromBase64: (items: { base64Data: string; ext: string }[], targetFolderId?: number | null) => Promise<FileItem[]>
   updateFileMetadata: (fileId: number, rating: number, description: string, sourceUrl: string) => Promise<void>
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
   extractColor: (fileId: number) => Promise<string>
@@ -483,9 +483,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }
   },
 
-  importImageFromBase64: async (base64Data: string, ext: string, refresh = true) => {
-    console.log('[FileStore] importImageFromBase64 called, ext:', ext, 'refresh:', refresh)
-    const { selectedFolderId } = get()
+  importImageFromBase64: async (base64Data: string, ext: string, refresh = true, targetFolderId?: number | null) => {
+    console.log('[FileStore] importImageFromBase64 called, ext:', ext, 'refresh:', refresh, 'targetFolderId:', targetFolderId)
+    const selectedFolderId = targetFolderId !== undefined ? targetFolderId : get().selectedFolderId
     try {
       const file = await invoke<FileItem>('import_image_from_base64', { base64Data, ext, folderId: selectedFolderId })
       console.log('[FileStore] importImageFromBase64 result:', file)
@@ -500,9 +500,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }
   },
 
-  importImagesFromBase64: async (items: { base64Data: string; ext: string }[]) => {
-    console.log('[FileStore] importImagesFromBase64 called, count:', items.length)
-    const { selectedFolderId } = get()
+  importImagesFromBase64: async (items: { base64Data: string; ext: string }[], targetFolderId?: number | null) => {
+    console.log('[FileStore] importImagesFromBase64 called, count:', items.length, 'targetFolderId:', targetFolderId)
+    const selectedFolderId = targetFolderId !== undefined ? targetFolderId : get().selectedFolderId
     const results: FileItem[] = []
     try {
       for (const item of items) {

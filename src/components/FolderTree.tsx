@@ -158,7 +158,7 @@ interface FolderItemProps {
 }
 
 function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
-  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, uniqueContextId } = useFolderStore()
+  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
   const { loadFilesInFolder, setSelectedFolderId, setSelectedFile } = useFileStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
   const { setFolderId, isFilterPanelOpen } = useFilterStore()
@@ -167,6 +167,7 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   const hasChildren = folder.children && folder.children.length > 0
   const isSystemFolder = folder.name === '浏览器采集' || folder.isSystem
   const isBeingDragged = activeId === folder.id
+  const isExternalDragTarget = dragOverFolderId === folder.id
 
   // Check if this folder can be dragged (not a system folder)
   const canDrag = !isSystemFolder
@@ -322,6 +323,48 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     }
   }
 
+  const isExternalFileDrag = (e: React.DragEvent) => {
+    return Array.from(e.dataTransfer.types).includes('Files')
+  }
+
+  const handleExternalDragEnter = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOverFolderId(folder.id)
+  }
+
+  const handleExternalDragOver = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+    if (dragOverFolderId !== folder.id) {
+      setDragOverFolderId(folder.id)
+    }
+  }
+
+  const handleExternalDragLeave = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const nextTarget = e.relatedTarget
+    if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+      return
+    }
+
+    if (dragOverFolderId === folder.id) {
+      setDragOverFolderId(null)
+    }
+  }
+
+  const handleExternalDrop = (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
+    e.preventDefault()
+    setDragOverFolderId(folder.id)
+  }
+
   // Determine visual state based on dragPosition
   const isNestingTarget = dragPosition.type === 'nest' && dragPosition.folderId === folder.id && !isBeingDragged
 
@@ -357,12 +400,18 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
             } ${
               isSelected
                 ? 'bg-primary-100 dark:bg-primary-900/30'
+                : isExternalDragTarget
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30 ring-2 ring-emerald-400 dark:ring-emerald-600'
                 : isNestingTarget
                   ? 'bg-blue-100 dark:bg-blue-900/30 ring-2 ring-blue-400 dark:ring-blue-600'
                   : 'hover:bg-gray-100 dark:hover:bg-dark-border'
             }`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
             onClick={handleClick}
+            onDragEnter={handleExternalDragEnter}
+            onDragOver={handleExternalDragOver}
+            onDragLeave={handleExternalDragLeave}
+            onDrop={handleExternalDrop}
           >
             {hasChildren ? (
               <Button

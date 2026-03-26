@@ -35,6 +35,9 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
   const dragCounterRef = useRef(0);
+  const dragOverFolderIdRef = useRef<number | null>(dragOverFolderId);
+
+  dragOverFolderIdRef.current = dragOverFolderId;
 
   useAppInitialization();
   useInternalFileDrag(setDraggingFileId);
@@ -56,6 +59,26 @@ function App() {
     return Array.from(e.dataTransfer.files)
       .map((file) => (file as File & { path?: string }).path)
       .filter((path): path is string => Boolean(path));
+  }, []);
+
+  const getDropTargetFolderId = useCallback((e: React.DragEvent) => {
+    const target = e.target;
+    if (!(target instanceof Element)) {
+      return undefined;
+    }
+
+    const folderElement = target.closest("[data-folder-id]");
+    if (!folderElement) {
+      return undefined;
+    }
+
+    const folderId = folderElement.getAttribute("data-folder-id");
+    if (!folderId) {
+      return undefined;
+    }
+
+    const parsed = Number(folderId);
+    return Number.isFinite(parsed) ? parsed : undefined;
   }, []);
 
   const getFileExt = useCallback((file: File) => {
@@ -137,7 +160,8 @@ function App() {
     }
 
     const targetFolderId =
-      dragOverFolderId !== null ? dragOverFolderId : undefined;
+      getDropTargetFolderId(e) ??
+      (dragOverFolderIdRef.current !== null ? dragOverFolderIdRef.current : undefined);
     const paths = getDroppedPaths(e);
 
     if (paths.length > 0) {
@@ -153,16 +177,16 @@ function App() {
       );
 
       if (items.length > 0) {
-        await importImagesFromBase64(items);
+        await importImagesFromBase64(items, targetFolderId);
       }
     }
 
-    if (dragOverFolderId !== null) {
+    if (dragOverFolderIdRef.current !== null) {
       setDragOverFolderId(null);
     }
   }, [
-    dragOverFolderId,
     fileToBase64,
+    getDropTargetFolderId,
     getFileExt,
     getDroppedPaths,
     importFileFn,
