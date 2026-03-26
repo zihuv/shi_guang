@@ -1,16 +1,16 @@
-mod db;
-mod indexer;
 mod commands;
+mod db;
 mod http_server;
+mod indexer;
 mod path_utils;
 
+use crate::path_utils::join_path;
+use rusqlite::Connection;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::Manager;
-use std::path::{Path, PathBuf};
-use std::fs;
-use rusqlite::Connection;
-use crate::path_utils::join_path;
 
 /// Get the default index path (Pictures/shiguang)
 fn get_default_index_path() -> PathBuf {
@@ -32,7 +32,8 @@ fn get_db_path(index_path: &Path) -> PathBuf {
 fn ensure_shiguang_dir(index_path: &Path) -> Result<(), String> {
     let shiguang_dir = get_shiguang_dir(index_path);
     if !shiguang_dir.exists() {
-        fs::create_dir_all(&shiguang_dir).map_err(|e| format!("Failed to create .shiguang directory: {}", e))?;
+        fs::create_dir_all(&shiguang_dir)
+            .map_err(|e| format!("Failed to create .shiguang directory: {}", e))?;
     }
     Ok(())
 }
@@ -47,7 +48,9 @@ fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
         // Try to read index_path from old database
         match Connection::open(&old_db_path) {
             Ok(conn) => {
-                match conn.query_row("SELECT path FROM index_paths LIMIT 1", [], |row| row.get::<_, String>(0)) {
+                match conn.query_row("SELECT path FROM index_paths LIMIT 1", [], |row| {
+                    row.get::<_, String>(0)
+                }) {
                     Ok(path) => PathBuf::from(path),
                     Err(_) => get_default_index_path(),
                 }
@@ -65,7 +68,11 @@ fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
 
     // If old database exists but new one doesn't, copy it
     if old_db_path.exists() && !new_db_path.exists() {
-        log::info!("Migrating database from {:?} to {:?}", old_db_path, new_db_path);
+        log::info!(
+            "Migrating database from {:?} to {:?}",
+            old_db_path,
+            new_db_path
+        );
         fs::copy(&old_db_path, &new_db_path)
             .map_err(|e| format!("Failed to copy old database: {}", e))?;
         log::info!("Database migration completed");
@@ -95,7 +102,11 @@ fn cleanup_dot_folders(db: &db::Database) -> Result<(), String> {
 
 fn init_browser_collection_folder_internal(db: &db::Database) -> Result<(), String> {
     // Check if browser collection folder already exists
-    if db.get_browser_collection_folder().map_err(|e| e.to_string())?.is_some() {
+    if db
+        .get_browser_collection_folder()
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
         return Ok(());
     }
 
@@ -130,13 +141,16 @@ pub struct RecentImports {
 
 impl RecentImports {
     fn new() -> Self {
-        RecentImports { entries: Vec::new() }
+        RecentImports {
+            entries: Vec::new(),
+        }
     }
 
     fn is_recent(&mut self, source_path: &str, max_age: Duration) -> bool {
         let now = Instant::now();
         // Clean old entries
-        self.entries.retain(|(_, time)| now.duration_since(*time) < max_age);
+        self.entries
+            .retain(|(_, time)| now.duration_since(*time) < max_age);
         // Check if this path was recently imported
         self.entries.iter().any(|(path, _)| path == source_path)
     }
@@ -172,46 +186,50 @@ pub fn run() {
         .plugin(devtools_plugin)
         .plugin(tauri_plugin_mcp_bridge::init());
 
-    builder.setup(|app| {
-        let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-        std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
+    builder
+        .setup(|app| {
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to get app data dir");
+            std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
 
-        // Migrate database from old location to new location if needed
-        let db_path = migrate_or_get_db_path(&app_data_dir)
-            .expect("Failed to migrate or get database path");
+            // Migrate database from old location to new location if needed
+            let db_path = migrate_or_get_db_path(&app_data_dir)
+                .expect("Failed to migrate or get database path");
 
-        log::info!("Using database at: {:?}", db_path);
+            log::info!("Using database at: {:?}", db_path);
 
-        let database = db::Database::new(&db_path).expect("Failed to initialize database");
+            let database = db::Database::new(&db_path).expect("Failed to initialize database");
 
-        // Clean up dot-folders from database
-        if let Err(e) = cleanup_dot_folders(&database) {
-            log::warn!("Failed to cleanup dot-folders: {}", e);
-        }
+            // Clean up dot-folders from database
+            if let Err(e) = cleanup_dot_folders(&database) {
+                log::warn!("Failed to cleanup dot-folders: {}", e);
+            }
 
-        // Initialize browser collection folder (system folder) first
-        if let Err(e) = init_browser_collection_folder_internal(&database) {
-            log::warn!("Failed to initialize browser collection folder: {}", e);
-        }
+            // Initialize browser collection folder (system folder) first
+            if let Err(e) = init_browser_collection_folder_internal(&database) {
+                log::warn!("Failed to initialize browser collection folder: {}", e);
+            }
 
-        app.manage(AppState {
-            db: Mutex::new(database),
-            app_data_dir: app_data_dir.clone(),
-            recent_imports: Mutex::new(RecentImports::new()),
-            db_path: db_path.clone(),
-        });
+            app.manage(AppState {
+                db: Mutex::new(database),
+                app_data_dir: app_data_dir.clone(),
+                recent_imports: Mutex::new(RecentImports::new()),
+                db_path: db_path.clone(),
+            });
 
-        // Start HTTP server in background
-        let app_handle = app.handle().clone();
-        let http_db_path = db_path.clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(http_server::start_http_server(http_db_path, app_handle));
-        });
+            // Start HTTP server in background
+            let app_handle = app.handle().clone();
+            let http_db_path = db_path.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(http_server::start_http_server(http_db_path, app_handle));
+            });
 
-        log::info!("Application started successfully");
-        Ok(())
-    })
+            log::info!("Application started successfully");
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_all_files,
             commands::search_files,

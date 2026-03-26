@@ -14,7 +14,11 @@ pub(crate) fn path_has_prefix(path: &str, prefix: &str) -> bool {
     path == prefix || path.starts_with(prefix)
 }
 
-pub(crate) fn replace_path_prefix(path: &str, old_prefix: &str, new_prefix: &str) -> Option<String> {
+pub(crate) fn replace_path_prefix(
+    path: &str,
+    old_prefix: &str,
+    new_prefix: &str,
+) -> Option<String> {
     let relative = Path::new(path).strip_prefix(Path::new(old_prefix)).ok()?;
     if relative.as_os_str().is_empty() {
         Some(normalize_path(new_prefix))
@@ -36,12 +40,9 @@ mod tests {
 
     #[test]
     fn replace_prefix_updates_nested_path() {
-        let replaced = replace_path_prefix(
-            "/tmp/root/child/file.png",
-            "/tmp/root",
-            "/tmp/other/root",
-        )
-        .unwrap();
+        let replaced =
+            replace_path_prefix("/tmp/root/child/file.png", "/tmp/root", "/tmp/other/root")
+                .unwrap();
         assert_eq!(replaced, join_path("/tmp/other/root", "child/file.png"));
     }
 }

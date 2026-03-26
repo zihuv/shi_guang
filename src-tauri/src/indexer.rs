@@ -1,13 +1,13 @@
 use crate::db::{Database, FileRecord};
-use std::fs;
-use std::path::Path;
-use std::collections::HashSet;
-use walkdir::WalkDir;
+use chrono::{DateTime, Local};
 use image::GenericImageView;
 use image::Pixel;
-use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::HashSet;
+use std::fs;
+use std::path::Path;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorInfo {
@@ -16,9 +16,8 @@ pub struct ColorInfo {
 }
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp",
-    "ico", "tiff", "tif", "psd", "ai", "eps", "raw",
-    "cr2", "nef", "arw", "dng", "heic", "heif",
+    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "tif", "psd", "ai", "eps",
+    "raw", "cr2", "nef", "arw", "dng", "heic", "heif",
 ];
 
 pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
@@ -33,7 +32,9 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
 
     // Get existing file paths in this directory for incremental scanning
-    let existing_paths: HashSet<String> = db.get_file_paths_in_dir(dir_path).map_err(|e| e.to_string())?;
+    let existing_paths: HashSet<String> = db
+        .get_file_paths_in_dir(dir_path)
+        .map_err(|e| e.to_string())?;
     let mut processed_paths: HashSet<String> = HashSet::new();
 
     for entry in WalkDir::new(path)
@@ -63,7 +64,8 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
         // Get or create folder for this file
         let folder_id = if let Some(parent) = file_path.parent() {
             let parent_path = parent.to_string_lossy().to_string();
-            db.get_or_create_folder(&parent_path, &index_paths).map_err(|e| e.to_string())?
+            db.get_or_create_folder(&parent_path, &index_paths)
+                .map_err(|e| e.to_string())?
         } else {
             None
         };
@@ -74,7 +76,14 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             match process_file(file_path, &ext, folder_id) {
                 Ok(file_record) => {
                     // Check if file is unchanged
-                    if db.is_file_unchanged(&file_path_str, file_record.size, &file_record.modified_at).unwrap_or(false) {
+                    if db
+                        .is_file_unchanged(
+                            &file_path_str,
+                            file_record.size,
+                            &file_record.modified_at,
+                        )
+                        .unwrap_or(false)
+                    {
                         // File is unchanged, skip processing
                         continue;
                     }
@@ -115,7 +124,10 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
     }
 
     // Mark deleted files (files that existed but are no longer on disk)
-    let deleted_paths: Vec<String> = existing_paths.difference(&processed_paths).cloned().collect();
+    let deleted_paths: Vec<String> = existing_paths
+        .difference(&processed_paths)
+        .cloned()
+        .collect();
     for deleted_path in &deleted_paths {
         if let Err(e) = db.delete_file(deleted_path) {
             log::warn!("Failed to delete file {}: {}", deleted_path, e);
@@ -180,7 +192,8 @@ fn process_file(path: &Path, ext: &str, folder_id: Option<i64>) -> Result<FileRe
 
     // Extract color distribution
     let color_distribution = extract_color_distribution(path).unwrap_or_default();
-    let color_distribution_json = serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
+    let color_distribution_json =
+        serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
 
     let created_at = metadata
         .created()
@@ -235,11 +248,16 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
 
 /// 检查是否为不支持颜色提取的图像格式
 fn is_color_extraction_unsupported_format(ext: &str) -> bool {
-    ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("psd")
-        || ext.eq_ignore_ascii_case("ai") || ext.eq_ignore_ascii_case("eps")
-        || ext.eq_ignore_ascii_case("raw") || ext.eq_ignore_ascii_case("cr2")
-        || ext.eq_ignore_ascii_case("nef") || ext.eq_ignore_ascii_case("arw")
-        || ext.eq_ignore_ascii_case("dng") || ext.eq_ignore_ascii_case("heic")
+    ext.eq_ignore_ascii_case("svg")
+        || ext.eq_ignore_ascii_case("psd")
+        || ext.eq_ignore_ascii_case("ai")
+        || ext.eq_ignore_ascii_case("eps")
+        || ext.eq_ignore_ascii_case("raw")
+        || ext.eq_ignore_ascii_case("cr2")
+        || ext.eq_ignore_ascii_case("nef")
+        || ext.eq_ignore_ascii_case("arw")
+        || ext.eq_ignore_ascii_case("dng")
+        || ext.eq_ignore_ascii_case("heic")
         || ext.eq_ignore_ascii_case("heif")
 }
 
@@ -315,7 +333,8 @@ pub fn extract_color_distribution(path: &Path) -> Result<Vec<ColorInfo>, String>
 
             // Calculate percentages
             let total = rgb_values.len() as f64;
-            let mut color_infos: Vec<ColorInfo> = clusters.iter()
+            let mut color_infos: Vec<ColorInfo> = clusters
+                .iter()
                 .map(|c| {
                     let r = c[0] as u8;
                     let g = c[1] as u8;

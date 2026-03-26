@@ -1,14 +1,14 @@
-use crate::db::{Database, FileWithTags, Tag, Folder};
+use crate::db::{Database, FileWithTags, Folder, Tag};
 use crate::indexer;
 use crate::path_utils::{join_path, normalize_path, path_has_prefix};
 use crate::AppState;
-use tauri::State;
+use base64::Engine;
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use chrono::{DateTime, Local};
-use base64::Engine;
-use std::collections::HashMap;
+use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FolderTreeNode {
@@ -24,8 +24,8 @@ pub struct FolderTreeNode {
 
 fn get_import_dir() -> Result<std::path::PathBuf, String> {
     // Try to get user's Pictures directory
-    let pictures_dir = dirs::picture_dir()
-        .ok_or_else(|| "Could not find Pictures directory".to_string())?;
+    let pictures_dir =
+        dirs::picture_dir().ok_or_else(|| "Could not find Pictures directory".to_string())?;
 
     let import_dir = pictures_dir.join("shiguang");
 
@@ -56,7 +56,11 @@ fn uuid_simple() -> String {
 }
 
 #[tauri::command]
-pub fn import_file(state: State<AppState>, source_path: String, folder_id: Option<i64>) -> Result<FileWithTags, String> {
+pub fn import_file(
+    state: State<AppState>,
+    source_path: String,
+    folder_id: Option<i64>,
+) -> Result<FileWithTags, String> {
     // Check if this source file was recently imported (within 3 seconds)
     {
         let mut recent = state.recent_imports.lock().map_err(|e| e.to_string())?;
@@ -78,7 +82,8 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
     let target_dir = get_target_dir(&db, folder_id)?;
 
     // Generate unique filename
-    let ext = source.extension()
+    let ext = source
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("png")
         .to_lowercase();
@@ -92,7 +97,8 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
 
     // Get original file timestamps before copying
     let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
-    let created_at = metadata.created()
+    let created_at = metadata
+        .created()
         .ok()
         .map(|t| {
             let dt: DateTime<Local> = t.into();
@@ -100,7 +106,8 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
         })
         .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
 
-    let modified_at = metadata.modified()
+    let modified_at = metadata
+        .modified()
         .ok()
         .map(|t| {
             let dt: DateTime<Local> = t.into();
@@ -126,7 +133,12 @@ pub fn import_file(state: State<AppState>, source_path: String, folder_id: Optio
 }
 
 #[tauri::command]
-pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext: String, folder_id: Option<i64>) -> Result<FileWithTags, String> {
+pub fn import_image_from_base64(
+    state: State<AppState>,
+    base64_data: String,
+    ext: String,
+    folder_id: Option<i64>,
+) -> Result<FileWithTags, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // 获取目标目录
@@ -134,7 +146,11 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
 
     // Generate unique filename
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let final_ext = if ext.is_empty() { "png".to_string() } else { ext };
+    let final_ext = if ext.is_empty() {
+        "png".to_string()
+    } else {
+        ext
+    };
     let new_name = format!("paste_{}.{}", timestamp, final_ext);
     let dest_path = target_dir.join(&new_name);
 
@@ -145,13 +161,8 @@ pub fn import_image_from_base64(state: State<AppState>, base64_data: String, ext
     // Use shared function to save and process image
     // For pasted images, created_at and modified_at are the same (current time)
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let file_record = crate::db::save_and_import_image(
-        &image_data,
-        &dest_path,
-        folder_id,
-        now.clone(),
-        now,
-    )?;
+    let file_record =
+        crate::db::save_and_import_image(&image_data, &dest_path, folder_id, now.clone(), now)?;
 
     db.insert_file(&file_record).map_err(|e| e.to_string())?;
 
@@ -171,13 +182,19 @@ pub struct PaginatedFiles {
 }
 
 #[tauri::command]
-pub fn get_all_files(state: State<AppState>, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
+pub fn get_all_files(
+    state: State<AppState>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
     let offset = (page - 1) as i64 * page_size;
 
-    let files = db.get_all_files(Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let files = db
+        .get_all_files(Some(page_size), Some(offset))
+        .map_err(|e| e.to_string())?;
     let total = db.get_files_count().map_err(|e| e.to_string())?;
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
 
@@ -191,13 +208,20 @@ pub fn get_all_files(state: State<AppState>, page: Option<u32>, page_size: Optio
 }
 
 #[tauri::command]
-pub fn search_files(state: State<AppState>, query: String, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
+pub fn search_files(
+    state: State<AppState>,
+    query: String,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
     let offset = (page - 1) as i64 * page_size;
 
-    let files = db.search_files(&query, Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let files = db
+        .search_files(&query, Some(page_size), Some(offset))
+        .map_err(|e| e.to_string())?;
     let total = db.search_files_count(&query).map_err(|e| e.to_string())?;
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
 
@@ -223,7 +247,12 @@ pub fn create_tag(state: State<AppState>, name: String, color: String) -> Result
 }
 
 #[tauri::command]
-pub fn update_tag(state: State<AppState>, id: i64, name: String, color: String) -> Result<(), String> {
+pub fn update_tag(
+    state: State<AppState>,
+    id: i64,
+    name: String,
+    color: String,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.update_tag(id, &name, &color).map_err(|e| e.to_string())
 }
@@ -237,13 +266,19 @@ pub fn delete_tag(state: State<AppState>, id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn add_tag_to_file(state: State<AppState>, file_id: i64, tag_id: i64) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.add_tag_to_file(file_id, tag_id).map_err(|e| e.to_string())
+    db.add_tag_to_file(file_id, tag_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn remove_tag_from_file(state: State<AppState>, file_id: i64, tag_id: i64) -> Result<(), String> {
+pub fn remove_tag_from_file(
+    state: State<AppState>,
+    file_id: i64,
+    tag_id: i64,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.remove_tag_from_file(file_id, tag_id).map_err(|e| e.to_string())
+    db.remove_tag_from_file(file_id, tag_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -261,7 +296,8 @@ pub fn delete_file(state: State<AppState>, file_id: i64) -> Result<(), String> {
         let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
         if let Some(file) = file {
             // Delete from database
-            db.permanent_delete_file(file_id).map_err(|e| e.to_string())?;
+            db.permanent_delete_file(file_id)
+                .map_err(|e| e.to_string())?;
             // Delete the actual file
             let path = std::path::Path::new(&file.path);
             if path.exists() {
@@ -288,7 +324,8 @@ pub fn delete_files(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), St
             // Permanent delete
             let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
             if let Some(file) = file {
-                db.permanent_delete_file(file_id).map_err(|e| e.to_string())?;
+                db.permanent_delete_file(file_id)
+                    .map_err(|e| e.to_string())?;
                 let path = std::path::Path::new(&file.path);
                 if path.exists() {
                     let _ = fs::remove_file(path);
@@ -323,8 +360,8 @@ pub fn get_index_paths(state: State<AppState>) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn get_default_index_path() -> Result<String, String> {
     // Use Pictures/shiguang directory as default
-    let pictures_dir = dirs::picture_dir()
-        .ok_or_else(|| "Could not find Pictures directory".to_string())?;
+    let pictures_dir =
+        dirs::picture_dir().ok_or_else(|| "Could not find Pictures directory".to_string())?;
     let shiguang_dir = pictures_dir.join("shiguang");
     // Create the directory and .shiguang subdirectory if they don't exist
     if !shiguang_dir.exists() {
@@ -374,7 +411,10 @@ fn build_folder_tree(folders: &[Folder], file_counts: &HashMap<i64, i32>) -> Vec
     // Build a map of parent_id -> children
     let mut children_map: HashMap<Option<i64>, Vec<&Folder>> = HashMap::new();
     for folder in folders {
-        children_map.entry(folder.parent_id).or_default().push(folder);
+        children_map
+            .entry(folder.parent_id)
+            .or_default()
+            .push(folder);
     }
 
     fn build_node(
@@ -405,7 +445,10 @@ fn build_folder_tree(folders: &[Folder], file_counts: &HashMap<i64, i32>) -> Vec
     }
 
     // Get root folders (those with parent_id = None) and sort by sort_order
-    let mut root_folders: Vec<&Folder> = children_map.get(&None).map(|c| c.clone()).unwrap_or_default();
+    let mut root_folders: Vec<&Folder> = children_map
+        .get(&None)
+        .map(|c| c.clone())
+        .unwrap_or_default();
     root_folders.sort_by_key(|f| f.sort_order);
     root_folders
         .iter()
@@ -425,14 +468,23 @@ pub fn get_folder_tree(state: State<AppState>) -> Result<Vec<FolderTreeNode>, St
 }
 
 #[tauri::command]
-pub fn get_files_in_folder(state: State<AppState>, folder_id: Option<i64>, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
+pub fn get_files_in_folder(
+    state: State<AppState>,
+    folder_id: Option<i64>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
     let offset = (page - 1) as i64 * page_size;
 
-    let files = db.get_files_in_folder(folder_id, Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
-    let total = db.get_files_in_folder_count(folder_id).map_err(|e| e.to_string())?;
+    let files = db
+        .get_files_in_folder(folder_id, Some(page_size), Some(offset))
+        .map_err(|e| e.to_string())?;
+    let total = db
+        .get_files_in_folder_count(folder_id)
+        .map_err(|e| e.to_string())?;
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
 
     Ok(PaginatedFiles {
@@ -453,7 +505,12 @@ pub fn get_file(state: State<AppState>, file_id: i64) -> Result<FileWithTags, St
 }
 
 #[tauri::command]
-pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64>, is_system: Option<bool>) -> Result<Folder, String> {
+pub fn create_folder(
+    state: State<AppState>,
+    name: String,
+    parent_id: Option<i64>,
+    is_system: Option<bool>,
+) -> Result<Folder, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get index paths to determine where to create the folder
@@ -482,7 +539,9 @@ pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64
 
     // Create folder in database
     let system = is_system.unwrap_or(false);
-    let id = db.create_folder(&full_path, &name, parent_id, system).map_err(|e| e.to_string())?;
+    let id = db
+        .create_folder(&full_path, &name, parent_id, system)
+        .map_err(|e| e.to_string())?;
 
     Ok(Folder {
         id,
@@ -496,18 +555,25 @@ pub fn create_folder(state: State<AppState>, name: String, parent_id: Option<i64
 }
 
 #[tauri::command]
-pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<i64>) -> Result<(), String> {
+pub fn move_file(
+    state: State<AppState>,
+    file_id: i64,
+    target_folder_id: Option<i64>,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
     // Get target folder path
     let target_path = if let Some(folder_id) = target_folder_id {
         let folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        let folder = folders.iter().find(|f| f.id == folder_id)
+        let folder = folders
+            .iter()
+            .find(|f| f.id == folder_id)
             .ok_or_else(|| "Target folder not found".to_string())?;
         folder.path.clone()
     } else {
@@ -535,7 +601,8 @@ pub fn move_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
 
     // Update database - use UPDATE instead of INSERT to avoid creating duplicate records
     let modified_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    db.update_file_path_and_folder(file_id, &new_path, target_folder_id, &modified_at).map_err(|e| e.to_string())?;
+    db.update_file_path_and_folder(file_id, &new_path, target_folder_id, &modified_at)
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -591,7 +658,8 @@ pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
         }
 
         // Create folder in database
-        let id = db.create_folder(&folder_path, default_folder_name, None, false)
+        let id = db
+            .create_folder(&folder_path, default_folder_name, None, false)
             .map_err(|e| e.to_string())?;
 
         Ok(Folder {
@@ -641,7 +709,8 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
             .chain(subfolder_ids.iter().copied())
             .collect();
 
-        db.clear_files_folder_id(&all_folder_ids).map_err(|e| e.to_string())?;
+        db.clear_files_folder_id(&all_folder_ids)
+            .map_err(|e| e.to_string())?;
 
         // Step 2: Delete all files whose path starts with this folder's path
         for file in &files {
@@ -687,7 +756,8 @@ pub fn extract_color(state: State<AppState>, file_id: i64) -> Result<String, Str
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
@@ -708,13 +778,14 @@ pub fn export_file(state: State<AppState>, file_id: i64) -> Result<String, Strin
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
     // Get export directory (user's Documents/shiguang_exports)
-    let docs_dir = dirs::document_dir()
-        .ok_or_else(|| "Could not find Documents directory".to_string())?;
+    let docs_dir =
+        dirs::document_dir().ok_or_else(|| "Could not find Documents directory".to_string())?;
     let export_dir = docs_dir.join("shiguang_exports");
 
     // Create export directory if it doesn't exist
@@ -742,7 +813,10 @@ pub fn export_file(state: State<AppState>, file_id: i64) -> Result<String, Strin
     });
 
     // Write metadata JSON file
-    let json_filename = format!("{}_metadata.json", file.name.split('.').next().unwrap_or(&file.name));
+    let json_filename = format!(
+        "{}_metadata.json",
+        file.name.split('.').next().unwrap_or(&file.name)
+    );
     let json_path = export_dir.join(&json_filename);
     fs::write(&json_path, serde_json::to_string_pretty(&metadata).unwrap())
         .map_err(|e| e.to_string())?;
@@ -758,17 +832,24 @@ pub fn export_file(state: State<AppState>, file_id: i64) -> Result<String, Strin
 }
 
 #[tauri::command]
-pub fn update_file_name(state: State<AppState>, file_id: i64, new_name: String) -> Result<(), String> {
+pub fn update_file_name(
+    state: State<AppState>,
+    file_id: i64,
+    new_name: String,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
     // Get directory path
     let old_path = Path::new(&file.path);
-    let parent = old_path.parent().ok_or_else(|| "Invalid file path".to_string())?;
+    let parent = old_path
+        .parent()
+        .ok_or_else(|| "Invalid file path".to_string())?;
 
     // Build new path
     let new_path = parent.join(&new_name).to_string_lossy().to_string();
@@ -790,7 +871,10 @@ pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, 
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Check if browser collection folder already exists
-    if let Some(folder) = db.get_browser_collection_folder().map_err(|e| e.to_string())? {
+    if let Some(folder) = db
+        .get_browser_collection_folder()
+        .map_err(|e| e.to_string())?
+    {
         return Ok(folder);
     }
 
@@ -808,7 +892,8 @@ pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, 
         }
 
         // Create folder in database as system folder
-        let id = db.create_folder(&folder_path, folder_name, None, true)
+        let id = db
+            .create_folder(&folder_path, folder_name, None, true)
             .map_err(|e| e.to_string())?;
 
         Ok(Folder {
@@ -828,7 +913,8 @@ pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, 
 #[tauri::command]
 pub fn get_browser_collection_folder(state: State<AppState>) -> Result<Option<Folder>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.get_browser_collection_folder().map_err(|e| e.to_string())
+    db.get_browser_collection_folder()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -844,24 +930,37 @@ pub fn reorder_tags(state: State<AppState>, tag_ids: Vec<i64>) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn move_folder(state: State<AppState>, folder_id: i64, new_parent_id: Option<i64>, sort_order: i64) -> Result<(), String> {
+pub fn move_folder(
+    state: State<AppState>,
+    folder_id: i64,
+    new_parent_id: Option<i64>,
+    sort_order: i64,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.move_folder(folder_id, new_parent_id, sort_order).map_err(|e| e.to_string())
+    db.move_folder(folder_id, new_parent_id, sort_order)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<i64>) -> Result<(), String> {
+pub fn copy_file(
+    state: State<AppState>,
+    file_id: i64,
+    target_folder_id: Option<i64>,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
     // Get target folder path
     let target_path = if let Some(folder_id) = target_folder_id {
         let folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        let folder = folders.iter().find(|f| f.id == folder_id)
+        let folder = folders
+            .iter()
+            .find(|f| f.id == folder_id)
             .ok_or_else(|| "Target folder not found".to_string())?;
         folder.path.clone()
     } else {
@@ -872,7 +971,8 @@ pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
 
     // Get file name and extension
     let source_path = Path::new(&file.path);
-    let file_name = source_path.file_name()
+    let file_name = source_path
+        .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| "Invalid file path".to_string())?;
 
@@ -887,7 +987,8 @@ pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
 
     // Get timestamps from source file
     let metadata = fs::metadata(source_path).map_err(|e| e.to_string())?;
-    let created_at = metadata.created()
+    let created_at = metadata
+        .created()
         .ok()
         .map(|t| {
             let dt: DateTime<Local> = t.into();
@@ -895,7 +996,8 @@ pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
         })
         .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
 
-    let modified_at = metadata.modified()
+    let modified_at = metadata
+        .modified()
         .ok()
         .map(|t| {
             let dt: DateTime<Local> = t.into();
@@ -914,8 +1016,13 @@ pub fn copy_file(state: State<AppState>, file_id: i64, target_folder_id: Option<
     )?;
 
     // Update the rating, description, and source_url from the original file
-    db.update_file_metadata(file_record.id, file.rating, &file.description, &file.source_url)
-        .map_err(|e| e.to_string())?;
+    db.update_file_metadata(
+        file_record.id,
+        file.rating,
+        &file.description,
+        &file.source_url,
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -925,7 +1032,8 @@ pub fn open_file(state: State<AppState>, file_id: i64) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
@@ -962,13 +1070,16 @@ pub fn show_in_explorer(state: State<AppState>, file_id: i64) -> Result<(), Stri
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
     // Get parent directory
     let path = Path::new(&file.path);
-    let parent = path.parent().ok_or_else(|| "Invalid file path".to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Invalid file path".to_string())?;
 
     // Open in file explorer
     #[cfg(target_os = "macos")]
@@ -1003,7 +1114,8 @@ pub fn show_folder_in_explorer(state: State<AppState>, folder_id: i64) -> Result
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get folder info
-    let folder = db.get_folder_by_id(folder_id)
+    let folder = db
+        .get_folder_by_id(folder_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Folder not found".to_string())?;
 
@@ -1051,13 +1163,16 @@ pub fn restore_file(state: State<AppState>, file_id: i64) -> Result<(), String> 
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get file info to check if original folder still exists
-    let file = db.get_file_by_id(file_id)
+    let file = db
+        .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
     // Check if the file's folder still exists
     let folder_exists = if let Some(folder_id) = file.folder_id {
-        db.get_folder_by_id(folder_id).map_err(|e| e.to_string())?.is_some()
+        db.get_folder_by_id(folder_id)
+            .map_err(|e| e.to_string())?
+            .is_some()
     } else {
         true // Files without folder (root level) are always restorable
     };
@@ -1101,7 +1216,9 @@ pub fn restore_files(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), S
         if let Some(file) = file {
             // Check if the file's folder still exists
             let folder_exists = if let Some(folder_id) = file.folder_id {
-                db.get_folder_by_id(folder_id).map_err(|e| e.to_string())?.is_some()
+                db.get_folder_by_id(folder_id)
+                    .map_err(|e| e.to_string())?
+                    .is_some()
             } else {
                 true
             };
@@ -1119,7 +1236,8 @@ pub fn restore_files(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), S
                             let _ = fs::rename(old_path, new_path_obj);
                         }
 
-                        let modified_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                        let modified_at =
+                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         db.update_file_path_and_folder(file_id, &new_path, None, &modified_at)
                             .map_err(|e| e.to_string())?;
                     }
@@ -1142,7 +1260,8 @@ pub fn permanent_delete_file(state: State<AppState>, file_id: i64) -> Result<(),
 
     if let Some(file) = file {
         // Delete from database
-        db.permanent_delete_file(file_id).map_err(|e| e.to_string())?;
+        db.permanent_delete_file(file_id)
+            .map_err(|e| e.to_string())?;
 
         // Delete the actual file
         let path = std::path::Path::new(&file.path);
@@ -1161,7 +1280,8 @@ pub fn permanent_delete_files(state: State<AppState>, file_ids: Vec<i64>) -> Res
     for file_id in file_ids {
         let file = db.get_file_by_id(file_id).map_err(|e| e.to_string())?;
         if let Some(file) = file {
-            db.permanent_delete_file(file_id).map_err(|e| e.to_string())?;
+            db.permanent_delete_file(file_id)
+                .map_err(|e| e.to_string())?;
             let path = std::path::Path::new(&file.path);
             if path.exists() {
                 let _ = fs::remove_file(path);
@@ -1182,7 +1302,8 @@ pub fn empty_trash(state: State<AppState>) -> Result<(), String> {
     // Delete all trash files permanently
     for file in trash_files {
         // Delete from database
-        db.permanent_delete_file(file.id).map_err(|e| e.to_string())?;
+        db.permanent_delete_file(file.id)
+            .map_err(|e| e.to_string())?;
 
         // Delete the actual file
         let path = std::path::Path::new(&file.path);
@@ -1228,13 +1349,20 @@ pub struct FileFilter {
 }
 
 #[tauri::command]
-pub fn filter_files(state: State<AppState>, filter: FileFilter, page: Option<u32>, page_size: Option<u32>) -> Result<PaginatedFiles, String> {
+pub fn filter_files(
+    state: State<AppState>,
+    filter: FileFilter,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
     let offset = (page - 1) as i64 * page_size;
 
-    let files = db.filter_files(filter.clone(), Some(page_size), Some(offset)).map_err(|e| e.to_string())?;
+    let files = db
+        .filter_files(filter.clone(), Some(page_size), Some(offset))
+        .map_err(|e| e.to_string())?;
     let total = db.filter_files_count(&filter).map_err(|e| e.to_string())?;
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
 

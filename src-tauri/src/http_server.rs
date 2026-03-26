@@ -1,9 +1,9 @@
 use axum::{
     body::Body,
-    extract::{Query, State, Json},
-    http::{HeaderMap, StatusCode, header},
+    extract::{Json, Query, State},
+    http::{header, HeaderMap, StatusCode},
     response::Response,
-    routing::{get, post, options},
+    routing::{get, options, post},
     Router,
 };
 use serde::Deserialize;
@@ -105,9 +105,16 @@ fn detect_extension_from_magic_bytes(data: &[u8]) -> String {
 
 fn with_cors<B>(response: Response<B>) -> Response<B> {
     let (mut parts, body) = response.into_parts();
-    parts.headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
-    parts.headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS".parse().unwrap());
-    parts.headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, "*".parse().unwrap());
+    parts
+        .headers
+        .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+    parts.headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        "GET, POST, OPTIONS".parse().unwrap(),
+    );
+    parts
+        .headers
+        .insert(header::ACCESS_CONTROL_ALLOW_HEADERS, "*".parse().unwrap());
     Response::from_parts(parts, body)
 }
 
@@ -138,10 +145,12 @@ async fn import_image(
             error: Some("Empty body".to_string()),
         };
         let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap()));
+        return Ok(with_cors(
+            Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        ));
     }
 
     // Get content type from headers
@@ -152,11 +161,7 @@ async fn import_image(
 
     // Determine extension
     let ext = if let Some(filename) = &query.filename {
-        filename
-            .rsplit('.')
-            .next()
-            .unwrap_or("png")
-            .to_lowercase()
+        filename.rsplit('.').next().unwrap_or("png").to_lowercase()
     } else {
         // Try to detect from content type first, then magic bytes
         detect_extension_from_content_type(content_type)
@@ -187,10 +192,12 @@ async fn import_image(
                         error: Some(format!("Failed to get index paths: {}", e)),
                     };
                     let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(Response::builder()
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
-                        .unwrap()));
+                    return Ok(with_cors(
+                        Response::builder()
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    ));
                 }
             };
 
@@ -202,10 +209,12 @@ async fn import_image(
                     error: Some("No index path configured. Please configure an index path in settings first.".to_string()),
                 };
                 let body = serde_json::to_string(&resp).unwrap();
-                return Ok(with_cors(Response::builder()
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(body))
-                    .unwrap()));
+                return Ok(with_cors(
+                    Response::builder()
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                ));
             }
 
             // Create browser collection folder
@@ -223,10 +232,12 @@ async fn import_image(
                         error: Some(format!("Failed to create folder: {}", e)),
                     };
                     let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(Response::builder()
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
-                        .unwrap()));
+                    return Ok(with_cors(
+                        Response::builder()
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    ));
                 }
             }
 
@@ -257,10 +268,12 @@ async fn import_image(
                                 error: Some(format!("Failed to get folder: {}", e)),
                             };
                             let body = serde_json::to_string(&resp).unwrap();
-                            return Ok(with_cors(Response::builder()
-                                .header(header::CONTENT_TYPE, "application/json")
-                                .body(Body::from(body))
-                                .unwrap()));
+                            return Ok(with_cors(
+                                Response::builder()
+                                    .header(header::CONTENT_TYPE, "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap(),
+                            ));
                         }
                     } else {
                         let resp = ImportResponse {
@@ -269,10 +282,12 @@ async fn import_image(
                             error: Some(format!("Failed to create folder in database: {}", e)),
                         };
                         let body = serde_json::to_string(&resp).unwrap();
-                        return Ok(with_cors(Response::builder()
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(Body::from(body))
-                            .unwrap()));
+                        return Ok(with_cors(
+                            Response::builder()
+                                .header(header::CONTENT_TYPE, "application/json")
+                                .body(Body::from(body))
+                                .unwrap(),
+                        ));
                     }
                 }
             }
@@ -294,10 +309,12 @@ async fn import_image(
             error: Some(format!("Failed to write file: {}", e)),
         };
         let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap()));
+        return Ok(with_cors(
+            Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        ));
     }
 
     // Get image dimensions
@@ -305,13 +322,14 @@ async fn import_image(
     let metadata = std::fs::metadata(&dest_path).ok();
 
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let size = metadata.map(|m| m.len() as i64).unwrap_or(data.len() as i64);
+    let size = metadata
+        .map(|m| m.len() as i64)
+        .unwrap_or(data.len() as i64);
 
     // Extract color distribution
-    let color_distribution = indexer::extract_color_distribution(&dest_path)
-        .unwrap_or_default();
-    let color_distribution_json = serde_json::to_string(&color_distribution)
-        .unwrap_or_else(|_| "[]".to_string());
+    let color_distribution = indexer::extract_color_distribution(&dest_path).unwrap_or_default();
+    let color_distribution_json =
+        serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
 
     let file_record = FileRecord {
         id: 0,
@@ -343,10 +361,13 @@ async fn import_image(
             log::info!("Imported browser image: {} (id: {})", new_name, file_id);
 
             // Emit event to frontend to refresh file list
-            let _ = state.app_handle.emit("file-imported", serde_json::json!({
-                "file_id": file_id,
-                "path": dest_path.to_string_lossy().to_string(),
-            }));
+            let _ = state.app_handle.emit(
+                "file-imported",
+                serde_json::json!({
+                    "file_id": file_id,
+                    "path": dest_path.to_string_lossy().to_string(),
+                }),
+            );
 
             let resp = ImportResponse {
                 success: true,
@@ -354,29 +375,36 @@ async fn import_image(
                 error: None,
             };
             let body = serde_json::to_string(&resp).unwrap();
-            Ok(with_cors(Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap()))
+            Ok(with_cors(
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            ))
         }
         Err(e) => {
             // Clean up the file if database insert failed
             let _ = std::fs::remove_file(&dest_path);
             log::error!("Failed to import browser image: {}", e);
             // Emit event to frontend to show error
-            let _ = state.app_handle.emit("file-import-error", serde_json::json!({
-                "error": format!("Database error: {}", e),
-            }));
+            let _ = state.app_handle.emit(
+                "file-import-error",
+                serde_json::json!({
+                    "error": format!("Database error: {}", e),
+                }),
+            );
             let resp = ImportResponse {
                 success: false,
                 file_id: None,
                 error: Some(format!("Database error: {}", e)),
             };
             let body = serde_json::to_string(&resp).unwrap();
-            Ok(with_cors(Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap()))
+            Ok(with_cors(
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            ))
         }
     }
 }
@@ -404,10 +432,12 @@ async fn import_image_from_url(
                 error: Some(format!("Failed to download image: {}", e)),
             };
             let body = serde_json::to_string(&resp).unwrap();
-            return Ok(with_cors(Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap()));
+            return Ok(with_cors(
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            ));
         }
     };
 
@@ -416,13 +446,18 @@ async fn import_image_from_url(
         let resp = ImportResponse {
             success: false,
             file_id: None,
-            error: Some(format!("Download failed with status: {}", response.status())),
+            error: Some(format!(
+                "Download failed with status: {}",
+                response.status()
+            )),
         };
         let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap()));
+        return Ok(with_cors(
+            Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        ));
     }
 
     // Get content type from response headers (before consuming the response)
@@ -443,10 +478,12 @@ async fn import_image_from_url(
                 error: Some(format!("Failed to read response: {}", e)),
             };
             let body = serde_json::to_string(&resp).unwrap();
-            return Ok(with_cors(Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap()));
+            return Ok(with_cors(
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            ));
         }
     };
 
@@ -457,10 +494,12 @@ async fn import_image_from_url(
             error: Some("Empty response".to_string()),
         };
         let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap()));
+        return Ok(with_cors(
+            Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        ));
     }
 
     // Determine extension
@@ -489,10 +528,12 @@ async fn import_image_from_url(
                         error: Some(format!("Failed to get index paths: {}", e)),
                     };
                     let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(Response::builder()
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
-                        .unwrap()));
+                    return Ok(with_cors(
+                        Response::builder()
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    ));
                 }
             };
 
@@ -504,10 +545,12 @@ async fn import_image_from_url(
                     error: Some("No index path configured. Please configure an index path in settings first.".to_string()),
                 };
                 let body = serde_json::to_string(&resp).unwrap();
-                return Ok(with_cors(Response::builder()
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(body))
-                    .unwrap()));
+                return Ok(with_cors(
+                    Response::builder()
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                ));
             }
 
             // Create browser collection folder
@@ -525,10 +568,12 @@ async fn import_image_from_url(
                         error: Some(format!("Failed to create folder: {}", e)),
                     };
                     let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(Response::builder()
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
-                        .unwrap()));
+                    return Ok(with_cors(
+                        Response::builder()
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    ));
                 }
             }
 
@@ -559,10 +604,12 @@ async fn import_image_from_url(
                                 error: Some(format!("Failed to get folder: {}", e)),
                             };
                             let body = serde_json::to_string(&resp).unwrap();
-                            return Ok(with_cors(Response::builder()
-                                .header(header::CONTENT_TYPE, "application/json")
-                                .body(Body::from(body))
-                                .unwrap()));
+                            return Ok(with_cors(
+                                Response::builder()
+                                    .header(header::CONTENT_TYPE, "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap(),
+                            ));
                         }
                     } else {
                         let resp = ImportResponse {
@@ -571,10 +618,12 @@ async fn import_image_from_url(
                             error: Some(format!("Failed to create folder in database: {}", e)),
                         };
                         let body = serde_json::to_string(&resp).unwrap();
-                        return Ok(with_cors(Response::builder()
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(Body::from(body))
-                            .unwrap()));
+                        return Ok(with_cors(
+                            Response::builder()
+                                .header(header::CONTENT_TYPE, "application/json")
+                                .body(Body::from(body))
+                                .unwrap(),
+                        ));
                     }
                 }
             }
@@ -594,10 +643,12 @@ async fn import_image_from_url(
             error: Some(format!("Failed to write file: {}", e)),
         };
         let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap()));
+        return Ok(with_cors(
+            Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        ));
     }
 
     // Get image dimensions
@@ -605,13 +656,14 @@ async fn import_image_from_url(
     let metadata = std::fs::metadata(&dest_path).ok();
 
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let size = metadata.map(|m| m.len() as i64).unwrap_or(data.len() as i64);
+    let size = metadata
+        .map(|m| m.len() as i64)
+        .unwrap_or(data.len() as i64);
 
     // Extract color distribution
-    let color_distribution = indexer::extract_color_distribution(&dest_path)
-        .unwrap_or_default();
-    let color_distribution_json = serde_json::to_string(&color_distribution)
-        .unwrap_or_else(|_| "[]".to_string());
+    let color_distribution = indexer::extract_color_distribution(&dest_path).unwrap_or_default();
+    let color_distribution_json =
+        serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
 
     let file_record = FileRecord {
         id: 0,
@@ -640,13 +692,20 @@ async fn import_image_from_url(
 
     match result {
         Ok(file_id) => {
-            log::info!("Imported browser image from URL: {} (id: {})", new_name, file_id);
+            log::info!(
+                "Imported browser image from URL: {} (id: {})",
+                new_name,
+                file_id
+            );
 
             // Emit event to frontend to refresh file list
-            let _ = state.app_handle.emit("file-imported", serde_json::json!({
-                "file_id": file_id,
-                "path": dest_path.to_string_lossy().to_string(),
-            }));
+            let _ = state.app_handle.emit(
+                "file-imported",
+                serde_json::json!({
+                    "file_id": file_id,
+                    "path": dest_path.to_string_lossy().to_string(),
+                }),
+            );
 
             let resp = ImportResponse {
                 success: true,
@@ -654,10 +713,12 @@ async fn import_image_from_url(
                 error: None,
             };
             let body = serde_json::to_string(&resp).unwrap();
-            Ok(with_cors(Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap()))
+            Ok(with_cors(
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            ))
         }
         Err(e) => {
             // Clean up the file if database insert failed
@@ -668,10 +729,12 @@ async fn import_image_from_url(
                 error: Some(format!("Database error: {}", e)),
             };
             let body = serde_json::to_string(&resp).unwrap();
-            Ok(with_cors(Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap()))
+            Ok(with_cors(
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            ))
         }
     }
 }
@@ -698,7 +761,10 @@ pub async fn start_http_server(db_path: std::path::PathBuf, app_handle: AppHandl
         .route("/api/import", post(import_image))
         .route("/api/import-from-url", post(import_image_from_url))
         // 处理 CORS 预检请求
-        .route("/api/import-from-url", options(import_image_from_url_options))
+        .route(
+            "/api/import-from-url",
+            options(import_image_from_url_options),
+        )
         .route("/api/import", options(import_image_options))
         .route("/api/health", options(health_check_options))
         .with_state(state);

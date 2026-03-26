@@ -9,11 +9,11 @@ import FileContextMenu from "./FileContextMenu"
 
 const GRID_MIN_WIDTH = 180
 const GRID_GAP = 16
-const GRID_ROW_ESTIMATE = 300
 const LIST_ROW_HEIGHT = 56
 const OBSERVER_ROOT_MARGIN = "300px"
 const ADAPTIVE_MIN_WIDTH = 220
 const ADAPTIVE_CARD_FOOTER_HEIGHT = 48
+const ADAPTIVE_CARD_SCALE = 0.96
 const VIEWPORT_OVERSCAN_PX = 600
 
 export default function FileGrid() {
@@ -77,12 +77,25 @@ export default function FileGrid() {
       observer.disconnect()
       element.removeEventListener("scroll", handleScroll)
     }
-  }, [])
+  }, [isLoading, files.length])
 
-  const gridColumns = Math.max(1, Math.floor((Math.max(containerWidth, GRID_MIN_WIDTH) + GRID_GAP) / (GRID_MIN_WIDTH + GRID_GAP)))
-  const gridItemWidth = Math.max(0, (Math.max(containerWidth, GRID_MIN_WIDTH) - GRID_GAP * (gridColumns - 1)) / gridColumns)
+  const contentWidth = Math.max(containerWidth, GRID_MIN_WIDTH)
+  const gridColumns = Math.max(1, Math.floor((contentWidth + GRID_GAP) / (GRID_MIN_WIDTH + GRID_GAP)))
+  const gridItemWidth = Math.max(0, (contentWidth - GRID_GAP * (gridColumns - 1)) / gridColumns)
   const gridRowHeight = Math.ceil(gridItemWidth + 96)
   const gridRowCount = Math.ceil(filteredFiles.length / gridColumns)
+  const gridVisibleStartRow = Math.max(0, Math.floor((scrollTop - VIEWPORT_OVERSCAN_PX) / Math.max(gridRowHeight, 1)))
+  const gridVisibleEndRow = Math.min(
+    Math.max(0, gridRowCount - 1),
+    Math.ceil((scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX) / Math.max(gridRowHeight, 1)),
+  )
+  const gridVirtualRows =
+    gridRowCount > 0
+      ? Array.from(
+          { length: Math.max(0, gridVisibleEndRow - gridVisibleStartRow + 1) },
+          (_, idx) => gridVisibleStartRow + idx,
+        )
+      : []
   const adaptiveColumns = Math.max(1, Math.floor((Math.max(containerWidth, ADAPTIVE_MIN_WIDTH) + GRID_GAP) / (ADAPTIVE_MIN_WIDTH + GRID_GAP)))
   const adaptiveColumnWidth = Math.max(0, (Math.max(containerWidth, ADAPTIVE_MIN_WIDTH) - GRID_GAP * (adaptiveColumns - 1)) / adaptiveColumns)
   const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth)
@@ -97,13 +110,6 @@ export default function FileGrid() {
     getScrollElement: () => scrollParentRef.current,
     estimateSize: () => LIST_ROW_HEIGHT,
     overscan: 8,
-  })
-
-  const gridRowVirtualizer = useVirtualizer({
-    count: gridRowCount,
-    getScrollElement: () => scrollParentRef.current,
-    estimateSize: () => (containerWidth > 0 ? gridRowHeight : GRID_ROW_ESTIMATE),
-    overscan: 3,
   })
 
   const handleFileClick = (file: FileItem, event: MouseEvent) => {
@@ -286,18 +292,18 @@ export default function FileGrid() {
             ))}
           </div>
         ) : viewMode === "grid" ? (
-          <div className="relative" style={{ height: `${gridRowVirtualizer.getTotalSize()}px` }}>
-            {gridRowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const startIndex = virtualRow.index * gridColumns
+          <div className="relative" style={{ height: `${gridRowCount * gridRowHeight}px` }}>
+            {gridVirtualRows.map((rowIndex) => {
+              const startIndex = rowIndex * gridColumns
               const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns)
 
               return (
                 <div
-                  key={virtualRow.key}
+                  key={rowIndex}
                   className="absolute left-0 top-0 w-full"
                   style={{
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
+                    height: `${gridRowHeight}px`,
+                    transform: `translateY(${rowIndex * gridRowHeight}px)`,
                   }}
                 >
                   <div
@@ -466,9 +472,11 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
     return { items: [] as AdaptiveLayoutItem[], totalHeight: 0 }
   }
 
+  const visualWidth = Math.max(120, Math.round(columnWidth * ADAPTIVE_CARD_SCALE))
+  const horizontalInset = (columnWidth - visualWidth) / 2
   const heights = Array.from({ length: columns }, () => 0)
   const items: AdaptiveLayoutItem[] = files.map((file, index) => {
-    const imageHeight = getAdaptiveImageHeight(file, columnWidth)
+    const imageHeight = getAdaptiveImageHeight(file, visualWidth)
     const totalHeight = imageHeight + ADAPTIVE_CARD_FOOTER_HEIGHT
     let columnIndex = 0
 
@@ -479,7 +487,7 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
     }
 
     const top = heights[columnIndex]
-    const left = columnIndex * (columnWidth + GRID_GAP)
+    const left = columnIndex * (columnWidth + GRID_GAP) + horizontalInset
     heights[columnIndex] += totalHeight + GRID_GAP
 
     return {
@@ -487,7 +495,7 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
       index,
       left,
       top,
-      width: columnWidth,
+      width: visualWidth,
       height: totalHeight,
     }
   })
