@@ -246,6 +246,7 @@ interface FileStore {
   toggleFileSelection: (fileId: number) => void
   clearSelection: () => void
   selectAll: () => void
+  toggleSelectAll: () => void
   loadFiles: () => Promise<void>
   loadFilesInFolder: (folderId: number | null) => Promise<void>
   searchFiles: (query: string) => Promise<void>
@@ -490,7 +491,17 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   selectAll: () => {
     const { files } = get()
-    set({ selectedFiles: files.map(f => f.id) })
+    set({ selectedFiles: files.map(f => f.id), selectedFile: null })
+  },
+
+  toggleSelectAll: () => {
+    const { files, selectedFiles } = get()
+    if (files.length > 0 && selectedFiles.length === files.length) {
+      set({ selectedFiles: [] })
+      return
+    }
+
+    set({ selectedFiles: files.map(f => f.id), selectedFile: null })
   },
 
   loadFiles: async () => {

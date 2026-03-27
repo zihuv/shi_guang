@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_SHORTCUTS, resolveShortcuts, type ShortcutActionId, type ShortcutConfig } from "@/lib/shortcuts";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFileStore } from "@/stores/fileStore";
+
+const SHORTCUTS_SETTING_KEY = "shortcuts";
 
 const loadFilesInCurrentFolder = async () => {
   const selectedFolderId = useFolderStore.getState().selectedFolderId;
@@ -14,6 +17,7 @@ interface Settings {
   theme: "light" | "dark";
   indexPaths: string[];
   useTrash: boolean;
+  shortcuts: ShortcutConfig;
 }
 
 interface SettingsStore extends Settings {
@@ -21,14 +25,17 @@ interface SettingsStore extends Settings {
   addIndexPath: (path: string) => Promise<void>;
   removeIndexPath: (path: string) => Promise<void>;
   setDeleteMode: (useTrash: boolean) => Promise<void>;
+  setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
+  resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsStore>((set) => ({
+export const useSettingsStore = create<SettingsStore>((set, get) => ({
   theme: "light",
   indexPaths: [],
   useTrash: true,
+  shortcuts: { ...DEFAULT_SHORTCUTS },
 
   setTheme: async (theme) => {
     await invoke("set_setting", { key: "theme", value: theme });
@@ -38,6 +45,22 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setDeleteMode: async (useTrash: boolean) => {
     await invoke("set_delete_mode", { useTrash });
     set({ useTrash });
+  },
+
+  setShortcut: async (actionId, shortcut) => {
+    const nextShortcuts = {
+      ...get().shortcuts,
+      [actionId]: shortcut,
+    };
+    await invoke("set_setting", {
+      key: SHORTCUTS_SETTING_KEY,
+      value: JSON.stringify(nextShortcuts),
+    });
+    set({ shortcuts: nextShortcuts });
+  },
+
+  resetShortcut: async (actionId) => {
+    await get().setShortcut(actionId, DEFAULT_SHORTCUTS[actionId]);
   },
 
   addIndexPath: async (path) => {
@@ -60,6 +83,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     let theme: "light" | "dark" = "light";
     let indexPaths: string[] = [];
     let useTrash: boolean = true;
+    let shortcuts = { ...DEFAULT_SHORTCUTS };
 
     // Get theme
     try {
@@ -87,6 +111,16 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
       console.error("Failed to load index paths:", e);
     }
 
+    try {
+      const shortcutsValue = await invoke<string>("get_setting", { key: SHORTCUTS_SETTING_KEY });
+      shortcuts = resolveShortcuts(JSON.parse(shortcutsValue) as Partial<Record<ShortcutActionId, string | null>>);
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load shortcuts:", e);
+      }
+    }
+
     // If no index paths configured, add default path (user's Pictures/shiguang folder)
     if (!indexPaths || indexPaths.length === 0) {
       try {
@@ -106,6 +140,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
       theme,
       indexPaths: indexPaths || [],
       useTrash,
+      shortcuts,
     });
   },
 

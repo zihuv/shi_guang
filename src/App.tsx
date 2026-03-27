@@ -16,8 +16,8 @@ import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useClipboardImport } from "@/hooks/useClipboardImport";
 import { useDocumentTheme } from "@/hooks/useDocumentTheme";
 import { useInternalFileDrag } from "@/hooks/useInternalFileDrag";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useTauriImportListeners } from "@/hooks/useTauriImportListeners";
-import { useUndoHotkey } from "@/hooks/useUndoHotkey";
 
 function App() {
   const { theme } = useSettingsStore();
@@ -49,7 +49,7 @@ function App() {
   });
   useClipboardImport(importImagesFromBase64);
   useDocumentTheme(theme);
-  useUndoHotkey();
+  useKeyboardShortcuts();
 
   useEffect(() => {
     Object.assign(window as Window & {
