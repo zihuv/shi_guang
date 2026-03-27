@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { useSettingsStore } from "@/stores/settingsStore";
+import {
+  DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
+  PREVIEW_TRACKPAD_ZOOM_SPEED_MAX,
+  PREVIEW_TRACKPAD_ZOOM_SPEED_MIN,
+  PREVIEW_TRACKPAD_ZOOM_SPEED_STEP,
+  useSettingsStore,
+} from "@/stores/settingsStore";
 import ShortcutRecorder from "@/components/ShortcutRecorder";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -17,7 +23,15 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
-import { Sun, Moon, Trash2, Plus, Trash, AlertTriangle, RotateCcw } from "lucide-react";
+import {
+  Sun,
+  Moon,
+  Trash2,
+  Plus,
+  Trash,
+  AlertTriangle,
+  RotateCcw,
+} from "lucide-react";
 
 interface SettingsModalProps {
   open: boolean;
@@ -39,11 +53,13 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     shortcuts,
     setShortcut,
     resetShortcut,
-  } =
-    useSettingsStore();
+    previewTrackpadZoomSpeed,
+    setPreviewTrackpadZoomSpeed,
+  } = useSettingsStore();
   const [isAdding, setIsAdding] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const [activeSection, setActiveSection] =
+    useState<SettingsSection>("general");
 
   const handleAddPath = async () => {
     setIsAdding(true);
@@ -62,7 +78,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     setIsAdding(false);
   };
 
-  const handleShortcutChange = async (actionId: ShortcutActionId, nextShortcut: string) => {
+  const handleShortcutChange = async (
+    actionId: ShortcutActionId,
+    nextShortcut: string,
+  ) => {
     const normalized = normalizeShortcut(nextShortcut);
     if (!normalized) {
       return;
@@ -73,7 +92,9 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     );
 
     if (conflict) {
-      toast.error(`快捷键冲突：${conflict.label} 已使用 ${formatShortcutDisplay(normalized)}`);
+      toast.error(
+        `快捷键冲突：${conflict.label} 已使用 ${formatShortcutDisplay(normalized)}`,
+      );
       return;
     }
 
@@ -87,11 +108,14 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const handleShortcutReset = async (actionId: ShortcutActionId) => {
     const defaultShortcut = DEFAULT_SHORTCUTS[actionId];
     const conflict = SHORTCUT_ACTIONS.find(
-      (action) => action.id !== actionId && shortcuts[action.id] === defaultShortcut,
+      (action) =>
+        action.id !== actionId && shortcuts[action.id] === defaultShortcut,
     );
 
     if (conflict) {
-      toast.error(`快捷键冲突：${conflict.label} 已使用 ${formatShortcutDisplay(defaultShortcut)}`);
+      toast.error(
+        `快捷键冲突：${conflict.label} 已使用 ${formatShortcutDisplay(defaultShortcut)}`,
+      );
       return;
     }
 
@@ -164,11 +188,11 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         variant="outline"
                         disabled={isRebuilding}
                         onClick={async () => {
-                          setIsRebuilding(true)
+                          setIsRebuilding(true);
                           try {
-                            await rebuildIndex()
+                            await rebuildIndex();
                           } finally {
-                            setIsRebuilding(false)
+                            setIsRebuilding(false);
                           }
                         }}
                       >
@@ -258,6 +282,63 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                     <div className="flex flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          触控板缩放速度
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          调整预览页里按住 Ctrl / Cmd
+                          并滚动触控板或滚轮时的缩放灵敏度。
+                        </p>
+                      </div>
+                      <div className="w-full max-w-sm space-y-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            慢
+                          </span>
+                          <input
+                            type="range"
+                            min={PREVIEW_TRACKPAD_ZOOM_SPEED_MIN}
+                            max={PREVIEW_TRACKPAD_ZOOM_SPEED_MAX}
+                            step={PREVIEW_TRACKPAD_ZOOM_SPEED_STEP}
+                            value={previewTrackpadZoomSpeed}
+                            onChange={(e) =>
+                              void setPreviewTrackpadZoomSpeed(
+                                Number(e.target.value),
+                              )
+                            }
+                            className="flex-1"
+                          />
+                          <span className="w-14 text-right text-sm font-medium text-gray-700 dark:text-gray-200">
+                            {previewTrackpadZoomSpeed.toFixed(1)}x
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            快
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              void setPreviewTrackpadZoomSpeed(
+                                DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
+                              )
+                            }
+                            disabled={
+                              previewTrackpadZoomSpeed ===
+                              DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED
+                            }
+                          >
+                            默认
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 dark:border-dark-border" />
+
+                    <div className="flex flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
                           外观
                         </p>
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -293,7 +374,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                     快捷键
                   </h3>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Windows / Linux 使用 `Ctrl`，macOS 使用 `Cmd`。录制时按 `Esc` 取消。
+                    Windows / Linux 使用 `Ctrl`，macOS 使用 `Cmd`。录制时按
+                    `Esc` 取消。
                   </p>
                 </div>
 
@@ -302,7 +384,9 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                     <div
                       key={action.id}
                       className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${
-                        index !== SHORTCUT_ACTIONS.length - 1 ? "border-b border-gray-200 dark:border-dark-border" : ""
+                        index !== SHORTCUT_ACTIONS.length - 1
+                          ? "border-b border-gray-200 dark:border-dark-border"
+                          : ""
                       }`}
                     >
                       <div className="min-w-0">
@@ -316,7 +400,9 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       <div className="flex flex-wrap items-center gap-2">
                         <ShortcutRecorder
                           shortcut={shortcuts[action.id]}
-                          onChange={(nextShortcut) => handleShortcutChange(action.id, nextShortcut)}
+                          onChange={(nextShortcut) =>
+                            handleShortcutChange(action.id, nextShortcut)
+                          }
                         />
                         <Button
                           variant="ghost"
@@ -330,7 +416,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleShortcutReset(action.id)}
-                          disabled={shortcuts[action.id] === DEFAULT_SHORTCUTS[action.id]}
+                          disabled={
+                            shortcuts[action.id] ===
+                            DEFAULT_SHORTCUTS[action.id]
+                          }
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           默认
@@ -341,12 +430,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </div>
               </section>
             )}
-
-            <div className="mt-8 border-t border-gray-200 pt-4 dark:border-dark-border">
-              <p className="text-center text-xs text-gray-500 dark:text-gray-400">
-                拾光 v0.1.0
-              </p>
-            </div>
           </div>
         </div>
       </DialogContent>

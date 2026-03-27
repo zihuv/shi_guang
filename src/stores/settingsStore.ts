@@ -5,6 +5,28 @@ import { useFolderStore } from "@/stores/folderStore";
 import { useFileStore } from "@/stores/fileStore";
 
 const SHORTCUTS_SETTING_KEY = "shortcuts";
+const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
+
+export const DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED = 1;
+export const PREVIEW_TRACKPAD_ZOOM_SPEED_MIN = 0.2;
+export const PREVIEW_TRACKPAD_ZOOM_SPEED_MAX = 3;
+export const PREVIEW_TRACKPAD_ZOOM_SPEED_STEP = 0.1;
+
+export function clampPreviewTrackpadZoomSpeed(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
+  }
+
+  const clamped = Math.max(
+    PREVIEW_TRACKPAD_ZOOM_SPEED_MIN,
+    Math.min(PREVIEW_TRACKPAD_ZOOM_SPEED_MAX, value),
+  );
+  return Number(
+    (
+      Math.round(clamped / PREVIEW_TRACKPAD_ZOOM_SPEED_STEP) * PREVIEW_TRACKPAD_ZOOM_SPEED_STEP
+    ).toFixed(1),
+  );
+}
 
 const loadFilesInCurrentFolder = async () => {
   const selectedFolderId = useFolderStore.getState().selectedFolderId;
@@ -18,6 +40,7 @@ interface Settings {
   indexPaths: string[];
   useTrash: boolean;
   shortcuts: ShortcutConfig;
+  previewTrackpadZoomSpeed: number;
 }
 
 interface SettingsStore extends Settings {
@@ -27,6 +50,7 @@ interface SettingsStore extends Settings {
   setDeleteMode: (useTrash: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
+  setPreviewTrackpadZoomSpeed: (speed: number) => Promise<void>;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
 }
@@ -36,6 +60,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   indexPaths: [],
   useTrash: true,
   shortcuts: { ...DEFAULT_SHORTCUTS },
+  previewTrackpadZoomSpeed: DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
 
   setTheme: async (theme) => {
     await invoke("set_setting", { key: "theme", value: theme });
@@ -63,6 +88,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     await get().setShortcut(actionId, DEFAULT_SHORTCUTS[actionId]);
   },
 
+  setPreviewTrackpadZoomSpeed: async (speed) => {
+    const nextSpeed = clampPreviewTrackpadZoomSpeed(speed);
+    await invoke("set_setting", {
+      key: PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY,
+      value: String(nextSpeed),
+    });
+    set({ previewTrackpadZoomSpeed: nextSpeed });
+  },
+
   addIndexPath: async (path) => {
     await invoke("add_index_path", { path });
     const paths = await invoke<string[]>("get_index_paths");
@@ -84,6 +118,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let indexPaths: string[] = [];
     let useTrash: boolean = true;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
+    let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
 
     // Get theme
     try {
@@ -121,6 +156,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
     }
 
+    try {
+      const speedValue = await invoke<string>("get_setting", { key: PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY });
+      previewTrackpadZoomSpeed = clampPreviewTrackpadZoomSpeed(Number.parseFloat(speedValue));
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load preview trackpad zoom speed:", e);
+      }
+    }
+
     // If no index paths configured, add default path (user's Pictures/shiguang folder)
     if (!indexPaths || indexPaths.length === 0) {
       try {
@@ -141,6 +186,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       indexPaths: indexPaths || [],
       useTrash,
       shortcuts,
+      previewTrackpadZoomSpeed,
     });
   },
 

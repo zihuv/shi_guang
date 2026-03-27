@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import FileTypeIcon from '@/components/FileTypeIcon'
 import { formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
 import {
@@ -19,7 +20,7 @@ import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 10000
-const WHEEL_ZOOM_SENSITIVITY = 0.002
+const BASE_WHEEL_ZOOM_SENSITIVITY = 0.002
 
 function clampZoom(value: number) {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value))
@@ -42,6 +43,7 @@ export default function ImagePreview() {
   } = useFileStore()
 
   const { folders, selectedFolderId } = useFolderStore()
+  const previewTrackpadZoomSpeed = useSettingsStore((state) => state.previewTrackpadZoomSpeed)
 
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [textContent, setTextContent] = useState<string>("")
@@ -77,6 +79,7 @@ export default function ImagePreview() {
   const isPdf = currentFile ? isPdfFile(currentFile.ext) : false
   const isImageLike = previewType === 'image'
   const supportsZoom = previewType === 'image'
+  const wheelZoomSensitivity = BASE_WHEEL_ZOOM_SENSITIVITY * previewTrackpadZoomSpeed
 
   // 切换预览时同步更新选中文件
   useEffect(() => {
@@ -429,7 +432,7 @@ export default function ImagePreview() {
 
     setZoom(prevZoom => {
       const baseZoom = prevZoom === 'auto' ? fitZoomPercent : prevZoom
-      const nextZoom = clampZoom(baseZoom * Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY))
+      const nextZoom = clampZoom(baseZoom * Math.exp(-deltaY * wheelZoomSensitivity))
       const currentScale = baseZoom / 100
       const nextScale = nextZoom / 100
 

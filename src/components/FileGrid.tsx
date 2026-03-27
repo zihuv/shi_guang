@@ -26,6 +26,8 @@ type SelectionBox = {
   endY: number
 }
 
+type ArrowNavigationKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+
 const imageSrcCache = new Map<string, string>()
 
 function getCachedImageSrc(cacheKey: string) {
@@ -102,6 +104,22 @@ function isCardIntersectingSelection(cardRect: DOMRect, containerRect: DOMRect, 
     cardTop <= bounds.maxY &&
     cardBottom >= bounds.minY
   )
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  if (target.isContentEditable) {
+    return true
+  }
+
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']"))
+}
+
+function isDialogTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest("[role='dialog'], [role='menu']"))
 }
 
 export default function FileGrid() {
@@ -327,6 +345,144 @@ export default function FileGrid() {
     }
   }, [isSelecting])
 
+  const scrollIndexIntoView = (index: number) => {
+    const container = scrollParentRef.current
+    if (!container) {
+      return
+    }
+
+    let itemTop = 0
+    let itemBottom = 0
+
+    if (viewMode === "list") {
+      itemTop = index * LIST_ROW_HEIGHT
+      itemBottom = itemTop + LIST_ROW_HEIGHT
+    } else if (viewMode === "grid") {
+      const row = Math.floor(index / gridColumns)
+      itemTop = row * gridRowHeight
+      itemBottom = itemTop + gridRowHeight
+    } else {
+      const item = adaptiveLayout.items[index]
+      if (!item) {
+        return
+      }
+      itemTop = item.top
+      itemBottom = item.top + item.height
+    }
+
+    const padding = 24
+    const viewportTop = container.scrollTop
+    const viewportBottom = viewportTop + container.clientHeight
+
+    if (itemTop < viewportTop + padding) {
+      container.scrollTo({ top: Math.max(0, itemTop - padding) })
+      return
+    }
+
+    if (itemBottom > viewportBottom - padding) {
+      container.scrollTo({ top: Math.max(0, itemBottom - container.clientHeight + padding) })
+    }
+  }
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        isSelecting ||
+        event.isComposing ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return
+      }
+
+      if (
+        event.key !== "ArrowUp" &&
+        event.key !== "ArrowDown" &&
+        event.key !== "ArrowLeft" &&
+        event.key !== "ArrowRight"
+      ) {
+        return
+      }
+
+      if (isEditableTarget(event.target) || isDialogTarget(event.target) || selectedFiles.length > 0 || filteredFiles.length === 0) {
+        return
+      }
+
+      event.preventDefault()
+
+      const currentIndex = selectedFile ? filteredFiles.findIndex((file) => file.id === selectedFile.id) : -1
+      let nextIndex = currentIndex
+
+      if (currentIndex === -1) {
+        nextIndex = event.key === "ArrowLeft" || event.key === "ArrowUp" ? filteredFiles.length - 1 : 0
+      } else if (viewMode === "list") {
+        if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+          nextIndex = Math.max(0, currentIndex - 1)
+        } else {
+          nextIndex = Math.min(filteredFiles.length - 1, currentIndex + 1)
+        }
+      } else if (viewMode === "grid") {
+        const row = Math.floor(currentIndex / gridColumns)
+        const col = currentIndex % gridColumns
+
+        switch (event.key) {
+          case "ArrowLeft":
+            nextIndex = Math.max(0, currentIndex - 1)
+            break
+          case "ArrowRight":
+            nextIndex = Math.min(filteredFiles.length - 1, currentIndex + 1)
+            break
+          case "ArrowUp":
+            if (row === 0) {
+              return
+            }
+            nextIndex = (row - 1) * gridColumns + col
+            break
+          case "ArrowDown": {
+            const nextRowStart = (row + 1) * gridColumns
+            if (nextRowStart >= filteredFiles.length) {
+              return
+            }
+            nextIndex = Math.min(nextRowStart + col, filteredFiles.length - 1)
+            break
+          }
+        }
+      } else {
+        nextIndex = findAdaptiveNeighborIndex(adaptiveLayout.items, currentIndex, event.key)
+      }
+
+      if (nextIndex === currentIndex || nextIndex < 0 || nextIndex >= filteredFiles.length) {
+        return
+      }
+
+      const nextFile = filteredFiles[nextIndex]
+      if (!nextFile) {
+        return
+      }
+
+      setSelectedFile(nextFile)
+      scrollIndexIntoView(nextIndex)
+    }
+
+    window.addEventListener("keydown", handleWindowKeyDown)
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeyDown)
+    }
+  }, [
+    adaptiveLayout.items,
+    filteredFiles,
+    gridColumns,
+    gridRowHeight,
+    isSelecting,
+    selectedFile,
+    selectedFiles.length,
+    setSelectedFile,
+    viewMode,
+  ])
+
   const handleBatchDelete = async () => {
     await deleteFiles(selectedFiles)
     setShowBatchDeleteConfirm(false)
@@ -404,6 +560,7 @@ export default function FileGrid() {
               >
                 <AdaptiveFileCard
                   file={file}
+                  isSelected={selectedFile?.id === file.id}
                   isMultiSelected={selectedFiles.includes(file.id)}
                   isDragging={draggingFileId === file.id}
                   scrollRootRef={scrollParentRef}
@@ -438,6 +595,7 @@ export default function FileGrid() {
                       <FileCard
                         key={`grid-${rowIndex}-${offset}`}
                         file={file}
+                        isSelected={selectedFile?.id === file.id}
                         isMultiSelected={selectedFiles.includes(file.id)}
                         isDragging={draggingFileId === file.id}
                         scrollRootRef={scrollParentRef}
@@ -469,6 +627,7 @@ export default function FileGrid() {
                 >
                   <FileRow
                     file={file}
+                    isSelected={selectedFile?.id === file.id}
                     isMultiSelected={selectedFiles.includes(file.id)}
                     isDragging={draggingFileId === file.id}
                     scrollRootRef={scrollParentRef}
@@ -590,6 +749,64 @@ type AdaptiveLayoutItem = {
   top: number
   width: number
   height: number
+}
+
+function findAdaptiveNeighborIndex(items: AdaptiveLayoutItem[], currentIndex: number, direction: ArrowNavigationKey) {
+  const currentItem = items[currentIndex]
+  if (!currentItem) {
+    return currentIndex
+  }
+
+  const currentCenterX = currentItem.left + currentItem.width / 2
+  const currentCenterY = currentItem.top + currentItem.height / 2
+  let bestIndex = currentIndex
+  let bestScore = Number.POSITIVE_INFINITY
+
+  items.forEach((item, index) => {
+    if (index === currentIndex) {
+      return
+    }
+
+    const candidateCenterX = item.left + item.width / 2
+    const candidateCenterY = item.top + item.height / 2
+    const deltaX = candidateCenterX - currentCenterX
+    const deltaY = candidateCenterY - currentCenterY
+    let score = Number.POSITIVE_INFINITY
+
+    switch (direction) {
+      case "ArrowUp":
+        if (deltaY >= -4) {
+          return
+        }
+        score = Math.abs(deltaX) + Math.abs(deltaY) * 3
+        break
+      case "ArrowDown":
+        if (deltaY <= 4) {
+          return
+        }
+        score = Math.abs(deltaX) + deltaY * 3
+        break
+      case "ArrowLeft":
+        if (deltaX >= -4) {
+          return
+        }
+        score = Math.abs(deltaY) + Math.abs(deltaX) * 3
+        break
+      case "ArrowRight":
+        if (deltaX <= 4) {
+          return
+        }
+        score = Math.abs(deltaY) + deltaX * 3
+        break
+    }
+
+    if (score < bestScore) {
+      bestScore = score
+      bestIndex = index
+    }
+  })
+
+  return bestIndex
 }
 
 function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: number) {
@@ -715,6 +932,7 @@ function useLazyImageSrc(path: string, ext: string, cacheKey: string, isVisible:
 
 type FileCardBaseProps = {
   file: FileItem
+  isSelected: boolean
   isMultiSelected: boolean
   isDragging: boolean
   scrollRootRef: RefObject<HTMLDivElement | null>
@@ -724,7 +942,7 @@ type FileCardBaseProps = {
   onDragEnd: () => void
 }
 
-function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function FileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -755,6 +973,8 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
           className={`file-card group relative flex h-full flex-col overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
+              : isSelected
+                ? "ring-2 ring-primary-300 shadow-md shadow-primary-200/50 dark:ring-primary-700 dark:shadow-primary-950/40"
               : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
           }`}
         >
@@ -804,7 +1024,7 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
   )
 }
 
-function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -842,6 +1062,8 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
           className={`file-card group relative overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
+              : isSelected
+                ? "ring-2 ring-primary-300 shadow-md shadow-primary-200/50 dark:ring-primary-700 dark:shadow-primary-950/40"
               : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
           }`}
         >
@@ -877,7 +1099,7 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
   )
 }
 
-function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function FileRow({ file, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -908,6 +1130,8 @@ function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, on
           className={`file-card flex items-center gap-3 rounded-lg p-2 transition-colors ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "bg-primary-50 dark:bg-primary-900/20"
+              : isSelected
+                ? "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700"
               : "hover:bg-gray-100 dark:hover:bg-dark-border"
           }`}
         >
