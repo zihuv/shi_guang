@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useFilterStore } from '@/stores/filterStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useTagStore } from '@/stores/tagStore'
@@ -80,6 +81,110 @@ const TERMINAL_IMPORT_TASK_STATUSES = new Set([
 
 let fileListRequestId = 0
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const waitForImportTask = async (
+  taskId: string,
+  onUpdate: (task: ImportTaskSnapshot) => void,
+) => {
+  let unlisten: (() => void) | null = null
+  let fallbackTimer: ReturnType<typeof setInterval> | null = null
+  let isSettled = false
+  let isRefreshing = false
+  let needsRefresh = false
+
+  return await new Promise<ImportTaskSnapshot>((resolve, reject) => {
+    const cleanup = () => {
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer)
+        fallbackTimer = null
+      }
+      if (unlisten) {
+        unlisten()
+        unlisten = null
+      }
+    }
+
+    const finish = (snapshot: ImportTaskSnapshot) => {
+      if (isSettled) return
+      isSettled = true
+      cleanup()
+      resolve(snapshot)
+    }
+
+    const fail = (error: unknown) => {
+      if (isSettled) return
+      isSettled = true
+      cleanup()
+      reject(error)
+    }
+
+    const refreshSnapshot = async () => {
+      if (isSettled) return
+      if (isRefreshing) {
+        needsRefresh = true
+        return
+      }
+
+      isRefreshing = true
+      try {
+        const snapshot = await invoke<ImportTaskSnapshot>('get_import_task', { taskId })
+        onUpdate(snapshot)
+        if (TERMINAL_IMPORT_TASK_STATUSES.has(snapshot.status)) {
+          finish(snapshot)
+        }
+      } catch (error) {
+        fail(error)
+      } finally {
+        isRefreshing = false
+        if (needsRefresh && !isSettled) {
+          needsRefresh = false
+          void refreshSnapshot()
+        }
+      }
+    }
+
+    fallbackTimer = setInterval(() => {
+      void refreshSnapshot()
+    }, 1000)
+
+    void listen<string>('import-task-updated', (event) => {
+      if (event.payload !== taskId || isSettled) return
+      void refreshSnapshot()
+    })
+      .then((dispose) => {
+        if (isSettled) {
+          dispose()
+          return
+        }
+        unlisten = dispose
+      })
+      .catch(() => {
+        // Keep the fallback timer active when event subscription is unavailable.
+      })
+
+    void refreshSnapshot()
+  })
+}
+
+const finalizeImportTask = async (
+  task: ImportTaskSnapshot,
+  setImportTask: (task: ImportTaskSnapshot | null) => void,
+  refreshFiles: () => Promise<void>,
+) => {
+  const results = parseFileList(
+    task.results
+      .filter((result) => result.status === 'completed' && result.file)
+      .map((result) => result.file as FileItem),
+  )
+
+  await delay(0)
+  await refreshFiles()
+  useFolderStore.getState().loadFolders()
+  setImportTask(null)
+  return results
+}
 
 export interface Tag {
   id: number
@@ -647,22 +752,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
       })
       set({ importTask: task })
 
-      let currentTask = task
-      while (!TERMINAL_IMPORT_TASK_STATUSES.has(currentTask.status)) {
-        await new Promise((resolve) => setTimeout(resolve, 150))
-        currentTask = await invoke<ImportTaskSnapshot>('get_import_task', { taskId: task.id })
-        set({ importTask: currentTask })
-      }
-
-      const results = parseFileList(
-        currentTask.results
-          .filter((result) => result.status === 'completed' && result.file)
-          .map((result) => result.file as FileItem),
+      const currentTask = await waitForImportTask(task.id, (nextTask) => {
+        set({ importTask: nextTask })
+      })
+      const results = await finalizeImportTask(
+        currentTask,
+        (nextTask) => set({ importTask: nextTask }),
+        () => get().loadFilesInFolder(selectedFolderId),
       )
-
-      await get().loadFilesInFolder(selectedFolderId)
-      useFolderStore.getState().loadFolders()
-      set({ importTask: null })
       console.log('[FileStore] importFiles completed, imported:', results.length)
       return results
     } catch (e) {
@@ -704,22 +801,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
       })
       set({ importTask: task })
 
-      let currentTask = task
-      while (!TERMINAL_IMPORT_TASK_STATUSES.has(currentTask.status)) {
-        await new Promise((resolve) => setTimeout(resolve, 150))
-        currentTask = await invoke<ImportTaskSnapshot>('get_import_task', { taskId: task.id })
-        set({ importTask: currentTask })
-      }
-
-      const results = parseFileList(
-        currentTask.results
-          .filter((result) => result.status === 'completed' && result.file)
-          .map((result) => result.file as FileItem),
+      const currentTask = await waitForImportTask(task.id, (nextTask) => {
+        set({ importTask: nextTask })
+      })
+      const results = await finalizeImportTask(
+        currentTask,
+        (nextTask) => set({ importTask: nextTask }),
+        () => get().loadFilesInFolder(selectedFolderId),
       )
-
-      await get().loadFilesInFolder(selectedFolderId)
-      useFolderStore.getState().loadFolders()
-      set({ importTask: null })
       console.log('[FileStore] importImagesFromBase64 completed, imported:', results.length)
       return results
     } catch (e) {

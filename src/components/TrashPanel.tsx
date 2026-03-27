@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useFileStore } from '@/stores/fileStore'
 import { Button } from '@/components/ui/Button'
+import FileTypeIcon from '@/components/FileTypeIcon'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +10,7 @@ import {
   DialogFooter,
 } from '@/components/ui/Dialog'
 import { Trash2, RotateCcw, X, AlertTriangle } from 'lucide-react'
-import { getImageSrc } from '@/utils'
+import { getFilePreviewMode, getFileSrc } from '@/utils'
 
 interface TrashFileItemProps {
   file: {
@@ -29,16 +30,22 @@ interface TrashFileItemProps {
 function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, formatDate }: TrashFileItemProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [imageError, setImageError] = useState(false)
+  const previewType = getFilePreviewMode(file.ext)
 
   useEffect(() => {
     let mounted = true
     setImageSrc(null)
     setImageError(false)
-    getImageSrc(file.path).then(src => {
+
+    if (previewType !== 'image') {
+      return () => { mounted = false }
+    }
+
+    getFileSrc(file.path).then(src => {
       if (mounted) setImageSrc(src)
     })
     return () => { mounted = false }
-  }, [file.path])
+  }, [file.path, previewType])
 
   return (
     <div
@@ -59,8 +66,9 @@ function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, forma
             onError={() => setImageError(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <span className="text-2xl text-gray-400">{file.ext}</span>
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2">
+            <FileTypeIcon ext={file.ext} className="h-10 w-10" />
+            <span className="text-xs font-medium text-gray-400">{file.ext.toUpperCase()}</span>
           </div>
         )}
       </div>

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type RefObject } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFolderStore } from "@/stores/folderStore"
-import { getImageSrc, getThumbnailImageSrc, formatSize } from "@/utils"
+import { cn } from "@/lib/utils"
+import FileTypeIcon from "./FileTypeIcon"
+import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
 
 const GRID_MIN_WIDTH = 180
@@ -30,7 +33,7 @@ function getCachedImageSrc(cacheKey: string) {
 }
 
 function cacheImageSrc(cacheKey: string, src: string) {
-  if (!src.startsWith("blob:")) {
+  if (!src) {
     return
   }
 
@@ -609,12 +612,18 @@ function useVisibility(rootRef: RefObject<HTMLElement | null>) {
   return { ref, isVisible }
 }
 
-function useLazyImageSrc(path: string, cacheKey: string, isVisible: boolean) {
+function useLazyImageSrc(path: string, ext: string, cacheKey: string, isVisible: boolean) {
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(() => getCachedImageSrc(cacheKey))
 
   useEffect(() => {
     if (!isVisible) return
+
+    if (!canGenerateThumbnail(ext)) {
+      setImageError(false)
+      setImageSrc("")
+      return
+    }
 
     const cached = getCachedImageSrc(cacheKey)
     if (cached) {
@@ -626,8 +635,11 @@ function useLazyImageSrc(path: string, cacheKey: string, isVisible: boolean) {
     let active = true
     setImageError(false)
 
-    getThumbnailImageSrc(path).then(async (thumbnailSrc) => {
-      const src = thumbnailSrc || await getImageSrc(path)
+    const loadSrc = isImageFile(ext)
+      ? getThumbnailImageSrc(path, ext).then(async (thumbnailSrc) => thumbnailSrc || await getImageSrc(path))
+      : getVideoThumbnailSrc(path)
+
+    loadSrc.then((src) => {
       if (!active) {
         return
       }
@@ -639,7 +651,7 @@ function useLazyImageSrc(path: string, cacheKey: string, isVisible: boolean) {
     return () => {
       active = false
     }
-  }, [cacheKey, isVisible, path])
+  }, [cacheKey, ext, isVisible, path])
 
   return {
     imageSrc,
@@ -662,7 +674,8 @@ type FileCardBaseProps = {
 function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
-  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
+  const isVideo = isVideoFile(file.ext)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -708,10 +721,9 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
                 loading="lazy"
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-300 dark:text-gray-600">{file.ext.toUpperCase()}</span>
-              </div>
+              <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
             )}
+            {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div className="bg-white p-2 dark:bg-dark-surface">
             <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
@@ -742,7 +754,8 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
 function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
-  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
+  const isVideo = isVideoFile(file.ext)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -795,10 +808,9 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
                 loading="lazy"
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-300 dark:text-gray-600">{file.ext.toUpperCase()}</span>
-              </div>
+              <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
             )}
+            {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div className="bg-white p-2 dark:bg-dark-surface">
             <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
@@ -815,7 +827,8 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
 function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
-  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
+  const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
+  const isVideo = isVideoFile(file.ext)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -846,7 +859,7 @@ function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, on
           }`}
         >
           <div
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+            className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
           >
             {!isVisible || imageSrc === null ? (
               <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -860,13 +873,14 @@ function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, on
                 onError={() => setImageError(true)}
               />
             ) : (
-              <span className="text-[10px] font-medium text-gray-300 dark:text-gray-600">{file.ext.toUpperCase()}</span>
+              <FilePreviewFallback ext={file.ext} compact className="h-full w-full" iconClassName="h-5 w-5" labelClassName="text-[9px]" />
             )}
+            {isVideo && <VideoPlayBadge compact className="absolute inset-0" />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
             <p className="text-xs text-gray-400">
-              {file.width} x {file.height}
+              {getFileMetaText(file)}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -876,5 +890,66 @@ function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, on
         </div>
       </div>
     </FileContextMenu>
+  )
+}
+
+function getFileMetaText(file: FileItem) {
+  if (file.width > 0 && file.height > 0) {
+    return `${file.width} x ${file.height}`
+  }
+
+  return "无预览尺寸"
+}
+
+type VideoPlayBadgeProps = {
+  compact?: boolean
+  className?: string
+}
+
+function VideoPlayBadge({ compact = false, className }: VideoPlayBadgeProps) {
+  return (
+    <div className={cn("pointer-events-none flex items-center justify-center", className)}>
+      <div
+        className={cn(
+          "flex items-center justify-center rounded-full border border-white/70 bg-black/45 text-white shadow-lg backdrop-blur-sm",
+          compact ? "h-6 w-6" : "h-12 w-12",
+        )}
+      >
+        <Play className={cn("fill-current", compact ? "h-3 w-3 translate-x-[1px]" : "h-5 w-5 translate-x-[1.5px]")} />
+      </div>
+    </div>
+  )
+}
+
+type FilePreviewFallbackProps = {
+  ext: string
+  compact?: boolean
+  className?: string
+  iconClassName?: string
+  labelClassName?: string
+}
+
+function FilePreviewFallback({
+  ext,
+  compact = false,
+  className,
+  iconClassName,
+  labelClassName,
+}: FilePreviewFallbackProps) {
+  const upperExt = ext ? ext.toUpperCase() : "FILE"
+
+  return (
+    <div
+      className={cn(
+        "flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 text-gray-500 dark:from-slate-900/70 dark:to-slate-800/90 dark:text-gray-400",
+        compact ? "gap-0.5" : "gap-2",
+        className,
+      )}
+    >
+      <FileTypeIcon ext={ext} className={cn(compact ? "h-6 w-6" : "h-12 w-12", iconClassName)} />
+      <span className={cn("rounded bg-white/80 px-1.5 py-0.5 font-medium text-gray-500 dark:bg-black/20 dark:text-gray-300", compact ? "text-[10px]" : "text-xs", labelClassName)}>
+        {upperExt}
+      </span>
+    </div>
   )
 }

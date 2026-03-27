@@ -801,6 +801,42 @@ pub fn get_thumbnail_path(
 }
 
 #[tauri::command]
+pub fn get_thumbnail_cache_path(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<Option<String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    drop(db);
+
+    let thumbnail = storage::get_thumbnail_cache_path(&index_paths, Path::new(&file_path))?;
+    Ok(thumbnail.map(|path| path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub fn save_thumbnail_cache(
+    state: State<AppState>,
+    file_path: String,
+    data_base64: String,
+) -> Result<Option<String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    drop(db);
+
+    let Some(thumbnail_path) = storage::get_thumbnail_cache_path(&index_paths, Path::new(&file_path))? else {
+        return Ok(None);
+    };
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|e| e.to_string())?;
+
+    fs::write(&thumbnail_path, bytes).map_err(|e| e.to_string())?;
+
+    Ok(Some(thumbnail_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 pub fn remove_index_path(state: State<AppState>, path: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.remove_index_path(&path).map_err(|e| e.to_string())

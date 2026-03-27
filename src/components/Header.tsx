@@ -17,6 +17,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
   const { selectedFolderId } = useFolderStore();
   const { theme, setTheme } = useSettingsStore();
   const isImporting = !!importTask && !["completed", "completed_with_errors", "cancelled", "failed"].includes(importTask.status);
+  const importProgress = importTask?.total ? Math.min(100, Math.round((importTask.processed / importTask.total) * 100)) : 0;
 
   const activeFilterCount = getActiveFilterCount();
 
@@ -84,7 +85,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
 
       if (selected) {
         const paths = Array.isArray(selected) ? selected : [selected];
-        await importFiles(paths);
+        void importFiles(paths);
       }
     } catch (e) {
       console.error("Failed to import files:", e);
@@ -174,6 +175,23 @@ export default function Header({ onOpenSettings }: HeaderProps) {
           <Settings className="w-5 h-5" />
         </Button>
       </div>
+
+      {isImporting && (
+        <div className="border-t border-gray-100 px-4 pb-3 dark:border-dark-border">
+          <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-2 dark:border-blue-900/40 dark:bg-blue-950/20">
+            <div className="flex items-center justify-between text-xs text-blue-700 dark:text-blue-300">
+              <span>后台导入中，可继续浏览和筛选文件</span>
+              <span>{importTask?.processed ?? 0}/{importTask?.total ?? 0}</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/30">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-[width] duration-300"
+                style={{ width: `${importProgress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

@@ -187,6 +187,8 @@ pub fn run() {
             commands::get_default_index_path,
             commands::add_index_path,
             commands::get_thumbnail_path,
+            commands::get_thumbnail_cache_path,
+            commands::save_thumbnail_cache,
             commands::remove_index_path,
             commands::reindex_all,
             commands::import_file,

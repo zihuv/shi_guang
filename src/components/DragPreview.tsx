@@ -1,63 +1,53 @@
 import { useEffect, useState } from "react";
-import { readFile } from "@tauri-apps/plugin-fs";
+import FileTypeIcon from "@/components/FileTypeIcon";
+import { getFilePreviewMode, getFileSrc } from "@/utils";
 
 type DragPreviewProps = {
   fileId: number;
-  files: Array<{ id: number; path: string }>;
+  files: Array<{ id: number; path: string; ext?: string }>;
 };
 
 export default function DragPreview({ fileId, files }: DragPreviewProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const file = files.find((item) => item.id === fileId);
+  const previewType = getFilePreviewMode(file?.ext || "");
 
   useEffect(() => {
-    const file = files.find((item) => item.id === fileId);
     if (!file) {
       setImageSrc(null);
       return;
     }
 
-    let active = true;
-    let objectUrl: string | null = null;
+    if (previewType !== "image") {
+      setImageSrc(null);
+      return;
+    }
 
-    readFile(file.path)
-      .then((contents) => {
+    let active = true;
+
+    getFileSrc(file.path)
+      .then((src) => {
         if (!active) {
           return;
         }
 
-        const blob = new Blob([contents]);
-        objectUrl = URL.createObjectURL(blob);
-        setImageSrc(objectUrl);
+        setImageSrc(src);
       })
       .catch(console.error);
 
     return () => {
       active = false;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
-  }, [fileId, files]);
+  }, [file, previewType]);
 
   return (
     <div className="h-24 w-24 overflow-hidden rounded-lg bg-white shadow-xl dark:bg-dark-surface">
       {imageSrc ? (
         <img src={imageSrc} alt="" className="h-full w-full object-cover" />
       ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <svg
-            className="h-8 w-8 animate-pulse text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-gray-50 to-gray-100 text-gray-400 dark:from-slate-900/70 dark:to-slate-800/90">
+          <FileTypeIcon ext={file?.ext || ""} className="h-8 w-8" />
+          <span className="text-[10px] font-medium">{file?.ext?.toUpperCase() || "FILE"}</span>
         </div>
       )}
     </div>

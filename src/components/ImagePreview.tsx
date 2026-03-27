@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
-import { readFile } from '@tauri-apps/plugin-fs'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
-import { formatSize, isPdfFile, isVideoFile } from '@/utils'
+import FileTypeIcon from '@/components/FileTypeIcon'
+import { formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -15,18 +15,6 @@ import {
   ContextMenuSubContent,
 } from '@/components/ui/ContextMenu'
 import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
-
-// 获取图片 src
-async function getImageSrc(path: string): Promise<string> {
-  try {
-    const contents = await readFile(path)
-    const blob = new Blob([contents])
-    return URL.createObjectURL(blob)
-  } catch (e) {
-    console.error('Failed to read file:', e)
-    return ''
-  }
-}
 
 export default function ImagePreview() {
   const {
@@ -43,6 +31,7 @@ export default function ImagePreview() {
   const { folders, selectedFolderId } = useFolderStore()
 
   const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const [textContent, setTextContent] = useState<string>("")
   const [imageError, setImageError] = useState(false)
   const [zoom, setZoom] = useState<number | 'auto'>('auto')  // 'auto' = 适应窗口, 100 = 原始尺寸, 其他数字 = 缩放比例
   const [isLoading, setIsLoading] = useState(true)
@@ -54,9 +43,11 @@ export default function ImagePreview() {
 
   // 当前文件
   const currentFile = previewFiles[previewIndex]
+  const previewType = currentFile ? getFilePreviewMode(currentFile.ext) : 'none'
   const isVideo = currentFile ? isVideoFile(currentFile.ext) : false
   const isPdf = currentFile ? isPdfFile(currentFile.ext) : false
-  const isImageLike = !!currentFile && !isVideo && !isPdf
+  const isImageLike = previewType === 'image'
+  const supportsZoom = previewType === 'image'
 
   // 切换预览时同步更新选中文件
   useEffect(() => {
@@ -72,8 +63,30 @@ export default function ImagePreview() {
     let mounted = true
     setIsLoading(true)
     setImageError(false)
+    setImageSrc(null)
+    setTextContent("")
 
-    getImageSrc(currentFile.path).then(src => {
+    if (previewType === 'none') {
+      setIsLoading(false)
+      return () => {
+        mounted = false
+      }
+    }
+
+    if (previewType === 'text') {
+      getTextPreviewContent(currentFile.path, currentFile.size).then((content) => {
+        if (mounted) {
+          setTextContent(content)
+          setIsLoading(false)
+        }
+      })
+
+      return () => {
+        mounted = false
+      }
+    }
+
+    getFileSrc(currentFile.path).then(src => {
       if (mounted) {
         if (src) {
           setImageSrc(src)
@@ -87,12 +100,12 @@ export default function ImagePreview() {
     return () => {
       mounted = false
     }
-  }, [currentFile?.path])
+  }, [currentFile?.path, currentFile?.size, previewType])
 
   // 清理 URL 对象
   useEffect(() => {
     return () => {
-      if (imageSrc) {
+      if (imageSrc?.startsWith('blob:')) {
         URL.revokeObjectURL(imageSrc)
       }
     }
@@ -122,7 +135,7 @@ export default function ImagePreview() {
 
   // 触控板缩放
   useEffect(() => {
-    if (!previewMode) return
+    if (!previewMode || !supportsZoom) return
 
     const handleWheel = (e: Event) => {
       const wheelEvent = e as WheelEvent
@@ -156,7 +169,7 @@ export default function ImagePreview() {
     // 如果没找到容器，添加到 window
     window.addEventListener('wheel', handleWheel, { passive: false })
     return () => window.removeEventListener('wheel', handleWheel)
-  }, [previewMode])
+  }, [previewMode, supportsZoom])
 
   // 扁平化文件夹树
   const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {
@@ -277,6 +290,7 @@ export default function ImagePreview() {
   const currentNum = previewIndex + 1
   const canGoPrev = previewIndex > 0
   const canGoNext = previewIndex < totalFiles - 1
+  const previewMeta = getPreviewMetaText(currentFile)
 
   return (
     <div className="h-full flex flex-col bg-gray-100 dark:bg-dark-bg">
@@ -314,38 +328,46 @@ export default function ImagePreview() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* 缩放滑块 */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm w-12 text-right">
-              {zoom === 'auto' ? '适应' : zoom === 100 ? '100%' : `${zoom}%`}
+          {supportsZoom ? (
+            <>
+              {/* 缩放滑块 */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm w-12 text-right">
+                  {zoom === 'auto' ? '适应' : zoom === 100 ? '100%' : `${zoom}%`}
+                </span>
+                <input
+                  type="range"
+                  min="10"
+                  max="300"
+                  value={zoom === 'auto' ? 100 : zoom}
+                  onChange={handleZoomChange}
+                  className="w-24"
+                />
+              </div>
+
+              {/* 适应窗口按钮 */}
+              <button
+                onClick={handleZoomFit}
+                className={`px-2 py-1 text-sm rounded ${zoom === 'auto' ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                title="适应窗口"
+              >
+                适应
+              </button>
+
+              {/* 1:1 按钮 */}
+              <button
+                onClick={handleZoom100}
+                className={`px-2 py-1 text-sm rounded ${zoom === 100 ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                title="原始尺寸"
+              >
+                1:1
+              </button>
+            </>
+          ) : (
+            <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
+              {previewType === 'video' ? '视频播放' : previewType === 'pdf' ? 'PDF 预览' : '文件预览'}
             </span>
-            <input
-              type="range"
-              min="10"
-              max="300"
-              value={zoom === 'auto' ? 100 : zoom}
-              onChange={handleZoomChange}
-              className="w-24"
-            />
-          </div>
-
-          {/* 适应窗口按钮 */}
-          <button
-            onClick={handleZoomFit}
-            className={`px-2 py-1 text-sm rounded ${zoom === 'auto' ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-            title="适应窗口"
-          >
-            适应
-          </button>
-
-          {/* 1:1 按钮 */}
-          <button
-            onClick={handleZoom100}
-            className={`px-2 py-1 text-sm rounded ${zoom === 100 ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-            title="原始尺寸"
-          >
-            1:1
-          </button>
+          )}
 
           {/* 关闭按钮 */}
           <button
@@ -365,7 +387,7 @@ export default function ImagePreview() {
         <ContextMenuTrigger asChild>
           <div
             className="preview-wheel-container flex-1 overflow-auto flex items-center justify-center p-4"
-            onClick={handleImageClick}
+            onClick={isImageLike ? handleImageClick : undefined}
           >
             {isLoading ? (
               <div className="flex items-center justify-center">
@@ -381,12 +403,18 @@ export default function ImagePreview() {
                 </svg>
                 <p>无法加载预览</p>
               </div>
+            ) : previewType === 'none' ? (
+              <UnsupportedPreviewState file={currentFile} onOpenFile={handleOpenFile} />
+            ) : previewType === 'text' ? (
+              <TextPreviewPane content={textContent} />
             ) : imageSrc ? (
               isVideo ? (
                 <video
                   src={imageSrc}
                   controls
-                  className="max-w-full max-h-full"
+                  playsInline
+                  preload="metadata"
+                  className="max-h-full w-full max-w-5xl rounded-lg bg-black shadow-lg"
                 />
               ) : isPdf ? (
                 <object
@@ -471,7 +499,7 @@ export default function ImagePreview() {
       {/* 底部信息栏 */}
       <div className="px-4 py-1 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border text-xs flex items-center justify-between">
         <span className="text-gray-600 dark:text-gray-400">{currentFile.name}</span>
-        <span className="text-gray-500 dark:text-gray-500">{currentFile.width} x {currentFile.height} · {formatSize(currentFile.size)}</span>
+        <span className="text-gray-500 dark:text-gray-500">{previewMeta} · {formatSize(currentFile.size)}</span>
       </div>
 
       {/* 底部缩略图条 */}
@@ -519,19 +547,30 @@ export default function ImagePreview() {
 // 缩略图组件
 function ThumbnailItem({ file }: { file: FileItem }) {
   const [src, setSrc] = useState<string | null>(null)
+  const previewType = getFilePreviewMode(file.ext)
 
   useEffect(() => {
     let mounted = true
-    getImageSrc(file.path).then(imageSrc => {
+    setSrc(null)
+
+    if (previewType !== 'image' && previewType !== 'video') {
+      return () => {
+        mounted = false
+      }
+    }
+
+    const loader = previewType === 'video' ? getVideoThumbnailSrc(file.path) : getFileSrc(file.path)
+
+    loader.then(imageSrc => {
       if (mounted) setSrc(imageSrc)
     })
     return () => { mounted = false }
-  }, [file.path])
+  }, [file.path, previewType])
 
-  if (!src) {
+  if (!src || (previewType !== 'image' && previewType !== 'video')) {
     return (
-      <div className="w-full h-full bg-gray-800 flex items-center justify-center text-[10px] font-medium text-gray-500">
-        {file.ext.toUpperCase()}
+      <div className="h-full w-full bg-gray-900/90">
+        <UnsupportedThumbnail ext={file.ext} />
       </div>
     )
   }
@@ -542,5 +581,60 @@ function ThumbnailItem({ file }: { file: FileItem }) {
       alt={file.name}
       className="w-full h-full object-cover"
     />
+  )
+}
+
+function getPreviewMetaText(file: FileItem) {
+  if (file.width > 0 && file.height > 0) {
+    return `${file.width} x ${file.height}`
+  }
+
+  return file.ext.toUpperCase()
+}
+
+function UnsupportedPreviewState({
+  file,
+  onOpenFile,
+}: {
+  file: FileItem
+  onOpenFile: () => Promise<void>
+}) {
+  return (
+    <div className="flex w-full max-w-lg flex-col items-center gap-4 rounded-2xl border border-gray-200 bg-white/90 px-8 py-10 text-center shadow-lg dark:border-dark-border dark:bg-dark-surface">
+      <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-bg">
+        <FileTypeIcon ext={file.ext} className="h-12 w-12" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-lg font-medium text-gray-800 dark:text-gray-100">{file.name}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">此文件暂不支持内置预览</p>
+      </div>
+      <button
+        onClick={() => void onOpenFile()}
+        className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white transition hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
+      >
+        使用默认应用打开
+      </button>
+    </div>
+  )
+}
+
+function TextPreviewPane({ content }: { content: string }) {
+  return (
+    <div className="flex h-full w-full max-w-5xl justify-center">
+      <div className="h-full w-full overflow-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-lg dark:border-dark-border dark:bg-dark-surface">
+        <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-6 text-gray-800 dark:text-gray-100">
+          {content || '空文本文件'}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+function UnsupportedThumbnail({ ext }: { ext: string }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-gray-800 to-gray-900 text-gray-300">
+      <FileTypeIcon ext={ext} className="h-5 w-5" />
+      <span className="text-[9px] font-medium">{ext.toUpperCase()}</span>
+    </div>
   )
 }

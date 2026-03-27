@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
-import { getImageSrc, formatSize, findFolderById, debounce } from "@/utils";
+import FileTypeIcon from "@/components/FileTypeIcon";
+import { getFilePreviewMode, getFileSrc, getTextPreviewContent, formatSize, findFolderById, debounce } from "@/utils";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 
@@ -179,6 +180,8 @@ function FileDetailPanel({ file }: { file: FileItem }) {
   const folder = file.folderId ? findFolderById(folders, file.folderId) : null;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [imageSrc, setImageSrc] = useState<string>("");
+  const [textContent, setTextContent] = useState<string>("");
+  const previewType = getFilePreviewMode(file.ext);
   const [tagInput, setTagInput] = useState("");
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [rating, setRating] = useState(file.rating || 0);
@@ -195,13 +198,34 @@ function FileDetailPanel({ file }: { file: FileItem }) {
 
   useEffect(() => {
     let mounted = true;
-    getImageSrc(file.path).then((src) => {
+    setImageSrc("");
+    setTextContent("");
+
+    if (previewType === "none") {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    if (previewType === "text") {
+      getTextPreviewContent(file.path, file.size).then((content) => {
+        if (mounted) {
+          setTextContent(content);
+        }
+      });
+
+      return () => {
+        mounted = false;
+      };
+    }
+
+    getFileSrc(file.path).then((src) => {
       if (mounted) setImageSrc(src);
     });
     return () => {
       mounted = false;
     };
-  }, [file.path]);
+  }, [file.path, previewType]);
 
   // Sync state with file prop when it changes
   useEffect(() => {
@@ -392,11 +416,45 @@ function FileDetailPanel({ file }: { file: FileItem }) {
       <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3">
         {/* Preview image */}
         <div className="aspect-video bg-gray-100 dark:bg-dark-bg rounded-lg overflow-hidden relative">
-          <img
-            src={imageSrc}
-            alt={file.name}
-            className="w-full h-full object-contain"
-          />
+          {previewType === "image" && imageSrc ? (
+            <img
+              src={imageSrc}
+              alt={file.name}
+              className="w-full h-full object-contain"
+            />
+          ) : previewType === "video" && imageSrc ? (
+            <video
+              src={imageSrc}
+              controls
+              playsInline
+              preload="metadata"
+              className="h-full w-full bg-black object-contain"
+            />
+          ) : previewType === "pdf" && imageSrc ? (
+            <object
+              data={imageSrc}
+              type="application/pdf"
+              className="h-full w-full bg-white"
+            >
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+                <FileTypeIcon ext={file.ext} className="h-10 w-10" />
+                <p className="text-sm">当前环境不支持 PDF 内嵌预览</p>
+              </div>
+            </object>
+          ) : previewType === "text" ? (
+            <div className="h-full w-full overflow-auto bg-white p-3 dark:bg-dark-surface">
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-700 dark:text-gray-200">
+                {textContent || "空文本文件"}
+              </pre>
+            </div>
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+              <FileTypeIcon ext={file.ext} className="h-12 w-12" />
+              <span className="rounded bg-white/80 px-2 py-1 text-xs font-medium dark:bg-black/20">
+                {file.ext.toUpperCase()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 色彩分布进度条 */}

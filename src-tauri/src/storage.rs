@@ -99,7 +99,7 @@ fn hash_thumbnail_key(file_path: &Path, metadata: &fs::Metadata) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<PathBuf, String> {
+pub fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<PathBuf, String> {
     let metadata = fs::metadata(file_path).map_err(|e| e.to_string())?;
     let hash = hash_thumbnail_key(file_path, &metadata);
     let shard = &hash[0..2];
@@ -108,6 +108,19 @@ fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<Path
         fs::create_dir_all(&shard_dir).map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
     }
     Ok(shard_dir.join(format!("{}.jpg", hash)))
+}
+
+pub fn get_thumbnail_cache_path(
+    index_paths: &[String],
+    file_path: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let file_path_str = file_path.to_string_lossy().to_string();
+    let Some(index_path) = find_matching_index_path(index_paths, &file_path_str) else {
+        return Ok(None);
+    };
+
+    ensure_storage_dirs(Path::new(index_path))?;
+    Ok(Some(get_thumbnail_output_path(Path::new(index_path), file_path)?))
 }
 
 fn flatten_on_white(image: DynamicImage) -> image::RgbImage {
@@ -131,14 +144,9 @@ pub fn get_or_create_thumbnail(
     index_paths: &[String],
     file_path: &Path,
 ) -> Result<Option<PathBuf>, String> {
-    let file_path_str = file_path.to_string_lossy().to_string();
-    let Some(index_path) = find_matching_index_path(index_paths, &file_path_str) else {
+    let Some(output_path) = get_thumbnail_cache_path(index_paths, file_path)? else {
         return Ok(None);
     };
-
-    ensure_storage_dirs(Path::new(index_path))?;
-
-    let output_path = get_thumbnail_output_path(Path::new(index_path), file_path)?;
     if output_path.exists() {
         return Ok(Some(output_path));
     }

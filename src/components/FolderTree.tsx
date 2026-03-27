@@ -160,7 +160,7 @@ interface FolderItemProps {
 
 function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
   const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, reorderFolders, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile, clearSelection, closePreview } = useFileStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
   const { setFolderId, isFilterPanelOpen } = useFilterStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
@@ -295,6 +295,8 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     }
 
     if (selectedFolderId === folder.id) {
+      clearSelection()
+      closePreview()
       if (selectedFile) {
         setSelectedFile(null)
       }
@@ -303,6 +305,8 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
 
     selectFolder(folder.id)
     setSelectedFolderId(folder.id)
+    clearSelection()
+    closePreview()
     setSelectedFile(null)
     await loadFilesInFolder(folder.id)
   }
@@ -605,7 +609,7 @@ export default function FolderTree() {
     setFolders,
     uniqueContextId,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile, clearSelection, closePreview } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
 
   // Drag state - simplified to track only what's needed
@@ -1060,6 +1064,8 @@ export default function FolderTree() {
               style={{ paddingLeft: '8px' }}
               onClick={() => {
                 if (selectedFolderId === null) {
+                  clearSelection()
+                  closePreview()
                   if (selectedFile) {
                     setSelectedFile(null)
                   }
@@ -1070,6 +1076,8 @@ export default function FolderTree() {
 
                 selectFolder(null)
                 setSelectedFolderId(null)
+                clearSelection()
+                closePreview()
                 setSelectedFile(null)
                 loadFilesInFolder(null)
                 // Clear folder filter and reset type filter to "all"

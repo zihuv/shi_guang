@@ -25,7 +25,6 @@ function App() {
   const {
     importImagesFromBase64,
     importFiles,
-    importFile: importFileFn,
     previewMode,
     files,
   } = useFileStore();
@@ -46,7 +45,7 @@ function App() {
     dragOverFolderId,
     setDragOverFolderId,
     setIsDragging,
-    importFile: importFileFn,
+    importFiles,
   });
   useClipboardImport(importImagesFromBase64);
   useDocumentTheme(theme);
@@ -180,7 +179,7 @@ function App() {
     const paths = getDroppedPaths(e);
 
     if (paths.length > 0) {
-      await importFiles(paths, targetFolderId);
+      void importFiles(paths, targetFolderId);
     } else {
       const items = await Promise.all(
         Array.from(e.dataTransfer.files).map(async (file) => ({
@@ -190,7 +189,7 @@ function App() {
       );
 
       if (items.length > 0) {
-        await importImagesFromBase64(items, targetFolderId);
+        void importImagesFromBase64(items, targetFolderId);
       }
     }
 
@@ -202,7 +201,6 @@ function App() {
     getDropTargetFolderId,
     getFileExt,
     getDroppedPaths,
-    importFileFn,
     importFiles,
     importImagesFromBase64,
     isDraggingInternal,

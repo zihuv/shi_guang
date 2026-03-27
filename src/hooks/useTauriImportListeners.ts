@@ -14,9 +14,8 @@ type UseTauriImportListenersOptions = {
   dragOverFolderId: number | null;
   setDragOverFolderId: (folderId: number | null) => void;
   setIsDragging: (isDragging: boolean) => void;
-  importFile: (
-    sourcePath: string,
-    refresh?: boolean,
+  importFiles: (
+    sourcePaths: string[],
     targetFolderId?: number | null,
   ) => Promise<unknown>;
 };
@@ -25,13 +24,13 @@ export function useTauriImportListeners({
   dragOverFolderId,
   setDragOverFolderId,
   setIsDragging,
-  importFile,
+  importFiles,
 }: UseTauriImportListenersOptions) {
-  const importFileRef = useRef(importFile);
+  const importFilesRef = useRef(importFiles);
   const dragOverFolderIdRef = useRef(dragOverFolderId);
   const setDragOverFolderIdRef = useRef(setDragOverFolderId);
 
-  importFileRef.current = importFile;
+  importFilesRef.current = importFiles;
   dragOverFolderIdRef.current = dragOverFolderId;
   setDragOverFolderIdRef.current = setDragOverFolderId;
 
@@ -73,24 +72,29 @@ export function useTauriImportListeners({
           setIsDragging(false);
           dragDropState.isProcessing = true;
 
+          const uniquePaths = [...new Set(event.payload.paths)].filter(
+            (path) => !dragDropState.processedPaths.has(path),
+          );
+
+          if (uniquePaths.length === 0) {
+            dragDropState.isProcessing = false;
+            return;
+          }
+
+          for (const path of uniquePaths) {
+            dragDropState.processedPaths.add(path);
+          }
+
           try {
-            for (const path of event.payload.paths) {
-              if (dragDropState.processedPaths.has(path)) {
-                continue;
-              }
-
-              dragDropState.processedPaths.add(path);
-
-              try {
-                const targetFolderId =
-                  dragOverFolderIdRef.current !== null
-                    ? dragOverFolderIdRef.current
-                    : undefined;
-                await importFileRef.current(path, true, targetFolderId);
-              } catch (error) {
-                console.error("[Tauri DragDrop] Import error:", error);
-                dragDropState.processedPaths.delete(path);
-              }
+            const targetFolderId =
+              dragOverFolderIdRef.current !== null
+                ? dragOverFolderIdRef.current
+                : undefined;
+            await importFilesRef.current(uniquePaths, targetFolderId);
+          } catch (error) {
+            console.error("[Tauri DragDrop] Import error:", error);
+            for (const path of uniquePaths) {
+              dragDropState.processedPaths.delete(path);
             }
           } finally {
             dragDropState.isProcessing = false;
@@ -100,7 +104,7 @@ export function useTauriImportListeners({
             }
 
             setTimeout(() => {
-              for (const path of event.payload.paths) {
+              for (const path of uniquePaths) {
                 dragDropState.processedPaths.delete(path);
               }
             }, 2000);
