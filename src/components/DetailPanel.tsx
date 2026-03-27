@@ -182,7 +182,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
   const [imageSrc, setImageSrc] = useState<string>("");
   const [videoPosterSrc, setVideoPosterSrc] = useState<string>("");
   const [textContent, setTextContent] = useState<string>("");
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [isImageOriginalOpen, setIsImageOriginalOpen] = useState(false);
   const [isImageOriginalLoading, setIsImageOriginalLoading] = useState(false);
@@ -207,20 +206,27 @@ function FileDetailPanel({ file }: { file: FileItem }) {
 
   useEffect(() => {
     let mounted = true;
-    setImageSrc("");
-    setVideoPosterSrc("");
-    setTextContent("");
     setPreviewError(false);
     setIsImageOriginalOpen(false);
     setIsImageOriginalLoading(false);
     setIsVideoPlayerOpen(false);
     setIsVideoPlayerLoading(false);
-    setPreviewLoading(previewType !== "none");
     videoLoadVersionRef.current += 1;
     imageLoadVersionRef.current += 1;
 
+    if (previewType !== "image") {
+      setImageSrc("");
+    }
+
+    if (previewType !== "video") {
+      setVideoPosterSrc("");
+    }
+
+    if (previewType !== "text") {
+      setTextContent("");
+    }
+
     if (previewType === "none") {
-      setPreviewLoading(false);
       return () => {
         mounted = false;
       };
@@ -230,7 +236,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
       getTextPreviewContent(file.path, file.size).then((content) => {
         if (mounted) {
           setTextContent(content);
-          setPreviewLoading(false);
         }
       });
 
@@ -240,8 +245,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
     }
 
     if (previewType === "image") {
-      setPreviewLoading(false);
-
       void (async () => {
         const thumbnailSrc = await getThumbnailImageSrc(file.path, file.ext);
         if (!mounted) {
@@ -278,7 +281,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
     }
 
     if (previewType === "video") {
-      setPreviewLoading(false);
       getVideoThumbnailSrc(file.path).then((src) => {
         if (mounted && src) {
           setVideoPosterSrc(src);
@@ -297,7 +299,6 @@ function FileDetailPanel({ file }: { file: FileItem }) {
       } else {
         setPreviewError(true);
       }
-      setPreviewLoading(false);
     });
     return () => {
       mounted = false;
@@ -571,17 +572,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
       <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3">
         {/* Preview image */}
         <div className="aspect-video bg-gray-100 dark:bg-dark-bg rounded-lg overflow-hidden relative">
-          {previewLoading ? (
-            <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900/90 text-gray-200">
-              <div className="relative z-10 flex flex-col items-center gap-2">
-                <svg className="h-8 w-8 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                <span className="text-xs">加载预览...</span>
-              </div>
-            </div>
-          ) : previewType === "image" ? (
+          {previewType === "image" ? (
             <div
               onDoubleClick={() => void handleOpenOriginalImage()}
               className={`relative h-full w-full bg-gray-100 dark:bg-dark-bg ${isImageOriginalOpen ? "" : "cursor-zoom-in"}`}
@@ -606,23 +597,7 @@ function FileDetailPanel({ file }: { file: FileItem }) {
                   <p className="text-sm">预览加载失败</p>
                 </div>
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-400 dark:text-gray-500">
-                  <svg className="h-8 w-8 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                </div>
-              )}
-
-              {isImageOriginalLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/15">
-                  <div className="rounded-full bg-white/90 p-2 text-gray-700 shadow">
-                    <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  </div>
-                </div>
+                <div className="h-full w-full" />
               )}
             </div>
           ) : previewType === "video" && isVideoPlayerOpen && imageSrc ? (
@@ -656,16 +631,9 @@ function FileDetailPanel({ file }: { file: FileItem }) {
 
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow-lg transition-transform duration-200 group-hover:scale-105">
-                  {isVideoPlayerLoading ? (
-                    <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  ) : (
-                    <svg className="ml-0.5 h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5.14v13.72c0 .78.85 1.26 1.52.86l10.2-6.86a1 1 0 000-1.72l-10.2-6.86A1 1 0 008 5.14z" />
-                    </svg>
-                  )}
+                  <svg className="ml-0.5 h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5.14v13.72c0 .78.85 1.26 1.52.86l10.2-6.86a1 1 0 000-1.72l-10.2-6.86A1 1 0 008 5.14z" />
+                  </svg>
                 </div>
               </div>
               {previewError && (

@@ -111,7 +111,6 @@ export default function FileGrid() {
     setSelectedFile,
     isLoading,
     selectedFiles,
-    toggleFileSelection,
     clearSelection,
     deleteFiles,
     openPreview,
@@ -198,10 +197,31 @@ export default function FileGrid() {
 
   const handleFileClick = (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.ctrlKey || event.metaKey) {
-      toggleFileSelection(file.id)
-    } else {
-      setSelectedFile(file)
+      const nextSelectedIds = new Set<number>(selectedFiles)
+
+      // Promote the current single selection into the multi-selection set.
+      if (selectedFile) {
+        nextSelectedIds.add(selectedFile.id)
+      }
+
+      if (nextSelectedIds.has(file.id)) {
+        nextSelectedIds.delete(file.id)
+      } else {
+        nextSelectedIds.add(file.id)
+      }
+
+      useFileStore.setState({
+        selectedFiles: Array.from(nextSelectedIds),
+        selectedFile: null,
+      })
+      return
     }
+
+    if (selectedFiles.length > 0) {
+      clearSelection()
+    }
+
+    setSelectedFile(file)
   }
 
   const handleFileDoubleClick = (index: number) => {
