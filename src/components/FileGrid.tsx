@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type RefO
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
-import { useFolderStore } from "@/stores/folderStore"
 import { cn } from "@/lib/utils"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
@@ -68,14 +67,11 @@ export default function FileGrid() {
     toggleFileSelection,
     clearSelection,
     deleteFiles,
-    moveFiles,
-    copyFiles,
     openPreview,
     pagination,
     setPage,
     setPageSize,
   } = useFileStore()
-  const { folders } = useFolderStore()
   const filteredFiles = files
   const [viewMode, setViewMode] = useState<"grid" | "list" | "adaptive">("grid")
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
@@ -232,15 +228,6 @@ export default function FileGrid() {
     await deleteFiles(selectedFiles)
     setShowBatchDeleteConfirm(false)
   }
-
-  const flattenFolders = (nodes: typeof folders, depth = 0): Array<{ id: number; name: string; depth: number }> => {
-    return nodes.flatMap((node) => [
-      { id: node.id, name: node.name, depth },
-      ...flattenFolders(node.children || [], depth + 1),
-    ])
-  }
-
-  const folderOptions = flattenFolders(folders)
 
   if (files.length === 0) {
     return (
@@ -457,46 +444,12 @@ export default function FileGrid() {
       )}
 
       {selectedFiles.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 transform items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-lg dark:border-dark-border dark:bg-dark-surface">
-          <span className="text-sm text-gray-700 dark:text-gray-200">已选择 {selectedFiles.length} 个文件</span>
-          <div className="flex gap-2">
-            <select
-              defaultValue=""
-              onChange={async (e) => {
-                const value = e.target.value
-                if (!value) return
-                await moveFiles(selectedFiles, Number(value))
-                e.currentTarget.value = ""
-              }}
-              className="rounded border px-3 py-1 text-sm hover:bg-gray-50 dark:border-dark-border dark:bg-dark-surface dark:hover:bg-dark-border"
-            >
-              <option value="">批量移动到</option>
-              {folderOptions.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {`${"　".repeat(folder.depth)}${folder.name}`}
-                </option>
-              ))}
-            </select>
-            <select
-              defaultValue=""
-              onChange={async (e) => {
-                const value = e.target.value
-                if (!value) return
-                await copyFiles(selectedFiles, Number(value))
-                e.currentTarget.value = ""
-              }}
-              className="rounded border px-3 py-1 text-sm hover:bg-gray-50 dark:border-dark-border dark:bg-dark-surface dark:hover:bg-dark-border"
-            >
-              <option value="">批量复制到</option>
-              {folderOptions.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {`${"　".repeat(folder.depth)}${folder.name}`}
-                </option>
-              ))}
-            </select>
+        <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 transform flex-wrap items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-lg dark:border-dark-border dark:bg-dark-surface">
+          <span className="whitespace-nowrap text-sm text-gray-700 dark:text-gray-200">已选择 {selectedFiles.length} 个文件</span>
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               onClick={() => clearSelection()}
-              className="rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+              className="whitespace-nowrap rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
             >
               取消选择
             </button>
@@ -504,13 +457,13 @@ export default function FileGrid() {
               <>
                 <button
                   onClick={handleBatchDelete}
-                  className="rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
+                  className="whitespace-nowrap rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
                 >
                   确认删除
                 </button>
                 <button
                   onClick={() => setShowBatchDeleteConfirm(false)}
-                  className="rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                  className="whitespace-nowrap rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
                 >
                   取消
                 </button>
@@ -518,7 +471,7 @@ export default function FileGrid() {
             ) : (
               <button
                 onClick={() => setShowBatchDeleteConfirm(true)}
-                className="rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
+                className="whitespace-nowrap rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
               >
                 批量删除
               </button>
