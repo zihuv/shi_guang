@@ -1,49 +1,59 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const version = process.argv[2];
+const version = process.argv[2]?.trim();
+
 if (!version) {
-  console.error('Usage: node scripts/prepare-release.cjs <version>');
+  console.error("Usage: node scripts/prepare-release.cjs <version>");
   process.exit(1);
 }
 
-// 1. Update version in package files
-const files = ['package.json', 'src-tauri/tauri.conf.json'];
+const filesToValidate = [
+  "package.json",
+  "src-tauri/tauri.conf.json",
+];
 
-files.forEach(file => {
-  const content = fs.readFileSync(file, 'utf8');
-  const updated = content.replace(/"version":\s*"[^"]+"/, `"version": "${version}"`);
-  fs.writeFileSync(file, updated);
-  console.log(`✅ Updated ${file} to ${version}`);
-});
+const mismatches = [];
 
-// 2. Generate release body from template
-const templatePath = path.join(process.env.GITHUB_WORKSPACE || '.', '.github/release_template.md');
+for (const file of filesToValidate) {
+  const content = fs.readFileSync(file, "utf8");
+  const parsed = JSON.parse(content);
+
+  if (parsed.version !== version) {
+    mismatches.push(`${file}: expected ${version}, found ${parsed.version}`);
+  }
+}
+
+if (mismatches.length > 0) {
+  console.error("Release version validation failed.");
+  console.error("Commit the version bump before running the release workflow:");
+  mismatches.forEach((message) => console.error(`- ${message}`));
+  process.exit(1);
+}
+
+const templatePath = path.join(
+  process.env.GITHUB_WORKSPACE || ".",
+  ".github/release_template.md",
+);
 const outputFile = process.env.GITHUB_OUTPUT;
 
+let body = `See the assets to download version ${version}.`;
+
 if (fs.existsSync(templatePath)) {
-  try {
-    const template = fs.readFileSync(templatePath, 'utf8');
-    const content = template.replace(/VERSION/g, version);
-    
-    if (outputFile) {
-      // Running in GitHub Actions
-      const delimiter = 'EOF_' + Math.random().toString(36).substring(7);
-      fs.appendFileSync(outputFile, `body<<${delimiter}\n`);
-      fs.appendFileSync(outputFile, `${content}\n`);
-      fs.appendFileSync(outputFile, `${delimiter}\n`);
-      console.log('✅ Generated release body for GitHub output');
-    } else {
-      // Running locally, just print the content
-      console.log('\n📝 Release body template:');
-      console.log('-------------------');
-      console.log(content);
-      console.log('-------------------');
-    }
-  } catch (error) {
-    console.error('❌ Error generating release body:', error.message);
-    process.exit(1);
-  }
+  body = fs.readFileSync(templatePath, "utf8").replace(/VERSION/g, version);
 } else {
-  console.warn('⚠️ Release template not found, skipping body generation');
+  console.warn("Release template not found, using default release body.");
+}
+
+if (outputFile) {
+  const delimiter = `EOF_${Math.random().toString(36).slice(2)}`;
+  fs.appendFileSync(outputFile, `version=${version}\n`);
+  fs.appendFileSync(outputFile, `body<<${delimiter}\n`);
+  fs.appendFileSync(outputFile, `${body}\n`);
+  fs.appendFileSync(outputFile, `${delimiter}\n`);
+  console.log(`Prepared release metadata for ${version}`);
+} else {
+  console.log(`Validated release version ${version}`);
+  console.log("");
+  console.log(body);
 }

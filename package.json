@@ -1,7 +1,7 @@
 {
   "name": "shiguang",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.7",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -11,6 +11,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "version:set": "node scripts/set-version.cjs",
     "docs:dev": "cd website && rspress dev",
     "docs:build": "cd website && rspress build",
     "docs:preview": "cd website && rspress preview"
