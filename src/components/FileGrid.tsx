@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type RefObject } from "react"
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
@@ -17,6 +17,14 @@ const ADAPTIVE_CARD_SCALE = 0.96
 const VIEWPORT_OVERSCAN_PX = 600
 const IMAGE_SRC_CACHE_LIMIT = 300
 const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids"
+const SELECTION_DRAG_THRESHOLD = 10
+
+type SelectionBox = {
+  startX: number
+  startY: number
+  endX: number
+  endY: number
+}
 
 const imageSrcCache = new Map<string, string>()
 
@@ -57,6 +65,45 @@ function cacheImageSrc(cacheKey: string, src: string) {
   }
 }
 
+function getPointerPositionInScrollContainer(clientX: number, clientY: number, container: HTMLDivElement) {
+  const rect = container.getBoundingClientRect()
+
+  return {
+    x: clientX - rect.left + container.scrollLeft,
+    y: clientY - rect.top + container.scrollTop,
+  }
+}
+
+function getSelectionBounds(selectionBox: SelectionBox) {
+  const minX = Math.min(selectionBox.startX, selectionBox.endX)
+  const maxX = Math.max(selectionBox.startX, selectionBox.endX)
+  const minY = Math.min(selectionBox.startY, selectionBox.endY)
+  const maxY = Math.max(selectionBox.startY, selectionBox.endY)
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+  }
+}
+
+function isCardIntersectingSelection(cardRect: DOMRect, containerRect: DOMRect, container: HTMLDivElement, bounds: ReturnType<typeof getSelectionBounds>) {
+  const cardLeft = cardRect.left - containerRect.left + container.scrollLeft
+  const cardTop = cardRect.top - containerRect.top + container.scrollTop
+  const cardRight = cardLeft + cardRect.width
+  const cardBottom = cardTop + cardRect.height
+
+  return (
+    cardLeft <= bounds.maxX &&
+    cardRight >= bounds.minX &&
+    cardTop <= bounds.maxY &&
+    cardBottom >= bounds.minY
+  )
+}
+
 export default function FileGrid() {
   const {
     files,
@@ -83,7 +130,12 @@ export default function FileGrid() {
   const scrollParentRef = useRef<HTMLDivElement>(null)
 
   const [isSelecting, setIsSelecting] = useState(false)
-  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null)
+  const selectionBoxRef = useRef<SelectionBox | null>(null)
+
+  useEffect(() => {
+    selectionBoxRef.current = selectionBox
+  }, [selectionBox])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -144,7 +196,7 @@ export default function FileGrid() {
     overscan: 8,
   })
 
-  const handleFileClick = (file: FileItem, event: MouseEvent) => {
+  const handleFileClick = (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.ctrlKey || event.metaKey) {
       toggleFileSelection(file.id)
     } else {
@@ -156,9 +208,18 @@ export default function FileGrid() {
     openPreview(index, filteredFiles)
   }
 
-  const handleSelectionStart = (event: MouseEvent) => {
+  const handleSelectionStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return
+    }
+
     const target = event.target as HTMLElement
     if (target.closest(".file-card")) {
+      return
+    }
+
+    const container = scrollParentRef.current
+    if (!container) {
       return
     }
 
@@ -170,59 +231,81 @@ export default function FileGrid() {
     }
 
     setIsSelecting(true)
-    const rect = scrollParentRef.current?.getBoundingClientRect()
-    if (rect) {
-      setSelectionBox({
-        startX: event.clientX - rect.left + scrollParentRef.current!.scrollLeft,
-        startY: event.clientY - rect.top + scrollParentRef.current!.scrollTop,
-        endX: event.clientX - rect.left + scrollParentRef.current!.scrollLeft,
-        endY: event.clientY - rect.top + scrollParentRef.current!.scrollTop,
-      })
-    }
-  }
+    const startPoint = getPointerPositionInScrollContainer(event.clientX, event.clientY, container)
 
-  const handleSelectionMove = (event: MouseEvent) => {
-    if (!isSelecting || !selectionBox || !scrollParentRef.current) return
-
-    const rect = scrollParentRef.current.getBoundingClientRect()
     setSelectionBox({
-      ...selectionBox,
-      endX: event.clientX - rect.left + scrollParentRef.current.scrollLeft,
-      endY: event.clientY - rect.top + scrollParentRef.current.scrollTop,
+      startX: startPoint.x,
+      startY: startPoint.y,
+      endX: startPoint.x,
+      endY: startPoint.y,
     })
   }
 
-  const handleSelectionEnd = () => {
-    if (!isSelecting || !selectionBox || !scrollParentRef.current) {
-      setIsSelecting(false)
+  useEffect(() => {
+    if (!isSelecting) {
       return
     }
 
-    const minX = Math.min(selectionBox.startX, selectionBox.endX)
-    const maxX = Math.max(selectionBox.startX, selectionBox.endX)
-    const minY = Math.min(selectionBox.startY, selectionBox.endY)
-    const maxY = Math.max(selectionBox.startY, selectionBox.endY)
+    const handleWindowMouseMove = (event: MouseEvent) => {
+      const container = scrollParentRef.current
+      if (!container) {
+        return
+      }
 
-    if (maxX - minX > 10 && maxY - minY > 10) {
-      const cards = scrollParentRef.current.querySelectorAll(".file-card")
-      const containerRect = scrollParentRef.current.getBoundingClientRect()
-      cards.forEach((card) => {
-        const rect = card.getBoundingClientRect()
-        const cardX = rect.left - containerRect.left + scrollParentRef.current!.scrollLeft + rect.width / 2
-        const cardY = rect.top - containerRect.top + scrollParentRef.current!.scrollTop + rect.height / 2
+      setSelectionBox((current) => {
+        if (!current) {
+          return current
+        }
 
-        if (cardX >= minX && cardX <= maxX && cardY >= minY && cardY <= maxY) {
-          const fileId = parseInt(card.getAttribute("data-file-id") || "0", 10)
-          if (fileId && !selectedFiles.includes(fileId)) {
-            toggleFileSelection(fileId)
-          }
+        const point = getPointerPositionInScrollContainer(event.clientX, event.clientY, container)
+        return {
+          ...current,
+          endX: point.x,
+          endY: point.y,
         }
       })
     }
 
-    setIsSelecting(false)
-    setSelectionBox(null)
-  }
+    const handleWindowMouseUp = () => {
+      const container = scrollParentRef.current
+      const currentSelectionBox = selectionBoxRef.current
+
+      if (container && currentSelectionBox) {
+        const bounds = getSelectionBounds(currentSelectionBox)
+
+        if (Math.max(bounds.width, bounds.height) > SELECTION_DRAG_THRESHOLD) {
+          const containerRect = container.getBoundingClientRect()
+          const nextSelectedFiles = Array.from(container.querySelectorAll(".file-card"))
+            .map((card) => {
+              if (!isCardIntersectingSelection(card.getBoundingClientRect(), containerRect, container, bounds)) {
+                return null
+              }
+
+              const fileId = Number(card.getAttribute("data-file-id") || "0")
+              return fileId > 0 ? fileId : null
+            })
+            .filter((fileId): fileId is number => fileId !== null)
+
+          useFileStore.setState({
+            selectedFiles: nextSelectedFiles,
+            selectedFile: null,
+          })
+        }
+      }
+
+      selectionBoxRef.current = null
+      setIsSelecting(false)
+      setSelectionBox(null)
+    }
+
+    window.addEventListener("mousemove", handleWindowMouseMove)
+    window.addEventListener("mouseup", handleWindowMouseUp)
+
+    return () => {
+      window.removeEventListener("mousemove", handleWindowMouseMove)
+      window.removeEventListener("mouseup", handleWindowMouseUp)
+    }
+  }, [isSelecting])
 
   const handleBatchDelete = async () => {
     await deleteFiles(selectedFiles)
@@ -286,9 +369,6 @@ export default function FileGrid() {
         ref={scrollParentRef}
         className="relative flex-1 overflow-auto p-4 select-none"
         onMouseDown={handleSelectionStart}
-        onMouseMove={handleSelectionMove}
-        onMouseUp={handleSelectionEnd}
-        onMouseLeave={handleSelectionEnd}
       >
         {viewMode === "adaptive" ? (
           <div className="relative" style={{ height: `${adaptiveLayout.totalHeight}px` }}>
@@ -307,7 +387,7 @@ export default function FileGrid() {
                   isMultiSelected={selectedFiles.includes(file.id)}
                   isDragging={draggingFileId === file.id}
                   scrollRootRef={scrollParentRef}
-                  onClick={(e: MouseEvent) => handleFileClick(file, e)}
+                  onClick={(e) => handleFileClick(file, e)}
                   onDoubleClick={() => handleFileDoubleClick(index)}
                   onDragStart={() => setDraggingFileId(file.id)}
                   onDragEnd={() => setDraggingFileId(null)}
@@ -341,7 +421,7 @@ export default function FileGrid() {
                         isMultiSelected={selectedFiles.includes(file.id)}
                         isDragging={draggingFileId === file.id}
                         scrollRootRef={scrollParentRef}
-                        onClick={(e: MouseEvent) => handleFileClick(file, e)}
+                        onClick={(e) => handleFileClick(file, e)}
                         onDoubleClick={() => handleFileDoubleClick(startIndex + offset)}
                         onDragStart={() => setDraggingFileId(file.id)}
                         onDragEnd={() => setDraggingFileId(null)}
@@ -372,7 +452,7 @@ export default function FileGrid() {
                     isMultiSelected={selectedFiles.includes(file.id)}
                     isDragging={draggingFileId === file.id}
                     scrollRootRef={scrollParentRef}
-                    onClick={(e: MouseEvent) => handleFileClick(file, e)}
+                    onClick={(e) => handleFileClick(file, e)}
                     onDoubleClick={() => handleFileDoubleClick(virtualRow.index)}
                     onDragStart={() => setDraggingFileId(file.id)}
                     onDragEnd={() => setDraggingFileId(null)}
@@ -618,7 +698,7 @@ type FileCardBaseProps = {
   isMultiSelected: boolean
   isDragging: boolean
   scrollRootRef: RefObject<HTMLDivElement | null>
-  onClick: (e: MouseEvent) => void
+  onClick: (e: ReactMouseEvent<HTMLDivElement>) => void
   onDoubleClick?: () => void
   onDragStart: () => void
   onDragEnd: () => void
