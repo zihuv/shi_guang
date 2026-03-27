@@ -17,6 +17,7 @@ interface FilterStore {
   criteria: FilterCriteria
   isFilterPanelOpen: boolean
   setSearchQuery: (query: string) => void
+  setTagIds: (tagIds: number[]) => void
   setFileType: (fileType: FilterCriteria['fileType']) => void
   setDateRange: (range: FilterCriteria['dateRange']) => void
   setSizeRange: (range: FilterCriteria['sizeRange']) => void
@@ -82,6 +83,12 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
         criteria: { ...state.criteria, tagIds },
       }
     })
+  },
+
+  setTagIds: (tagIds) => {
+    set((state) => ({
+      criteria: { ...state.criteria, tagIds },
+    }))
   },
 
   setMinRating: (rating) => {

@@ -17,27 +17,6 @@ fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
     Some((r, g, b))
 }
 
-/// Calculate Euclidean distance between two colors in RGB space
-fn color_distance(c1: &str, c2: &str) -> f64 {
-    let (r1, g1, b1) = match parse_hex_color(c1) {
-        Some(c) => c,
-        None => return f64::MAX,
-    };
-    let (r2, g2, b2) = match parse_hex_color(c2) {
-        Some(c) => c,
-        None => return f64::MAX,
-    };
-    let dr = r1 as f64 - r2 as f64;
-    let dg = g1 as f64 - g2 as f64;
-    let db = b1 as f64 - b2 as f64;
-    (dr * dr + dg * dg + db * db).sqrt()
-}
-
-/// Check if two colors are similar (within threshold)
-fn colors_are_similar(color1: &str, color2: &str, threshold: f64) -> bool {
-    color_distance(color1, color2) <= threshold
-}
-
 /// Get image dimensions
 pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -190,7 +169,7 @@ pub struct Database {
     conn: Connection,
 }
 
-const DB_SCHEMA_VERSION: i32 = 2;
+const DB_SCHEMA_VERSION: i32 = 3;
 
 impl Database {
     pub fn new(path: &Path) -> Result<Self> {
@@ -232,6 +211,9 @@ impl Database {
                 description TEXT NOT NULL DEFAULT '',
                 source_url TEXT NOT NULL DEFAULT '',
                 dominant_color TEXT NOT NULL DEFAULT '',
+                dominant_r INTEGER,
+                dominant_g INTEGER,
+                dominant_b INTEGER,
                 color_distribution TEXT NOT NULL DEFAULT '[]',
                 deleted_at TEXT DEFAULT NULL
             );
@@ -357,6 +339,36 @@ impl Database {
             )?;
         }
 
+        let has_dominant_r: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'dominant_r'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_dominant_r == 0 {
+            self.conn
+                .execute("ALTER TABLE files ADD COLUMN dominant_r INTEGER", [])?;
+        }
+
+        let has_dominant_g: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'dominant_g'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_dominant_g == 0 {
+            self.conn
+                .execute("ALTER TABLE files ADD COLUMN dominant_g INTEGER", [])?;
+        }
+
+        let has_dominant_b: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'dominant_b'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_dominant_b == 0 {
+            self.conn
+                .execute("ALTER TABLE files ADD COLUMN dominant_b INTEGER", [])?;
+        }
+
         // Add color_distribution column if it doesn't exist (for migration)
         let has_color_distribution: i32 = self.conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('files') WHERE name = 'color_distribution'",
@@ -443,6 +455,10 @@ impl Database {
             self.normalize_existing_data()?;
         }
 
+        if current_version < 3 {
+            self.backfill_dominant_color_channels()?;
+        }
+
         self.conn
             .execute_batch(&format!("PRAGMA user_version = {};", DB_SCHEMA_VERSION))?;
         Ok(())
@@ -473,13 +489,16 @@ impl Database {
                 description TEXT NOT NULL DEFAULT '',
                 source_url TEXT NOT NULL DEFAULT '',
                 dominant_color TEXT NOT NULL DEFAULT '',
+                dominant_r INTEGER,
+                dominant_g INTEGER,
+                dominant_b INTEGER,
                 color_distribution TEXT NOT NULL DEFAULT '[]',
                 deleted_at TEXT DEFAULT NULL
             );
 
             INSERT INTO files_new (
                 id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
-                rating, description, source_url, dominant_color, color_distribution, deleted_at
+                rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b, color_distribution, deleted_at
             )
             SELECT
                 id,
@@ -501,6 +520,9 @@ impl Database {
                 COALESCE(description, ''),
                 COALESCE(source_url, ''),
                 COALESCE(dominant_color, ''),
+                NULL,
+                NULL,
+                NULL,
                 CASE
                     WHEN color_distribution IS NULL OR trim(color_distribution) = '' THEN '[]'
                     ELSE color_distribution
@@ -556,6 +578,30 @@ impl Database {
         Ok(())
     }
 
+    fn backfill_dominant_color_channels(&self) -> Result<()> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, dominant_color FROM files WHERE dominant_color IS NOT NULL")?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|row| row.ok())
+            .collect();
+
+        for (id, dominant_color) in rows {
+            let (r, g, b) = match parse_hex_color(&dominant_color) {
+                Some((r, g, b)) => (Some(r as i64), Some(g as i64), Some(b as i64)),
+                None => (None, None, None),
+            };
+
+            self.conn.execute(
+                "UPDATE files SET dominant_r = ?1, dominant_g = ?2, dominant_b = ?3 WHERE id = ?4",
+                params![r, g, b, id],
+            )?;
+        }
+
+        Ok(())
+    }
+
     fn create_indexes(&self) -> Result<()> {
         self.conn.execute_batch(
             "
@@ -565,6 +611,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
             CREATE INDEX IF NOT EXISTS idx_files_active_order ON files(deleted_at, imported_at DESC, id ASC);
             CREATE INDEX IF NOT EXISTS idx_files_folder_active_order ON files(folder_id, deleted_at, imported_at DESC, id ASC);
+            CREATE INDEX IF NOT EXISTS idx_files_dominant_rgb ON files(dominant_r, dominant_g, dominant_b);
             CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
             CREATE INDEX IF NOT EXISTS idx_folders_parent_sort_order ON folders(parent_id, sort_order, name);
@@ -1163,9 +1210,13 @@ impl Database {
             .map(|e| e.imported_at.as_str())
             .unwrap_or(&file.imported_at)
             .to_string();
+        let (dominant_r, dominant_g, dominant_b) = match parse_hex_color(&dominant_color) {
+            Some((r, g, b)) => (Some(r as i64), Some(g as i64), Some(b as i64)),
+            None => (None, None, None),
+        };
 
         self.conn.execute(
-            "INSERT INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            "INSERT INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b, color_distribution) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(path) DO UPDATE SET
                 name = excluded.name,
                 ext = excluded.ext,
@@ -1180,8 +1231,11 @@ impl Database {
                 description = excluded.description,
                 source_url = excluded.source_url,
                 dominant_color = excluded.dominant_color,
+                dominant_r = excluded.dominant_r,
+                dominant_g = excluded.dominant_g,
+                dominant_b = excluded.dominant_b,
                 color_distribution = excluded.color_distribution",
-            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution],
+            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, imported_at, rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b, color_distribution],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -2095,14 +2149,8 @@ impl Database {
         sql: &mut String,
         filter: &crate::commands::FileFilter,
         params_vec: &mut Vec<Box<dyn rusqlite::ToSql>>,
-    ) -> bool {
+    ) {
         let mut conditions: Vec<String> = Vec::new();
-
-        if let Some(tag_ids) = filter.tag_ids.as_ref() {
-            if !tag_ids.is_empty() {
-                sql.push_str(" INNER JOIN file_tags ft ON f.id = ft.file_id");
-            }
-        }
 
         conditions.push("f.deleted_at IS NULL".to_string());
 
@@ -2189,28 +2237,45 @@ impl Database {
         if let Some(tag_ids) = filter.tag_ids.as_ref() {
             if !tag_ids.is_empty() {
                 let placeholders: Vec<String> = tag_ids.iter().map(|_| "?".to_string()).collect();
-                conditions.push(format!("ft.tag_id IN ({})", placeholders.join(", ")));
+                conditions.push(format!(
+                    "EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id AND ft.tag_id IN ({}))",
+                    placeholders.join(", ")
+                ));
                 for tag_id in tag_ids {
                     params_vec.push(Box::new(*tag_id));
                 }
             }
         }
 
-        let has_color_filter = filter
+        if let Some(target_color) = filter
             .dominant_color
             .as_ref()
-            .map(|color| !color.is_empty())
-            .unwrap_or(false);
-        if has_color_filter {
-            conditions.push("f.dominant_color != ''".to_string());
+            .filter(|color| !color.is_empty())
+        {
+            if let Some((r, g, b)) = parse_hex_color(target_color) {
+                let threshold_squared = 85i64 * 85i64;
+                let r = r as i64;
+                let g = g as i64;
+                let b = b as i64;
+                conditions.push(
+                    "f.dominant_r IS NOT NULL AND f.dominant_g IS NOT NULL AND f.dominant_b IS NOT NULL AND (((f.dominant_r - ?) * (f.dominant_r - ?)) + ((f.dominant_g - ?) * (f.dominant_g - ?)) + ((f.dominant_b - ?) * (f.dominant_b - ?))) <= ?".to_string(),
+                );
+                params_vec.push(Box::new(r));
+                params_vec.push(Box::new(r));
+                params_vec.push(Box::new(g));
+                params_vec.push(Box::new(g));
+                params_vec.push(Box::new(b));
+                params_vec.push(Box::new(b));
+                params_vec.push(Box::new(threshold_squared));
+            } else {
+                conditions.push("1 = 0".to_string());
+            }
         }
 
         if !conditions.is_empty() {
             sql.push_str(" WHERE ");
             sql.push_str(&conditions.join(" AND "));
         }
-
-        has_color_filter
     }
 
     /// Filter files based on various criteria
@@ -2224,7 +2289,7 @@ impl Database {
             "SELECT DISTINCT f.id, f.path, f.name, f.ext, f.size, f.width, f.height, f.folder_id, f.created_at, f.modified_at, f.imported_at, f.rating, f.description, f.source_url, f.dominant_color, f.color_distribution, f.deleted_at FROM files f"
         );
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        let has_color_filter = Self::append_file_filter_sql(&mut sql, &filter, &mut params_vec);
+        Self::append_file_filter_sql(&mut sql, &filter, &mut params_vec);
 
         sql.push_str(" ORDER BY f.imported_at DESC, f.id ASC");
 
@@ -2268,24 +2333,6 @@ impl Database {
             .filter_map(|r| r.ok())
             .collect();
 
-        let color_threshold = 85.0;
-        let target_color = filter
-            .dominant_color
-            .as_ref()
-            .filter(|color| !color.is_empty());
-        let files: Vec<(FileRecord, Option<String>)> = if has_color_filter {
-            let target_color =
-                target_color.expect("color filter presence should match SQL conditions");
-            files
-                .into_iter()
-                .filter(|(file, _)| {
-                    colors_are_similar(&file.dominant_color, target_color, color_threshold)
-                })
-                .collect()
-        } else {
-            files
-        };
-
         let file_ids: Vec<i64> = files.iter().map(|(file, _)| file.id).collect();
         let tags_map = self.get_tags_for_files(&file_ids)?;
 
@@ -2322,30 +2369,6 @@ impl Database {
     /// Get count of filtered files
     pub fn filter_files_count(&self, filter: &crate::commands::FileFilter) -> Result<i64> {
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        let target_color = filter
-            .dominant_color
-            .as_ref()
-            .filter(|color| !color.is_empty());
-
-        if let Some(target_color) = target_color {
-            let mut sql = String::from("SELECT DISTINCT f.id, f.dominant_color FROM files f");
-            Self::append_file_filter_sql(&mut sql, filter, &mut params_vec);
-
-            let mut stmt = self.conn.prepare(&sql)?;
-            let params_refs: Vec<&dyn rusqlite::ToSql> =
-                params_vec.iter().map(|p| p.as_ref()).collect();
-            let colors: Vec<String> = stmt
-                .query_map(params_refs.as_slice(), |row| row.get(1))?
-                .filter_map(|r| r.ok())
-                .collect();
-
-            let count = colors
-                .into_iter()
-                .filter(|color| colors_are_similar(color, target_color, 85.0))
-                .count() as i64;
-            return Ok(count);
-        }
-
         let mut sql = String::from("SELECT COUNT(DISTINCT f.id) FROM files f");
         Self::append_file_filter_sql(&mut sql, filter, &mut params_vec);
 

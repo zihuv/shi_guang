@@ -8,7 +8,9 @@ mod storage;
 use crate::path_utils::join_path;
 use std::fs;
 use std::path::Path;
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -90,6 +92,16 @@ pub struct AppState {
     pub app_data_dir: std::path::PathBuf,
     pub recent_imports: Mutex<RecentImports>,
     pub db_path: std::path::PathBuf, // Add db_path for HTTP server to create its own connection
+    pub import_tasks: Arc<Mutex<HashMap<String, ImportTaskEntry>>>,
+    pub import_write_lock: Arc<Mutex<()>>,
+    pub app_handle: tauri::AppHandle,
+}
+
+pub struct ImportTaskEntry {
+    pub snapshot: commands::ImportTaskSnapshot,
+    pub items: Vec<commands::BatchImportItem>,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub folder_id: Option<i64>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -142,6 +154,9 @@ pub fn run() {
                 app_data_dir: app_data_dir.clone(),
                 recent_imports: Mutex::new(RecentImports::new()),
                 db_path: db_path.clone(),
+                import_tasks: Arc::new(Mutex::new(HashMap::new())),
+                import_write_lock: Arc::new(Mutex::new(())),
+                app_handle: app.handle().clone(),
             });
 
             // Start HTTP server in background
@@ -176,11 +191,17 @@ pub fn run() {
             commands::reindex_all,
             commands::import_file,
             commands::import_image_from_base64,
+            commands::start_import_task,
+            commands::get_import_task,
+            commands::cancel_import_task,
+            commands::retry_import_task,
+            commands::sync_index_path,
             commands::get_folder_tree,
             commands::get_files_in_folder,
             commands::get_file,
             commands::create_folder,
             commands::move_file,
+            commands::move_files,
             commands::scan_folders,
             commands::init_default_folder,
             commands::delete_folder,
@@ -196,6 +217,7 @@ pub fn run() {
             commands::move_tag,
             commands::move_folder,
             commands::copy_file,
+            commands::copy_files,
             commands::open_file,
             commands::show_in_explorer,
             commands::show_folder_in_explorer,
@@ -209,6 +231,7 @@ pub fn run() {
             commands::set_delete_mode,
             commands::get_trash_count,
             commands::filter_files,
+            commands::rebuild_library_index,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

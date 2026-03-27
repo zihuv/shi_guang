@@ -16,9 +16,10 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const { indexPaths, addIndexPath, removeIndexPath, theme, setTheme, useTrash, setDeleteMode } =
+  const { indexPaths, addIndexPath, removeIndexPath, theme, setTheme, useTrash, setDeleteMode, rebuildIndex } =
     useSettingsStore();
   const [isAdding, setIsAdding] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
 
   const handleAddPath = async () => {
     setIsAdding(true);
@@ -82,6 +83,21 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               >
                 <Plus className="w-4 h-4" />
                 {isAdding ? "选择中..." : "添加目录"}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={isRebuilding}
+                onClick={async () => {
+                  setIsRebuilding(true)
+                  try {
+                    await rebuildIndex()
+                  } finally {
+                    setIsRebuilding(false)
+                  }
+                }}
+                className="w-full"
+              >
+                {isRebuilding ? "重建中..." : "完整重建索引"}
               </Button>
             </div>
           </div>

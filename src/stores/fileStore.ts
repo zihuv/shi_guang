@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { useFilterStore } from '@/stores/filterStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useTagStore } from '@/stores/tagStore'
 
@@ -44,6 +45,42 @@ const parseFile = (file: FileItem): FileItem => ({
 // 批量解析文件列表
 const parseFileList = (files: FileItem[]): FileItem[] => files.map(parseFile)
 
+interface PaginatedFilesResponse {
+  files: FileItem[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+interface ImportTaskItemResult {
+  index: number
+  status: string
+  source: string
+  error?: string | null
+  file?: FileItem | null
+}
+
+interface ImportTaskSnapshot {
+  id: string
+  status: string
+  total: number
+  processed: number
+  successCount: number
+  failureCount: number
+  results: ImportTaskItemResult[]
+}
+
+const TERMINAL_IMPORT_TASK_STATUSES = new Set([
+  'completed',
+  'completed_with_errors',
+  'cancelled',
+  'failed',
+])
+
+let fileListRequestId = 0
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
 export interface Tag {
   id: number
   name: string
@@ -64,6 +101,7 @@ interface FileStore {
   selectedFiles: number[]
   searchQuery: string
   isLoading: boolean
+  importTask: ImportTaskSnapshot | null
   // Pagination state
   pagination: {
     page: number
@@ -81,6 +119,13 @@ interface FileStore {
   // Internal drag state (to prevent showing drop overlay for internal drags)
   isDraggingInternal: boolean
   setIsDraggingInternal: (isDragging: boolean) => void
+  draggedFileIds: number[]
+  draggedPrimaryFileId: number | null
+  currentDragSessionId: string | null
+  dropHandledForSession: boolean
+  beginInternalFileDrag: (fileId: number) => number[]
+  markInternalDropHandled: () => boolean
+  clearInternalFileDrag: () => void
   // Preview mode state
   previewMode: boolean
   previewIndex: number
@@ -99,6 +144,7 @@ interface FileStore {
   loadFiles: () => Promise<void>
   loadFilesInFolder: (folderId: number | null) => Promise<void>
   searchFiles: (query: string) => Promise<void>
+  runCurrentQuery: (folderIdOverride?: number | null) => Promise<void>
   filterFiles: (filter: {
     query?: string
     folderId?: number | null
@@ -117,11 +163,14 @@ interface FileStore {
   deleteFile: (fileId: number) => Promise<void>
   deleteFiles: (fileIds: number[]) => Promise<void>
   importFile: (sourcePath: string, refresh?: boolean, targetFolderId?: number | null) => Promise<FileItem | null>
-  importFiles: (sourcePaths: string[]) => Promise<FileItem[]>
+  importFiles: (sourcePaths: string[], targetFolderId?: number | null) => Promise<FileItem[]>
   importImageFromBase64: (base64Data: string, ext: string, refresh?: boolean, targetFolderId?: number | null) => Promise<FileItem | null>
   importImagesFromBase64: (items: { base64Data: string; ext: string }[], targetFolderId?: number | null) => Promise<FileItem[]>
+  cancelImportTask: () => Promise<void>
   updateFileMetadata: (fileId: number, rating: number, description: string, sourceUrl: string) => Promise<void>
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
+  moveFiles: (fileIds: number[], targetFolderId: number | null) => Promise<void>
+  copyFiles: (fileIds: number[], targetFolderId: number | null) => Promise<void>
   extractColor: (fileId: number) => Promise<string>
   exportFile: (fileId: number) => Promise<string>
   updateFileName: (fileId: number, newName: string) => Promise<void>
@@ -144,6 +193,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
   selectedFiles: [],
   searchQuery: '',
   isLoading: false,
+  importTask: null,
 
   // Pagination defaults
   pagination: {
@@ -155,14 +205,18 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   setPage: (page) => {
     set((state) => ({ pagination: { ...state.pagination, page } }))
-    get().loadFilesInFolder(get().selectedFolderId)
+    get().runCurrentQuery()
   },
 
   setPageSize: (pageSize) => {
     set((state) => ({ pagination: { ...state.pagination, pageSize, page: 1 } }))
-    get().loadFilesInFolder(get().selectedFolderId)
+    get().runCurrentQuery()
   },
   isDraggingInternal: false,
+  draggedFileIds: [],
+  draggedPrimaryFileId: null,
+  currentDragSessionId: null,
+  dropHandledForSession: false,
 
   // Undo stack for delete operations (max 50 entries)
   undoStack: [],
@@ -199,6 +253,38 @@ export const useFileStore = create<FileStore>((set, get) => ({
   clearUndoStack: () => set({ undoStack: [] }),
 
   setIsDraggingInternal: (isDragging) => set({ isDraggingInternal: isDragging }),
+  beginInternalFileDrag: (fileId) => {
+    const { selectedFiles } = get()
+    const draggedFileIds = selectedFiles.includes(fileId) ? selectedFiles : [fileId]
+    const currentDragSessionId = `${Date.now()}-${fileId}-${Math.random().toString(36).slice(2, 8)}`
+    set({
+      isDraggingInternal: true,
+      draggedFileIds,
+      draggedPrimaryFileId: fileId,
+      currentDragSessionId,
+      dropHandledForSession: false,
+    })
+    console.log('[FileStore] beginInternalFileDrag', { currentDragSessionId, draggedFileIds, fileId })
+    return draggedFileIds
+  },
+  markInternalDropHandled: () => {
+    const { currentDragSessionId, dropHandledForSession } = get()
+    if (!currentDragSessionId || dropHandledForSession) {
+      console.log('[FileStore] drop ignored', { currentDragSessionId, dropHandledForSession })
+      return false
+    }
+    set({ dropHandledForSession: true })
+    console.log('[FileStore] drop accepted', { currentDragSessionId })
+    return true
+  },
+  clearInternalFileDrag: () =>
+    set({
+      isDraggingInternal: false,
+      draggedFileIds: [],
+      draggedPrimaryFileId: null,
+      currentDragSessionId: null,
+      dropHandledForSession: false,
+    }),
   // Preview mode defaults
   previewMode: false,
   previewIndex: 0,
@@ -228,12 +314,63 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   setSearchQuery: (query) => {
     set({ searchQuery: query })
-    get().searchFiles(query)
+    useFilterStore.getState().setSearchQuery(query)
+    set((state) => ({ pagination: { ...state.pagination, page: 1 } }))
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+
+    searchDebounceTimer = setTimeout(() => {
+      void get().runCurrentQuery()
+    }, 250)
   },
 
   setSelectedFile: (file) => set({ selectedFile: file ? parseFile(file) : null }),
 
   setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
+
+  runCurrentQuery: async (folderIdOverride) => {
+    const { searchQuery, selectedFolderId } = get()
+    const criteria = useFilterStore.getState().criteria
+    const folderId = folderIdOverride !== undefined ? folderIdOverride : selectedFolderId
+    const hasStructuredFilters =
+      criteria.fileType !== 'all' ||
+      !!criteria.dateRange.start ||
+      !!criteria.dateRange.end ||
+      criteria.sizeRange.min !== null ||
+      criteria.sizeRange.max !== null ||
+      criteria.tagIds.length > 0 ||
+      criteria.minRating > 0 ||
+      criteria.favoritesOnly ||
+      !!criteria.dominantColor ||
+      !!criteria.keyword ||
+      criteria.folderId !== null
+
+    if (hasStructuredFilters) {
+      await get().filterFiles({
+        query: criteria.keyword || searchQuery || undefined,
+        folderId: criteria.folderId ?? folderId,
+        fileTypes: criteria.fileType !== 'all' ? [criteria.fileType] : undefined,
+        dateStart: criteria.dateRange.start,
+        dateEnd: criteria.dateRange.end,
+        sizeMin: criteria.sizeRange.min,
+        sizeMax: criteria.sizeRange.max,
+        tagIds: criteria.tagIds.length ? criteria.tagIds : undefined,
+        minRating: criteria.minRating > 0 ? criteria.minRating : undefined,
+        favoritesOnly: criteria.favoritesOnly || undefined,
+        dominantColor: criteria.dominantColor || undefined,
+      })
+      return
+    }
+
+    if (searchQuery.trim()) {
+      await get().searchFiles(searchQuery)
+      return
+    }
+
+    await get().loadFilesInFolder(folderId)
+  },
 
   toggleFileSelection: (fileId) => {
     const { selectedFiles } = get()
@@ -253,12 +390,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   loadFiles: async () => {
     const { selectedFile, pagination } = get()
+    const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
-      const result = await invoke<{ files: FileItem[], total: number, page: number, page_size: number, total_pages: number }>('get_all_files', {
+      const result = await invoke<PaginatedFilesResponse>('get_all_files', {
         page: pagination.page,
         pageSize: pagination.pageSize
       })
+      if (requestId !== fileListRequestId) return
       // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
       // Update selectedFile if it exists in the new files list
@@ -279,16 +418,38 @@ export const useFileStore = create<FileStore>((set, get) => ({
       })
     } catch (e) {
       console.error('Failed to load files:', e)
-      set({ isLoading: false })
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
     }
   },
 
   loadFilesInFolder: async (folderId) => {
     console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
+    set({ selectedFolderId: folderId })
+    const criteria = useFilterStore.getState().criteria
+    const hasStructuredFilters =
+      criteria.fileType !== 'all' ||
+      !!criteria.dateRange.start ||
+      !!criteria.dateRange.end ||
+      criteria.sizeRange.min !== null ||
+      criteria.sizeRange.max !== null ||
+      criteria.tagIds.length > 0 ||
+      criteria.minRating > 0 ||
+      criteria.favoritesOnly ||
+      !!criteria.dominantColor ||
+      !!criteria.keyword ||
+      criteria.folderId !== null
+    if (hasStructuredFilters || get().searchQuery.trim()) {
+      await get().runCurrentQuery(folderId)
+      return
+    }
+
     const { pagination, selectedFile, selectedFiles } = get()
+    const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
-      let result: { files: FileItem[], total: number, page: number, page_size: number, total_pages: number }
+      let result: PaginatedFilesResponse
       if (folderId === null) {
         // When folderId is null, get ALL files (not just orphan files)
         // Use filter_files with no folder filter
@@ -316,6 +477,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
           pageSize: pagination.pageSize
         })
       }
+      if (requestId !== fileListRequestId) return
       // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
       const visibleFileIds = new Set(parsedFiles.map((file) => file.id))
@@ -338,19 +500,23 @@ export const useFileStore = create<FileStore>((set, get) => ({
       })
     } catch (e) {
       console.error('[fileStore] Failed to load files in folder:', e)
-      set({ isLoading: false })
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
     }
   },
 
   searchFiles: async (query) => {
     const { pagination } = get()
+    const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
-      const result = await invoke<{ files: FileItem[], total: number, page: number, page_size: number, total_pages: number }>('search_files', {
+      const result = await invoke<PaginatedFilesResponse>('search_files', {
         query,
         page: pagination.page,
         pageSize: pagination.pageSize
       })
+      if (requestId !== fileListRequestId) return
       // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
       set({
@@ -365,15 +531,18 @@ export const useFileStore = create<FileStore>((set, get) => ({
       })
     } catch (e) {
       console.error('Failed to search files:', e)
-      set({ isLoading: false })
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
     }
   },
 
   filterFiles: async (filter) => {
     const { pagination } = get()
+    const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
-      const result = await invoke<{ files: FileItem[], total: number, page: number, page_size: number, total_pages: number }>('filter_files', {
+      const result = await invoke<PaginatedFilesResponse>('filter_files', {
         filter: {
           query: filter.query || null,
           folder_id: filter.folderId ?? null,
@@ -390,6 +559,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
         page: pagination.page,
         pageSize: pagination.pageSize
       })
+      if (requestId !== fileListRequestId) return
       // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
       set({
@@ -404,7 +574,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
       })
     } catch (e) {
       console.error('Failed to filter files:', e)
-      set({ isLoading: false })
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
     }
   },
 
@@ -464,29 +636,39 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }
   },
 
-  importFiles: async (sourcePaths: string[]) => {
+  importFiles: async (sourcePaths: string[], targetFolderId?: number | null) => {
     console.log('[FileStore] importFiles called, count:', sourcePaths.length)
-    const { selectedFolderId } = get()
-    const results: FileItem[] = []
+    if (sourcePaths.length === 0) return []
+    const selectedFolderId = targetFolderId !== undefined ? targetFolderId : get().selectedFolderId
     try {
-      for (const path of sourcePaths) {
-        try {
-          const file = await invoke<FileItem>('import_file', { sourcePath: path, folderId: selectedFolderId })
-          if (file) {
-            results.push(file)
-          }
-        } catch (e) {
-          console.error('[FileStore] Failed to import file:', path, e)
-        }
+      const task = await invoke<ImportTaskSnapshot>('start_import_task', {
+        items: sourcePaths.map((path) => ({ kind: 'file_path', path })),
+        folderId: selectedFolderId,
+      })
+      set({ importTask: task })
+
+      let currentTask = task
+      while (!TERMINAL_IMPORT_TASK_STATUSES.has(currentTask.status)) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        currentTask = await invoke<ImportTaskSnapshot>('get_import_task', { taskId: task.id })
+        set({ importTask: currentTask })
       }
-      // Only refresh once after all imports
+
+      const results = parseFileList(
+        currentTask.results
+          .filter((result) => result.status === 'completed' && result.file)
+          .map((result) => result.file as FileItem),
+      )
+
       await get().loadFilesInFolder(selectedFolderId)
       useFolderStore.getState().loadFolders()
+      set({ importTask: null })
       console.log('[FileStore] importFiles completed, imported:', results.length)
       return results
     } catch (e) {
       console.error('[FileStore] Failed to import files:', e)
-      return results
+      set({ importTask: null })
+      return []
     }
   },
 
@@ -509,32 +691,48 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   importImagesFromBase64: async (items: { base64Data: string; ext: string }[], targetFolderId?: number | null) => {
     console.log('[FileStore] importImagesFromBase64 called, count:', items.length, 'targetFolderId:', targetFolderId)
+    if (items.length === 0) return []
     const selectedFolderId = targetFolderId !== undefined ? targetFolderId : get().selectedFolderId
-    const results: FileItem[] = []
     try {
-      for (const item of items) {
-        try {
-          const file = await invoke<FileItem>('import_image_from_base64', {
-            base64Data: item.base64Data,
-            ext: item.ext,
-            folderId: selectedFolderId
-          })
-          if (file) {
-            results.push(file)
-          }
-        } catch (e) {
-          console.error('[FileStore] Failed to import image from base64:', e)
-        }
+      const task = await invoke<ImportTaskSnapshot>('start_import_task', {
+        items: items.map((item) => ({
+          kind: 'base64_image',
+          base64Data: item.base64Data,
+          ext: item.ext,
+        })),
+        folderId: selectedFolderId,
+      })
+      set({ importTask: task })
+
+      let currentTask = task
+      while (!TERMINAL_IMPORT_TASK_STATUSES.has(currentTask.status)) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        currentTask = await invoke<ImportTaskSnapshot>('get_import_task', { taskId: task.id })
+        set({ importTask: currentTask })
       }
-      // Only refresh once after all imports
+
+      const results = parseFileList(
+        currentTask.results
+          .filter((result) => result.status === 'completed' && result.file)
+          .map((result) => result.file as FileItem),
+      )
+
       await get().loadFilesInFolder(selectedFolderId)
       useFolderStore.getState().loadFolders()
+      set({ importTask: null })
       console.log('[FileStore] importImagesFromBase64 completed, imported:', results.length)
       return results
     } catch (e) {
       console.error('[FileStore] Failed to import images:', e)
-      return results
+      set({ importTask: null })
+      return []
     }
+  },
+
+  cancelImportTask: async () => {
+    const task = get().importTask
+    if (!task || TERMINAL_IMPORT_TASK_STATUSES.has(task.status)) return
+    await invoke('cancel_import_task', { taskId: task.id })
   },
 
   updateFileMetadata: async (fileId: number, rating: number, description: string, sourceUrl: string) => {
@@ -552,13 +750,26 @@ export const useFileStore = create<FileStore>((set, get) => ({
   moveFile: async (fileId: number, targetFolderId: number | null) => {
     console.log('[FileStore] moveFile called, fileId:', fileId, 'targetFolderId:', targetFolderId)
     await invoke('move_file', { fileId, targetFolderId })
-    // Re-fetch from database to get accurate modified_at
-    const updatedFile = await invoke<FileItem>('get_file', { fileId })
-    const parsedFile = parseFile(updatedFile)
-    set((state) => ({
-      files: state.files.map((f) => f.id === fileId ? parsedFile : f),
-      selectedFile: state.selectedFile?.id === fileId ? parsedFile : state.selectedFile,
-    }))
+    const { selectedFolderId } = get()
+    await get().loadFilesInFolder(selectedFolderId)
+    await useFolderStore.getState().loadFolders()
+  },
+
+  moveFiles: async (fileIds: number[], targetFolderId: number | null) => {
+    console.log('[FileStore] moveFiles called, fileIds:', fileIds, 'targetFolderId:', targetFolderId)
+    await invoke('move_files', { fileIds, targetFolderId })
+    const { selectedFolderId } = get()
+    set({ selectedFiles: [], selectedFile: null })
+    await get().loadFilesInFolder(selectedFolderId)
+    await useFolderStore.getState().loadFolders()
+  },
+
+  copyFiles: async (fileIds: number[], targetFolderId: number | null) => {
+    console.log('[FileStore] copyFiles called, fileIds:', fileIds, 'targetFolderId:', targetFolderId)
+    await invoke('copy_files', { fileIds, targetFolderId })
+    const { selectedFolderId } = get()
+    await get().loadFilesInFolder(selectedFolderId)
+    await useFolderStore.getState().loadFolders()
   },
 
   extractColor: async (fileId: number) => {

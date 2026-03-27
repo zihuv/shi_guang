@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useFileStore } from "@/stores/fileStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useFolderStore } from "@/stores/folderStore";
@@ -13,11 +12,11 @@ interface HeaderProps {
 }
 
 export default function Header({ onOpenSettings }: HeaderProps) {
-  const { searchQuery, setSearchQuery, importFiles } = useFileStore();
+  const { searchQuery, setSearchQuery, importFiles, importTask, cancelImportTask } = useFileStore();
   const { isFilterPanelOpen, toggleFilterPanel, setFolderId, getActiveFilterCount, clearFilters } = useFilterStore();
   const { selectedFolderId } = useFolderStore();
   const { theme, setTheme } = useSettingsStore();
-  const [isImporting, setIsImporting] = useState(false);
+  const isImporting = !!importTask && !["completed", "completed_with_errors", "cancelled", "failed"].includes(importTask.status);
 
   const activeFilterCount = getActiveFilterCount();
 
@@ -40,7 +39,6 @@ export default function Header({ onOpenSettings }: HeaderProps) {
   };
 
   const handleImport = async () => {
-    setIsImporting(true);
     try {
       const selected = await open({
         multiple: true,
@@ -68,10 +66,20 @@ export default function Header({ onOpenSettings }: HeaderProps) {
               "dng",
               "heic",
               "heif",
+              "pdf",
+              "mp4",
+              "avi",
+              "mov",
+              "mkv",
+              "wmv",
+              "flv",
+              "webm",
+              "m4v",
+              "3gp",
             ],
           },
         ],
-        title: "选择要导入的图片",
+        title: "选择要导入的素材",
       });
 
       if (selected) {
@@ -81,7 +89,6 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     } catch (e) {
       console.error("Failed to import files:", e);
     }
-    setIsImporting(false);
   };
 
   return (
@@ -136,8 +143,14 @@ export default function Header({ onOpenSettings }: HeaderProps) {
 
         <Button onClick={handleImport} disabled={isImporting} title="导入图片">
           <Download className="w-4 h-4" />
-          {isImporting ? "导入中..." : "导入"}
+          {isImporting ? `导入中 ${importTask?.processed ?? 0}/${importTask?.total ?? 0}` : "导入"}
         </Button>
+
+        {isImporting && (
+          <Button variant="outline" onClick={cancelImportTask} title="取消导入">
+            取消
+          </Button>
+        )}
 
         <Button
           variant="ghost"

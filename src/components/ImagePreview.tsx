@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import { formatSize, isPdfFile, isVideoFile } from '@/utils'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -27,15 +28,6 @@ async function getImageSrc(path: string): Promise<string> {
   }
 }
 
-// 格式化文件大小
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
-
 export default function ImagePreview() {
   const {
     previewMode,
@@ -43,7 +35,9 @@ export default function ImagePreview() {
     previewFiles,
     setPreviewIndex,
     closePreview,
-    setSelectedFile
+    setSelectedFile,
+    moveFiles,
+    copyFiles,
   } = useFileStore()
 
   const { folders, selectedFolderId } = useFolderStore()
@@ -60,6 +54,9 @@ export default function ImagePreview() {
 
   // 当前文件
   const currentFile = previewFiles[previewIndex]
+  const isVideo = currentFile ? isVideoFile(currentFile.ext) : false
+  const isPdf = currentFile ? isPdfFile(currentFile.ext) : false
+  const isImageLike = !!currentFile && !isVideo && !isPdf
 
   // 切换预览时同步更新选中文件
   useEffect(() => {
@@ -200,7 +197,7 @@ export default function ImagePreview() {
   // 复制到
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
-      await invoke('copy_file', { fileId: currentFile.id, targetFolderId })
+      await copyFiles([currentFile.id], targetFolderId)
     } catch (e) {
       console.error('Failed to copy file:', e)
     }
@@ -209,7 +206,7 @@ export default function ImagePreview() {
   // 移动到
   const handleMoveFile = async (targetFolderId: number | null) => {
     try {
-      await invoke('move_file', { fileId: currentFile.id, targetFolderId })
+      await moveFiles([currentFile.id], targetFolderId)
     } catch (e) {
       console.error('Failed to move file:', e)
     }
@@ -382,15 +379,34 @@ export default function ImagePreview() {
                 <svg className="w-16 h-16 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <p>无法加载图片</p>
+                <p>无法加载预览</p>
               </div>
             ) : imageSrc ? (
-              <img
-                src={imageSrc}
-                alt={currentFile.name}
-                className={isFitMode ? 'max-w-full max-h-full object-contain' : 'max-w-none transition-transform duration-150'}
-                style={isFitMode ? {} : { transform: `scale(${zoom / 100})` }}
-              />
+              isVideo ? (
+                <video
+                  src={imageSrc}
+                  controls
+                  className="max-w-full max-h-full"
+                />
+              ) : isPdf ? (
+                <object
+                  data={imageSrc}
+                  type="application/pdf"
+                  className="h-full w-full rounded-lg bg-white"
+                >
+                  <div className="flex flex-col items-center gap-2 text-gray-500">
+                    <p>当前环境不支持 PDF 内嵌预览</p>
+                    <p className="text-xs">可以使用右键菜单用默认应用打开</p>
+                  </div>
+                </object>
+              ) : isImageLike ? (
+                <img
+                  src={imageSrc}
+                  alt={currentFile.name}
+                  className={isFitMode ? 'max-w-full max-h-full object-contain' : 'max-w-none transition-transform duration-150'}
+                  style={isFitMode ? {} : { transform: `scale(${zoom / 100})` }}
+                />
+              ) : null
             ) : null}
           </div>
         </ContextMenuTrigger>
@@ -514,10 +530,8 @@ function ThumbnailItem({ file }: { file: FileItem }) {
 
   if (!src) {
     return (
-      <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
+      <div className="w-full h-full bg-gray-800 flex items-center justify-center text-[10px] font-medium text-gray-500">
+        {file.ext.toUpperCase()}
       </div>
     )
   }

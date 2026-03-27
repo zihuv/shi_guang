@@ -22,6 +22,7 @@ interface SettingsStore extends Settings {
   removeIndexPath: (path: string) => Promise<void>;
   setDeleteMode: (useTrash: boolean) => Promise<void>;
   loadSettings: () => Promise<void>;
+  rebuildIndex: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
@@ -43,9 +44,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     await invoke("add_index_path", { path });
     const paths = await invoke<string[]>("get_index_paths");
     set({ indexPaths: paths });
-    // Trigger file reindex and folder scan
-    await invoke("reindex_all");
-    await invoke("scan_folders");
+    await invoke("sync_index_path", { path });
     // Reload folders and files in UI
     useFolderStore.getState().loadFolders();
     loadFilesInCurrentFolder();
@@ -94,24 +93,12 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
         const defaultPath = await invoke<string>("get_default_index_path");
         await invoke("add_index_path", { path: defaultPath });
         indexPaths = [defaultPath];
-        // Trigger file scan and folder scan
-        await invoke("reindex_all");
-        await invoke("scan_folders");
+        await invoke("sync_index_path", { path: defaultPath });
         // Reload folders and files in UI
         useFolderStore.getState().loadFolders();
         loadFilesInCurrentFolder();
       } catch (e) {
         console.error("Failed to add default index path:", e);
-      }
-    } else {
-      // Even if index paths exist, trigger reindex to ensure files are indexed
-      try {
-        await invoke("reindex_all");
-        await invoke("scan_folders");
-        useFolderStore.getState().loadFolders();
-        loadFilesInCurrentFolder();
-      } catch (e) {
-        console.error("Failed to reindex:", e);
       }
     }
 
@@ -120,5 +107,12 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
       indexPaths: indexPaths || [],
       useTrash,
     });
+  },
+
+  rebuildIndex: async () => {
+    await invoke("rebuild_library_index");
+    await invoke("scan_folders");
+    await useFolderStore.getState().loadFolders();
+    await loadFilesInCurrentFolder();
   },
 }));

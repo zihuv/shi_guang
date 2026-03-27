@@ -21,8 +21,9 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/ContextMenu"
+import { useFilterStore } from "@/stores/filterStore"
 import { useFileStore } from "@/stores/fileStore"
-import { flattenTagTree, Tag, useTagStore } from "@/stores/tagStore"
+import { collectTagIds, flattenTagTree, Tag, useTagStore } from "@/stores/tagStore"
 import { ChevronRight, Move, Pencil, Plus, Tag as TagIcon, Tags, Trash2, X } from "lucide-react"
 
 const TAG_COLORS = [
@@ -299,7 +300,8 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
 
 export default function TagPanel() {
   const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } = useTagStore()
-  const { loadFilesInFolder, selectedFolderId } = useFileStore()
+  const { runCurrentQuery, selectedFolderId } = useFileStore()
+  const { setTagIds } = useFilterStore()
   const [isAdding, setIsAdding] = useState(false)
   const [addingParent, setAddingParent] = useState<Tag | null>(null)
   const [newTagName, setNewTagName] = useState("")
@@ -453,9 +455,10 @@ export default function TagPanel() {
 
     if (deletingTag.id === selectedTagId) {
       setSelectedTagId(null)
+      setTagIds([])
     }
     await deleteTag(deletingTag.id)
-    await loadFilesInFolder(selectedFolderId)
+    await runCurrentQuery(selectedFolderId)
     setDeletingTag(null)
   }
 
@@ -479,7 +482,11 @@ export default function TagPanel() {
                 : "hover:bg-gray-100 dark:hover:bg-dark-border"
             }`}
             style={{ paddingLeft: "8px" }}
-            onClick={() => setSelectedTagId(null)}
+            onClick={async () => {
+              setSelectedTagId(null)
+              setTagIds([])
+              await runCurrentQuery(selectedFolderId)
+            }}
           >
             <span className="w-5" />
             <Tags className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -495,7 +502,18 @@ export default function TagPanel() {
               dragPosition={dragPosition}
               expandedIds={expandedIds}
               onToggle={handleToggle}
-              onSelect={setSelectedTagId}
+              onSelect={async (id) => {
+                if (id === null) {
+                  setSelectedTagId(null)
+                  setTagIds([])
+                  await runCurrentQuery(selectedFolderId)
+                  return
+                }
+                setSelectedTagId(id)
+                const selectedTag = flattenTagTree(tags).find((item) => item.id === id)
+                setTagIds(selectedTag ? collectTagIds(selectedTag) : [id])
+                await runCurrentQuery(selectedFolderId)
+              }}
               onEdit={handleEditTag}
               onDelete={handleDeleteTag}
               onAddChild={openAddDialog}

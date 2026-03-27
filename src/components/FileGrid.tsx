@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react"
-import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter"
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type RefObject } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
-import { collectTagIds, useTagStore } from "@/stores/tagStore"
 import { useFolderStore } from "@/stores/folderStore"
 import { getImageSrc, getThumbnailImageSrc, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -16,6 +14,7 @@ const ADAPTIVE_CARD_FOOTER_HEIGHT = 48
 const ADAPTIVE_CARD_SCALE = 0.96
 const VIEWPORT_OVERSCAN_PX = 600
 const IMAGE_SRC_CACHE_LIMIT = 300
+const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids"
 
 const imageSrcCache = new Map<string, string>()
 
@@ -66,13 +65,15 @@ export default function FileGrid() {
     toggleFileSelection,
     clearSelection,
     deleteFiles,
+    moveFiles,
+    copyFiles,
     openPreview,
     pagination,
     setPage,
     setPageSize,
   } = useFileStore()
-  const { selectedTagId, flatTags } = useTagStore()
-  const [filteredFiles, setFilteredFiles] = useState<FileItem[]>([])
+  const { folders } = useFolderStore()
+  const filteredFiles = files
   const [viewMode, setViewMode] = useState<"grid" | "list" | "adaptive">("grid")
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
@@ -84,16 +85,6 @@ export default function FileGrid() {
 
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
-
-  useEffect(() => {
-    if (selectedTagId) {
-      const selectedTag = flatTags.find((tag) => tag.id === selectedTagId)
-      const selectedIds = selectedTag ? new Set(collectTagIds(selectedTag)) : new Set([selectedTagId])
-      setFilteredFiles(files.filter((f) => f.tags.some((t) => selectedIds.has(t.id))))
-    } else {
-      setFilteredFiles(files)
-    }
-  }, [files, selectedTagId, flatTags])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -238,6 +229,15 @@ export default function FileGrid() {
     await deleteFiles(selectedFiles)
     setShowBatchDeleteConfirm(false)
   }
+
+  const flattenFolders = (nodes: typeof folders, depth = 0): Array<{ id: number; name: string; depth: number }> => {
+    return nodes.flatMap((node) => [
+      { id: node.id, name: node.name, depth },
+      ...flattenFolders(node.children || [], depth + 1),
+    ])
+  }
+
+  const folderOptions = flattenFolders(folders)
 
   if (files.length === 0) {
     return (
@@ -457,6 +457,40 @@ export default function FileGrid() {
         <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 transform items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-lg dark:border-dark-border dark:bg-dark-surface">
           <span className="text-sm text-gray-700 dark:text-gray-200">已选择 {selectedFiles.length} 个文件</span>
           <div className="flex gap-2">
+            <select
+              defaultValue=""
+              onChange={async (e) => {
+                const value = e.target.value
+                if (!value) return
+                await moveFiles(selectedFiles, Number(value))
+                e.currentTarget.value = ""
+              }}
+              className="rounded border px-3 py-1 text-sm hover:bg-gray-50 dark:border-dark-border dark:bg-dark-surface dark:hover:bg-dark-border"
+            >
+              <option value="">批量移动到</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {`${"　".repeat(folder.depth)}${folder.name}`}
+                </option>
+              ))}
+            </select>
+            <select
+              defaultValue=""
+              onChange={async (e) => {
+                const value = e.target.value
+                if (!value) return
+                await copyFiles(selectedFiles, Number(value))
+                e.currentTarget.value = ""
+              }}
+              className="rounded border px-3 py-1 text-sm hover:bg-gray-50 dark:border-dark-border dark:bg-dark-surface dark:hover:bg-dark-border"
+            >
+              <option value="">批量复制到</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {`${"　".repeat(folder.depth)}${folder.name}`}
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => clearSelection()}
               className="rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
@@ -626,41 +660,32 @@ type FileCardBaseProps = {
 }
 
 function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
-  const { uniqueContextId } = useFolderStore()
-  const dragRef = useRef<HTMLDivElement>(null)
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
+  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
+    const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
+    event.dataTransfer.setData("text/plain", draggedFileIds.join(","))
+    onDragStart()
+  }
 
-  useEffect(() => {
-    const element = dragRef.current
-    if (!element) return
-
-    return draggable({
-      element,
-      getInitialData: () => ({
-        type: "app-file",
-        fileId: file.id,
-        fileName: file.name,
-        uniqueContextId,
-      }),
-      onDragStart: () => {
-        onDragStart()
-      },
-      onDrop: () => {
-        onDragEnd()
-      },
-    })
-  }, [file.id, file.name, uniqueContextId, onDragStart, onDragEnd])
+  const handleNativeDragEnd = () => {
+    useFileStore.getState().clearInternalFileDrag()
+    onDragEnd()
+  }
 
   return (
     <FileContextMenu file={file}>
       <div ref={visibilityRef} className="h-full">
         <div
-          ref={dragRef}
+          draggable
           data-file-id={file.id}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
+          onDragStart={handleNativeDragStart}
+          onDragEnd={handleNativeDragEnd}
           className={`file-card group relative flex h-full flex-col overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
@@ -684,9 +709,7 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
-                <svg className="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+                <span className="text-sm font-medium text-gray-300 dark:text-gray-600">{file.ext.toUpperCase()}</span>
               </div>
             )}
           </div>
@@ -717,32 +740,21 @@ function FileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, o
 }
 
 function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
-  const { uniqueContextId } = useFolderStore()
-  const dragRef = useRef<HTMLDivElement>(null)
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
+  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
+    const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
+    event.dataTransfer.setData("text/plain", draggedFileIds.join(","))
+    onDragStart()
+  }
 
-  useEffect(() => {
-    const element = dragRef.current
-    if (!element) return
-
-    return draggable({
-      element,
-      getInitialData: () => ({
-        type: "app-file",
-        fileId: file.id,
-        fileName: file.name,
-        uniqueContextId,
-      }),
-      onDragStart: () => {
-        onDragStart()
-      },
-      onDrop: () => {
-        onDragEnd()
-      },
-    })
-  }, [file.id, file.name, uniqueContextId, onDragStart, onDragEnd])
+  const handleNativeDragEnd = () => {
+    useFileStore.getState().clearInternalFileDrag()
+    onDragEnd()
+  }
 
   const getAspectRatio = () => {
     if (!file.width || !file.height || file.width === 0) {
@@ -755,10 +767,12 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
     <FileContextMenu file={file}>
       <div ref={visibilityRef}>
         <div
-          ref={dragRef}
+          draggable
           data-file-id={file.id}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
+          onDragStart={handleNativeDragStart}
+          onDragEnd={handleNativeDragEnd}
           className={`file-card group relative overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
@@ -782,9 +796,7 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
-                <svg className="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+                <span className="text-sm font-medium text-gray-300 dark:text-gray-600">{file.ext.toUpperCase()}</span>
               </div>
             )}
           </div>
@@ -801,41 +813,32 @@ function AdaptiveFileCard({ file, isMultiSelected, isDragging, scrollRootRef, on
 }
 
 function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
-  const { uniqueContextId } = useFolderStore()
-  const dragRef = useRef<HTMLDivElement>(null)
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, cacheKey, isVisible)
+  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
+    const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
+    event.dataTransfer.setData("text/plain", draggedFileIds.join(","))
+    onDragStart()
+  }
 
-  useEffect(() => {
-    const element = dragRef.current
-    if (!element) return
-
-    return draggable({
-      element,
-      getInitialData: () => ({
-        type: "app-file",
-        fileId: file.id,
-        fileName: file.name,
-        uniqueContextId,
-      }),
-      onDragStart: () => {
-        onDragStart()
-      },
-      onDrop: () => {
-        onDragEnd()
-      },
-    })
-  }, [file.id, file.name, uniqueContextId, onDragStart, onDragEnd])
+  const handleNativeDragEnd = () => {
+    useFileStore.getState().clearInternalFileDrag()
+    onDragEnd()
+  }
 
   return (
     <FileContextMenu file={file}>
       <div ref={visibilityRef}>
         <div
-          ref={dragRef}
+          draggable
           data-file-id={file.id}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
+          onDragStart={handleNativeDragStart}
+          onDragEnd={handleNativeDragEnd}
           className={`file-card flex items-center gap-3 rounded-lg p-2 transition-colors ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "bg-primary-50 dark:bg-primary-900/20"
@@ -857,9 +860,7 @@ function FileRow({ file, isMultiSelected, isDragging, scrollRootRef, onClick, on
                 onError={() => setImageError(true)}
               />
             ) : (
-              <svg className="h-5 w-5 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+              <span className="text-[10px] font-medium text-gray-300 dark:text-gray-600">{file.ext.toUpperCase()}</span>
             )}
           </div>
           <div className="min-w-0 flex-1">

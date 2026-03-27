@@ -42,27 +42,16 @@ const getFileTypeDisplay = (type: string) => {
 
 export default function FilterPanel() {
   const { criteria, setFileType, setDominantColor, setKeyword, setFolderId, clearFilters } = useFilterStore()
-  const { filterFiles, selectedFolderId } = useFileStore()
+  const { runCurrentQuery } = useFileStore()
   const { flatTags } = useTagStore()
   const { folders } = useFolderStore()
 
   // Apply filters automatically when any filter changes
   useEffect(() => {
-    filterFiles({
-      query: criteria.keyword || criteria.searchQuery || undefined,
-      folderId: criteria.folderId ?? selectedFolderId,
-      fileTypes: criteria.fileType !== 'all' ? [criteria.fileType] : undefined,
-      dateStart: criteria.dateRange.start,
-      dateEnd: criteria.dateRange.end,
-      sizeMin: criteria.sizeRange.min,
-      sizeMax: criteria.sizeRange.max,
-      tagIds: criteria.tagIds.length > 0 ? criteria.tagIds : undefined,
-      minRating: criteria.minRating > 0 ? criteria.minRating : undefined,
-      favoritesOnly: criteria.favoritesOnly || undefined,
-      dominantColor: criteria.dominantColor || undefined,
-    })
+    void runCurrentQuery()
   }, [
     criteria.keyword,
+    criteria.searchQuery,
     criteria.fileType,
     criteria.folderId,
     criteria.tagIds,
@@ -71,6 +60,7 @@ export default function FilterPanel() {
     criteria.sizeRange,
     criteria.minRating,
     criteria.favoritesOnly,
+    runCurrentQuery,
   ])
 
   // Flatten folder tree for dropdown

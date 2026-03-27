@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -24,6 +24,7 @@ function App() {
 
   const {
     importImagesFromBase64,
+    importFiles,
     importFile: importFileFn,
     previewMode,
     files,
@@ -50,6 +51,20 @@ function App() {
   useClipboardImport(importImagesFromBase64);
   useDocumentTheme(theme);
   useUndoHotkey();
+
+  useEffect(() => {
+    Object.assign(window as Window & {
+      __SHIGUANG_DEBUG__?: {
+        fileStore: typeof useFileStore;
+        folderStore: typeof useFolderStore;
+      };
+    }, {
+      __SHIGUANG_DEBUG__: {
+        fileStore: useFileStore,
+        folderStore: useFolderStore,
+      },
+    });
+  }, []);
 
   const isExternalFileDrag = useCallback((e: React.DragEvent) => {
     return Array.from(e.dataTransfer.types).includes("Files");
@@ -165,9 +180,7 @@ function App() {
     const paths = getDroppedPaths(e);
 
     if (paths.length > 0) {
-      for (const path of paths) {
-        await importFileFn(path, true, targetFolderId);
-      }
+      await importFiles(paths, targetFolderId);
     } else {
       const items = await Promise.all(
         Array.from(e.dataTransfer.files).map(async (file) => ({
@@ -190,6 +203,7 @@ function App() {
     getFileExt,
     getDroppedPaths,
     importFileFn,
+    importFiles,
     importImagesFromBase64,
     isDraggingInternal,
     isExternalFileDrag,

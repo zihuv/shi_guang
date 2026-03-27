@@ -39,6 +39,8 @@ import {
 } from '@/components/ui/AlertDialog'
 import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move, FolderOpen, Files } from 'lucide-react'
 
+const INTERNAL_FILE_DRAG_MIME = 'application/x-shiguang-file-ids'
+
 // Helper functions for folder tree operations
 const findFolderParentId = (folders: FolderNode[], folderId: number, parentId: number | null): number | null => {
   for (const folder of folders) {
@@ -157,7 +159,7 @@ interface FolderItemProps {
 }
 
 function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
-  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
+  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, reorderFolders, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
   const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile } = useFileStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
   const { setFolderId, isFilterPanelOpen } = useFilterStore()
@@ -194,6 +196,11 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     { id: null, name: '根目录', sortOrder: -1 as number, children: [], fileCount: 0 },
     ...availableTargets
   ]
+  const parentId = findFolderParentId(folders, folder.id, null)
+  const siblingFolders = findSiblings(folders, parentId).filter(item => !item.isSystem && item.name !== '浏览器采集')
+  const siblingIndex = siblingFolders.findIndex(item => item.id === folder.id)
+  const canMoveUp = siblingIndex > 0
+  const canMoveDown = siblingIndex >= 0 && siblingIndex < siblingFolders.length - 1
 
   // Setup draggable and drop target
   useEffect(() => {
@@ -250,14 +257,8 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
           if (source.data.uniqueContextId !== uniqueContextId) {
             return false
           }
-          // Accept both files and folders, but not self
-          if (source.data.type === 'folder') {
-            return source.data.folderId !== folder.id
-          }
-          if (source.data.type === 'app-file') {
-            return true
-          }
-          return false
+          // Only folder drag/sort uses Atlaskit DnD. Files use native HTML drag/drop.
+          return source.data.type === 'folder' && source.data.folderId !== folder.id
         },
         onDragEnter: ({ source }) => {
           if (source.data.type === 'folder') {
@@ -330,29 +331,59 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     }
   }
 
+  const moveFolderByStep = async (step: -1 | 1) => {
+    if (isSystemFolder) return
+    const nextIndex = siblingIndex + step
+    if (siblingIndex < 0 || nextIndex < 0 || nextIndex >= siblingFolders.length) return
+    const reordered = [...siblingFolders]
+    const [moved] = reordered.splice(siblingIndex, 1)
+    reordered.splice(nextIndex, 0, moved)
+    await reorderFolders(reordered.map(item => item.id))
+  }
+
+  const isInternalFileDrag = (e: React.DragEvent) => {
+    return Array.from(e.dataTransfer.types).includes(INTERNAL_FILE_DRAG_MIME)
+  }
+
   const isExternalFileDrag = (e: React.DragEvent) => {
     return Array.from(e.dataTransfer.types).includes('Files')
   }
 
+  const getDraggedFileIds = (e: React.DragEvent) => {
+    if (isInternalFileDrag(e)) {
+      try {
+        const raw = e.dataTransfer.getData(INTERNAL_FILE_DRAG_MIME)
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          return parsed.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+        }
+      } catch (error) {
+        console.error('Failed to parse internal drag file ids:', error)
+      }
+    }
+
+    return useFileStore.getState().draggedFileIds
+  }
+
   const handleExternalDragEnter = (e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return
+    if (!isExternalFileDrag(e) && !isInternalFileDrag(e)) return
     e.preventDefault()
     e.stopPropagation()
     setDragOverFolderId(folder.id)
   }
 
   const handleExternalDragOver = (e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return
+    if (!isExternalFileDrag(e) && !isInternalFileDrag(e)) return
     e.preventDefault()
     e.stopPropagation()
-    e.dataTransfer.dropEffect = 'copy'
+    e.dataTransfer.dropEffect = isInternalFileDrag(e) ? 'move' : 'copy'
     if (dragOverFolderId !== folder.id) {
       setDragOverFolderId(folder.id)
     }
   }
 
   const handleExternalDragLeave = (e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return
+    if (!isExternalFileDrag(e) && !isInternalFileDrag(e)) return
     e.preventDefault()
     e.stopPropagation()
 
@@ -366,9 +397,31 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
     }
   }
 
-  const handleExternalDrop = (e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return
+  const handleExternalDrop = async (e: React.DragEvent) => {
+    if (!isExternalFileDrag(e) && !isInternalFileDrag(e)) return
     e.preventDefault()
+    e.stopPropagation()
+
+    if (isInternalFileDrag(e)) {
+      const fileIds = getDraggedFileIds(e)
+      console.log('[FolderTree] internal drop', {
+        folderId: folder.id,
+        fileIds,
+        currentDragSessionId: useFileStore.getState().currentDragSessionId,
+      })
+      if (!useFileStore.getState().markInternalDropHandled()) {
+        return
+      }
+      if (fileIds.length > 1) {
+        await useFileStore.getState().moveFiles(fileIds, folder.id)
+      } else if (fileIds.length === 1) {
+        await useFileStore.getState().moveFile(fileIds[0], folder.id)
+      }
+      useFileStore.getState().clearInternalFileDrag()
+      setDragOverFolderId(null)
+      return
+    }
+
     setDragOverFolderId(folder.id)
   }
 
@@ -466,6 +519,16 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
             <Pencil className="w-4 h-4 mr-2" />
             重命名
           </ContextMenuItem>
+          {!isSystemFolder && (
+            <ContextMenuItem disabled={!canMoveUp} onClick={() => moveFolderByStep(-1)}>
+              上移
+            </ContextMenuItem>
+          )}
+          {!isSystemFolder && (
+            <ContextMenuItem disabled={!canMoveDown} onClick={() => moveFolderByStep(1)}>
+              下移
+            </ContextMenuItem>
+          )}
           <ContextMenuSub>
             <ContextMenuSubTrigger>
               <Move className="w-4 h-4 mr-2" />
@@ -593,7 +656,7 @@ export default function FolderTree() {
     return monitorForElements({
       canMonitor: ({ source }) =>
         source.data.uniqueContextId === uniqueContextId &&
-        (source.data.type === 'folder' || source.data.type === 'app-file'),
+        source.data.type === 'folder',
       onDragStart: ({ source }) => {
         if (source.data.type === 'folder') {
           setActiveId(source.data.folderId as number)
@@ -789,16 +852,6 @@ export default function FolderTree() {
 
         const target = dropTargets[0]
         const targetData = target.data
-
-        // Handle file drop - move file to folder
-        if (source.data.type === 'app-file' && targetData.type === 'folder') {
-          const fileId = source.data.fileId as number
-          const targetFolderId = targetData.folderId as number
-          useFileStore.getState().moveFile(fileId, targetFolderId)
-          setDragPosition({ type: 'none' })
-          setActiveId(null)
-          return
-        }
 
         // Handle folder drop
         const activeFolderId = source.data.folderId as number

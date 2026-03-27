@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
@@ -15,12 +16,15 @@ import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
 
 interface FileContextMenuProps {
   file: FileItem
-  children: React.ReactNode
+  children: ReactNode
 }
 
 export default function FileContextMenu({ file, children }: FileContextMenuProps) {
-  const { deleteFile, loadFilesInFolder, setSelectedFile } = useFileStore()
-  const { folders, selectedFolderId } = useFolderStore()
+  const { deleteFile, deleteFiles, setSelectedFile, selectedFiles, moveFiles, copyFiles } = useFileStore()
+  const { folders } = useFolderStore()
+  const [frozenFileIds, setFrozenFileIds] = useState<number[] | null>(null)
+  const liveActiveFileIds = selectedFiles.includes(file.id) ? selectedFiles : [file.id]
+  const activeFileIds = frozenFileIds ?? liveActiveFileIds
 
   // Flatten folder tree for display in submenu
   const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {
@@ -63,9 +67,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   // Copy file to a folder
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
-      await invoke('copy_file', { fileId: file.id, targetFolderId })
-      // Refresh current folder
-      await loadFilesInFolder(selectedFolderId)
+      await copyFiles(activeFileIds, targetFolderId)
     } catch (e) {
       console.error('Failed to copy file:', e)
     }
@@ -74,9 +76,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   // Move file to a folder
   const handleMoveFile = async (targetFolderId: number | null) => {
     try {
-      await invoke('move_file', { fileId: file.id, targetFolderId })
-      // Refresh current folder
-      await loadFilesInFolder(selectedFolderId)
+      await moveFiles(activeFileIds, targetFolderId)
     } catch (e) {
       console.error('Failed to move file:', e)
     }
@@ -85,15 +85,30 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   // Delete file
   const handleDeleteFile = async () => {
     try {
-      await deleteFile(file.id)
+      if (activeFileIds.length > 1) {
+        await deleteFiles(activeFileIds)
+        return
+      }
+
+      await deleteFile(activeFileIds[0] ?? file.id)
       setSelectedFile(null)
     } catch (e) {
       console.error('Failed to delete file:', e)
     }
   }
 
+  const handleOpenChange = (open: boolean) => {
+    if (open) {
+      const { selectedFiles: latestSelectedFiles } = useFileStore.getState()
+      setFrozenFileIds(latestSelectedFiles.includes(file.id) ? [...latestSelectedFiles] : [file.id])
+      return
+    }
+
+    setFrozenFileIds(null)
+  }
+
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={handleOpenChange}>
       <ContextMenuTrigger asChild>
         {children}
       </ContextMenuTrigger>
@@ -112,7 +127,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <Copy className="w-4 h-4 mr-2" />
-            复制到
+            {activeFileIds.length > 1 ? `复制 ${activeFileIds.length} 个文件到` : '复制到'}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
             {copyMenuItems.map((folder) => (
@@ -131,7 +146,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <Move className="w-4 h-4 mr-2" />
-            移动到
+            {activeFileIds.length > 1 ? `移动 ${activeFileIds.length} 个文件到` : '移动到'}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
             {flatFolders.map((folder) => (
@@ -152,7 +167,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
           className="text-red-600 dark:text-red-400"
         >
           <Trash2 className="w-4 h-4 mr-2" />
-          删除
+          {activeFileIds.length > 1 ? `删除 ${activeFileIds.length} 个文件` : '删除'}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

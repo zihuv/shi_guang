@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tauri::State;
+use std::sync::atomic::Ordering;
+use tauri::{Emitter, State};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FolderTreeNode {
@@ -21,6 +22,39 @@ pub struct FolderTreeNode {
     pub file_count: i32,
     #[serde(rename = "sortOrder")]
     pub sort_order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BatchImportItem {
+    FilePath { path: String },
+    Base64Image {
+        #[serde(rename = "base64Data")]
+        base64_data: String,
+        ext: String,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImportTaskItemResult {
+    pub index: usize,
+    pub status: String,
+    pub source: String,
+    pub error: Option<String>,
+    pub file: Option<FileWithTags>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImportTaskSnapshot {
+    pub id: String,
+    pub status: String,
+    pub total: usize,
+    pub processed: usize,
+    #[serde(rename = "successCount")]
+    pub success_count: usize,
+    #[serde(rename = "failureCount")]
+    pub failure_count: usize,
+    pub results: Vec<ImportTaskItemResult>,
 }
 
 fn get_import_dir() -> Result<std::path::PathBuf, String> {
@@ -65,6 +99,265 @@ fn uuid_simple() -> String {
     format!("{:x}{:x}", duration.as_secs(), duration.subsec_nanos())
 }
 
+fn import_file_with_database(
+    db: &Database,
+    source_path: &str,
+    folder_id: Option<i64>,
+) -> Result<FileWithTags, String> {
+    let source = Path::new(source_path);
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let target_dir = get_target_dir(db, folder_id)?;
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_lowercase();
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let new_name = format!("{}_{}.{}", timestamp, uuid_simple(), ext);
+    let dest_path = target_dir.join(&new_name);
+
+    let image_data = fs::read(source).map_err(|e| e.to_string())?;
+    let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
+    let created_at = metadata
+        .created()
+        .ok()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+
+    let file_record = crate::db::save_and_import_image(
+        &image_data,
+        &dest_path,
+        folder_id,
+        created_at,
+        modified_at,
+    )?;
+
+    db.insert_file(&file_record).map_err(|e| e.to_string())?;
+
+    db.get_file_by_path(&dest_path.to_string_lossy())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+}
+
+fn import_base64_with_database(
+    db: &Database,
+    base64_data: &str,
+    ext: &str,
+    folder_id: Option<i64>,
+) -> Result<FileWithTags, String> {
+    let target_dir = get_target_dir(db, folder_id)?;
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let final_ext = if ext.is_empty() {
+        "png".to_string()
+    } else {
+        ext.to_string()
+    };
+    let new_name = format!("paste_{}_{}.{}", timestamp, uuid_simple(), final_ext);
+    let dest_path = target_dir.join(&new_name);
+
+    let engine = base64::engine::general_purpose::STANDARD;
+    let image_data = engine.decode(base64_data).map_err(|e| e.to_string())?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let file_record =
+        crate::db::save_and_import_image(&image_data, &dest_path, folder_id, now.clone(), now)?;
+
+    db.insert_file(&file_record).map_err(|e| e.to_string())?;
+
+    db.get_file_by_path(&dest_path.to_string_lossy())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+}
+
+fn import_batch_item(
+    db: &Database,
+    item: &BatchImportItem,
+    folder_id: Option<i64>,
+) -> Result<FileWithTags, String> {
+    match item {
+        BatchImportItem::FilePath { path } => import_file_with_database(db, path, folder_id),
+        BatchImportItem::Base64Image { base64_data, ext } => {
+            import_base64_with_database(db, base64_data, ext, folder_id)
+        }
+    }
+}
+
+fn batch_item_source(item: &BatchImportItem) -> String {
+    match item {
+        BatchImportItem::FilePath { path } => path.clone(),
+        BatchImportItem::Base64Image { ext, .. } => format!("clipboard.{}", ext),
+    }
+}
+
+fn resolve_target_folder_path(db: &Database, target_folder_id: Option<i64>) -> Result<String, String> {
+    if let Some(folder_id) = target_folder_id {
+        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
+        let folder = folders
+            .iter()
+            .find(|f| f.id == folder_id)
+            .ok_or_else(|| "Target folder not found".to_string())?;
+        Ok(folder.path.clone())
+    } else {
+        let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+        Ok(index_paths.first().cloned().unwrap_or_default())
+    }
+}
+
+fn resolve_available_target_path(
+    db: &Database,
+    source_path: &Path,
+    target_folder_path: &str,
+    current_file_id: Option<i64>,
+    conflict_suffix: &str,
+) -> Result<std::path::PathBuf, String> {
+    let file_name = source_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid file path".to_string())?;
+    let desired_path = std::path::PathBuf::from(join_path(target_folder_path, file_name));
+
+    let has_db_conflict = |path: &Path| -> Result<bool, String> {
+        let Some(path_str) = path.to_str() else {
+            return Ok(true);
+        };
+        let existing = db.get_file_by_path(path_str).map_err(|e| e.to_string())?;
+        Ok(existing
+            .map(|file| current_file_id.map(|id| file.id != id).unwrap_or(true))
+            .unwrap_or(false))
+    };
+
+    if source_path == desired_path {
+        return Ok(desired_path);
+    }
+
+    if !desired_path.exists() && !has_db_conflict(&desired_path)? {
+        return Ok(desired_path);
+    }
+
+    let stem = source_path
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    let ext = source_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    for _ in 0..16 {
+        let unique_name = if ext.is_empty() {
+            format!("{}_{}_{}", stem, conflict_suffix, uuid_simple())
+        } else {
+            format!("{}_{}_{}.{}", stem, conflict_suffix, uuid_simple(), ext)
+        };
+        let candidate = std::path::PathBuf::from(join_path(target_folder_path, &unique_name));
+        if !candidate.exists() && !has_db_conflict(&candidate)? {
+            return Ok(candidate);
+        }
+    }
+
+    Err("Failed to resolve available target path".to_string())
+}
+
+fn move_single_file(db: &Database, file_id: i64, target_folder_id: Option<i64>) -> Result<(), String> {
+    let file = db
+        .get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+    let target_path = resolve_target_folder_path(db, target_folder_id)?;
+    let old_path = Path::new(&file.path);
+    let new_path_obj =
+        resolve_available_target_path(db, old_path, &target_path, Some(file_id), "moved")?;
+    let new_path = new_path_obj.to_string_lossy().to_string();
+    log::info!(
+        "move_single_file file_id={} from='{}' target_folder_id={:?} to='{}'",
+        file_id,
+        file.path,
+        target_folder_id,
+        new_path
+    );
+
+    if old_path != new_path_obj && old_path.exists() {
+        fs::rename(old_path, &new_path_obj).map_err(|e| e.to_string())?;
+    }
+
+    let modified_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    db.update_file_path_and_folder(file_id, &new_path, target_folder_id, &modified_at)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+fn copy_single_file(db: &Database, file_id: i64, target_folder_id: Option<i64>) -> Result<(), String> {
+    let file = db
+        .get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+    let target_path = resolve_target_folder_path(db, target_folder_id)?;
+    let source_path = Path::new(&file.path);
+    let new_path_obj = resolve_available_target_path(db, source_path, &target_path, None, "copy")?;
+    let new_path = new_path_obj.to_string_lossy().to_string();
+
+    if source_path.exists() && source_path != new_path_obj {
+        fs::copy(source_path, &new_path_obj).map_err(|e| e.to_string())?;
+    }
+
+    let metadata = fs::metadata(source_path).map_err(|e| e.to_string())?;
+    let created_at = metadata
+        .created()
+        .ok()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+
+    let image_data = fs::read(source_path).map_err(|e| e.to_string())?;
+    let file_record = crate::db::save_and_import_image(
+        &image_data,
+        &new_path_obj,
+        target_folder_id,
+        created_at,
+        modified_at,
+    )?;
+    db.insert_file(&file_record).map_err(|e| e.to_string())?;
+
+    let imported_file = db
+        .get_file_by_path(&new_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Failed to retrieve copied file".to_string())?;
+
+    db.update_file_metadata(
+        imported_file.id,
+        file.rating,
+        &file.description,
+        &file.source_url,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn import_file(
     state: State<AppState>,
@@ -82,64 +375,7 @@ pub fn import_file(
     }
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
-
-    let source = Path::new(&source_path);
-    if !source.exists() {
-        return Err("Source file does not exist".to_string());
-    }
-
-    // 获取目标目录
-    let target_dir = get_target_dir(&db, folder_id)?;
-
-    // Generate unique filename
-    let ext = source
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("png")
-        .to_lowercase();
-
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let new_name = format!("{}_{}.{}", timestamp, uuid_simple(), ext);
-    let dest_path = target_dir.join(&new_name);
-
-    // Read source file data
-    let image_data = fs::read(source).map_err(|e| e.to_string())?;
-
-    // Get original file timestamps before copying
-    let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
-    let created_at = metadata
-        .created()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-
-    let modified_at = metadata
-        .modified()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-
-    // Use shared function to save and process image
-    let file_record = crate::db::save_and_import_image(
-        &image_data,
-        &dest_path,
-        folder_id,
-        created_at,
-        modified_at,
-    )?;
-
-    db.insert_file(&file_record).map_err(|e| e.to_string())?;
-
-    // Return the newly imported file
-    db.get_file_by_path(&dest_path.to_string_lossy())
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+    import_file_with_database(&db, &source_path, folder_id)
 }
 
 #[tauri::command]
@@ -150,36 +386,190 @@ pub fn import_image_from_base64(
     folder_id: Option<i64>,
 ) -> Result<FileWithTags, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    import_base64_with_database(&db, &base64_data, &ext, folder_id)
+}
 
-    // 获取目标目录
-    let target_dir = get_target_dir(&db, folder_id)?;
-
-    // Generate unique filename
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let final_ext = if ext.is_empty() {
-        "png".to_string()
-    } else {
-        ext
+fn spawn_import_task(
+    state: &AppState,
+    items: Vec<BatchImportItem>,
+    folder_id: Option<i64>,
+) -> Result<ImportTaskSnapshot, String> {
+    let task_id = format!("import-{}", uuid_simple());
+    let snapshot = ImportTaskSnapshot {
+        id: task_id.clone(),
+        status: "queued".to_string(),
+        total: items.len(),
+        processed: 0,
+        success_count: 0,
+        failure_count: 0,
+        results: Vec::new(),
     };
-    let new_name = format!("paste_{}.{}", timestamp, final_ext);
-    let dest_path = target_dir.join(&new_name);
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    // Decode base64
-    let engine = base64::engine::general_purpose::STANDARD;
-    let image_data = engine.decode(&base64_data).map_err(|e| e.to_string())?;
+    {
+        let mut tasks = state.import_tasks.lock().map_err(|e| e.to_string())?;
+        tasks.insert(
+            task_id.clone(),
+            crate::ImportTaskEntry {
+                snapshot: snapshot.clone(),
+                items: items.clone(),
+                cancel_flag: cancel_flag.clone(),
+                folder_id,
+            },
+        );
+    }
 
-    // Use shared function to save and process image
-    // For pasted images, created_at and modified_at are the same (current time)
-    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let file_record =
-        crate::db::save_and_import_image(&image_data, &dest_path, folder_id, now.clone(), now)?;
+    let tasks = state.import_tasks.clone();
+    let db_path = state.db_path.clone();
+    let app_handle = state.app_handle.clone();
+    let write_lock = state.import_write_lock.clone();
 
-    db.insert_file(&file_record).map_err(|e| e.to_string())?;
+    std::thread::spawn(move || {
+        {
+            if let Ok(mut task_map) = tasks.lock() {
+                if let Some(task) = task_map.get_mut(&task_id) {
+                    task.snapshot.status = "running".to_string();
+                }
+            }
+        }
+        let _ = app_handle.emit("import-task-updated", &task_id);
 
-    // Return the newly imported file
-    db.get_file_by_path(&dest_path.to_string_lossy())
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+        let _write_guard = match write_lock.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+
+        let db = match Database::new(&db_path) {
+            Ok(db) => db,
+            Err(err) => {
+                if let Ok(mut task_map) = tasks.lock() {
+                    if let Some(task) = task_map.get_mut(&task_id) {
+                        task.snapshot.status = "failed".to_string();
+                        task.snapshot.failure_count = task.snapshot.total;
+                        task.snapshot.processed = task.snapshot.total;
+                        task.snapshot.results.push(ImportTaskItemResult {
+                            index: 0,
+                            status: "failed".to_string(),
+                            source: "task".to_string(),
+                            error: Some(err.to_string()),
+                            file: None,
+                        });
+                    }
+                }
+                let _ = app_handle.emit("import-task-updated", &task_id);
+                return;
+            }
+        };
+
+        for (index, item) in items.iter().enumerate() {
+            if cancel_flag.load(Ordering::Relaxed) {
+                if let Ok(mut task_map) = tasks.lock() {
+                    if let Some(task) = task_map.get_mut(&task_id) {
+                        task.snapshot.status = "cancelled".to_string();
+                    }
+                }
+                let _ = app_handle.emit("import-task-updated", &task_id);
+                return;
+            }
+
+            let source = batch_item_source(item);
+            let result = import_batch_item(&db, item, folder_id);
+            if let Ok(mut task_map) = tasks.lock() {
+                if let Some(task) = task_map.get_mut(&task_id) {
+                    task.snapshot.processed += 1;
+                    match result {
+                        Ok(file) => {
+                            task.snapshot.success_count += 1;
+                            task.snapshot.results.push(ImportTaskItemResult {
+                                index,
+                                status: "completed".to_string(),
+                                source,
+                                error: None,
+                                file: Some(file),
+                            });
+                        }
+                        Err(error) => {
+                            task.snapshot.failure_count += 1;
+                            task.snapshot.results.push(ImportTaskItemResult {
+                                index,
+                                status: "failed".to_string(),
+                                source,
+                                error: Some(error),
+                                file: None,
+                            });
+                        }
+                    }
+
+                    if task.snapshot.processed == task.snapshot.total {
+                        task.snapshot.status = if task.snapshot.failure_count > 0 {
+                            "completed_with_errors".to_string()
+                        } else {
+                            "completed".to_string()
+                        };
+                    }
+                }
+            }
+            let _ = app_handle.emit("import-task-updated", &task_id);
+        }
+    });
+
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn start_import_task(
+    state: State<AppState>,
+    items: Vec<BatchImportItem>,
+    folder_id: Option<i64>,
+) -> Result<ImportTaskSnapshot, String> {
+    spawn_import_task(&state, items, folder_id)
+}
+
+#[tauri::command]
+pub fn get_import_task(state: State<AppState>, task_id: String) -> Result<ImportTaskSnapshot, String> {
+    let tasks = state.import_tasks.lock().map_err(|e| e.to_string())?;
+    tasks
+        .get(&task_id)
+        .map(|task| task.snapshot.clone())
+        .ok_or_else(|| "Import task not found".to_string())
+}
+
+#[tauri::command]
+pub fn cancel_import_task(state: State<AppState>, task_id: String) -> Result<(), String> {
+    let tasks = state.import_tasks.lock().map_err(|e| e.to_string())?;
+    let task = tasks
+        .get(&task_id)
+        .ok_or_else(|| "Import task not found".to_string())?;
+    task.cancel_flag.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn retry_import_task(
+    state: State<AppState>,
+    task_id: String,
+) -> Result<ImportTaskSnapshot, String> {
+    let (retry_items, folder_id) = {
+        let tasks = state.import_tasks.lock().map_err(|e| e.to_string())?;
+        let task = tasks
+            .get(&task_id)
+            .ok_or_else(|| "Import task not found".to_string())?;
+        (
+            task.snapshot
+                .results
+                .iter()
+                .filter(|result| result.status == "failed")
+                .filter_map(|result| task.items.get(result.index).cloned())
+                .collect::<Vec<_>>(),
+            task.folder_id,
+        )
+    };
+
+    if retry_items.is_empty() {
+        return Err("No failed import items to retry".to_string());
+    }
+
+    spawn_import_task(&state, retry_items, folder_id)
 }
 
 #[derive(Debug, Serialize)]
@@ -437,6 +827,26 @@ pub fn reindex_all(state: State<AppState>) -> Result<usize, String> {
     Ok(total_count)
 }
 
+#[tauri::command]
+pub fn sync_index_path(state: State<AppState>, path: String) -> Result<usize, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let file_count = indexer::scan_directory(&db, &path)?;
+    let _ = indexer::scan_folders(&db, &path);
+    Ok(file_count)
+}
+
+#[tauri::command]
+pub fn rebuild_library_index(state: State<AppState>) -> Result<usize, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    let mut total_count = 0;
+    for path in paths {
+        total_count += indexer::scan_directory(&db, &path)?;
+        let _ = indexer::scan_folders(&db, &path);
+    }
+    Ok(total_count)
+}
+
 fn build_folder_tree(folders: &[Folder], file_counts: &HashMap<i64, i32>) -> Vec<FolderTreeNode> {
     // Build a map of parent_id -> children
     let mut children_map: HashMap<Option<i64>, Vec<&Folder>> = HashMap::new();
@@ -596,49 +1006,35 @@ pub fn move_file(
     target_folder_id: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    log::info!(
+        "move_file command file_id={} target_folder_id={:?}",
+        file_id,
+        target_folder_id
+    );
+    move_single_file(&db, file_id, target_folder_id)
+}
 
-    // Get file info
-    let file = db
-        .get_file_by_id(file_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "File not found".to_string())?;
-
-    // Get target folder path
-    let target_path = if let Some(folder_id) = target_folder_id {
-        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        let folder = folders
-            .iter()
-            .find(|f| f.id == folder_id)
-            .ok_or_else(|| "Target folder not found".to_string())?;
-        folder.path.clone()
-    } else {
-        // Move to root (no folder)
-        let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
-        index_paths.first().cloned().unwrap_or_default()
-    };
-
-    // Get file name
-    let file_name = Path::new(&file.path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| "Invalid file path".to_string())?;
-
-    // Build new path
-    let new_path = join_path(&target_path, file_name);
-
-    // Move file in file system
-    let old_path = Path::new(&file.path);
-    let new_path_obj = Path::new(&new_path);
-
-    if old_path != new_path_obj && old_path.exists() {
-        fs::rename(old_path, new_path_obj).map_err(|e| e.to_string())?;
+#[tauri::command]
+pub fn move_files(
+    state: State<AppState>,
+    file_ids: Vec<i64>,
+    target_folder_id: Option<i64>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut deduped_file_ids = Vec::new();
+    for file_id in file_ids {
+        if !deduped_file_ids.contains(&file_id) {
+            deduped_file_ids.push(file_id);
+        }
     }
-
-    // Update database - use UPDATE instead of INSERT to avoid creating duplicate records
-    let modified_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    db.update_file_path_and_folder(file_id, &new_path, target_folder_id, &modified_at)
-        .map_err(|e| e.to_string())?;
-
+    log::info!(
+        "move_files command file_ids={:?} target_folder_id={:?}",
+        deduped_file_ids,
+        target_folder_id
+    );
+    for file_id in deduped_file_ids {
+        move_single_file(&db, file_id, target_folder_id)?;
+    }
     Ok(())
 }
 
@@ -1001,82 +1397,19 @@ pub fn copy_file(
     target_folder_id: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    copy_single_file(&db, file_id, target_folder_id)
+}
 
-    // Get file info
-    let file = db
-        .get_file_by_id(file_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "File not found".to_string())?;
-
-    // Get target folder path
-    let target_path = if let Some(folder_id) = target_folder_id {
-        let folders = db.get_all_folders().map_err(|e| e.to_string())?;
-        let folder = folders
-            .iter()
-            .find(|f| f.id == folder_id)
-            .ok_or_else(|| "Target folder not found".to_string())?;
-        folder.path.clone()
-    } else {
-        // Copy to root (no folder)
-        let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
-        index_paths.first().cloned().unwrap_or_default()
-    };
-
-    // Get file name and extension
-    let source_path = Path::new(&file.path);
-    let file_name = source_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| "Invalid file path".to_string())?;
-
-    // Build new path
-    let new_path = join_path(&target_path, file_name);
-    let new_path_obj = Path::new(&new_path);
-
-    // Copy file in file system (only if source and destination are different)
-    if source_path.exists() && source_path != new_path_obj {
-        fs::copy(source_path, new_path_obj).map_err(|e| e.to_string())?;
+#[tauri::command]
+pub fn copy_files(
+    state: State<AppState>,
+    file_ids: Vec<i64>,
+    target_folder_id: Option<i64>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    for file_id in file_ids {
+        copy_single_file(&db, file_id, target_folder_id)?;
     }
-
-    // Get timestamps from source file
-    let metadata = fs::metadata(source_path).map_err(|e| e.to_string())?;
-    let created_at = metadata
-        .created()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-
-    let modified_at = metadata
-        .modified()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-
-    // Use shared function to save and import (this handles color distribution, etc.)
-    let image_data = fs::read(source_path).map_err(|e| e.to_string())?;
-    let file_record = crate::db::save_and_import_image(
-        &image_data,
-        &new_path_obj,
-        target_folder_id,
-        created_at,
-        modified_at,
-    )?;
-
-    // Update the rating, description, and source_url from the original file
-    db.update_file_metadata(
-        file_record.id,
-        file.rating,
-        &file.description,
-        &file.source_url,
-    )
-    .map_err(|e| e.to_string())?;
-
     Ok(())
 }
 
