@@ -17,8 +17,8 @@ pub struct ColorInfo {
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "tif", "psd", "ai", "eps",
-    "raw", "cr2", "nef", "arw", "dng", "heic", "heif", "pdf", "mp4", "avi", "mov", "mkv",
-    "wmv", "flv", "webm", "m4v", "3gp",
+    "raw", "cr2", "nef", "arw", "dng", "heic", "heif", "pdf", "mp4", "avi", "mov", "mkv", "wmv",
+    "flv", "webm", "m4v", "3gp",
 ];
 
 pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {

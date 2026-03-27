@@ -1,5 +1,5 @@
+use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, ColorType, DynamicImage};
 use rusqlite::Connection;
-use image::{imageops::FilterType, codecs::jpeg::JpegEncoder, ColorType, DynamicImage};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -55,8 +55,7 @@ pub fn ensure_storage_dirs(index_path: &Path) -> Result<(), String> {
     }
 
     if !db_dir.exists() {
-        fs::create_dir_all(&db_dir)
-            .map_err(|e| format!("Failed to create db directory: {}", e))?;
+        fs::create_dir_all(&db_dir).map_err(|e| format!("Failed to create db directory: {}", e))?;
     }
 
     if !thumbnail_dir.exists() {
@@ -105,7 +104,8 @@ pub fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<
     let shard = &hash[0..2];
     let shard_dir = get_thumbnail_dir(index_path).join(shard);
     if !shard_dir.exists() {
-        fs::create_dir_all(&shard_dir).map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
+        fs::create_dir_all(&shard_dir)
+            .map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
     }
     Ok(shard_dir.join(format!("{}.jpg", hash)))
 }
@@ -120,7 +120,10 @@ pub fn get_thumbnail_cache_path(
     };
 
     ensure_storage_dirs(Path::new(index_path))?;
-    Ok(Some(get_thumbnail_output_path(Path::new(index_path), file_path)?))
+    Ok(Some(get_thumbnail_output_path(
+        Path::new(index_path),
+        file_path,
+    )?))
 }
 
 fn flatten_on_white(image: DynamicImage) -> image::RgbImage {
@@ -170,10 +173,7 @@ pub fn get_or_create_thumbnail(
     Ok(Some(output_path))
 }
 
-pub fn remove_thumbnail_for_file(
-    index_paths: &[String],
-    file_path: &Path,
-) -> Result<(), String> {
+pub fn remove_thumbnail_for_file(index_paths: &[String], file_path: &Path) -> Result<(), String> {
     if !file_path.exists() {
         return Ok(());
     }
@@ -209,7 +209,8 @@ fn move_file_with_fallback(from: &Path, to: &Path) -> Result<(), String> {
     match fs::rename(from, to) {
         Ok(_) => Ok(()),
         Err(_) => {
-            fs::copy(from, to).map_err(|e| format!("Failed to copy {:?} to {:?}: {}", from, to, e))?;
+            fs::copy(from, to)
+                .map_err(|e| format!("Failed to copy {:?} to {:?}: {}", from, to, e))?;
             fs::remove_file(from)
                 .map_err(|e| format!("Failed to remove old file {:?}: {}", from, e))?;
             Ok(())
@@ -243,7 +244,8 @@ fn move_sqlite_bundle(from: &Path, to: &Path) -> Result<(), String> {
 pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
     let legacy_app_db_path = get_legacy_app_db_path(app_data_dir);
 
-    let index_path = read_index_path_from_db(&legacy_app_db_path).unwrap_or_else(|| get_default_index_path());
+    let index_path =
+        read_index_path_from_db(&legacy_app_db_path).unwrap_or_else(|| get_default_index_path());
 
     ensure_storage_dirs(&index_path)?;
 
