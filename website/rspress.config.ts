@@ -2,7 +2,7 @@ import { defineConfig } from "rspress/config";
 
 export default defineConfig({
   title: "拾光",
-  description: "拾光",
+  description: "为设计师而生的本地素材管理工具",
   outDir: ".rspress/build",
   base: "/shiguang/",
   icon: "/icon.ico",
@@ -16,13 +16,19 @@ export default defineConfig({
     ],
     nav: [
       { text: "首页", link: "/" },
-      { text: "指南", link: "/guide/getting-started" },
+      { text: "快速开始", link: "/guide/getting-started" },
+      { text: "核心能力", link: "/guide/core-features" },
+      { text: "采集与数据", link: "/guide/collection-and-storage" },
     ],
     sidebar: {
       "/guide/": [
         {
-          text: "指南",
-          items: [{ text: "快速开始", link: "/guide/getting-started" }],
+          text: "开始使用",
+          items: [
+            { text: "快速开始", link: "/guide/getting-started" },
+            { text: "核心能力", link: "/guide/core-features" },
+            { text: "采集与数据", link: "/guide/collection-and-storage" },
+          ],
         },
       ],
     },
