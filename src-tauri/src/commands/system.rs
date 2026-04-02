@@ -4,6 +4,44 @@ use std::path::PathBuf;
 
 const EXTERNAL_DRAG_PREVIEW_ICON: &[u8] = include_bytes!("../../icons/32x32.png");
 
+fn reveal_in_file_manager(target: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let target = normalize_path(target).replace('/', "\\");
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", target))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let open_target = if target.is_dir() {
+            target
+        } else {
+            target
+                .parent()
+                .ok_or_else(|| "Invalid target path".to_string())?
+        };
+
+        std::process::Command::new("xdg-open")
+            .arg(open_target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn resolve_target_folder_path(
     db: &Database,
     target_folder_id: Option<i64>,
@@ -316,38 +354,8 @@ pub fn show_in_explorer(state: State<AppState>, file_id: i64) -> Result<(), Stri
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
 
-    // Get parent directory
     let path = Path::new(&file.path);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Invalid file path".to_string())?;
-
-    // Open in file explorer
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(parent)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(parent)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(parent)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
+    reveal_in_file_manager(path)
 }
 
 #[tauri::command]
@@ -360,35 +368,7 @@ pub fn show_folder_in_explorer(state: State<AppState>, folder_id: i64) -> Result
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Folder not found".to_string())?;
 
-    // Open folder in file explorer
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&folder.path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        // Use /select to open explorer with the folder selected
-        // Convert path separators to Windows format
-        let path = normalize_path(&folder.path);
-        std::process::Command::new("explorer")
-            .arg(&format!("/select,{}", path))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&folder.path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
+    reveal_in_file_manager(Path::new(&folder.path))
 }
 
 pub(crate) fn move_single_file_shared(
