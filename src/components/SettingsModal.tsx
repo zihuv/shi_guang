@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
@@ -41,25 +41,36 @@ interface SettingsModalProps {
 type SettingsSection = "general" | "shortcuts";
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const {
-    indexPaths,
-    addIndexPath,
-    removeIndexPath,
-    theme,
-    setTheme,
-    useTrash,
-    setDeleteMode,
-    rebuildIndex,
-    shortcuts,
-    setShortcut,
-    resetShortcut,
-    previewTrackpadZoomSpeed,
-    setPreviewTrackpadZoomSpeed,
-  } = useSettingsStore();
+  const indexPaths = useSettingsStore((state) => state.indexPaths);
+  const addIndexPath = useSettingsStore((state) => state.addIndexPath);
+  const removeIndexPath = useSettingsStore((state) => state.removeIndexPath);
+  const theme = useSettingsStore((state) => state.theme);
+  const setTheme = useSettingsStore((state) => state.setTheme);
+  const useTrash = useSettingsStore((state) => state.useTrash);
+  const setDeleteMode = useSettingsStore((state) => state.setDeleteMode);
+  const rebuildIndex = useSettingsStore((state) => state.rebuildIndex);
+  const loadSettings = useSettingsStore((state) => state.loadSettings);
+  const shortcuts = useSettingsStore((state) => state.shortcuts);
+  const setShortcut = useSettingsStore((state) => state.setShortcut);
+  const resetShortcut = useSettingsStore((state) => state.resetShortcut);
+  const previewTrackpadZoomSpeed = useSettingsStore(
+    (state) => state.previewTrackpadZoomSpeed,
+  );
+  const setPreviewTrackpadZoomSpeed = useSettingsStore(
+    (state) => state.setPreviewTrackpadZoomSpeed,
+  );
   const [isAdding, setIsAdding] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [activeSection, setActiveSection] =
     useState<SettingsSection>("general");
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    void loadSettings();
+  }, [open, loadSettings]);
 
   const handleAddPath = async () => {
     setIsAdding(true);
@@ -124,8 +135,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden p-0">
-        <DialogHeader>
+      <DialogContent className="flex h-[42rem] max-h-[85vh] w-[64rem] max-w-[92vw] flex-col overflow-hidden p-0">
+        <DialogHeader className="shrink-0">
           <div className="border-b border-gray-200 px-6 py-5 dark:border-dark-border">
             <DialogTitle>设置</DialogTitle>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -134,7 +145,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
           </div>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-col md:flex-row">
+        <div className="flex min-h-0 flex-1 overflow-hidden flex-col md:flex-row">
           <aside className="border-b border-gray-200 bg-gray-50/70 px-4 py-4 dark:border-dark-border dark:bg-dark-bg/40 md:w-52 md:border-b-0 md:border-r">
             <div className="flex gap-2 md:flex-col">
               <button
@@ -289,11 +300,12 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                           并滚动触控板或滚轮时的缩放灵敏度。
                         </p>
                       </div>
-                      <div className="w-full max-w-sm space-y-2">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            慢
-                          </span>
+                      <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-dark-border dark:bg-dark-bg/40">
+                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                          <span>慢</span>
+                          <span>快</span>
+                        </div>
+                        <div className="mt-2">
                           <input
                             type="range"
                             min={PREVIEW_TRACKPAD_ZOOM_SPEED_MIN}
@@ -305,15 +317,12 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                                 Number(e.target.value),
                               )
                             }
-                            className="flex-1"
+                            className="w-full"
                           />
-                          <span className="w-14 text-right text-sm font-medium text-gray-700 dark:text-gray-200">
-                            {previewTrackpadZoomSpeed.toFixed(1)}x
-                          </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            快
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                            {previewTrackpadZoomSpeed.toFixed(1)}x
                           </span>
                           <Button
                             variant="ghost"

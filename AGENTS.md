@@ -20,5 +20,7 @@ Follow the existing code style in each layer: TypeScript files generally use 2-s
 ## Testing Guidelines
 There is no dedicated frontend test runner configured yet. Before opening a PR, at minimum run `pnpm build` and validate the affected flow manually in `pnpm tauri dev`. For backend changes, add Rust unit tests where practical and run `cargo test` in `src-tauri/`. Name new Rust tests after the behavior they verify, for example `imports_images_from_drop_event`.
 
+For desktop UI or interaction changes, do not stop at static analysis or build success. After implementing the change, verify the affected flow yourself through the Tauri MCP bridge: open the app, navigate to the changed screen, and confirm the actual rendered result with MCP inspection such as screenshot/DOM checks. If MCP verification is blocked, call that out explicitly before finishing.
+
 ## Commit & Pull Request Guidelines
 Recent history uses short, imperative commit subjects in Chinese, for example `筛选` or `修改db存储路径`. Keep commit messages brief, focused, and scoped to one change. PRs should include a clear summary, manual verification steps, linked issues when applicable, and screenshots or short recordings for UI changes. If a change affects packaging, release behavior, or docs, mention that explicitly.
