@@ -6,11 +6,35 @@ import { useFileStore } from "@/stores/fileStore";
 
 const SHORTCUTS_SETTING_KEY = "shortcuts";
 const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
+const LIBRARY_VIEW_PREFERENCES_SETTING_KEY = "libraryViewPreferences";
+
+export type LibraryViewMode = "grid" | "list" | "adaptive";
 
 export const DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED = 1;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MIN = 0.2;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MAX = 3;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_STEP = 0.1;
+export const DEFAULT_LIBRARY_VIEW_MODE: LibraryViewMode = "grid";
+export const LIBRARY_VIEW_SCALE_STEP = 0.02;
+const SHARED_TILE_VIEW_SCALE_MIN = 0.5;
+const SHARED_TILE_VIEW_SCALE_MAX = 1.8;
+export const DEFAULT_LIBRARY_VIEW_SCALES: Record<LibraryViewMode, number> = {
+  grid: 1,
+  list: 1,
+  adaptive: 1,
+};
+
+const LIBRARY_VIEW_SCALE_LIMITS: Record<
+  LibraryViewMode,
+  { min: number; max: number }
+> = {
+  grid: { min: SHARED_TILE_VIEW_SCALE_MIN, max: SHARED_TILE_VIEW_SCALE_MAX },
+  list: { min: 0.82, max: 1.8 },
+  adaptive: { min: SHARED_TILE_VIEW_SCALE_MIN, max: SHARED_TILE_VIEW_SCALE_MAX },
+};
+
+let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null =
+  null;
 
 export function clampPreviewTrackpadZoomSpeed(value: number) {
   if (!Number.isFinite(value)) {
@@ -28,6 +52,81 @@ export function clampPreviewTrackpadZoomSpeed(value: number) {
   );
 }
 
+function isLibraryViewMode(value: unknown): value is LibraryViewMode {
+  return value === "grid" || value === "list" || value === "adaptive";
+}
+
+function isSharedTileViewMode(viewMode: LibraryViewMode) {
+  return viewMode === "grid" || viewMode === "adaptive";
+}
+
+export function clampLibraryViewScale(
+  viewMode: LibraryViewMode,
+  value: number,
+) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_LIBRARY_VIEW_SCALES[viewMode];
+  }
+
+  const limits = LIBRARY_VIEW_SCALE_LIMITS[viewMode];
+  const clamped = Math.max(limits.min, Math.min(limits.max, value));
+  return Number(
+    (Math.round(clamped / LIBRARY_VIEW_SCALE_STEP) * LIBRARY_VIEW_SCALE_STEP).toFixed(2),
+  );
+}
+
+export function getLibraryViewScaleRange(viewMode: LibraryViewMode) {
+  return LIBRARY_VIEW_SCALE_LIMITS[viewMode];
+}
+
+function resolveLibraryViewScales(
+  value?: Partial<Record<LibraryViewMode, unknown>>,
+) {
+  const tileScaleSource =
+    value?.grid !== undefined ? Number(value.grid) : Number(value?.adaptive);
+  const tileScale = clampLibraryViewScale("grid", tileScaleSource);
+
+  return {
+    grid: tileScale,
+    list: clampLibraryViewScale("list", Number(value?.list)),
+    adaptive: tileScale,
+  };
+}
+
+function serializeLibraryViewPreferences(
+  mode: LibraryViewMode,
+  scales: Record<LibraryViewMode, number>,
+) {
+  return JSON.stringify({
+    mode,
+    scales,
+  });
+}
+
+function scheduleLibraryViewPreferencesPersist(
+  get: () => {
+    libraryViewMode: LibraryViewMode;
+    libraryViewScales: Record<LibraryViewMode, number>;
+  },
+) {
+  if (libraryViewPreferencesPersistTimer) {
+    clearTimeout(libraryViewPreferencesPersistTimer);
+  }
+
+  libraryViewPreferencesPersistTimer = setTimeout(() => {
+    const { libraryViewMode, libraryViewScales } = get();
+    void invoke("set_setting", {
+      key: LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
+      value: serializeLibraryViewPreferences(
+        libraryViewMode,
+        libraryViewScales,
+      ),
+    }).catch((error) => {
+      console.error("Failed to persist library view preferences:", error);
+    });
+  }, 120);
+}
+
 const loadFilesInCurrentFolder = async () => {
   const selectedFolderId = useFolderStore.getState().selectedFolderId;
   if (selectedFolderId) {
@@ -41,6 +140,8 @@ interface Settings {
   useTrash: boolean;
   shortcuts: ShortcutConfig;
   previewTrackpadZoomSpeed: number;
+  libraryViewMode: LibraryViewMode;
+  libraryViewScales: Record<LibraryViewMode, number>;
 }
 
 interface SettingsStore extends Settings {
@@ -51,6 +152,9 @@ interface SettingsStore extends Settings {
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
   setPreviewTrackpadZoomSpeed: (speed: number) => Promise<void>;
+  setLibraryViewMode: (mode: LibraryViewMode) => void;
+  setLibraryViewScale: (viewMode: LibraryViewMode, scale: number) => void;
+  resetLibraryViewScale: (viewMode: LibraryViewMode) => void;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
 }
@@ -61,6 +165,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   useTrash: true,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   previewTrackpadZoomSpeed: DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
+  libraryViewMode: DEFAULT_LIBRARY_VIEW_MODE,
+  libraryViewScales: { ...DEFAULT_LIBRARY_VIEW_SCALES },
 
   setTheme: async (theme) => {
     await invoke("set_setting", { key: "theme", value: theme });
@@ -97,6 +203,33 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ previewTrackpadZoomSpeed: nextSpeed });
   },
 
+  setLibraryViewMode: (mode) => {
+    set({ libraryViewMode: mode });
+    scheduleLibraryViewPreferencesPersist(get);
+  },
+
+  setLibraryViewScale: (viewMode, scale) => {
+    const normalizedScale = clampLibraryViewScale(viewMode, scale);
+    set((state) => ({
+      libraryViewScales: {
+        ...state.libraryViewScales,
+        ...(isSharedTileViewMode(viewMode)
+          ? {
+              grid: normalizedScale,
+              adaptive: normalizedScale,
+            }
+          : {
+              [viewMode]: normalizedScale,
+            }),
+      },
+    }));
+    scheduleLibraryViewPreferencesPersist(get);
+  },
+
+  resetLibraryViewScale: (viewMode) => {
+    get().setLibraryViewScale(viewMode, DEFAULT_LIBRARY_VIEW_SCALES[viewMode]);
+  },
+
   addIndexPath: async (path) => {
     await invoke("add_index_path", { path });
     const paths = await invoke<string[]>("get_index_paths");
@@ -119,6 +252,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let useTrash: boolean = true;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
     let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
+    let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
+    let libraryViewScales = { ...DEFAULT_LIBRARY_VIEW_SCALES };
 
     // Get theme
     try {
@@ -166,6 +301,26 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
     }
 
+    try {
+      const libraryViewPreferencesValue = await invoke<string>("get_setting", {
+        key: LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
+      });
+      const parsedPreferences = JSON.parse(libraryViewPreferencesValue) as {
+        mode?: unknown;
+        scales?: Partial<Record<LibraryViewMode, unknown>>;
+      };
+
+      if (isLibraryViewMode(parsedPreferences.mode)) {
+        libraryViewMode = parsedPreferences.mode;
+      }
+      libraryViewScales = resolveLibraryViewScales(parsedPreferences.scales);
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load library view preferences:", e);
+      }
+    }
+
     // If no index paths configured, add default path (user's Pictures/shiguang folder)
     if (!indexPaths || indexPaths.length === 0) {
       try {
@@ -187,6 +342,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       useTrash,
       shortcuts,
       previewTrackpadZoomSpeed,
+      libraryViewMode,
+      libraryViewScales,
     });
   },
 

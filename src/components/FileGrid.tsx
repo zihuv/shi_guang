@@ -1,28 +1,34 @@
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Play } from "lucide-react"
 import { toast } from "sonner"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
+import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, useSettingsStore } from "@/stores/settingsStore"
 import { cn } from "@/lib/utils"
 import { startExternalFileDrag } from "@/lib/externalDrag"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
 
-const GRID_MIN_WIDTH = 180
+const TILE_CARD_BASE_WIDTH = 180
+const TILE_CARD_MIN_WIDTH = 90
+const TILE_CARD_MAX_WIDTH = 420
 const GRID_GAP = 16
-const LIST_ROW_HEIGHT = 56
+const GRID_BASE_METADATA_HEIGHT = 96
+const GRID_PREVIEW_HEIGHT_RATIO = 0.68
+const LIST_BASE_ROW_HEIGHT = 56
+const LIST_BASE_THUMBNAIL_SIZE = 40
 const OBSERVER_ROOT_MARGIN = "300px"
-const ADAPTIVE_MIN_WIDTH = 220
-const ADAPTIVE_CARD_FOOTER_HEIGHT = 48
-const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 72
-const ADAPTIVE_CARD_SCALE = 0.96
+const ADAPTIVE_CARD_FOOTER_HEIGHT = 44
+const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 62
 const VIEWPORT_OVERSCAN_PX = 600
 const IMAGE_SRC_CACHE_LIMIT = 300
 const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids"
 const SELECTION_DRAG_THRESHOLD = 10
 const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
+const VIEW_SCALE_KEYBOARD_STEP = 0.1
+const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012
 
 type SelectionBox = {
   startX: number
@@ -127,6 +133,10 @@ function isDialogTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest("[role='dialog'], [role='menu']"))
 }
 
+function getGridMetadataHeight(scale: number) {
+  return Math.max(72, Math.round(GRID_BASE_METADATA_HEIGHT * (0.68 + scale * 0.12)))
+}
+
 export default function FileGrid() {
   const {
     files,
@@ -141,8 +151,12 @@ export default function FileGrid() {
     setPage,
     setPageSize,
   } = useFileStore()
+  const viewMode = useSettingsStore((state) => state.libraryViewMode)
+  const libraryViewScales = useSettingsStore((state) => state.libraryViewScales)
+  const setLibraryViewMode = useSettingsStore((state) => state.setLibraryViewMode)
+  const setLibraryViewScale = useSettingsStore((state) => state.setLibraryViewScale)
+  const resetLibraryViewScale = useSettingsStore((state) => state.resetLibraryViewScale)
   const filteredFiles = files
-  const [viewMode, setViewMode] = useState<"grid" | "list" | "adaptive">("grid")
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -150,14 +164,29 @@ export default function FileGrid() {
   const [viewportHeight, setViewportHeight] = useState(0)
 
   const scrollParentRef = useRef<HTMLDivElement>(null)
+  const currentViewScaleRef = useRef(viewMode === "list" ? libraryViewScales.list : libraryViewScales.grid)
+  const wheelScaleRemainderRef = useRef(0)
 
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null)
   const selectionBoxRef = useRef<SelectionBox | null>(null)
+  const tileViewScale = libraryViewScales.grid
+  const gridViewScale = tileViewScale
+  const listViewScale = libraryViewScales.list
+  const currentViewScale = viewMode === "list" ? listViewScale : tileViewScale
+  const currentViewScaleRange = getLibraryViewScaleRange(viewMode)
 
   useEffect(() => {
     selectionBoxRef.current = selectionBox
   }, [selectionBox])
+
+  useEffect(() => {
+    currentViewScaleRef.current = currentViewScale
+  }, [currentViewScale])
+
+  useEffect(() => {
+    wheelScaleRemainderRef.current = 0
+  }, [viewMode])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -185,10 +214,24 @@ export default function FileGrid() {
     }
   }, [isLoading, files.length])
 
-  const contentWidth = Math.max(containerWidth, GRID_MIN_WIDTH)
-  const gridColumns = Math.max(1, Math.floor((contentWidth + GRID_GAP) / (GRID_MIN_WIDTH + GRID_GAP)))
-  const gridItemWidth = Math.max(0, (contentWidth - GRID_GAP * (gridColumns - 1)) / gridColumns)
-  const gridRowHeight = Math.ceil(gridItemWidth + 96)
+  const tileTargetWidth = Math.max(
+    TILE_CARD_MIN_WIDTH,
+    Math.min(TILE_CARD_MAX_WIDTH, Math.round(TILE_CARD_BASE_WIDTH * tileViewScale)),
+  )
+  const gridMinWidth = tileTargetWidth
+  const gridMetadataHeight = getGridMetadataHeight(gridViewScale)
+  const listRowHeight = Math.max(42, Math.round(LIST_BASE_ROW_HEIGHT * listViewScale))
+  const listThumbnailSize = Math.max(28, Math.round(LIST_BASE_THUMBNAIL_SIZE * listViewScale))
+  const adaptiveTargetWidth = tileTargetWidth
+  const contentWidth = Math.max(containerWidth, gridMinWidth)
+  const gridColumns = Math.max(1, Math.floor((contentWidth + GRID_GAP) / (gridMinWidth + GRID_GAP)))
+  const gridItemWidth = Math.min(
+    gridMinWidth,
+    Math.max(0, Math.floor((contentWidth - GRID_GAP * (gridColumns - 1)) / gridColumns)),
+  )
+  const gridTrackWidth = gridColumns * gridItemWidth + GRID_GAP * Math.max(0, gridColumns - 1)
+  const gridPreviewHeight = Math.ceil(gridItemWidth * GRID_PREVIEW_HEIGHT_RATIO)
+  const gridRowHeight = gridPreviewHeight + gridMetadataHeight
   const gridRowCount = Math.ceil(filteredFiles.length / gridColumns)
   const gridVisibleStartRow = Math.max(0, Math.floor((scrollTop - VIEWPORT_OVERSCAN_PX) / Math.max(gridRowHeight, 1)))
   const gridVisibleEndRow = Math.min(
@@ -202,21 +245,80 @@ export default function FileGrid() {
           (_, idx) => gridVisibleStartRow + idx,
         )
       : []
-  const adaptiveColumns = Math.max(1, Math.floor((Math.max(containerWidth, ADAPTIVE_MIN_WIDTH) + GRID_GAP) / (ADAPTIVE_MIN_WIDTH + GRID_GAP)))
-  const adaptiveColumnWidth = Math.max(0, (Math.max(containerWidth, ADAPTIVE_MIN_WIDTH) - GRID_GAP * (adaptiveColumns - 1)) / adaptiveColumns)
-  const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth)
-  const adaptiveVisibleItems = adaptiveLayout.items.filter(
-    (item) =>
-      item.top + item.height >= scrollTop - VIEWPORT_OVERSCAN_PX &&
-      item.top <= scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX,
+  const adaptiveColumns = Math.max(
+    1,
+    Math.min(
+      Math.max(1, Math.floor((Math.max(containerWidth, adaptiveTargetWidth) + GRID_GAP) / (adaptiveTargetWidth + GRID_GAP))),
+      Math.max(1, filteredFiles.length),
+    ),
   )
+  const adaptiveAvailableColumnWidth = Math.max(
+    0,
+    Math.floor((Math.max(containerWidth, adaptiveTargetWidth) - GRID_GAP * (adaptiveColumns - 1)) / adaptiveColumns),
+  )
+  const adaptiveColumnWidth = Math.min(adaptiveTargetWidth, adaptiveAvailableColumnWidth)
+  const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth)
+  const adaptiveColumnsData = buildAdaptiveColumns(adaptiveLayout.items, adaptiveColumns)
 
   const listRowVirtualizer = useVirtualizer({
     count: filteredFiles.length,
     getScrollElement: () => scrollParentRef.current,
-    estimateSize: () => LIST_ROW_HEIGHT,
+    estimateSize: () => listRowHeight,
     overscan: 8,
   })
+
+  useEffect(() => {
+    listRowVirtualizer.measure()
+  }, [listRowHeight, listRowVirtualizer])
+
+  const handleViewModeChange = (nextViewMode: LibraryViewMode) => {
+    wheelScaleRemainderRef.current = 0
+    setLibraryViewMode(nextViewMode)
+  }
+
+  const applyCurrentViewScale = (nextScale: number) => {
+    const normalizedScale = clampLibraryViewScale(viewMode, nextScale)
+    wheelScaleRemainderRef.current = 0
+    currentViewScaleRef.current = normalizedScale
+    setLibraryViewScale(viewMode, normalizedScale)
+  }
+
+  const stepCurrentViewScale = (direction: 1 | -1) => {
+    applyCurrentViewScale(currentViewScaleRef.current + direction * VIEW_SCALE_KEYBOARD_STEP)
+  }
+
+  const resetCurrentViewScale = () => {
+    wheelScaleRemainderRef.current = 0
+    currentViewScaleRef.current = DEFAULT_LIBRARY_VIEW_SCALES[viewMode]
+    resetLibraryViewScale(viewMode)
+  }
+
+  const handleViewportWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!(event.ctrlKey || event.metaKey) || isSelecting) {
+      return
+    }
+
+    if (isEditableTarget(event.target) || isDialogTarget(event.target)) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    wheelScaleRemainderRef.current += -event.deltaY * VIEW_SCALE_WHEEL_SENSITIVITY
+    const wholeSteps = Math.trunc(Math.abs(wheelScaleRemainderRef.current) / LIBRARY_VIEW_SCALE_STEP)
+
+    if (wholeSteps === 0) {
+      return
+    }
+
+    const delta = Math.sign(wheelScaleRemainderRef.current) * wholeSteps * LIBRARY_VIEW_SCALE_STEP
+    wheelScaleRemainderRef.current -= delta
+
+    const nextScale = clampLibraryViewScale(viewMode, currentViewScaleRef.current + delta)
+    currentViewScaleRef.current = nextScale
+    setLibraryViewScale(viewMode, nextScale)
+  }
 
   const handleFileClick = (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.ctrlKey || event.metaKey) {
@@ -360,8 +462,8 @@ export default function FileGrid() {
     let itemBottom = 0
 
     if (viewMode === "list") {
-      itemTop = index * LIST_ROW_HEIGHT
-      itemBottom = itemTop + LIST_ROW_HEIGHT
+      itemTop = index * listRowHeight
+      itemBottom = itemTop + listRowHeight
     } else if (viewMode === "grid") {
       const row = Math.floor(index / gridColumns)
       itemTop = row * gridRowHeight
@@ -388,6 +490,58 @@ export default function FileGrid() {
       container.scrollTo({ top: Math.max(0, itemBottom - container.clientHeight + padding) })
     }
   }
+
+  useEffect(() => {
+    const handleWindowZoomKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        isSelecting
+      ) {
+        return
+      }
+
+      if (isEditableTarget(event.target) || isDialogTarget(event.target)) {
+        return
+      }
+
+      let handled = true
+
+      switch (event.key) {
+        case "+":
+        case "=":
+        case "NumpadAdd":
+          stepCurrentViewScale(1)
+          break
+        case "-":
+        case "_":
+        case "NumpadSubtract":
+          stepCurrentViewScale(-1)
+          break
+        case "0":
+        case "Numpad0":
+          resetCurrentViewScale()
+          break
+        default:
+          handled = false
+          break
+      }
+
+      if (!handled) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    window.addEventListener("keydown", handleWindowZoomKeyDown)
+    return () => {
+      window.removeEventListener("keydown", handleWindowZoomKeyDown)
+    }
+  }, [isSelecting, resetCurrentViewScale, stepCurrentViewScale])
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -482,6 +636,7 @@ export default function FileGrid() {
     gridColumns,
     gridRowHeight,
     isSelecting,
+    listRowHeight,
     selectedFile,
     selectedFiles.length,
     setSelectedFile,
@@ -515,34 +670,51 @@ export default function FileGrid() {
             {pagination.totalPages > 1 && ` (第 ${pagination.page}/${pagination.totalPages} 页)`}
           </span>
         </div>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setViewMode("adaptive")}
-            className={`rounded p-1.5 ${viewMode === "adaptive" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
-            title="自适应大小"
+        <div className="flex items-center gap-3">
+          <div
+            className="hidden items-center sm:flex"
+            onDoubleClick={resetCurrentViewScale}
           >
-            <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setViewMode("grid")}
-            className={`rounded p-1.5 ${viewMode === "grid" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
-            title="网格视图"
-          >
-            <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={`rounded p-1.5 ${viewMode === "list" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
-            title="列表视图"
-          >
-            <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+            <input
+              type="range"
+              min={currentViewScaleRange.min}
+              max={currentViewScaleRange.max}
+              step={LIBRARY_VIEW_SCALE_STEP}
+              value={currentViewScale}
+              onChange={(event) => applyCurrentViewScale(Number(event.target.value))}
+              className="h-1 w-16 cursor-pointer accent-gray-400 opacity-75 transition-opacity hover:opacity-100 dark:accent-gray-500"
+              aria-label="当前视图缩放"
+            />
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleViewModeChange("adaptive")}
+              className={`rounded p-1.5 ${viewMode === "adaptive" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
+              title="自适应大小"
+            >
+              <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("grid")}
+              className={`rounded p-1.5 ${viewMode === "grid" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
+              title="网格视图"
+            >
+              <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("list")}
+              className={`rounded p-1.5 ${viewMode === "list" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
+              title="列表视图"
+            >
+              <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -550,30 +722,41 @@ export default function FileGrid() {
         ref={scrollParentRef}
         className="relative flex-1 overflow-auto p-4 select-none"
         onMouseDown={handleSelectionStart}
+        onWheel={handleViewportWheel}
       >
         {viewMode === "adaptive" ? (
-          <div className="relative" style={{ height: `${adaptiveLayout.totalHeight}px` }}>
-            {adaptiveVisibleItems.map(({ file, index, left, top, width }) => (
+          <div
+            className="flex items-start gap-4"
+            style={{
+              width: `${adaptiveLayout.trackWidth}px`,
+              maxWidth: "100%",
+            }}
+          >
+            {adaptiveColumnsData.filter((column) => column.length > 0).map((column, columnIndex) => (
               <div
-                key={`adaptive-${index}`}
-                className="absolute"
-                style={{
-                  left: `${left}px`,
-                  top: `${top}px`,
-                  width: `${width}px`,
-                }}
+                key={`adaptive-column-${columnIndex}`}
+                className="flex min-w-0 flex-col gap-4"
+                style={{ width: `${adaptiveLayout.columnWidth}px`, flex: "0 0 auto" }}
               >
-                <AdaptiveFileCard
-                  file={file}
-                  isSelected={selectedFile?.id === file.id}
-                  isMultiSelected={selectedFiles.includes(file.id)}
-                  isDragging={draggingFileId === file.id}
-                  scrollRootRef={scrollParentRef}
-                  onClick={(e) => handleFileClick(file, e)}
-                  onDoubleClick={() => handleFileDoubleClick(index)}
-                  onDragStart={() => setDraggingFileId(file.id)}
-                  onDragEnd={() => setDraggingFileId(null)}
-                />
+                {column.map(({ file, index, width }) => (
+                  <div
+                    key={`adaptive-${index}`}
+                    className="mx-auto w-full"
+                    style={{ maxWidth: `${width}px` }}
+                  >
+                    <AdaptiveFileCard
+                      file={file}
+                      isSelected={selectedFile?.id === file.id}
+                      isMultiSelected={selectedFiles.includes(file.id)}
+                      isDragging={draggingFileId === file.id}
+                      scrollRootRef={scrollParentRef}
+                      onClick={(e) => handleFileClick(file, e)}
+                      onDoubleClick={() => handleFileDoubleClick(index)}
+                      onDragStart={() => setDraggingFileId(file.id)}
+                      onDragEnd={() => setDraggingFileId(null)}
+                    />
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -586,20 +769,22 @@ export default function FileGrid() {
               return (
                 <div
                   key={rowIndex}
-                  className="absolute left-0 top-0 w-full"
+                  className="absolute left-0 top-0"
                   style={{
+                    width: `${gridTrackWidth}px`,
                     height: `${gridRowHeight}px`,
                     transform: `translateY(${rowIndex * gridRowHeight}px)`,
                   }}
                 >
                   <div
                     className="grid gap-4"
-                    style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+                    style={{ gridTemplateColumns: `repeat(${gridColumns}, ${gridItemWidth}px)` }}
                   >
                     {rowFiles.map((file, offset) => (
                       <FileCard
                         key={`grid-${rowIndex}-${offset}`}
                         file={file}
+                        footerHeight={gridMetadataHeight}
                         isSelected={selectedFile?.id === file.id}
                         isMultiSelected={selectedFiles.includes(file.id)}
                         isDragging={draggingFileId === file.id}
@@ -632,6 +817,7 @@ export default function FileGrid() {
                 >
                   <FileRow
                     file={file}
+                    thumbnailSize={listThumbnailSize}
                     isSelected={selectedFile?.id === file.id}
                     isMultiSelected={selectedFiles.includes(file.id)}
                     isDragging={draggingFileId === file.id}
@@ -750,6 +936,7 @@ export default function FileGrid() {
 type AdaptiveLayoutItem = {
   file: FileItem
   index: number
+  columnIndex: number
   left: number
   top: number
   width: number
@@ -816,11 +1003,11 @@ function findAdaptiveNeighborIndex(items: AdaptiveLayoutItem[], currentIndex: nu
 
 function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: number) {
   if (files.length === 0 || columnWidth <= 0) {
-    return { items: [] as AdaptiveLayoutItem[], totalHeight: 0 }
+    return { items: [] as AdaptiveLayoutItem[], totalHeight: 0, columnWidth: 0, trackWidth: 0 }
   }
 
-  const visualWidth = Math.max(120, Math.round(columnWidth * ADAPTIVE_CARD_SCALE))
-  const horizontalInset = (columnWidth - visualWidth) / 2
+  const visualWidth = columnWidth
+  const horizontalInset = 0
   const heights = Array.from({ length: columns }, () => 0)
   const items: AdaptiveLayoutItem[] = files.map((file, index) => {
     const imageHeight = getAdaptiveImageHeight(file, visualWidth)
@@ -840,6 +1027,7 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
     return {
       file,
       index,
+      columnIndex,
       left,
       top,
       width: visualWidth,
@@ -850,7 +1038,22 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
   return {
     items,
     totalHeight: Math.max(0, ...heights) - GRID_GAP,
+    columnWidth,
+    trackWidth: columnWidth * columns + GRID_GAP * Math.max(0, columns - 1),
   }
+}
+
+function buildAdaptiveColumns(items: AdaptiveLayoutItem[], columns: number) {
+  const nextColumns = Array.from({ length: Math.max(1, columns) }, () => [] as AdaptiveLayoutItem[])
+
+  items.forEach((item) => {
+    const column = nextColumns[item.columnIndex]
+    if (column) {
+      column.push(item)
+    }
+  })
+
+  return nextColumns
 }
 
 function getAdaptiveImageHeight(file: FileItem, width: number) {
@@ -964,7 +1167,7 @@ type FileCardBaseProps = {
   onDragEnd: () => void
 }
 
-function FileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function FileCard({ file, footerHeight, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { footerHeight: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -1001,7 +1204,8 @@ function FileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef
           }`}
         >
           <div
-            className="relative bg-gray-100 pb-[100%] dark:bg-dark-bg"
+            className="relative bg-gray-100 dark:bg-dark-bg"
+            style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
             draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
           >
@@ -1024,23 +1228,26 @@ function FileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef
             )}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
-          <div className="bg-white p-2 dark:bg-dark-surface">
-            <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
-            <p className="mt-0.5 text-xs text-gray-400">
+          <div
+            className="flex min-h-0 flex-1 flex-col bg-white px-2 py-1.5 dark:bg-dark-surface"
+            style={{ minHeight: `${footerHeight}px` }}
+          >
+            <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            <p className="mt-0.5 text-xs leading-4 text-gray-400">
               {file.ext.toUpperCase()} · {formatSize(file.size)}
             </p>
             {file.tags.length > 0 && (
-              <div className="mt-1.5 flex max-h-10 flex-wrap gap-1 overflow-hidden">
-                {file.tags.slice(0, 3).map((tag) => (
+              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1">
+                {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
-                    className="rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                    className="min-w-0 max-w-[88px] truncate rounded-full px-1.5 py-0.5 text-[10px] text-white"
                     style={{ backgroundColor: tag.color }}
                   >
                     {tag.name}
                   </span>
                 ))}
-                {file.tags.length > 3 && <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>}
+                {file.tags.length > MAX_VISIBLE_TAGS && <span className="flex-shrink-0 text-[10px] text-gray-400">+{file.tags.length - MAX_VISIBLE_TAGS}</span>}
               </div>
             )}
           </div>
@@ -1086,7 +1293,7 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
           onDoubleClick={onDoubleClick}
           onDragStart={handleNativeDragStart}
           onDragEnd={handleNativeDragEnd}
-          className={`file-card group relative overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+          className={`file-card group relative flex flex-col overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
               : isSelected
@@ -1119,17 +1326,20 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
             )}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
-          <div className="bg-white p-2 dark:bg-dark-surface" style={{ minHeight: `${footerHeight}px` }}>
-            <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
-            <p className="text-[10px] text-gray-400">
+          <div
+            className="flex min-h-0 flex-1 flex-col bg-white px-2 py-1.5 dark:bg-dark-surface"
+            style={{ minHeight: `${footerHeight}px` }}
+          >
+            <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            <p className="mt-0.5 text-xs leading-4 text-gray-400">
               {file.ext.toUpperCase()} · {formatSize(file.size)}
             </p>
             {file.tags.length > 0 && (
-              <div className="mt-1 flex items-center gap-1 overflow-hidden whitespace-nowrap">
+              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
-                    className="min-w-0 max-w-[96px] truncate rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                    className="min-w-0 max-w-[88px] truncate rounded-full px-1.5 py-0.5 text-[10px] text-white"
                     style={{ backgroundColor: tag.color }}
                   >
                     {tag.name}
@@ -1147,7 +1357,7 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
   )
 }
 
-function FileRow({ file, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function FileRow({ file, thumbnailSize, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { thumbnailSize: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -1185,7 +1395,8 @@ function FileRow({ file, isSelected, isMultiSelected, isDragging, scrollRootRef,
           }`}
         >
           <div
-            className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+            className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+            style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
             draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
           >
