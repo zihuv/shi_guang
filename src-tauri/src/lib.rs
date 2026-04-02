@@ -5,10 +5,7 @@ mod indexer;
 mod path_utils;
 mod storage;
 
-use crate::path_utils::join_path;
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -28,37 +25,11 @@ fn cleanup_dot_folders(db: &db::Database) -> Result<(), String> {
 }
 
 fn init_browser_collection_folder_internal(db: &db::Database) -> Result<(), String> {
-    // Check if browser collection folder already exists
-    if db
-        .get_browser_collection_folder()
-        .map_err(|e| e.to_string())?
-        .is_some()
-    {
-        return Ok(());
-    }
-
-    // Get index paths
-    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
-
-    if let Some(index_path) = index_paths.first() {
-        let folder_name = "浏览器采集";
-        let folder_path = join_path(index_path, folder_name);
-
-        // Create directory in file system
-        let path = Path::new(&folder_path);
-        if !path.exists() {
-            fs::create_dir_all(path).map_err(|e| e.to_string())?;
-        }
-
-        // Create folder in database as system folder
-        db.create_folder(&folder_path, folder_name, None, true)
-            .map_err(|e| e.to_string())?;
-
-        log::info!("Created browser collection folder: {}", folder_path);
-        Ok(())
-    } else {
-        Err("No index path configured".to_string())
-    }
+    db.ensure_browser_collection_folder()
+        .map(|folder| {
+            log::info!("Browser collection folder ready: {}", folder.path);
+        })
+        .map_err(|e| e.to_string())
 }
 
 // Track recent imports to prevent duplicate imports within a short time

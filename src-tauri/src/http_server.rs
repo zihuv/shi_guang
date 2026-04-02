@@ -14,7 +14,6 @@ use tauri::Emitter;
 
 use crate::db::{Database, FileRecord};
 use crate::indexer;
-use crate::path_utils::join_path;
 use chrono::Local;
 use image::GenericImageView;
 use reqwest::Client;
@@ -42,6 +41,37 @@ struct ImportResponse {
     success: bool,
     file_id: Option<i64>,
     error: Option<String>,
+}
+
+fn import_response(response: ImportResponse) -> Response<Body> {
+    let body = serde_json::to_string(&response).unwrap();
+    with_cors(
+        Response::builder()
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap(),
+    )
+}
+
+fn ensure_browser_collection_folder(
+    state: &HttpServerState,
+) -> Result<crate::db::Folder, Response<Body>> {
+    let db = state.db.lock().unwrap();
+    db.ensure_browser_collection_folder().map_err(|e| {
+        import_response(ImportResponse {
+            success: false,
+            file_id: None,
+            error: Some(e.to_string()),
+        })
+    })
+}
+
+fn build_browser_file_name(ext: &str) -> String {
+    format!(
+        "browser_{}.{}",
+        Local::now().format("%Y%m%d_%H%M%S_%f"),
+        ext
+    )
 }
 
 fn get_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
@@ -174,131 +204,15 @@ async fn import_image(
         ext
     };
 
-    // Get browser collection folder, create if not exists
-    let folder: crate::db::Folder = {
-        let db = state.db.lock().unwrap();
-
-        // Try to get existing folder first
-        if let Ok(Some(f)) = db.get_browser_collection_folder() {
-            f
-        } else {
-            // Get index paths to determine where to create the folder
-            let index_paths = match db.get_index_paths() {
-                Ok(paths) => paths,
-                Err(e) => {
-                    let resp = ImportResponse {
-                        success: false,
-                        file_id: None,
-                        error: Some(format!("Failed to get index paths: {}", e)),
-                    };
-                    let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(
-                        Response::builder()
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(Body::from(body))
-                            .unwrap(),
-                    ));
-                }
-            };
-
-            // If no index path configured, return error
-            if index_paths.is_empty() {
-                let resp = ImportResponse {
-                    success: false,
-                    file_id: None,
-                    error: Some("No index path configured. Please configure an index path in settings first.".to_string()),
-                };
-                let body = serde_json::to_string(&resp).unwrap();
-                return Ok(with_cors(
-                    Response::builder()
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
-                        .unwrap(),
-                ));
-            }
-
-            // Create browser collection folder
-            let index_path = &index_paths[0];
-            let folder_name = "浏览器采集";
-            let folder_path = join_path(index_path, folder_name);
-
-            // Create directory in file system
-            let path = std::path::Path::new(&folder_path);
-            if !path.exists() {
-                if let Err(e) = std::fs::create_dir_all(path) {
-                    let resp = ImportResponse {
-                        success: false,
-                        file_id: None,
-                        error: Some(format!("Failed to create folder: {}", e)),
-                    };
-                    let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(
-                        Response::builder()
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(Body::from(body))
-                            .unwrap(),
-                    ));
-                }
-            }
-
-            // Create folder in database
-            match db.create_folder(&folder_path, folder_name, None, true) {
-                Ok(id) => {
-                    log::info!("Created browser collection folder: {}", folder_path);
-                    crate::db::Folder {
-                        id,
-                        path: folder_path,
-                        name: folder_name.to_string(),
-                        parent_id: None,
-                        created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                        is_system: true,
-                        sort_order: 0,
-                    }
-                }
-                Err(e) => {
-                    // If folder already exists (UNIQUE constraint), try to get it by path
-                    if e.to_string().contains("UNIQUE constraint failed") {
-                        if let Ok(Some(f)) = db.get_folder_by_path(&folder_path) {
-                            log::info!("Browser collection folder already exists: {}", f.path);
-                            f
-                        } else {
-                            let resp = ImportResponse {
-                                success: false,
-                                file_id: None,
-                                error: Some(format!("Failed to get folder: {}", e)),
-                            };
-                            let body = serde_json::to_string(&resp).unwrap();
-                            return Ok(with_cors(
-                                Response::builder()
-                                    .header(header::CONTENT_TYPE, "application/json")
-                                    .body(Body::from(body))
-                                    .unwrap(),
-                            ));
-                        }
-                    } else {
-                        let resp = ImportResponse {
-                            success: false,
-                            file_id: None,
-                            error: Some(format!("Failed to create folder in database: {}", e)),
-                        };
-                        let body = serde_json::to_string(&resp).unwrap();
-                        return Ok(with_cors(
-                            Response::builder()
-                                .header(header::CONTENT_TYPE, "application/json")
-                                .body(Body::from(body))
-                                .unwrap(),
-                        ));
-                    }
-                }
-            }
-        }
+    let folder = match ensure_browser_collection_folder(&state) {
+        Ok(folder) => folder,
+        Err(response) => return Ok(response),
     };
 
     // Now import the file with the folder
 
     // Generate unique filename
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let new_name = format!("browser_{}.{}", timestamp, final_ext);
+    let new_name = build_browser_file_name(&final_ext);
     let dest_path = std::path::Path::new(&folder.path).join(&new_name);
 
     // Save file
@@ -510,129 +424,13 @@ async fn import_image_from_url(
         ext
     };
 
-    // Get browser collection folder, create if not exists
-    let folder: crate::db::Folder = {
-        let db = state.db.lock().unwrap();
-
-        // Try to get existing folder first
-        if let Ok(Some(f)) = db.get_browser_collection_folder() {
-            f
-        } else {
-            // Get index paths to determine where to create the folder
-            let index_paths = match db.get_index_paths() {
-                Ok(paths) => paths,
-                Err(e) => {
-                    let resp = ImportResponse {
-                        success: false,
-                        file_id: None,
-                        error: Some(format!("Failed to get index paths: {}", e)),
-                    };
-                    let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(
-                        Response::builder()
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(Body::from(body))
-                            .unwrap(),
-                    ));
-                }
-            };
-
-            // If no index path configured, return error
-            if index_paths.is_empty() {
-                let resp = ImportResponse {
-                    success: false,
-                    file_id: None,
-                    error: Some("No index path configured. Please configure an index path in settings first.".to_string()),
-                };
-                let body = serde_json::to_string(&resp).unwrap();
-                return Ok(with_cors(
-                    Response::builder()
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
-                        .unwrap(),
-                ));
-            }
-
-            // Create browser collection folder
-            let index_path = &index_paths[0];
-            let folder_name = "浏览器采集";
-            let folder_path = join_path(index_path, folder_name);
-
-            // Create directory in file system
-            let path = std::path::Path::new(&folder_path);
-            if !path.exists() {
-                if let Err(e) = std::fs::create_dir_all(path) {
-                    let resp = ImportResponse {
-                        success: false,
-                        file_id: None,
-                        error: Some(format!("Failed to create folder: {}", e)),
-                    };
-                    let body = serde_json::to_string(&resp).unwrap();
-                    return Ok(with_cors(
-                        Response::builder()
-                            .header(header::CONTENT_TYPE, "application/json")
-                            .body(Body::from(body))
-                            .unwrap(),
-                    ));
-                }
-            }
-
-            // Create folder in database
-            match db.create_folder(&folder_path, folder_name, None, true) {
-                Ok(id) => {
-                    log::info!("Created browser collection folder: {}", folder_path);
-                    crate::db::Folder {
-                        id,
-                        path: folder_path,
-                        name: folder_name.to_string(),
-                        parent_id: None,
-                        created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                        is_system: true,
-                        sort_order: 0,
-                    }
-                }
-                Err(e) => {
-                    // If folder already exists (UNIQUE constraint), try to get it by path
-                    if e.to_string().contains("UNIQUE constraint failed") {
-                        if let Ok(Some(f)) = db.get_folder_by_path(&folder_path) {
-                            log::info!("Browser collection folder already exists: {}", f.path);
-                            f
-                        } else {
-                            let resp = ImportResponse {
-                                success: false,
-                                file_id: None,
-                                error: Some(format!("Failed to get folder: {}", e)),
-                            };
-                            let body = serde_json::to_string(&resp).unwrap();
-                            return Ok(with_cors(
-                                Response::builder()
-                                    .header(header::CONTENT_TYPE, "application/json")
-                                    .body(Body::from(body))
-                                    .unwrap(),
-                            ));
-                        }
-                    } else {
-                        let resp = ImportResponse {
-                            success: false,
-                            file_id: None,
-                            error: Some(format!("Failed to create folder in database: {}", e)),
-                        };
-                        let body = serde_json::to_string(&resp).unwrap();
-                        return Ok(with_cors(
-                            Response::builder()
-                                .header(header::CONTENT_TYPE, "application/json")
-                                .body(Body::from(body))
-                                .unwrap(),
-                        ));
-                    }
-                }
-            }
-        }
+    let folder = match ensure_browser_collection_folder(&state) {
+        Ok(folder) => folder,
+        Err(response) => return Ok(response),
     };
 
     // Generate unique filename
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let new_name = format!("browser_{}.{}", timestamp, final_ext);
+    let new_name = build_browser_file_name(&final_ext);
     let dest_path = std::path::Path::new(&folder.path).join(&new_name);
 
     // Save file

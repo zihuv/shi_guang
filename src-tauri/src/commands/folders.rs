@@ -288,45 +288,8 @@ pub fn rename_folder(state: State<AppState>, id: i64, name: String) -> Result<()
 #[tauri::command]
 pub fn init_browser_collection_folder(state: State<AppState>) -> Result<Folder, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-
-    // Check if browser collection folder already exists
-    if let Some(folder) = db
-        .get_browser_collection_folder()
-        .map_err(|e| e.to_string())?
-    {
-        return Ok(folder);
-    }
-
-    // Get index paths to determine where to create the folder
-    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
-
-    if let Some(index_path) = index_paths.first() {
-        let folder_name = "浏览器采集";
-        let folder_path = join_path(index_path, folder_name);
-
-        // Create directory in file system
-        let path = Path::new(&folder_path);
-        if !path.exists() {
-            fs::create_dir_all(path).map_err(|e| e.to_string())?;
-        }
-
-        // Create folder in database as system folder
-        let id = db
-            .create_folder(&folder_path, folder_name, None, true)
-            .map_err(|e| e.to_string())?;
-
-        Ok(Folder {
-            id,
-            path: folder_path,
-            name: folder_name.to_string(),
-            parent_id: None,
-            created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            is_system: true,
-            sort_order: 0,
-        })
-    } else {
-        Err("No index path configured".to_string())
-    }
+    db.ensure_browser_collection_folder()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

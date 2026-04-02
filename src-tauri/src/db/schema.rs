@@ -289,6 +289,10 @@ impl Database {
             self.backfill_dominant_color_channels()?;
         }
 
+        if current_version < 4 {
+            self.normalize_browser_collection_folder()?;
+        }
+
         self.conn
             .execute_batch(&format!("PRAGMA user_version = {};", DB_SCHEMA_VERSION))?;
         Ok(())
@@ -429,6 +433,19 @@ impl Database {
             )?;
         }
 
+        Ok(())
+    }
+
+    fn normalize_browser_collection_folder(&self) -> Result<()> {
+        self.conn.execute(
+            "UPDATE folders
+             SET sort_order = ?1
+             WHERE is_system = 1 AND name = ?2",
+            params![
+                BROWSER_COLLECTION_FOLDER_SORT_ORDER,
+                BROWSER_COLLECTION_FOLDER_NAME
+            ],
+        )?;
         Ok(())
     }
 

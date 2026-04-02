@@ -114,8 +114,11 @@ export function useTauriImportListeners({
 
       unlistenFileImported = await listen("file-imported", async () => {
         toast.success("图片导入成功");
-        const folderId = useFolderStore.getState().selectedFolderId;
-        await useFileStore.getState().loadFilesInFolder(folderId);
+        const fileStore = useFileStore.getState();
+        await Promise.all([
+          fileStore.runCurrentQuery(fileStore.selectedFolderId),
+          useFolderStore.getState().loadFolders(),
+        ]);
       });
 
       unlistenFileImportError = await listen<{ error: string }>(

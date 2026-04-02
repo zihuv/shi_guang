@@ -51,11 +51,90 @@ impl Database {
         parent_id: Option<i64>,
         is_system: bool,
     ) -> Result<i64> {
+        self.create_folder_with_sort_order(path, name, parent_id, is_system, 0)
+    }
+
+    pub fn create_folder_with_sort_order(
+        &self,
+        path: &str,
+        name: &str,
+        parent_id: Option<i64>,
+        is_system: bool,
+        sort_order: i32,
+    ) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO folders (path, name, parent_id, created_at, is_system) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![path, name, parent_id, chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(), is_system as i32],
+            "INSERT INTO folders (path, name, parent_id, created_at, is_system, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                path,
+                name,
+                parent_id,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                is_system as i32,
+                sort_order
+            ],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn update_folder_sort_order(&self, id: i64, sort_order: i32) -> Result<()> {
+        self.conn.execute(
+            "UPDATE folders SET sort_order = ?1 WHERE id = ?2",
+            params![sort_order, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn ensure_browser_collection_folder(&self) -> Result<Folder> {
+        if let Some(mut folder) = self.get_browser_collection_folder()? {
+            if folder.sort_order != BROWSER_COLLECTION_FOLDER_SORT_ORDER {
+                self.conn.execute(
+                    "UPDATE folders SET sort_order = ?1 WHERE id = ?2",
+                    params![BROWSER_COLLECTION_FOLDER_SORT_ORDER, folder.id],
+                )?;
+                folder.sort_order = BROWSER_COLLECTION_FOLDER_SORT_ORDER;
+            }
+            return Ok(folder);
+        }
+
+        let index_path = self.get_index_paths()?.into_iter().next().ok_or_else(|| {
+            rusqlite::Error::InvalidParameterName("No index path configured".to_string())
+        })?;
+        let folder_path = join_path(&index_path, BROWSER_COLLECTION_FOLDER_NAME);
+        let path = std::path::Path::new(&folder_path);
+
+        if !path.exists() {
+            std::fs::create_dir_all(path)
+                .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
+        }
+
+        if let Some(mut folder) = self.get_folder_by_path(&folder_path)? {
+            self.conn.execute(
+                "UPDATE folders SET is_system = 1, parent_id = NULL, sort_order = ?1 WHERE id = ?2",
+                params![BROWSER_COLLECTION_FOLDER_SORT_ORDER, folder.id],
+            )?;
+            folder.is_system = true;
+            folder.parent_id = None;
+            folder.sort_order = BROWSER_COLLECTION_FOLDER_SORT_ORDER;
+            return Ok(folder);
+        }
+
+        let id = self.create_folder_with_sort_order(
+            &folder_path,
+            BROWSER_COLLECTION_FOLDER_NAME,
+            None,
+            true,
+            BROWSER_COLLECTION_FOLDER_SORT_ORDER,
+        )?;
+
+        Ok(Folder {
+            id,
+            path: folder_path,
+            name: BROWSER_COLLECTION_FOLDER_NAME.to_string(),
+            parent_id: None,
+            created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            is_system: true,
+            sort_order: BROWSER_COLLECTION_FOLDER_SORT_ORDER,
+        })
     }
 
     pub fn get_or_create_folder(
@@ -203,9 +282,13 @@ impl Database {
 
     pub fn get_browser_collection_folder(&self) -> Result<Option<Folder>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE is_system = 1 LIMIT 1"
+            "SELECT id, path, name, parent_id, created_at, is_system, sort_order
+             FROM folders
+             WHERE is_system = 1 AND name = ?1
+             ORDER BY sort_order ASC, created_at ASC
+             LIMIT 1",
         )?;
-        let mut rows = stmt.query([])?;
+        let mut rows = stmt.query([BROWSER_COLLECTION_FOLDER_NAME])?;
         if let Some(row) = rows.next()? {
             Ok(Some(Folder {
                 id: row.get(0)?,
