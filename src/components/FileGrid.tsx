@@ -15,11 +15,14 @@ const LIST_ROW_HEIGHT = 56
 const OBSERVER_ROOT_MARGIN = "300px"
 const ADAPTIVE_MIN_WIDTH = 220
 const ADAPTIVE_CARD_FOOTER_HEIGHT = 48
+const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 72
 const ADAPTIVE_CARD_SCALE = 0.96
 const VIEWPORT_OVERSCAN_PX = 600
 const IMAGE_SRC_CACHE_LIMIT = 300
 const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids"
 const SELECTION_DRAG_THRESHOLD = 10
+const MAX_VISIBLE_TAGS = 3
+const LIST_MAX_VISIBLE_TAGS = 2
 
 type SelectionBox = {
   startX: number
@@ -821,7 +824,7 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
   const heights = Array.from({ length: columns }, () => 0)
   const items: AdaptiveLayoutItem[] = files.map((file, index) => {
     const imageHeight = getAdaptiveImageHeight(file, visualWidth)
-    const totalHeight = imageHeight + ADAPTIVE_CARD_FOOTER_HEIGHT
+    const totalHeight = imageHeight + getAdaptiveFooterHeight(file)
     let columnIndex = 0
 
     for (let i = 1; i < heights.length; i += 1) {
@@ -856,6 +859,10 @@ function getAdaptiveImageHeight(file: FileItem, width: number) {
   }
 
   return Math.max(80, Math.round((file.height / file.width) * width))
+}
+
+function getAdaptiveFooterHeight(file: FileItem) {
+  return file.tags.length > 0 ? ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT : ADAPTIVE_CARD_FOOTER_HEIGHT
 }
 
 function useVisibility(rootRef: RefObject<HTMLElement | null>) {
@@ -1048,6 +1055,7 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
   const isVideo = isVideoFile(file.ext)
+  const footerHeight = getAdaptiveFooterHeight(file)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -1111,11 +1119,27 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
             )}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
-          <div className="bg-white p-2 dark:bg-dark-surface">
+          <div className="bg-white p-2 dark:bg-dark-surface" style={{ minHeight: `${footerHeight}px` }}>
             <p className="truncate text-xs text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
             <p className="text-[10px] text-gray-400">
               {file.ext.toUpperCase()} · {formatSize(file.size)}
             </p>
+            {file.tags.length > 0 && (
+              <div className="mt-1 flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="min-w-0 max-w-[96px] truncate rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                    style={{ backgroundColor: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {file.tags.length > MAX_VISIBLE_TAGS && (
+                  <span className="flex-shrink-0 text-[10px] text-gray-400">+{file.tags.length - MAX_VISIBLE_TAGS}</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1128,6 +1152,7 @@ function FileRow({ file, isSelected, isMultiSelected, isDragging, scrollRootRef,
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
   const isVideo = isVideoFile(file.ext)
+  const visibleTags = file.tags.slice(0, LIST_MAX_VISIBLE_TAGS)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -1182,9 +1207,25 @@ function FileRow({ file, isSelected, isMultiSelected, isDragging, scrollRootRef,
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
-            <p className="text-xs text-gray-400">
-              {getFileMetaText(file)}
-            </p>
+            <div className="mt-0.5 flex items-center gap-1 overflow-hidden text-xs text-gray-400">
+              <span className="flex-shrink-0">{getFileMetaText(file)}</span>
+              {visibleTags.length > 0 && <span className="text-gray-300 dark:text-gray-600">·</span>}
+              {visibleTags.map((tag) => (
+                <span
+                  key={tag.id}
+                  className="inline-flex min-w-0 max-w-[84px] items-center gap-1 rounded-full border border-gray-200/80 px-1.5 py-0 text-[10px] text-gray-500 dark:border-gray-700 dark:text-gray-400"
+                >
+                  <span
+                    className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                    style={{ backgroundColor: tag.color }}
+                  />
+                  <span className="truncate">{tag.name}</span>
+                </span>
+              ))}
+              {file.tags.length > LIST_MAX_VISIBLE_TAGS && (
+                <span className="flex-shrink-0 text-[10px] text-gray-400">+{file.tags.length - LIST_MAX_VISIBLE_TAGS}</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
