@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { copyFilesToClipboard } from '@/lib/clipboard'
+import { startExternalFileDrag } from '@/lib/externalDrag'
 import FileTypeIcon from '@/components/FileTypeIcon'
 import { formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
 import {
@@ -304,6 +307,24 @@ export default function ImagePreview() {
     } catch (e) {
       console.error('Failed to open directory:', e)
     }
+  }
+
+  const handleCopyFileToClipboard = async () => {
+    try {
+      await copyFilesToClipboard([currentFile.id])
+    } catch (e) {
+      console.error('Failed to copy file to clipboard:', e)
+    }
+  }
+
+  const handleExternalDragStart = (event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    void startExternalFileDrag([currentFile.id]).catch((error) => {
+      console.error('Failed to start external drag:', error)
+      toast.error('拖拽到外部应用失败')
+    })
   }
 
   // 复制到
@@ -676,7 +697,8 @@ export default function ImagePreview() {
                     <img
                       src={imageSrc}
                       alt={currentFile.name}
-                      draggable={false}
+                      draggable
+                      onDragStart={handleExternalDragStart}
                       className="max-w-full max-h-full object-contain select-none"
                     />
                   </div>
@@ -711,11 +733,15 @@ export default function ImagePreview() {
             <ExternalLink className="w-4 h-4 mr-2" />
             默认应用打开
           </ContextMenuItem>
-          <ContextMenuItem onClick={handleShowInExplorer}>
-            <FolderOpen className="w-4 h-4 mr-2" />
-            在资源管理器中显示
-          </ContextMenuItem>
-          <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleShowInExplorer}>
+          <FolderOpen className="w-4 h-4 mr-2" />
+          在资源管理器中显示
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleCopyFileToClipboard}>
+          <Copy className="w-4 h-4 mr-2" />
+          复制到剪贴板
+        </ContextMenuItem>
+        <ContextMenuSeparator />
 
           <ContextMenuSub>
             <ContextMenuSubTrigger>
@@ -766,7 +792,15 @@ export default function ImagePreview() {
 
       {/* 底部信息栏 */}
       <div className="px-4 py-1 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border text-xs flex items-center justify-between">
-        <span className="text-gray-600 dark:text-gray-400">{currentFile.name}</span>
+        <div
+          className="flex min-w-0 items-center gap-2 cursor-grab active:cursor-grabbing"
+          draggable
+          onDragStart={handleExternalDragStart}
+          title="拖拽到外部应用"
+        >
+          <FileTypeIcon ext={currentFile.ext} className="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-gray-400" />
+          <span className="truncate text-gray-600 dark:text-gray-400">{currentFile.name}</span>
+        </div>
         <span className="text-gray-500 dark:text-gray-500">{previewMeta} · {formatSize(currentFile.size)}</span>
       </div>
 

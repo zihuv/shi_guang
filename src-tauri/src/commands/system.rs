@@ -1,5 +1,8 @@
 use super::imports::uuid_simple_shared as uuid_simple;
 use super::*;
+use std::path::PathBuf;
+
+const EXTERNAL_DRAG_PREVIEW_ICON: &[u8] = include_bytes!("../../icons/32x32.png");
 
 fn resolve_target_folder_path(
     db: &Database,
@@ -194,6 +197,75 @@ pub fn copy_files(
         copy_single_file(&db, file_id, target_folder_id)?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn copy_files_to_clipboard(state: State<AppState>, file_ids: Vec<i64>) -> Result<(), String> {
+    if file_ids.is_empty() {
+        return Err("No files selected".to_string());
+    }
+
+    let file_paths = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        file_ids
+            .into_iter()
+            .map(|file_id| {
+                db.get_file_by_id(file_id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("File not found: {}", file_id))
+                    .map(|file| PathBuf::from(file.path))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard
+        .set()
+        .file_list(&file_paths)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn start_drag_files(
+    window: tauri::Window,
+    state: State<AppState>,
+    file_ids: Vec<i64>,
+) -> Result<(), String> {
+    if file_ids.is_empty() {
+        return Err("No files selected".to_string());
+    }
+
+    let file_paths = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        file_ids
+            .into_iter()
+            .map(|file_id| {
+                db.get_file_by_id(file_id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("File not found: {}", file_id))
+                    .map(|file| PathBuf::from(file.path))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        drag::start_drag(
+            &window,
+            drag::DragItem::Files(file_paths),
+            drag::Image::Raw(EXTERNAL_DRAG_PREVIEW_ICON.to_vec()),
+            |_result, _cursor_position| {},
+            drag::Options::default(),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        let _ = file_paths;
+        Err("External file drag is not supported on this platform".to_string())
+    }
 }
 
 #[tauri::command]

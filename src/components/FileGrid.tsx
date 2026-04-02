@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { Play } from "lucide-react"
+import { toast } from "sonner"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { cn } from "@/lib/utils"
+import { startExternalFileDrag } from "@/lib/externalDrag"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -930,6 +932,19 @@ function useLazyImageSrc(path: string, ext: string, cacheKey: string, isVisible:
   }
 }
 
+function handleExternalFileDragStart(event: DragEvent<HTMLElement>, fileId: number) {
+  event.preventDefault()
+  event.stopPropagation()
+
+  const { selectedFiles } = useFileStore.getState()
+  const fileIds = selectedFiles.includes(fileId) ? selectedFiles : [fileId]
+
+  void startExternalFileDrag(fileIds).catch((error) => {
+    console.error("Failed to start external drag:", error)
+    toast.error("拖拽到外部应用失败")
+  })
+}
+
 type FileCardBaseProps = {
   file: FileItem
   isSelected: boolean
@@ -978,7 +993,11 @@ function FileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef
               : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
           }`}
         >
-          <div className="relative bg-gray-100 pb-[100%] dark:bg-dark-bg">
+          <div
+            className="relative bg-gray-100 pb-[100%] dark:bg-dark-bg"
+            draggable
+            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
+          >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1067,7 +1086,12 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
               : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
           }`}
         >
-          <div className="relative bg-gray-100 dark:bg-dark-bg" style={{ paddingBottom: getAspectRatio() }}>
+          <div
+            className="relative bg-gray-100 dark:bg-dark-bg"
+            style={{ paddingBottom: getAspectRatio() }}
+            draggable
+            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
+          >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1137,6 +1161,8 @@ function FileRow({ file, isSelected, isMultiSelected, isDragging, scrollRootRef,
         >
           <div
             className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+            draggable
+            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
           >
             {!isVisible || imageSrc === null ? (
               <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

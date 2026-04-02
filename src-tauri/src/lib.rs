@@ -220,6 +220,8 @@ pub fn run() {
             commands::folders::move_folder,
             commands::system::copy_file,
             commands::system::copy_files,
+            commands::system::copy_files_to_clipboard,
+            commands::system::start_drag_files,
             commands::system::open_file,
             commands::system::show_in_explorer,
             commands::system::show_folder_in_explorer,

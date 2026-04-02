@@ -38,6 +38,8 @@ tower = "0.4"
 tower-service = "0.3"
 bytes = "1"
 http = "0.2"
+arboard = "3"
+drag = "2.1.0"
 
 [profile.release]
 panic = "abort"

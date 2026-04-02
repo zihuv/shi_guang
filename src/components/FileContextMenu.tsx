@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import { copyFilesToClipboard } from '@/lib/clipboard'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -64,6 +65,14 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     }
   }
 
+  const handleCopyFilesToClipboard = async () => {
+    try {
+      await copyFilesToClipboard(activeFileIds)
+    } catch (e) {
+      console.error('Failed to copy files to clipboard:', e)
+    }
+  }
+
   // Copy file to a folder
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
@@ -120,6 +129,10 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
         <ContextMenuItem onClick={handleShowInExplorer}>
           <FolderOpen className="w-4 h-4 mr-2" />
           在资源管理器中显示
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleCopyFilesToClipboard}>
+          <Copy className="w-4 h-4 mr-2" />
+          复制到剪贴板
         </ContextMenuItem>
         <ContextMenuSeparator />
 
