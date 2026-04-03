@@ -4,7 +4,11 @@ import TagPanel from "@/components/TagPanel"
 import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
 
-export default function SidePanel() {
+interface SidePanelProps {
+  width: number;
+}
+
+export default function SidePanel({ width }: SidePanelProps) {
   const { loadFilesInFolder, setSelectedFolderId, loadTrashCount } = useFileStore();
   const { loadFolders, initDefaultFolder, folders, selectFolder } = useFolderStore();
   const initRef = useRef(false);
@@ -33,7 +37,10 @@ export default function SidePanel() {
   }, []);
 
   return (
-    <aside className="w-60 flex-shrink-0 bg-white dark:bg-dark-surface border-r border-gray-200 dark:border-dark-border flex flex-col overflow-hidden">
+    <aside
+      className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col overflow-hidden"
+      style={{ width }}
+    >
       <div className="flex-1 overflow-auto">
         <FolderTree />
       </div>

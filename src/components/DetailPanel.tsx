@@ -15,7 +15,11 @@ function formatDateTime(isoString: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
-export default function DetailPanel() {
+interface DetailPanelProps {
+  width: number;
+}
+
+export default function DetailPanel({ width }: DetailPanelProps) {
   const { selectedFile } = useFileStore();
   const { folders, selectedFolderId } = useFolderStore();
 
@@ -27,7 +31,10 @@ export default function DetailPanel() {
   // Show empty state when nothing is selected
   if (!selectedFile && !selectedFolder) {
     return (
-      <div className="w-72 flex-shrink-0 bg-white dark:bg-dark-surface border-l border-gray-200 dark:border-dark-border flex flex-col items-center justify-center p-6">
+      <div
+        className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col items-center justify-center p-6"
+        style={{ width }}
+      >
         <svg
           className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4"
           fill="none"
@@ -50,18 +57,18 @@ export default function DetailPanel() {
 
   // Show file details when a file is selected (takes priority over folder)
   if (selectedFile) {
-    return <FileDetailPanel file={selectedFile} />;
+    return <FileDetailPanel file={selectedFile} width={width} />;
   }
 
   // Show folder details when no file is selected
   if (selectedFolder) {
-    return <FolderDetailPanel folder={selectedFolder} />;
+    return <FolderDetailPanel folder={selectedFolder} width={width} />;
   }
 
   return null;
 }
 
-function FolderDetailPanel({ folder }: { folder: FolderNode }) {
+function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: number }) {
   const { deleteFolder: deleteFolderFn } = useFolderStore();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -71,7 +78,10 @@ function FolderDetailPanel({ folder }: { folder: FolderNode }) {
   };
 
   return (
-    <div className="w-72 flex-shrink-0 bg-white dark:bg-dark-surface border-l border-gray-200 dark:border-dark-border flex flex-col">
+    <div
+      className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col"
+      style={{ width }}
+    >
       <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-dark-border">
         <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">
           文件夹详情
@@ -164,7 +174,7 @@ function FolderDetailPanel({ folder }: { folder: FolderNode }) {
   );
 }
 
-function FileDetailPanel({ file }: { file: FileItem }) {
+function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const {
     addTagToFile,
     removeTagFromFile,
@@ -499,7 +509,10 @@ function FileDetailPanel({ file }: { file: FileItem }) {
   };
 
   return (
-    <div className="w-72 flex-shrink-0 bg-white dark:bg-dark-surface border-l border-gray-200 dark:border-dark-border flex flex-col">
+    <div
+      className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col"
+      style={{ width }}
+    >
       <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-dark-border">
         <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">
           文件详情

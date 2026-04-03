@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
-import { useSettingsStore } from "@/stores/settingsStore";
+import {
+  MAX_DETAIL_PANEL_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  clampDetailPanelWidth,
+  clampSidebarWidth,
+  useSettingsStore,
+} from "@/stores/settingsStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
@@ -19,8 +25,112 @@ import { useInternalFileDrag } from "@/hooks/useInternalFileDrag";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useTauriImportListeners } from "@/hooks/useTauriImportListeners";
 
+const PANEL_RESIZER_WIDTH = 11;
+const PANEL_RESIZER_LAYOUT_WIDTH = 1;
+const PANEL_RESIZER_MARGIN = (PANEL_RESIZER_WIDTH - PANEL_RESIZER_LAYOUT_WIDTH) / 2;
+const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_LAYOUT_WIDTH * 2;
+const MIN_MAIN_PANEL_WIDTH = 240;
+const MIN_RENDERED_SIDEBAR_WIDTH = 72;
+const MIN_RENDERED_DETAIL_PANEL_WIDTH = 120;
+
+type ResizeHandle = "sidebar" | "detail";
+
+function clampDraggedWidth(value: number, minWidth: number, maxWidth: number) {
+  const safeMaxWidth = Math.max(0, maxWidth);
+  if (safeMaxWidth <= minWidth) {
+    return safeMaxWidth;
+  }
+
+  return Math.max(minWidth, Math.min(safeMaxWidth, value));
+}
+
+function constrainPanelWidths(
+  containerWidth: number,
+  requestedSidebarWidth: number,
+  requestedDetailPanelWidth: number,
+) {
+  let sidebarWidth = clampSidebarWidth(requestedSidebarWidth);
+  let detailPanelWidth = clampDetailPanelWidth(requestedDetailPanelWidth);
+
+  if (containerWidth <= 0) {
+    return { sidebarWidth, detailPanelWidth };
+  }
+
+  const maxCombinedPanelWidth = Math.max(
+    0,
+    containerWidth - PANEL_RESIZER_TOTAL_WIDTH - MIN_MAIN_PANEL_WIDTH,
+  );
+  let overflow = sidebarWidth + detailPanelWidth - maxCombinedPanelWidth;
+
+  if (overflow <= 0) {
+    return { sidebarWidth, detailPanelWidth };
+  }
+
+  const detailPanelReducible = Math.max(
+    0,
+    detailPanelWidth - MIN_RENDERED_DETAIL_PANEL_WIDTH,
+  );
+  const detailPanelReduction = Math.min(detailPanelReducible, overflow);
+  detailPanelWidth -= detailPanelReduction;
+  overflow -= detailPanelReduction;
+
+  const sidebarReducible = Math.max(
+    0,
+    sidebarWidth - MIN_RENDERED_SIDEBAR_WIDTH,
+  );
+  const sidebarReduction = Math.min(sidebarReducible, overflow);
+  sidebarWidth -= sidebarReduction;
+  overflow -= sidebarReduction;
+
+  if (overflow > 0) {
+    detailPanelWidth = Math.max(48, detailPanelWidth - overflow);
+  }
+
+  return {
+    sidebarWidth: Math.max(48, Math.round(sidebarWidth)),
+    detailPanelWidth: Math.max(48, Math.round(detailPanelWidth)),
+  };
+}
+
+function PanelResizeHandle({
+  ariaLabel,
+  isActive,
+  onMouseDown,
+}: {
+  ariaLabel: string;
+  isActive: boolean;
+  onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={ariaLabel}
+      aria-orientation="vertical"
+      className="group relative z-10 flex flex-shrink-0 cursor-col-resize items-stretch justify-center select-none"
+      style={{
+        width: PANEL_RESIZER_WIDTH,
+        marginLeft: -PANEL_RESIZER_MARGIN,
+        marginRight: -PANEL_RESIZER_MARGIN,
+      }}
+      onMouseDown={onMouseDown}
+    >
+      <div
+        className={`h-full w-px transition-colors ${
+          isActive
+            ? "bg-blue-400 dark:bg-blue-500"
+            : "bg-gray-200 group-hover:bg-gray-300 dark:bg-dark-border dark:group-hover:bg-gray-500"
+        }`}
+      />
+    </div>
+  );
+}
+
 function App() {
-  const { theme } = useSettingsStore();
+  const theme = useSettingsStore((state) => state.theme);
+  const sidebarWidthPreference = useSettingsStore((state) => state.sidebarWidth);
+  const detailPanelWidthPreference = useSettingsStore((state) => state.detailPanelWidth);
+  const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
+  const setDetailPanelWidth = useSettingsStore((state) => state.setDetailPanelWidth);
 
   const {
     importImagesFromBase64,
@@ -34,10 +144,24 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
   const dragCounterRef = useRef(0);
   const dragOverFolderIdRef = useRef<number | null>(dragOverFolderId);
+  const contentContainerRef = useRef<HTMLDivElement>(null);
+  const activeResizeHandleRef = useRef<ResizeHandle | null>(null);
+
+  const { sidebarWidth, detailPanelWidth } = constrainPanelWidths(
+    contentWidth,
+    sidebarWidthPreference,
+    detailPanelWidthPreference,
+  );
+  const sidebarWidthRef = useRef(sidebarWidth);
+  const detailPanelWidthRef = useRef(detailPanelWidth);
 
   dragOverFolderIdRef.current = dragOverFolderId;
+  sidebarWidthRef.current = sidebarWidth;
+  detailPanelWidthRef.current = detailPanelWidth;
 
   useAppInitialization();
   useInternalFileDrag(setDraggingFileId);
@@ -52,6 +176,29 @@ function App() {
   useKeyboardShortcuts();
 
   useEffect(() => {
+    const element = contentContainerRef.current;
+    if (!element) {
+      return undefined;
+    }
+
+    const updateContentWidth = () => {
+      setContentWidth(element.clientWidth);
+    };
+
+    updateContentWidth();
+
+    const observer = new ResizeObserver(() => {
+      updateContentWidth();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
     Object.assign(window as Window & {
       __SHIGUANG_DEBUG__?: {
         fileStore: typeof useFileStore;
@@ -63,6 +210,82 @@ function App() {
         folderStore: useFolderStore,
       },
     });
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const activeHandle = activeResizeHandleRef.current;
+      const container = contentContainerRef.current;
+      if (!activeHandle || !container) {
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const nextContentWidth = rect.width;
+
+      if (activeHandle === "sidebar") {
+        const maxSidebarWidth = Math.min(
+          MAX_SIDEBAR_WIDTH,
+          nextContentWidth -
+            detailPanelWidthRef.current -
+            PANEL_RESIZER_TOTAL_WIDTH -
+            MIN_MAIN_PANEL_WIDTH,
+        );
+        const nextSidebarWidth = clampDraggedWidth(
+          event.clientX - rect.left,
+          MIN_RENDERED_SIDEBAR_WIDTH,
+          maxSidebarWidth,
+        );
+        setSidebarWidth(nextSidebarWidth);
+        return;
+      }
+
+      const maxDetailWidth = Math.min(
+        MAX_DETAIL_PANEL_WIDTH,
+        nextContentWidth -
+          sidebarWidthRef.current -
+          PANEL_RESIZER_TOTAL_WIDTH -
+          MIN_MAIN_PANEL_WIDTH,
+      );
+      const nextDetailWidth = clampDraggedWidth(
+        rect.right - event.clientX,
+        MIN_RENDERED_DETAIL_PANEL_WIDTH,
+        maxDetailWidth,
+      );
+      setDetailPanelWidth(nextDetailWidth);
+    };
+
+    const stopResize = () => {
+      if (!activeResizeHandleRef.current) {
+        return;
+      }
+
+      activeResizeHandleRef.current = null;
+      setActiveResizeHandle(null);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopResize);
+    window.addEventListener("blur", stopResize);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResize);
+      window.removeEventListener("blur", stopResize);
+      stopResize();
+    };
+  }, [setDetailPanelWidth, setSidebarWidth]);
+
+  const handleResizeStart = useCallback((handle: ResizeHandle) => {
+    return (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      activeResizeHandleRef.current = handle;
+      setActiveResizeHandle(handle);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    };
   }, []);
 
   const isExternalFileDrag = useCallback((e: React.DragEvent) => {
@@ -241,15 +464,27 @@ function App() {
 
       <Header onOpenSettings={() => setShowSettings(true)} />
 
-      <div className="flex flex-1 overflow-hidden">
-        <SidePanel />
+      <div ref={contentContainerRef} className="flex flex-1 overflow-hidden">
+        <SidePanel width={sidebarWidth} />
 
-        <main className="flex-1 overflow-hidden flex flex-col">
+        <PanelResizeHandle
+          ariaLabel="调整左侧面板宽度"
+          isActive={activeResizeHandle === "sidebar"}
+          onMouseDown={handleResizeStart("sidebar")}
+        />
+
+        <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
           {isFilterPanelOpen && <FilterPanel />}
           {previewMode ? <ImagePreview /> : <FileGrid />}
         </main>
 
-        <DetailPanel />
+        <PanelResizeHandle
+          ariaLabel="调整右侧面板宽度"
+          isActive={activeResizeHandle === "detail"}
+          onMouseDown={handleResizeStart("detail")}
+        />
+
+        <DetailPanel width={detailPanelWidth} />
       </div>
 
       {/* Drag overlay for internal file dragging */}

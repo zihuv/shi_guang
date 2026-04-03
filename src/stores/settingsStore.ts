@@ -7,6 +7,7 @@ import { useFileStore } from "@/stores/fileStore";
 const SHORTCUTS_SETTING_KEY = "shortcuts";
 const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
 const LIBRARY_VIEW_PREFERENCES_SETTING_KEY = "libraryViewPreferences";
+const PANEL_LAYOUT_SETTING_KEY = "panelLayout";
 
 export type LibraryViewMode = "grid" | "list" | "adaptive";
 export type LibraryVisibleField = "name" | "ext" | "size" | "dimensions" | "tags";
@@ -17,6 +18,12 @@ export const PREVIEW_TRACKPAD_ZOOM_SPEED_MIN = 0.2;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MAX = 3;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_STEP = 0.1;
 export const DEFAULT_LIBRARY_VIEW_MODE: LibraryViewMode = "grid";
+export const DEFAULT_SIDEBAR_WIDTH = 240;
+export const DEFAULT_DETAIL_PANEL_WIDTH = 288;
+export const MIN_SIDEBAR_WIDTH = 120;
+export const MAX_SIDEBAR_WIDTH = 420;
+export const MIN_DETAIL_PANEL_WIDTH = 160;
+export const MAX_DETAIL_PANEL_WIDTH = 560;
 export const DEFAULT_LIBRARY_VISIBLE_FIELDS: LibraryVisibleField[] = [
   "name",
   "ext",
@@ -44,6 +51,7 @@ const LIBRARY_VIEW_SCALE_LIMITS: Record<
 
 let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null =
   null;
+let panelLayoutPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function clampPreviewTrackpadZoomSpeed(value: number) {
   if (!Number.isFinite(value)) {
@@ -90,6 +98,26 @@ export function clampLibraryViewScale(
 
 export function getLibraryViewScaleRange(viewMode: LibraryViewMode) {
   return LIBRARY_VIEW_SCALE_LIMITS[viewMode];
+}
+
+export function clampSidebarWidth(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+
+  return Math.round(
+    Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, value)),
+  );
+}
+
+export function clampDetailPanelWidth(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_DETAIL_PANEL_WIDTH;
+  }
+
+  return Math.round(
+    Math.max(MIN_DETAIL_PANEL_WIDTH, Math.min(MAX_DETAIL_PANEL_WIDTH, value)),
+  );
 }
 
 function resolveLibraryViewScales(
@@ -161,6 +189,34 @@ function scheduleLibraryViewPreferencesPersist(
   }, 120);
 }
 
+function serializePanelLayout(sidebarWidth: number, detailPanelWidth: number) {
+  return JSON.stringify({
+    sidebarWidth,
+    detailPanelWidth,
+  });
+}
+
+function schedulePanelLayoutPersist(
+  get: () => {
+    sidebarWidth: number;
+    detailPanelWidth: number;
+  },
+) {
+  if (panelLayoutPersistTimer) {
+    clearTimeout(panelLayoutPersistTimer);
+  }
+
+  panelLayoutPersistTimer = setTimeout(() => {
+    const { sidebarWidth, detailPanelWidth } = get();
+    void invoke("set_setting", {
+      key: PANEL_LAYOUT_SETTING_KEY,
+      value: serializePanelLayout(sidebarWidth, detailPanelWidth),
+    }).catch((error) => {
+      console.error("Failed to persist panel layout:", error);
+    });
+  }, 120);
+}
+
 const loadFilesInCurrentFolder = async () => {
   const selectedFolderId = useFolderStore.getState().selectedFolderId;
   if (selectedFolderId) {
@@ -177,6 +233,8 @@ interface Settings {
   libraryViewMode: LibraryViewMode;
   libraryViewScales: Record<LibraryViewMode, number>;
   libraryVisibleFields: LibraryVisibleField[];
+  sidebarWidth: number;
+  detailPanelWidth: number;
 }
 
 interface SettingsStore extends Settings {
@@ -191,6 +249,8 @@ interface SettingsStore extends Settings {
   setLibraryViewScale: (viewMode: LibraryViewMode, scale: number) => void;
   resetLibraryViewScale: (viewMode: LibraryViewMode) => void;
   toggleLibraryVisibleField: (field: LibraryVisibleField) => void;
+  setSidebarWidth: (width: number) => void;
+  setDetailPanelWidth: (width: number) => void;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
 }
@@ -204,6 +264,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   libraryViewMode: DEFAULT_LIBRARY_VIEW_MODE,
   libraryViewScales: { ...DEFAULT_LIBRARY_VIEW_SCALES },
   libraryVisibleFields: [...DEFAULT_LIBRARY_VISIBLE_FIELDS],
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+  detailPanelWidth: DEFAULT_DETAIL_PANEL_WIDTH,
 
   setTheme: async (theme) => {
     await invoke("set_setting", { key: "theme", value: theme });
@@ -276,6 +338,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     scheduleLibraryViewPreferencesPersist(get);
   },
 
+  setSidebarWidth: (width) => {
+    set({ sidebarWidth: clampSidebarWidth(width) });
+    schedulePanelLayoutPersist(get);
+  },
+
+  setDetailPanelWidth: (width) => {
+    set({ detailPanelWidth: clampDetailPanelWidth(width) });
+    schedulePanelLayoutPersist(get);
+  },
+
   addIndexPath: async (path) => {
     await invoke("add_index_path", { path });
     const paths = await invoke<string[]>("get_index_paths");
@@ -301,6 +373,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
     let libraryViewScales = { ...DEFAULT_LIBRARY_VIEW_SCALES };
     let libraryVisibleFields = [...DEFAULT_LIBRARY_VISIBLE_FIELDS];
+    let sidebarWidth = DEFAULT_SIDEBAR_WIDTH;
+    let detailPanelWidth = DEFAULT_DETAIL_PANEL_WIDTH;
 
     // Get theme
     try {
@@ -374,6 +448,24 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
     }
 
+    try {
+      const panelLayoutValue = await invoke<string>("get_setting", {
+        key: PANEL_LAYOUT_SETTING_KEY,
+      });
+      const parsedLayout = JSON.parse(panelLayoutValue) as {
+        sidebarWidth?: unknown;
+        detailPanelWidth?: unknown;
+      };
+
+      sidebarWidth = clampSidebarWidth(Number(parsedLayout.sidebarWidth));
+      detailPanelWidth = clampDetailPanelWidth(Number(parsedLayout.detailPanelWidth));
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load panel layout:", e);
+      }
+    }
+
     // If no index paths configured, add default path (user's Pictures/shiguang folder)
     if (!indexPaths || indexPaths.length === 0) {
       try {
@@ -398,6 +490,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       libraryViewMode,
       libraryViewScales,
       libraryVisibleFields,
+      sidebarWidth,
+      detailPanelWidth,
     });
   },
 
