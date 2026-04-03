@@ -12,6 +12,10 @@ import {
 import { Trash2, RotateCcw, X, AlertTriangle } from 'lucide-react'
 import { getFilePreviewMode, getFileSrc } from '@/utils'
 
+type TrashPanelProps = {
+  variant?: 'sidebar' | 'header'
+}
+
 interface TrashFileItemProps {
   file: {
     id: number
@@ -92,7 +96,7 @@ function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, forma
   )
 }
 
-export default function TrashPanel() {
+export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
   const {
     trashFiles,
     trashCount,
@@ -176,21 +180,39 @@ export default function TrashPanel() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
+  const compactTrashCount = trashCount > 99 ? '99+' : String(trashCount)
+
   return (
     <>
-      {/* Trash entry in sidebar */}
-      <div
-        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-border transition-colors"
-        onClick={handleOpenTrash}
-      >
-        <Trash2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-        <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">回收站</span>
-        {trashCount > 0 && (
-          <span className="text-xs bg-gray-200 dark:bg-dark-border text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded">
-            {trashCount}
-          </span>
-        )}
-      </div>
+      {variant === 'header' ? (
+        <button
+          type="button"
+          className="relative inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-border"
+          onClick={handleOpenTrash}
+          title={trashCount > 0 ? `回收站（${trashCount}）` : '回收站'}
+          aria-label={trashCount > 0 ? `回收站，${trashCount} 个文件` : '回收站'}
+        >
+          <Trash2 className="h-4 w-4" />
+          {trashCount > 0 && (
+            <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[10px] leading-4 text-white shadow-sm">
+              {compactTrashCount}
+            </span>
+          )}
+        </button>
+      ) : (
+        <div
+          className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-gray-100 dark:hover:bg-dark-border"
+          onClick={handleOpenTrash}
+        >
+          <Trash2 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">回收站</span>
+          {trashCount > 0 && (
+            <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-400">
+              {trashCount}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Trash view dialog */}
       <Dialog open={showTrashView} onOpenChange={(isOpen) => !isOpen && handleCloseTrash()}>

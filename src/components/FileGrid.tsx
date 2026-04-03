@@ -726,18 +726,6 @@ export default function FileGrid() {
     setShowBatchDeleteConfirm(false)
   }
 
-  if (files.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-gray-500 dark:text-gray-400">
-        <svg className="mb-4 h-16 w-16 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-        <p className="text-lg font-medium">暂无文件</p>
-        <p className="mt-1 text-sm">请在设置中添加索引目录</p>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-dark-border">
@@ -885,134 +873,144 @@ export default function FileGrid() {
         </div>
       </div>
 
-      <div
-        ref={scrollParentRef}
-        className="relative flex-1 overflow-auto p-4 select-none"
-        onMouseDown={handleSelectionStart}
-        onWheel={handleViewportWheel}
-      >
-        {viewMode === "adaptive" ? (
-          <div
-            className="flex items-start gap-4"
-            style={{
-              width: `${adaptiveLayout.trackWidth}px`,
-              maxWidth: "100%",
-            }}
-          >
-            {adaptiveColumnsData.filter((column) => column.length > 0).map((column, columnIndex) => (
-              <div
-                key={`adaptive-column-${columnIndex}`}
-                className="flex min-w-0 flex-col gap-4"
-                style={{ width: `${adaptiveLayout.columnWidth}px`, flex: "0 0 auto" }}
-              >
-                {column.map(({ file, index, width }) => (
-                  <div
-                    key={`adaptive-${index}`}
-                    className="mx-auto w-full"
-                    style={{ maxWidth: `${width}px` }}
-                  >
-                    <AdaptiveFileCard
-                      file={file}
-                      isSelected={selectedFile?.id === file.id}
-                      isMultiSelected={selectedFiles.includes(file.id)}
-                      isDragging={draggingFileId === file.id}
-                      scrollRootRef={scrollParentRef}
-                      onClick={(e) => handleFileClick(file, e)}
-                      onDoubleClick={() => handleFileDoubleClick(index)}
-                      onDragStart={() => setDraggingFileId(file.id)}
-                      onDragEnd={() => setDraggingFileId(null)}
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        ) : viewMode === "grid" ? (
-          <div className="relative" style={{ height: `${gridRowCount * gridRowHeight}px` }}>
-            {gridVirtualRows.map((rowIndex) => {
-              const startIndex = rowIndex * gridColumns
-              const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns)
-
-              return (
+      {files.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+          <svg className="mb-4 h-16 w-16 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <p className="text-lg font-medium">暂无文件</p>
+          <p className="mt-1 text-sm">请在设置中添加索引目录</p>
+        </div>
+      ) : (
+        <div
+          ref={scrollParentRef}
+          className="relative flex-1 overflow-auto p-4 select-none"
+          onMouseDown={handleSelectionStart}
+          onWheel={handleViewportWheel}
+        >
+          {viewMode === "adaptive" ? (
+            <div
+              className="flex items-start gap-4"
+              style={{
+                width: `${adaptiveLayout.trackWidth}px`,
+                maxWidth: "100%",
+              }}
+            >
+              {adaptiveColumnsData.filter((column) => column.length > 0).map((column, columnIndex) => (
                 <div
-                  key={rowIndex}
-                  className="absolute left-0 top-0"
-                  style={{
-                    width: `${gridTrackWidth}px`,
-                    height: `${gridRowHeight}px`,
-                    transform: `translateY(${rowIndex * gridRowHeight}px)`,
-                  }}
+                  key={`adaptive-column-${columnIndex}`}
+                  className="flex min-w-0 flex-col gap-4"
+                  style={{ width: `${adaptiveLayout.columnWidth}px`, flex: "0 0 auto" }}
                 >
-                  <div
-                    className="grid gap-4"
-                    style={{ gridTemplateColumns: `repeat(${gridColumns}, ${gridItemWidth}px)` }}
-                  >
-                    {rowFiles.map((file, offset) => (
-                      <FileCard
-                        key={`grid-${rowIndex}-${offset}`}
+                  {column.map(({ file, index, width }) => (
+                    <div
+                      key={`adaptive-${index}`}
+                      className="mx-auto w-full"
+                      style={{ maxWidth: `${width}px` }}
+                    >
+                      <AdaptiveFileCard
                         file={file}
-                        footerHeight={gridMetadataHeight}
                         isSelected={selectedFile?.id === file.id}
                         isMultiSelected={selectedFiles.includes(file.id)}
                         isDragging={draggingFileId === file.id}
                         scrollRootRef={scrollParentRef}
                         onClick={(e) => handleFileClick(file, e)}
-                        onDoubleClick={() => handleFileDoubleClick(startIndex + offset)}
+                        onDoubleClick={() => handleFileDoubleClick(index)}
                         onDragStart={() => setDraggingFileId(file.id)}
                         onDragEnd={() => setDraggingFileId(null)}
                       />
-                    ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : viewMode === "grid" ? (
+            <div className="relative" style={{ height: `${gridRowCount * gridRowHeight}px` }}>
+              {gridVirtualRows.map((rowIndex) => {
+                const startIndex = rowIndex * gridColumns
+                const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns)
+
+                return (
+                  <div
+                    key={rowIndex}
+                    className="absolute left-0 top-0"
+                    style={{
+                      width: `${gridTrackWidth}px`,
+                      height: `${gridRowHeight}px`,
+                      transform: `translateY(${rowIndex * gridRowHeight}px)`,
+                    }}
+                  >
+                    <div
+                      className="grid gap-4"
+                      style={{ gridTemplateColumns: `repeat(${gridColumns}, ${gridItemWidth}px)` }}
+                    >
+                      {rowFiles.map((file, offset) => (
+                        <FileCard
+                          key={`grid-${rowIndex}-${offset}`}
+                          file={file}
+                          footerHeight={gridMetadataHeight}
+                          isSelected={selectedFile?.id === file.id}
+                          isMultiSelected={selectedFiles.includes(file.id)}
+                          isDragging={draggingFileId === file.id}
+                          scrollRootRef={scrollParentRef}
+                          onClick={(e) => handleFileClick(file, e)}
+                          onDoubleClick={() => handleFileDoubleClick(startIndex + offset)}
+                          onDragStart={() => setDraggingFileId(file.id)}
+                          onDragEnd={() => setDraggingFileId(null)}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="relative" style={{ height: `${listRowVirtualizer.getTotalSize()}px` }}>
-            {listRowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const file = filteredFiles[virtualRow.index]
-              if (!file) return null
+                )
+              })}
+            </div>
+          ) : (
+            <div className="relative" style={{ height: `${listRowVirtualizer.getTotalSize()}px` }}>
+              {listRowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const file = filteredFiles[virtualRow.index]
+                if (!file) return null
 
-              return (
-                <div
-                  key={virtualRow.key}
-                  className="absolute left-0 top-0 w-full"
-                  style={{
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  <FileRow
-                    file={file}
-                    thumbnailSize={listThumbnailSize}
-                    isSelected={selectedFile?.id === file.id}
-                    isMultiSelected={selectedFiles.includes(file.id)}
-                    isDragging={draggingFileId === file.id}
-                    scrollRootRef={scrollParentRef}
-                    onClick={(e) => handleFileClick(file, e)}
-                    onDoubleClick={() => handleFileDoubleClick(virtualRow.index)}
-                    onDragStart={() => setDraggingFileId(file.id)}
-                    onDragEnd={() => setDraggingFileId(null)}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
+                return (
+                  <div
+                    key={virtualRow.key}
+                    className="absolute left-0 top-0 w-full"
+                    style={{
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <FileRow
+                      file={file}
+                      thumbnailSize={listThumbnailSize}
+                      isSelected={selectedFile?.id === file.id}
+                      isMultiSelected={selectedFiles.includes(file.id)}
+                      isDragging={draggingFileId === file.id}
+                      scrollRootRef={scrollParentRef}
+                      onClick={(e) => handleFileClick(file, e)}
+                      onDoubleClick={() => handleFileDoubleClick(virtualRow.index)}
+                      onDragStart={() => setDraggingFileId(file.id)}
+                      onDragEnd={() => setDraggingFileId(null)}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
-        {selectionBox && (
-          <div
-            className="pointer-events-none absolute border-2 border-primary-500 bg-primary-500/10"
-            style={{
-              left: Math.min(selectionBox.startX, selectionBox.endX),
-              top: Math.min(selectionBox.startY, selectionBox.endY),
-              width: Math.abs(selectionBox.endX - selectionBox.startX),
-              height: Math.abs(selectionBox.endY - selectionBox.startY),
-            }}
-          />
-        )}
+          {selectionBox && (
+            <div
+              className="pointer-events-none absolute border-2 border-primary-500 bg-primary-500/10"
+              style={{
+                left: Math.min(selectionBox.startX, selectionBox.endX),
+                top: Math.min(selectionBox.startY, selectionBox.endY),
+                width: Math.abs(selectionBox.endX - selectionBox.startX),
+                height: Math.abs(selectionBox.endY - selectionBox.startY),
+              }}
+            />
+          )}
 
-      </div>
+        </div>
+      )}
 
       {pagination.totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 border-t border-gray-200 py-2 dark:border-dark-border">

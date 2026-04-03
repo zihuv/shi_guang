@@ -10,6 +10,7 @@ import { useFileStore } from '@/stores/fileStore'
 import { useFilterStore } from '@/stores/filterStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import TrashPanel from '@/components/TrashPanel'
 import {
   Dialog,
   DialogContent,
@@ -1031,13 +1032,16 @@ export default function FolderTree() {
       <div className="p-3 border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">文件夹</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsAdding(true)}
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <TrashPanel variant="header" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
