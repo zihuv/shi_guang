@@ -237,7 +237,9 @@ pub fn delete_folder(state: State<AppState>, id: i64) -> Result<(), String> {
         let folder_path = folder.path.clone();
 
         // Get all files
-        let files = db.get_all_files(None, None).map_err(|e| e.to_string())?;
+        let files = db
+            .get_all_files(None, None, None, None)
+            .map_err(|e| e.to_string())?;
 
         // Get all folders (for finding subfolders)
         let all_folders = db.get_all_folders().map_err(|e| e.to_string())?;

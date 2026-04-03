@@ -235,7 +235,7 @@ impl Database {
 
             // Update all file paths
             let files: Vec<(i64, String)> = self
-                .get_all_files(None, None)?
+                .get_all_files(None, None, None, None)?
                 .into_iter()
                 .filter(|file| path_has_prefix(&file.path, &old_folder_path))
                 .map(|file| (file.id, file.path))
@@ -322,7 +322,7 @@ impl Database {
         dir_path: &str,
     ) -> Result<std::collections::HashSet<String>> {
         let paths: Vec<String> = self
-            .get_all_files(None, None)?
+            .get_all_files(None, None, None, None)?
             .into_iter()
             .filter(|file| path_has_prefix(&file.path, dir_path))
             .map(|file| file.path)
@@ -515,7 +515,7 @@ impl Database {
 
             // Update all file paths
             let files: Vec<(i64, String)> = self
-                .get_all_files(None, None)?
+                .get_all_files(None, None, None, None)?
                 .into_iter()
                 .filter(|file| path_has_prefix(&file.path, &old_folder_path))
                 .map(|file| (file.id, file.path))

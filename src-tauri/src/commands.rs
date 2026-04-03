@@ -89,4 +89,6 @@ pub struct FileFilter {
     pub min_rating: Option<i32>,
     pub favorites_only: Option<bool>,
     pub dominant_color: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_direction: Option<String>,
 }

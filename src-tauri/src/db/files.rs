@@ -1,20 +1,63 @@
 use super::*;
 
 impl Database {
+    fn qualify_sort_column(prefix: &str, column: &str) -> String {
+        if prefix.is_empty() {
+            column.to_string()
+        } else {
+            format!("{prefix}{column}")
+        }
+    }
+
+    fn build_file_order_sql(
+        sort_by: Option<&str>,
+        sort_direction: Option<&str>,
+        prefix: &str,
+    ) -> String {
+        let direction = if matches!(sort_direction, Some("asc")) {
+            "ASC"
+        } else {
+            "DESC"
+        };
+        let imported_at = Self::qualify_sort_column(prefix, "imported_at");
+        let modified_at = Self::qualify_sort_column(prefix, "modified_at");
+        let created_at = Self::qualify_sort_column(prefix, "created_at");
+        let name = Self::qualify_sort_column(prefix, "name");
+        let size = Self::qualify_sort_column(prefix, "size");
+        let id = Self::qualify_sort_column(prefix, "id");
+
+        match sort_by.unwrap_or("imported_at") {
+            "modified_at" => format!("{modified_at} {direction}, {imported_at} DESC, {id} ASC"),
+            "created_at" => format!("{created_at} {direction}, {imported_at} DESC, {id} ASC"),
+            "name" => format!("LOWER({name}) {direction}, {imported_at} DESC, {id} ASC"),
+            "size" => format!("{size} {direction}, {imported_at} DESC, {id} ASC"),
+            _ => format!("{imported_at} {direction}, {id} ASC"),
+        }
+    }
+
     pub fn get_all_files(
         &self,
         limit: Option<i64>,
         offset: Option<i64>,
+        sort_by: Option<&str>,
+        sort_direction: Option<&str>,
     ) -> Result<Vec<FileWithTags>> {
+        let order_sql = Self::build_file_order_sql(sort_by, sort_direction, "");
         let sql = if limit.is_some() && offset.is_some() {
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC LIMIT ?1 OFFSET ?2"
+            format!(
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY {order_sql} LIMIT ?1 OFFSET ?2"
+            )
         } else if limit.is_some() {
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC LIMIT ?1"
+            format!(
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY {order_sql} LIMIT ?1"
+            )
         } else {
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY imported_at ASC, id ASC"
+            format!(
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution, deleted_at FROM files WHERE deleted_at IS NULL ORDER BY {order_sql}"
+            )
         };
 
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let files: Vec<FileRecord> = if let (Some(l), Some(o)) = (limit, offset) {
             stmt.query_map(params![l, o], |row| {
@@ -134,26 +177,35 @@ impl Database {
         query: &str,
         limit: Option<i64>,
         offset: Option<i64>,
+        sort_by: Option<&str>,
+        sort_direction: Option<&str>,
     ) -> Result<Vec<FileWithTags>> {
         let search_pattern = format!("%{}%", query);
+        let order_sql = Self::build_file_order_sql(sort_by, sort_direction, "");
         let sql = if limit.is_some() && offset.is_some() {
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+            format!(
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
              FROM files
              WHERE name LIKE ?1 AND deleted_at IS NULL
-             ORDER BY imported_at ASC, id ASC LIMIT ?2 OFFSET ?3"
+             ORDER BY {order_sql} LIMIT ?2 OFFSET ?3"
+            )
         } else if limit.is_some() {
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+            format!(
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
              FROM files
              WHERE name LIKE ?1 AND deleted_at IS NULL
-             ORDER BY imported_at ASC, id ASC LIMIT ?2"
+             ORDER BY {order_sql} LIMIT ?2"
+            )
         } else {
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+            format!(
+                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
              FROM files
              WHERE name LIKE ?1 AND deleted_at IS NULL
-             ORDER BY imported_at ASC, id ASC"
+             ORDER BY {order_sql}"
+            )
         };
 
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let files: Vec<FileRecord> = if let (Some(l), Some(o)) = (limit, offset) {
             stmt.query_map(params![&search_pattern, l, o], |row| {
@@ -274,44 +326,59 @@ impl Database {
         folder_id: Option<i64>,
         limit: Option<i64>,
         offset: Option<i64>,
+        sort_by: Option<&str>,
+        sort_direction: Option<&str>,
     ) -> Result<Vec<FileWithTags>> {
+        let order_sql = Self::build_file_order_sql(sort_by, sort_direction, "");
         let sql = if folder_id.is_some() {
             if limit.is_some() && offset.is_some() {
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                format!(
+                    "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id = ?1 AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC LIMIT ?2 OFFSET ?3"
+                 ORDER BY {order_sql} LIMIT ?2 OFFSET ?3"
+                )
             } else if limit.is_some() {
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                format!(
+                    "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id = ?1 AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC LIMIT ?2"
+                 ORDER BY {order_sql} LIMIT ?2"
+                )
             } else {
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                format!(
+                    "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id = ?1 AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC"
+                 ORDER BY {order_sql}"
+                )
             }
         } else {
             if limit.is_some() && offset.is_some() {
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                format!(
+                    "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id IS NULL AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC LIMIT ?1 OFFSET ?2"
+                 ORDER BY {order_sql} LIMIT ?1 OFFSET ?2"
+                )
             } else if limit.is_some() {
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                format!(
+                    "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id IS NULL AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC LIMIT ?1"
+                 ORDER BY {order_sql} LIMIT ?1"
+                )
             } else {
-                "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
+                format!(
+                    "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, color_distribution
                  FROM files
                  WHERE folder_id IS NULL AND deleted_at IS NULL
-                 ORDER BY imported_at ASC, id ASC"
+                 ORDER BY {order_sql}"
+                )
             }
         };
 
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let files: Vec<FileRecord> =
             if let (Some(fid), Some(l), Some(o)) = (folder_id, limit, offset) {
@@ -1004,7 +1071,13 @@ impl Database {
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         Self::append_file_filter_sql(&mut sql, &filter, &mut params_vec);
 
-        sql.push_str(" ORDER BY f.imported_at DESC, f.id ASC");
+        let order_sql = Self::build_file_order_sql(
+            filter.sort_by.as_deref(),
+            filter.sort_direction.as_deref(),
+            "f.",
+        );
+        sql.push_str(" ORDER BY ");
+        sql.push_str(&order_sql);
 
         // Add LIMIT and OFFSET if provided
         if let (Some(l), Some(o)) = (limit, offset) {

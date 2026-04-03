@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { useFilterStore } from '@/stores/filterStore'
+import { getSortConfig, useFilterStore, type FilterCriteria } from '@/stores/filterStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useTagStore } from '@/stores/tagStore'
 
@@ -45,6 +45,38 @@ const parseFile = (file: FileItem): FileItem => ({
 
 // 批量解析文件列表
 const parseFileList = (files: FileItem[]): FileItem[] => files.map(parseFile)
+
+const hasStructuredFilters = (criteria: FilterCriteria) =>
+  criteria.fileType !== 'all' ||
+  !!criteria.dateRange.start ||
+  !!criteria.dateRange.end ||
+  criteria.sizeRange.min !== null ||
+  criteria.sizeRange.max !== null ||
+  criteria.tagIds.length > 0 ||
+  criteria.minRating > 0 ||
+  criteria.favoritesOnly ||
+  !!criteria.dominantColor ||
+  !!criteria.keyword ||
+  criteria.folderId !== null
+
+const reconcileVisibleSelection = (
+  files: FileItem[],
+  selectedFile: FileItem | null,
+  selectedFiles: number[],
+) => {
+  const visibleFileIds = new Set(files.map((file) => file.id))
+  return {
+    selectedFile: selectedFile
+      ? files.find((file) => file.id === selectedFile.id) || null
+      : null,
+    selectedFiles: selectedFiles.filter((fileId) => visibleFileIds.has(fileId)),
+  }
+}
+
+const getCurrentSortConfig = () => {
+  const { sort } = useFilterStore.getState().criteria
+  return getSortConfig(sort)
+}
 
 interface PaginatedFilesResponse {
   files: FileItem[]
@@ -440,20 +472,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
     const { searchQuery, selectedFolderId } = get()
     const criteria = useFilterStore.getState().criteria
     const folderId = folderIdOverride !== undefined ? folderIdOverride : selectedFolderId
-    const hasStructuredFilters =
-      criteria.fileType !== 'all' ||
-      !!criteria.dateRange.start ||
-      !!criteria.dateRange.end ||
-      criteria.sizeRange.min !== null ||
-      criteria.sizeRange.max !== null ||
-      criteria.tagIds.length > 0 ||
-      criteria.minRating > 0 ||
-      criteria.favoritesOnly ||
-      !!criteria.dominantColor ||
-      !!criteria.keyword ||
-      criteria.folderId !== null
 
-    if (hasStructuredFilters) {
+    if (hasStructuredFilters(criteria)) {
       await get().filterFiles({
         query: criteria.keyword || searchQuery || undefined,
         folderId: criteria.folderId ?? folderId,
@@ -505,26 +525,25 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   loadFiles: async () => {
-    const { selectedFile, pagination } = get()
+    const { selectedFile, selectedFiles, pagination } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
     const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
       const result = await invoke<PaginatedFilesResponse>('get_all_files', {
         page: pagination.page,
-        pageSize: pagination.pageSize
+        pageSize: pagination.pageSize,
+        sortBy,
+        sortDirection,
       })
       if (requestId !== fileListRequestId) return
-      // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
-      // Update selectedFile if it exists in the new files list
-      let newSelectedFile = selectedFile
-      if (selectedFile) {
-        newSelectedFile = parsedFiles.find(f => f.id === selectedFile.id) || null
-      }
+      const nextSelection = reconcileVisibleSelection(parsedFiles, selectedFile, selectedFiles)
       set({
         files: parsedFiles,
         isLoading: false,
-        selectedFile: newSelectedFile,
+        selectedFile: nextSelection.selectedFile,
+        selectedFiles: nextSelection.selectedFiles,
         pagination: {
           page: result.page,
           pageSize: result.page_size,
@@ -544,69 +563,42 @@ export const useFileStore = create<FileStore>((set, get) => ({
     console.log('[fileStore] loadFilesInFolder called, folderId:', folderId)
     set({ selectedFolderId: folderId })
     const criteria = useFilterStore.getState().criteria
-    const hasStructuredFilters =
-      criteria.fileType !== 'all' ||
-      !!criteria.dateRange.start ||
-      !!criteria.dateRange.end ||
-      criteria.sizeRange.min !== null ||
-      criteria.sizeRange.max !== null ||
-      criteria.tagIds.length > 0 ||
-      criteria.minRating > 0 ||
-      criteria.favoritesOnly ||
-      !!criteria.dominantColor ||
-      !!criteria.keyword ||
-      criteria.folderId !== null
-    if (hasStructuredFilters || get().searchQuery.trim()) {
+    if (hasStructuredFilters(criteria) || get().searchQuery.trim()) {
       await get().runCurrentQuery(folderId)
       return
     }
 
     const { pagination, selectedFile, selectedFiles } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
     const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
       let result: PaginatedFilesResponse
       if (folderId === null) {
-        // When folderId is null, get ALL files (not just orphan files)
-        // Use filter_files with no folder filter
-        result = await invoke('filter_files', {
-          filter: {
-            query: null,
-            folder_id: null,
-            file_types: null,
-            date_start: null,
-            date_end: null,
-            size_min: null,
-            size_max: null,
-            tag_ids: null,
-            min_rating: null,
-            favorites_only: null,
-            dominant_color: null,
-          },
+        result = await invoke('get_all_files', {
           page: pagination.page,
-          pageSize: pagination.pageSize
+          pageSize: pagination.pageSize,
+          sortBy,
+          sortDirection,
         })
       } else {
         result = await invoke('get_files_in_folder', {
           folderId,
           page: pagination.page,
-          pageSize: pagination.pageSize
+          pageSize: pagination.pageSize,
+          sortBy,
+          sortDirection,
         })
       }
       if (requestId !== fileListRequestId) return
-      // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
-      const visibleFileIds = new Set(parsedFiles.map((file) => file.id))
-      const newSelectedFile = selectedFile
-        ? parsedFiles.find((file) => file.id === selectedFile.id) || null
-        : null
-      const newSelectedFiles = selectedFiles.filter((fileId) => visibleFileIds.has(fileId))
+      const nextSelection = reconcileVisibleSelection(parsedFiles, selectedFile, selectedFiles)
       console.log('[fileStore] Loaded files:', parsedFiles.length)
       set({
         files: parsedFiles,
         isLoading: false,
-        selectedFile: newSelectedFile,
-        selectedFiles: newSelectedFiles,
+        selectedFile: nextSelection.selectedFile,
+        selectedFiles: nextSelection.selectedFiles,
         pagination: {
           page: result.page,
           pageSize: result.page_size,
@@ -623,21 +615,26 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   searchFiles: async (query) => {
-    const { pagination } = get()
+    const { pagination, selectedFile, selectedFiles } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
     const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
       const result = await invoke<PaginatedFilesResponse>('search_files', {
         query,
         page: pagination.page,
-        pageSize: pagination.pageSize
+        pageSize: pagination.pageSize,
+        sortBy,
+        sortDirection,
       })
       if (requestId !== fileListRequestId) return
-      // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
+      const nextSelection = reconcileVisibleSelection(parsedFiles, selectedFile, selectedFiles)
       set({
         files: parsedFiles,
         isLoading: false,
+        selectedFile: nextSelection.selectedFile,
+        selectedFiles: nextSelection.selectedFiles,
         pagination: {
           page: result.page,
           pageSize: result.page_size,
@@ -654,7 +651,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   filterFiles: async (filter) => {
-    const { pagination } = get()
+    const { pagination, selectedFile, selectedFiles } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
     const requestId = ++fileListRequestId
     set({ isLoading: true })
     try {
@@ -671,16 +669,20 @@ export const useFileStore = create<FileStore>((set, get) => ({
           min_rating: filter.minRating ?? null,
           favorites_only: filter.favoritesOnly ?? null,
           dominant_color: filter.dominantColor || null,
+          sort_by: sortBy,
+          sort_direction: sortDirection,
         },
         page: pagination.page,
         pageSize: pagination.pageSize
       })
       if (requestId !== fileListRequestId) return
-      // Parse colorDistribution from JSON string
       const parsedFiles = parseFileList(result.files)
+      const nextSelection = reconcileVisibleSelection(parsedFiles, selectedFile, selectedFiles)
       set({
         files: parsedFiles,
         isLoading: false,
+        selectedFile: nextSelection.selectedFile,
+        selectedFiles: nextSelection.selectedFiles,
         pagination: {
           page: result.page,
           pageSize: result.page_size,

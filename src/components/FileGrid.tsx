@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Play } from "lucide-react"
+import { ArrowUpDown, Play } from "lucide-react"
 import { toast } from "sonner"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
+import { useFilterStore, type FileSortOption } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, useSettingsStore } from "@/stores/settingsStore"
 import { cn } from "@/lib/utils"
 import { startExternalFileDrag } from "@/lib/externalDrag"
+import { Select, SelectContent, SelectItem } from "@/components/ui/Select"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -29,6 +31,17 @@ const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
 const VIEW_SCALE_KEYBOARD_STEP = 0.1
 const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012
+
+const SORT_OPTIONS: Array<{ value: FileSortOption; label: string }> = [
+  { value: "imported_desc", label: "最近添加" },
+  { value: "imported_asc", label: "最早添加" },
+  { value: "modified_desc", label: "最近修改" },
+  { value: "created_desc", label: "创建时间" },
+  { value: "name_asc", label: "名称 A-Z" },
+  { value: "name_desc", label: "名称 Z-A" },
+  { value: "size_desc", label: "文件最大" },
+  { value: "size_asc", label: "文件最小" },
+]
 
 type SelectionBox = {
   startX: number
@@ -148,9 +161,12 @@ export default function FileGrid() {
     deleteFiles,
     openPreview,
     pagination,
+    runCurrentQuery,
     setPage,
     setPageSize,
   } = useFileStore()
+  const sort = useFilterStore((state) => state.criteria.sort)
+  const setSort = useFilterStore((state) => state.setSort)
   const viewMode = useSettingsStore((state) => state.libraryViewMode)
   const libraryViewScales = useSettingsStore((state) => state.libraryViewScales)
   const setLibraryViewMode = useSettingsStore((state) => state.setLibraryViewMode)
@@ -166,6 +182,7 @@ export default function FileGrid() {
   const scrollParentRef = useRef<HTMLDivElement>(null)
   const currentViewScaleRef = useRef(viewMode === "list" ? libraryViewScales.list : libraryViewScales.grid)
   const wheelScaleRemainderRef = useRef(0)
+  const sortDidMountRef = useRef(false)
 
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null)
@@ -187,6 +204,21 @@ export default function FileGrid() {
   useEffect(() => {
     wheelScaleRemainderRef.current = 0
   }, [viewMode])
+
+  useEffect(() => {
+    if (!sortDidMountRef.current) {
+      sortDidMountRef.current = true
+      return
+    }
+
+    useFileStore.setState((state) => ({
+      pagination: {
+        ...state.pagination,
+        page: 1,
+      },
+    }))
+    void runCurrentQuery()
+  }, [runCurrentQuery, sort])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -671,6 +703,24 @@ export default function FileGrid() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />
+            <Select
+              value={sort}
+              displayValue={SORT_OPTIONS.find((option) => option.value === sort)?.label ?? "最近添加"}
+              onValueChange={(value) => setSort(value as FileSortOption)}
+              className="w-[132px]"
+              triggerClassName="h-8 rounded-full border-gray-200 bg-white/95 px-3 text-xs text-gray-700 shadow-sm hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg dark:text-gray-200"
+            >
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div
             className="hidden items-center sm:flex"
             onDoubleClick={resetCurrentViewScale}

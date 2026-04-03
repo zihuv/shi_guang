@@ -1,6 +1,5 @@
 import { useFileStore } from "@/stores/fileStore";
 import { useFilterStore } from "@/stores/filterStore";
-import { useFolderStore } from "@/stores/folderStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/Button";
@@ -13,8 +12,7 @@ interface HeaderProps {
 
 export default function Header({ onOpenSettings }: HeaderProps) {
   const { searchQuery, setSearchQuery, importFiles, importTask, cancelImportTask } = useFileStore();
-  const { isFilterPanelOpen, toggleFilterPanel, setFolderId, getActiveFilterCount, clearFilters } = useFilterStore();
-  const { selectedFolderId } = useFolderStore();
+  const { isFilterPanelOpen, toggleFilterPanel, getActiveFilterCount } = useFilterStore();
   const { theme, setTheme } = useSettingsStore();
   const isImporting = !!importTask && !["completed", "completed_with_errors", "cancelled", "failed"].includes(importTask.status);
   const importProgress = importTask?.total ? Math.min(100, Math.round((importTask.processed / importTask.total) * 100)) : 0;
@@ -23,20 +21,6 @@ export default function Header({ onOpenSettings }: HeaderProps) {
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
-  };
-
-  const handleToggleFilter = () => {
-    if (!isFilterPanelOpen) {
-      // Opening filter panel - if a real folder is selected (not "全部文件" which is null),
-      // remember it in filter criteria but show all files
-      if (selectedFolderId !== null) {
-        setFolderId(selectedFolderId)
-      }
-    } else {
-      // Closing filter panel - clear all filter conditions
-      clearFilters()
-    }
-    toggleFilterPanel();
   };
 
   const handleImport = async () => {
@@ -130,7 +114,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
         <Button
           variant={isFilterPanelOpen ? "default" : "outline"}
           size="sm"
-          onClick={handleToggleFilter}
+          onClick={toggleFilterPanel}
           className="relative"
         >
           <Filter className="w-4 h-4 mr-1" />

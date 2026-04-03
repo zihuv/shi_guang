@@ -1070,7 +1070,6 @@ export default function FolderTree() {
                     setSelectedFile(null)
                   }
                   useFilterStore.getState().setFolderId(null)
-                  useFilterStore.getState().setFileType('all')
                   return
                 }
 
@@ -1080,9 +1079,7 @@ export default function FolderTree() {
                 closePreview()
                 setSelectedFile(null)
                 loadFilesInFolder(null)
-                // Clear folder filter and reset type filter to "all"
                 useFilterStore.getState().setFolderId(null)
-                useFilterStore.getState().setFileType('all')
               }}
             >
               <span className="w-5" />

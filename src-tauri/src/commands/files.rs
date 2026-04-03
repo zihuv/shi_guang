@@ -5,6 +5,8 @@ pub fn get_all_files(
     state: State<AppState>,
     page: Option<u32>,
     page_size: Option<u32>,
+    sort_by: Option<String>,
+    sort_direction: Option<String>,
 ) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
@@ -12,7 +14,12 @@ pub fn get_all_files(
     let offset = (page - 1) as i64 * page_size;
 
     let files = db
-        .get_all_files(Some(page_size), Some(offset))
+        .get_all_files(
+            Some(page_size),
+            Some(offset),
+            sort_by.as_deref(),
+            sort_direction.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
     let total = db.get_files_count().map_err(|e| e.to_string())?;
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
@@ -32,6 +39,8 @@ pub fn search_files(
     query: String,
     page: Option<u32>,
     page_size: Option<u32>,
+    sort_by: Option<String>,
+    sort_direction: Option<String>,
 ) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
@@ -39,7 +48,13 @@ pub fn search_files(
     let offset = (page - 1) as i64 * page_size;
 
     let files = db
-        .search_files(&query, Some(page_size), Some(offset))
+        .search_files(
+            &query,
+            Some(page_size),
+            Some(offset),
+            sort_by.as_deref(),
+            sort_direction.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
     let total = db.search_files_count(&query).map_err(|e| e.to_string())?;
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
@@ -59,6 +74,8 @@ pub fn get_files_in_folder(
     folder_id: Option<i64>,
     page: Option<u32>,
     page_size: Option<u32>,
+    sort_by: Option<String>,
+    sort_direction: Option<String>,
 ) -> Result<PaginatedFiles, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
@@ -66,7 +83,13 @@ pub fn get_files_in_folder(
     let offset = (page - 1) as i64 * page_size;
 
     let files = db
-        .get_files_in_folder(folder_id, Some(page_size), Some(offset))
+        .get_files_in_folder(
+            folder_id,
+            Some(page_size),
+            Some(offset),
+            sort_by.as_deref(),
+            sort_direction.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
     let total = db
         .get_files_in_folder_count(folder_id)
