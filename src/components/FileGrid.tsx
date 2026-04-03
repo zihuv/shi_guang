@@ -15,11 +15,12 @@ const TILE_CARD_BASE_WIDTH = 180
 const TILE_CARD_MIN_WIDTH = 90
 const TILE_CARD_MAX_WIDTH = 420
 const GRID_GAP = 16
-const GRID_BASE_METADATA_HEIGHT = 96
-const GRID_PREVIEW_HEIGHT_RATIO = 0.68
+const GRID_PREVIEW_HEIGHT_RATIO = 0.6
 const LIST_BASE_ROW_HEIGHT = 56
 const LIST_BASE_THUMBNAIL_SIZE = 40
 const OBSERVER_ROOT_MARGIN = "300px"
+const GRID_METADATA_HEIGHT = 56
+const GRID_METADATA_HEIGHT_WITH_TAGS = 72
 const ADAPTIVE_CARD_FOOTER_HEIGHT = 44
 const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 62
 const VIEWPORT_OVERSCAN_PX = 600
@@ -163,8 +164,11 @@ function isDialogTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest("[role='dialog'], [role='menu']"))
 }
 
-function getGridMetadataHeight(scale: number) {
-  return Math.max(72, Math.round(GRID_BASE_METADATA_HEIGHT * (0.68 + scale * 0.12)))
+function getGridMetadataHeight(scale: number, visibleFields: LibraryVisibleField[]) {
+  const showsTags = visibleFields.includes("tags")
+  const baseHeight = showsTags ? GRID_METADATA_HEIGHT_WITH_TAGS : GRID_METADATA_HEIGHT
+  const minHeight = showsTags ? 62 : 48
+  return Math.max(minHeight, Math.round(baseHeight * (0.88 + scale * 0.1)))
 }
 
 export default function FileGrid() {
@@ -307,8 +311,16 @@ export default function FileGrid() {
     if (!element) return
 
     const updateWidth = () => {
-      setContainerWidth(element.clientWidth)
-      setViewportHeight(element.clientHeight)
+      const styles = window.getComputedStyle(element)
+      const horizontalPadding =
+        Number.parseFloat(styles.paddingLeft || "0") +
+        Number.parseFloat(styles.paddingRight || "0")
+      const verticalPadding =
+        Number.parseFloat(styles.paddingTop || "0") +
+        Number.parseFloat(styles.paddingBottom || "0")
+
+      setContainerWidth(Math.max(0, element.clientWidth - horizontalPadding))
+      setViewportHeight(Math.max(0, element.clientHeight - verticalPadding))
       setScrollTop(element.scrollTop)
     }
 
@@ -333,7 +345,7 @@ export default function FileGrid() {
     Math.min(TILE_CARD_MAX_WIDTH, Math.round(TILE_CARD_BASE_WIDTH * tileViewScale)),
   )
   const gridMinWidth = tileTargetWidth
-  const gridMetadataHeight = getGridMetadataHeight(gridViewScale)
+  const gridMetadataHeight = getGridMetadataHeight(gridViewScale, libraryVisibleFields)
   const listRowHeight = Math.max(42, Math.round(LIST_BASE_ROW_HEIGHT * listViewScale))
   const listThumbnailSize = Math.max(28, Math.round(LIST_BASE_THUMBNAIL_SIZE * listViewScale))
   const adaptiveTargetWidth = tileTargetWidth
@@ -346,11 +358,12 @@ export default function FileGrid() {
   const gridTrackWidth = gridColumns * gridItemWidth + GRID_GAP * Math.max(0, gridColumns - 1)
   const gridPreviewHeight = Math.ceil(gridItemWidth * GRID_PREVIEW_HEIGHT_RATIO)
   const gridRowHeight = gridPreviewHeight + gridMetadataHeight
+  const gridRowSpan = gridRowHeight + GRID_GAP
   const gridRowCount = Math.ceil(filteredFiles.length / gridColumns)
-  const gridVisibleStartRow = Math.max(0, Math.floor((scrollTop - VIEWPORT_OVERSCAN_PX) / Math.max(gridRowHeight, 1)))
+  const gridVisibleStartRow = Math.max(0, Math.floor((scrollTop - VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)))
   const gridVisibleEndRow = Math.min(
     Math.max(0, gridRowCount - 1),
-    Math.ceil((scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX) / Math.max(gridRowHeight, 1)),
+    Math.ceil((scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)),
   )
   const gridVirtualRows =
     gridRowCount > 0
@@ -1050,7 +1063,10 @@ export default function FileGrid() {
               ))}
             </div>
           ) : viewMode === "grid" ? (
-            <div className="relative" style={{ height: `${gridRowCount * gridRowHeight}px` }}>
+            <div
+              className="relative"
+              style={{ height: `${Math.max(0, gridRowCount * gridRowSpan - GRID_GAP)}px` }}
+            >
               {gridVirtualRows.map((rowIndex) => {
                 const startIndex = rowIndex * gridColumns
                 const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns)
@@ -1062,7 +1078,7 @@ export default function FileGrid() {
                     style={{
                       width: `${gridTrackWidth}px`,
                       height: `${gridRowHeight}px`,
-                      transform: `translateY(${rowIndex * gridRowHeight}px)`,
+                      transform: `translateY(${rowIndex * gridRowSpan}px)`,
                     }}
                   >
                     <div
