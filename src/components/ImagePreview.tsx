@@ -24,6 +24,9 @@ import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
 const MIN_ZOOM = 1
 const MAX_ZOOM = 10000
 const BASE_WHEEL_ZOOM_SENSITIVITY = 0.002
+const OVERLAY_BUTTON_CLASS = 'flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/80 backdrop-blur transition hover:bg-black/70 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
+const OVERLAY_CHIP_CLASS = 'rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-xs text-white/70 backdrop-blur'
+const OVERLAY_ACTION_CLASS = 'rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-sm text-white/80 backdrop-blur transition hover:bg-black/70 hover:text-white'
 
 function clampZoom(value: number) {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value))
@@ -538,16 +541,249 @@ export default function ImagePreview() {
   const canGoPrev = previewIndex > 0
   const canGoNext = previewIndex < totalFiles - 1
   const previewMeta = getPreviewMetaText(currentFile)
+  const zoomLabel = `${Math.round(zoom === 'auto' ? fitZoomPercent : zoom)}%`
+  const showZoomLabel = zoom !== 'auto' && zoom !== 100
+  const renderedPreviewContent = isLoading ? (
+    <div className="flex h-full min-h-full items-center justify-center p-4">
+      <svg className="h-10 w-10 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+      </svg>
+    </div>
+  ) : imageError ? (
+    <div className="flex h-full min-h-full flex-col items-center justify-center p-4 text-gray-400">
+      <svg className="mb-2 h-16 w-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+      <p>无法加载预览</p>
+    </div>
+  ) : previewType === 'none' ? (
+    <div className="flex h-full min-h-full items-center justify-center p-4">
+      <UnsupportedPreviewState file={currentFile} onOpenFile={handleOpenFile} />
+    </div>
+  ) : previewType === 'text' ? (
+    <TextPreviewPane content={textContent} />
+  ) : imageSrc ? (
+    isVideo ? (
+      <div className="flex h-full min-h-full items-center justify-center p-4">
+        <video
+          src={imageSrc}
+          controls
+          playsInline
+          preload="metadata"
+          className={`${isFullscreen ? 'max-w-6xl shadow-2xl' : 'max-w-5xl shadow-lg'} max-h-full w-full rounded-lg bg-black`}
+        />
+      </div>
+    ) : isPdf ? (
+      <div className="h-full min-h-full p-4">
+        <object
+          data={imageSrc}
+          type="application/pdf"
+          className="h-full w-full rounded-lg bg-white"
+        >
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-gray-500">
+            <p>当前环境不支持 PDF 内嵌预览</p>
+            <p className="text-xs">可以使用右键菜单用默认应用打开</p>
+          </div>
+        </object>
+      </div>
+    ) : isImageLike ? (
+      isFitMode || manualCanvasWidth === null || manualCanvasHeight === null || scaledImageWidth === null || scaledImageHeight === null ? (
+        <div className="flex h-full min-h-full items-center justify-center p-4">
+          <img
+            src={imageSrc}
+            alt={currentFile.name}
+            draggable
+            onDragStart={handleExternalDragStart}
+            className="max-h-full max-w-full select-none object-contain"
+          />
+        </div>
+      ) : (
+        <div
+          className="relative"
+          style={{
+            width: `${manualCanvasWidth}px`,
+            height: `${manualCanvasHeight}px`,
+          }}
+        >
+          <img
+            src={imageSrc}
+            alt={currentFile.name}
+            draggable={false}
+            className="absolute block select-none"
+            style={{
+              width: `${scaledImageWidth}px`,
+              height: `${scaledImageHeight}px`,
+              left: `${manualImageOffsetLeft}px`,
+              top: `${manualImageOffsetTop}px`,
+            }}
+          />
+        </div>
+      )
+    ) : null
+  ) : null
+
+  const previewContextMenu = (
+    <ContextMenuContent>
+      <ContextMenuItem onClick={handleOpenFile}>
+        <ExternalLink className="w-4 h-4 mr-2" />
+        默认应用打开
+      </ContextMenuItem>
+      <ContextMenuItem onClick={handleShowInExplorer}>
+        <FolderOpen className="w-4 h-4 mr-2" />
+        在资源管理器中显示
+      </ContextMenuItem>
+      <ContextMenuItem onClick={handleCopyFileToClipboard}>
+        <Copy className="w-4 h-4 mr-2" />
+        复制到剪贴板
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>
+          <Copy className="w-4 h-4 mr-2" />
+          复制到
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent>
+          {menuItems.map((folder) => (
+            <ContextMenuItem
+              key={folder.id === null ? 'root' : folder.id}
+              onClick={() => handleCopyFile(folder.id)}
+              style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
+            >
+              {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+            </ContextMenuItem>
+          ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>
+          <Move className="w-4 h-4 mr-2" />
+          移动到
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent>
+          {menuItems.map((folder) => (
+            <ContextMenuItem
+              key={folder.id === null ? 'root' : folder.id}
+              onClick={() => handleMoveFile(folder.id)}
+              style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
+            >
+              {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+            </ContextMenuItem>
+          ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onClick={handleDeleteFile}
+        className="text-red-600 dark:text-red-400"
+      >
+        <Trash2 className="w-4 h-4 mr-2" />
+        删除
+      </ContextMenuItem>
+    </ContextMenuContent>
+  )
+
+  const fullscreenPreviewShell = (
+    <div className="fixed inset-0 z-[80] bg-black text-white">
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="relative h-full w-full">
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-24 bg-gradient-to-b from-black/70 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-20 bg-gradient-to-t from-black/50 to-transparent" />
+
+            <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
+              {supportsZoom && (
+                <>
+                  <button
+                    onClick={handleZoomFit}
+                    className={`${OVERLAY_ACTION_CLASS} ${zoom === 'auto' ? 'border-white/20 bg-white/20 text-white' : ''}`}
+                    title="适应窗口"
+                  >
+                    适应
+                  </button>
+                  <button
+                    onClick={handleZoom100}
+                    className={`${OVERLAY_ACTION_CLASS} ${zoom === 100 ? 'border-white/20 bg-white/20 text-white' : ''}`}
+                    title="原始尺寸"
+                  >
+                    100%
+                  </button>
+                  {showZoomLabel && <span className={OVERLAY_CHIP_CLASS}>{zoomLabel}</span>}
+                </>
+              )}
+            </div>
+
+            <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+              {totalFiles > 1 && (
+                <span className={OVERLAY_CHIP_CLASS}>
+                  {currentNum} / {totalFiles}
+                </span>
+              )}
+              <button
+                onClick={toggleFullscreen}
+                className={OVERLAY_BUTTON_CLASS}
+                title="退出全屏 (Esc)"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {totalFiles > 1 && (
+              <>
+                <button
+                  onClick={goToPrev}
+                  disabled={!canGoPrev}
+                  className={`${OVERLAY_BUTTON_CLASS} absolute left-4 top-1/2 z-20 -translate-y-1/2`}
+                  title="上一张"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={goToNext}
+                  disabled={!canGoNext}
+                  className={`${OVERLAY_BUTTON_CLASS} absolute right-4 top-1/2 z-20 -translate-y-1/2`}
+                  title="下一张"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </>
+            )}
+
+            <div
+              ref={viewportRef}
+              className={`preview-wheel-container h-full w-full overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+              onWheel={handleWheel}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+            >
+              {renderedPreviewContent}
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        {previewContextMenu}
+      </ContextMenu>
+    </div>
+  )
+
   const previewShell = (
-    <div className={isFullscreen ? "fixed inset-0 z-[80] flex flex-col bg-gray-100 dark:bg-dark-bg" : "h-full flex flex-col bg-gray-100 dark:bg-dark-bg"}>
-      {/* 顶部工具栏 */}
+    <div className="h-full flex flex-col bg-gray-100 dark:bg-dark-bg">
       <div className="flex items-center justify-between px-4 py-2 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center gap-4">
           <span className="text-sm">{currentFolderName}</span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* 左右导航 */}
           <button
             onClick={goToPrev}
             disabled={!canGoPrev}
@@ -576,7 +812,6 @@ export default function ImagePreview() {
         <div className="flex items-center gap-3">
           {supportsZoom ? (
             <>
-              {/* 缩放滑块 */}
               <div className="flex items-center">
                 <input
                   type="range"
@@ -588,7 +823,6 @@ export default function ImagePreview() {
                 />
               </div>
 
-              {/* 适应窗口按钮 */}
               <button
                 onClick={handleZoomFit}
                 className={`px-2 py-1 text-sm rounded ${zoom === 'auto' ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
@@ -597,7 +831,6 @@ export default function ImagePreview() {
                 适应
               </button>
 
-              {/* 1:1 按钮 */}
               <button
                 onClick={handleZoom100}
                 className={`px-2 py-1 text-sm rounded ${zoom === 100 ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
@@ -622,7 +855,6 @@ export default function ImagePreview() {
             </button>
           )}
 
-          {/* 关闭按钮 */}
           <button
             onClick={closePreview}
             className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
@@ -635,7 +867,6 @@ export default function ImagePreview() {
         </div>
       </div>
 
-      {/* 中间大图预览 */}
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
@@ -647,150 +878,12 @@ export default function ImagePreview() {
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
           >
-            {isLoading ? (
-              <div className="flex h-full min-h-full items-center justify-center p-4">
-                <svg className="w-10 h-10 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
-            ) : imageError ? (
-              <div className="flex h-full min-h-full flex-col items-center justify-center p-4 text-gray-400">
-                <svg className="w-16 h-16 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p>无法加载预览</p>
-              </div>
-            ) : previewType === 'none' ? (
-              <div className="flex h-full min-h-full items-center justify-center p-4">
-                <UnsupportedPreviewState file={currentFile} onOpenFile={handleOpenFile} />
-              </div>
-            ) : previewType === 'text' ? (
-              <TextPreviewPane content={textContent} />
-            ) : imageSrc ? (
-              isVideo ? (
-                <div className="flex h-full min-h-full items-center justify-center p-4">
-                  <video
-                    src={imageSrc}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="max-h-full w-full max-w-5xl rounded-lg bg-black shadow-lg"
-                  />
-                </div>
-              ) : isPdf ? (
-                <div className="h-full min-h-full p-4">
-                  <object
-                    data={imageSrc}
-                    type="application/pdf"
-                    className="h-full w-full rounded-lg bg-white"
-                  >
-                    <div className="flex h-full flex-col items-center justify-center gap-2 text-gray-500">
-                      <p>当前环境不支持 PDF 内嵌预览</p>
-                      <p className="text-xs">可以使用右键菜单用默认应用打开</p>
-                    </div>
-                  </object>
-                </div>
-              ) : isImageLike ? (
-                isFitMode || manualCanvasWidth === null || manualCanvasHeight === null || scaledImageWidth === null || scaledImageHeight === null ? (
-                  <div className="flex h-full min-h-full items-center justify-center p-4">
-                    <img
-                      src={imageSrc}
-                      alt={currentFile.name}
-                      draggable
-                      onDragStart={handleExternalDragStart}
-                      className="max-w-full max-h-full object-contain select-none"
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="relative"
-                    style={{
-                      width: `${manualCanvasWidth}px`,
-                      height: `${manualCanvasHeight}px`,
-                    }}
-                  >
-                    <img
-                      src={imageSrc}
-                      alt={currentFile.name}
-                      draggable={false}
-                      className="absolute block select-none"
-                      style={{
-                        width: `${scaledImageWidth}px`,
-                        height: `${scaledImageHeight}px`,
-                        left: `${manualImageOffsetLeft}px`,
-                        top: `${manualImageOffsetTop}px`,
-                      }}
-                    />
-                  </div>
-                )
-              ) : null
-            ) : null}
+            {renderedPreviewContent}
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onClick={handleOpenFile}>
-            <ExternalLink className="w-4 h-4 mr-2" />
-            默认应用打开
-          </ContextMenuItem>
-        <ContextMenuItem onClick={handleShowInExplorer}>
-          <FolderOpen className="w-4 h-4 mr-2" />
-          在资源管理器中显示
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleCopyFileToClipboard}>
-          <Copy className="w-4 h-4 mr-2" />
-          复制到剪贴板
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
-              <Copy className="w-4 h-4 mr-2" />
-              复制到
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {menuItems.map((folder) => (
-                <ContextMenuItem
-                  key={folder.id === null ? 'root' : folder.id}
-                  onClick={() => handleCopyFile(folder.id)}
-                  style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
-                >
-                  {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
-                </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
-              <Move className="w-4 h-4 mr-2" />
-              移动到
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {menuItems.map((folder) => (
-                <ContextMenuItem
-                  key={folder.id === null ? 'root' : folder.id}
-                  onClick={() => handleMoveFile(folder.id)}
-                  style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
-                >
-                  {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
-                </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            onClick={handleDeleteFile}
-            className="text-red-600 dark:text-red-400"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            删除
-          </ContextMenuItem>
-        </ContextMenuContent>
+        {previewContextMenu}
       </ContextMenu>
 
-      {/* 底部信息栏 */}
       <div className="px-4 py-1 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border text-xs flex items-center justify-between">
         <div
           className="flex min-w-0 items-center gap-2 cursor-grab active:cursor-grabbing"
@@ -804,7 +897,6 @@ export default function ImagePreview() {
         <span className="text-gray-500 dark:text-gray-500">{previewMeta} · {formatSize(currentFile.size)}</span>
       </div>
 
-      {/* 底部缩略图条 */}
       <div className="h-20 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border flex items-center px-4 gap-2 overflow-x-auto">
         <button
           onClick={goToPrev}
@@ -846,13 +938,12 @@ export default function ImagePreview() {
   )
 
   if (isFullscreen && typeof document !== 'undefined') {
-    return createPortal(previewShell, document.body)
+    return createPortal(fullscreenPreviewShell, document.body)
   }
 
   return previewShell
 }
 
-// 缩略图组件
 function ThumbnailItem({ file }: { file: FileItem }) {
   const [src, setSrc] = useState<string | null>(null)
   const previewType = getFilePreviewMode(file.ext)
