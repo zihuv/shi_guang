@@ -3,11 +3,10 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { ArrowUpDown, Play } from "lucide-react"
 import { toast } from "sonner"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
-import { useFilterStore, type FileSortOption } from "@/stores/filterStore"
+import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, useSettingsStore } from "@/stores/settingsStore"
 import { cn } from "@/lib/utils"
 import { startExternalFileDrag } from "@/lib/externalDrag"
-import { Select, SelectContent, SelectItem } from "@/components/ui/Select"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -32,15 +31,18 @@ const LIST_MAX_VISIBLE_TAGS = 2
 const VIEW_SCALE_KEYBOARD_STEP = 0.1
 const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012
 
-const SORT_OPTIONS: Array<{ value: FileSortOption; label: string }> = [
-  { value: "imported_desc", label: "最近添加" },
-  { value: "imported_asc", label: "最早添加" },
-  { value: "modified_desc", label: "最近修改" },
-  { value: "created_desc", label: "创建时间" },
-  { value: "name_asc", label: "名称 A-Z" },
-  { value: "name_desc", label: "名称 Z-A" },
-  { value: "size_desc", label: "文件最大" },
-  { value: "size_asc", label: "文件最小" },
+const SORT_DIRECTION_OPTIONS: Array<{ value: SortDirection; label: string }> = [
+  { value: "asc", label: "升序" },
+  { value: "desc", label: "降序" },
+]
+
+const SORT_FIELD_OPTIONS: Array<{ value: FileSortField; label: string }> = [
+  { value: "imported_at", label: "导入时间" },
+  { value: "created_at", label: "创建时间" },
+  { value: "modified_at", label: "修改时间" },
+  { value: "name", label: "名称" },
+  { value: "ext", label: "类型" },
+  { value: "size", label: "文件大小" },
 ]
 
 type SelectionBox = {
@@ -165,8 +167,10 @@ export default function FileGrid() {
     setPage,
     setPageSize,
   } = useFileStore()
-  const sort = useFilterStore((state) => state.criteria.sort)
-  const setSort = useFilterStore((state) => state.setSort)
+  const sortBy = useFilterStore((state) => state.criteria.sortBy)
+  const sortDirection = useFilterStore((state) => state.criteria.sortDirection)
+  const setSortBy = useFilterStore((state) => state.setSortBy)
+  const setSortDirection = useFilterStore((state) => state.setSortDirection)
   const viewMode = useSettingsStore((state) => state.libraryViewMode)
   const libraryViewScales = useSettingsStore((state) => state.libraryViewScales)
   const setLibraryViewMode = useSettingsStore((state) => state.setLibraryViewMode)
@@ -175,11 +179,14 @@ export default function FileGrid() {
   const filteredFiles = files
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false)
   const [containerWidth, setContainerWidth] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
 
   const scrollParentRef = useRef<HTMLDivElement>(null)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
+  const sortMenuButtonRef = useRef<HTMLButtonElement>(null)
   const currentViewScaleRef = useRef(viewMode === "list" ? libraryViewScales.list : libraryViewScales.grid)
   const wheelScaleRemainderRef = useRef(0)
   const sortDidMountRef = useRef(false)
@@ -192,6 +199,9 @@ export default function FileGrid() {
   const listViewScale = libraryViewScales.list
   const currentViewScale = viewMode === "list" ? listViewScale : tileViewScale
   const currentViewScaleRange = getLibraryViewScaleRange(viewMode)
+  const currentSortFieldLabel =
+    SORT_FIELD_OPTIONS.find((option) => option.value === sortBy)?.label ?? "导入时间"
+  const currentSortDirectionLabel = sortDirection === "asc" ? "升序" : "降序"
 
   useEffect(() => {
     selectionBoxRef.current = selectionBox
@@ -218,7 +228,43 @@ export default function FileGrid() {
       },
     }))
     void runCurrentQuery()
-  }, [runCurrentQuery, sort])
+  }, [runCurrentQuery, sortBy, sortDirection])
+
+  useEffect(() => {
+    if (!isSortMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) {
+        return
+      }
+
+      if (
+        sortMenuRef.current?.contains(target) ||
+        sortMenuButtonRef.current?.contains(target)
+      ) {
+        return
+      }
+
+      setIsSortMenuOpen(false)
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSortMenuOpen(false)
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown)
+    window.addEventListener("keydown", handleEscape)
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown)
+      window.removeEventListener("keydown", handleEscape)
+    }
+  }, [isSortMenuOpen])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -703,23 +749,94 @@ export default function FileGrid() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />
-            <Select
-              value={sort}
-              displayValue={SORT_OPTIONS.find((option) => option.value === sort)?.label ?? "最近添加"}
-              onValueChange={(value) => setSort(value as FileSortOption)}
-              className="w-[132px]"
-              triggerClassName="h-8 rounded-full border-gray-200 bg-white/95 px-3 text-xs text-gray-700 shadow-sm hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg dark:text-gray-200"
+          <div className="relative">
+            <button
+              ref={sortMenuButtonRef}
+              type="button"
+              onClick={() => setIsSortMenuOpen((open) => !open)}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
+                isSortMenuOpen
+                  ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
+                  : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
+              )}
+              title={`排序：${currentSortFieldLabel} · ${currentSortDirectionLabel}`}
+              aria-label="排序"
+              aria-expanded={isSortMenuOpen}
             >
-              <SelectContent>
-                {SORT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <ArrowUpDown className="h-4 w-4" />
+            </button>
+
+            {isSortMenuOpen && (
+              <div
+                ref={sortMenuRef}
+                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+              >
+                <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                  排序方式
+                </div>
+                {SORT_DIRECTION_OPTIONS.map((option) => {
+                  const isActive = sortDirection === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setSortDirection(option.value)
+                        setIsSortMenuOpen(false)
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        isActive
+                          ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          isActive ? "bg-current" : "bg-transparent",
+                        )}
+                      />
+                      <span>{option.label}</span>
+                    </button>
+                  )
+                })}
+
+                <div className="my-1.5 h-px bg-gray-100 dark:bg-dark-border" />
+
+                <div className="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                  排序依据
+                </div>
+                {SORT_FIELD_OPTIONS.map((option) => {
+                  const isActive = sortBy === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setSortBy(option.value)
+                        setIsSortMenuOpen(false)
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        isActive
+                          ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          isActive ? "bg-current" : "bg-transparent",
+                        )}
+                      />
+                      <span>{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
           <div
             className="hidden items-center sm:flex"

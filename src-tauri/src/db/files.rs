@@ -23,6 +23,7 @@ impl Database {
         let modified_at = Self::qualify_sort_column(prefix, "modified_at");
         let created_at = Self::qualify_sort_column(prefix, "created_at");
         let name = Self::qualify_sort_column(prefix, "name");
+        let ext = Self::qualify_sort_column(prefix, "ext");
         let size = Self::qualify_sort_column(prefix, "size");
         let id = Self::qualify_sort_column(prefix, "id");
 
@@ -30,6 +31,7 @@ impl Database {
             "modified_at" => format!("{modified_at} {direction}, {imported_at} DESC, {id} ASC"),
             "created_at" => format!("{created_at} {direction}, {imported_at} DESC, {id} ASC"),
             "name" => format!("LOWER({name}) {direction}, {imported_at} DESC, {id} ASC"),
+            "ext" => format!("LOWER({ext}) {direction}, LOWER({name}) ASC, {imported_at} DESC, {id} ASC"),
             "size" => format!("{size} {direction}, {imported_at} DESC, {id} ASC"),
             _ => format!("{imported_at} {direction}, {id} ASC"),
         }

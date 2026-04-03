@@ -73,10 +73,7 @@ const reconcileVisibleSelection = (
   }
 }
 
-const getCurrentSortConfig = () => {
-  const { sort } = useFilterStore.getState().criteria
-  return getSortConfig(sort)
-}
+const getCurrentSortConfig = () => getSortConfig(useFilterStore.getState().criteria)
 
 interface PaginatedFilesResponse {
   files: FileItem[]

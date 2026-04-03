@@ -4,7 +4,17 @@ import { create } from "zustand"
 const FILTER_PREFERENCES_SETTING_KEY = "libraryFilterPreferences"
 let filterPreferencesPersistTimer: ReturnType<typeof setTimeout> | null = null
 
-export type FileSortOption =
+export type FileSortField =
+  | "imported_at"
+  | "created_at"
+  | "modified_at"
+  | "name"
+  | "ext"
+  | "size"
+
+export type SortDirection = "asc" | "desc"
+
+type LegacyFileSortOption =
   | "imported_desc"
   | "imported_asc"
   | "modified_desc"
@@ -14,7 +24,8 @@ export type FileSortOption =
   | "size_desc"
   | "size_asc"
 
-export const DEFAULT_FILE_SORT: FileSortOption = "imported_desc"
+export const DEFAULT_FILE_SORT_BY: FileSortField = "imported_at"
+export const DEFAULT_SORT_DIRECTION: SortDirection = "desc"
 
 const FILE_TYPES = new Set(["all", "image", "video", "document"])
 
@@ -22,6 +33,8 @@ type PersistedFilterPreferences = {
   fileType?: unknown
   tagIds?: unknown
   dominantColor?: unknown
+  sortBy?: unknown
+  sortDirection?: unknown
   sort?: unknown
 }
 
@@ -36,7 +49,8 @@ export interface FilterCriteria {
   dominantColor: string | null
   keyword: string
   folderId: number | null
-  sort: FileSortOption
+  sortBy: FileSortField
+  sortDirection: SortDirection
 }
 
 interface FilterStore {
@@ -58,7 +72,9 @@ interface FilterStore {
   setDominantColor: (color: string | null) => void
   setKeyword: (keyword: string) => void
   setFolderId: (folderId: number | null) => void
-  setSort: (sort: FileSortOption) => void
+  setSortBy: (sortBy: FileSortField) => void
+  setSortDirection: (sortDirection: SortDirection) => void
+  setSort: (sortBy: FileSortField, sortDirection?: SortDirection) => void
   loadPreferences: () => Promise<void>
 }
 
@@ -73,10 +89,26 @@ const initialCriteria: FilterCriteria = {
   dominantColor: null,
   keyword: "",
   folderId: null,
-  sort: DEFAULT_FILE_SORT,
+  sortBy: DEFAULT_FILE_SORT_BY,
+  sortDirection: DEFAULT_SORT_DIRECTION,
 }
 
-function isFileSortOption(value: unknown): value is FileSortOption {
+function isFileSortField(value: unknown): value is FileSortField {
+  return (
+    value === "imported_at" ||
+    value === "created_at" ||
+    value === "modified_at" ||
+    value === "name" ||
+    value === "ext" ||
+    value === "size"
+  )
+}
+
+function isSortDirection(value: unknown): value is SortDirection {
+  return value === "asc" || value === "desc"
+}
+
+function isLegacyFileSortOption(value: unknown): value is LegacyFileSortOption {
   return (
     value === "imported_desc" ||
     value === "imported_asc" ||
@@ -89,12 +121,35 @@ function isFileSortOption(value: unknown): value is FileSortOption {
   )
 }
 
+function getLegacySortConfig(sort: LegacyFileSortOption) {
+  switch (sort) {
+    case "imported_asc":
+      return { sortBy: "imported_at" as const, sortDirection: "asc" as const }
+    case "modified_desc":
+      return { sortBy: "modified_at" as const, sortDirection: "desc" as const }
+    case "created_desc":
+      return { sortBy: "created_at" as const, sortDirection: "desc" as const }
+    case "name_asc":
+      return { sortBy: "name" as const, sortDirection: "asc" as const }
+    case "name_desc":
+      return { sortBy: "name" as const, sortDirection: "desc" as const }
+    case "size_desc":
+      return { sortBy: "size" as const, sortDirection: "desc" as const }
+    case "size_asc":
+      return { sortBy: "size" as const, sortDirection: "asc" as const }
+    case "imported_desc":
+    default:
+      return { sortBy: "imported_at" as const, sortDirection: "desc" as const }
+  }
+}
+
 function serializeFilterPreferences(criteria: FilterCriteria) {
   return JSON.stringify({
     fileType: criteria.fileType,
     tagIds: criteria.tagIds,
     dominantColor: criteria.dominantColor,
-    sort: criteria.sort,
+    sortBy: criteria.sortBy,
+    sortDirection: criteria.sortDirection,
   })
 }
 
@@ -128,6 +183,13 @@ function restoreFilterPreferences(
   criteria: FilterCriteria,
   value: PersistedFilterPreferences,
 ): FilterCriteria {
+  const legacySort = isLegacyFileSortOption(value.sort)
+    ? getLegacySortConfig(value.sort)
+    : {
+        sortBy: criteria.sortBy,
+        sortDirection: criteria.sortDirection,
+      }
+
   return {
     ...criteria,
     fileType: FILE_TYPES.has(value.fileType as string)
@@ -142,29 +204,17 @@ function restoreFilterPreferences(
       typeof value.dominantColor === "string" || value.dominantColor === null
         ? value.dominantColor
         : criteria.dominantColor,
-    sort: isFileSortOption(value.sort) ? value.sort : criteria.sort,
+    sortBy: isFileSortField(value.sortBy) ? value.sortBy : legacySort.sortBy,
+    sortDirection: isSortDirection(value.sortDirection)
+      ? value.sortDirection
+      : legacySort.sortDirection,
   }
 }
 
-export function getSortConfig(sort: FileSortOption) {
-  switch (sort) {
-    case "imported_asc":
-      return { sortBy: "imported_at", sortDirection: "asc" as const }
-    case "modified_desc":
-      return { sortBy: "modified_at", sortDirection: "desc" as const }
-    case "created_desc":
-      return { sortBy: "created_at", sortDirection: "desc" as const }
-    case "name_asc":
-      return { sortBy: "name", sortDirection: "asc" as const }
-    case "name_desc":
-      return { sortBy: "name", sortDirection: "desc" as const }
-    case "size_desc":
-      return { sortBy: "size", sortDirection: "desc" as const }
-    case "size_asc":
-      return { sortBy: "size", sortDirection: "asc" as const }
-    case "imported_desc":
-    default:
-      return { sortBy: "imported_at", sortDirection: "desc" as const }
+export function getSortConfig(criteria: Pick<FilterCriteria, "sortBy" | "sortDirection">) {
+  return {
+    sortBy: criteria.sortBy,
+    sortDirection: criteria.sortDirection,
   }
 }
 
@@ -234,7 +284,8 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
       criteria: {
         ...initialCriteria,
         searchQuery: state.criteria.searchQuery,
-        sort: state.criteria.sort,
+        sortBy: state.criteria.sortBy,
+        sortDirection: state.criteria.sortDirection,
       },
     }))
     scheduleFilterPreferencesPersist(get)
@@ -267,9 +318,27 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
     }))
   },
 
-  setSort: (sort) => {
+  setSortBy: (sortBy) => {
     set((state) => ({
-      criteria: { ...state.criteria, sort },
+      criteria: { ...state.criteria, sortBy },
+    }))
+    scheduleFilterPreferencesPersist(get)
+  },
+
+  setSortDirection: (sortDirection) => {
+    set((state) => ({
+      criteria: { ...state.criteria, sortDirection },
+    }))
+    scheduleFilterPreferencesPersist(get)
+  },
+
+  setSort: (sortBy, sortDirection) => {
+    set((state) => ({
+      criteria: {
+        ...state.criteria,
+        sortBy,
+        sortDirection: sortDirection ?? state.criteria.sortDirection,
+      },
     }))
     scheduleFilterPreferencesPersist(get)
   },
@@ -305,14 +374,19 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
         fileType: nextCriteria.fileType,
         tagIds: nextCriteria.tagIds,
         dominantColor: nextCriteria.dominantColor,
-        sort: nextCriteria.sort,
+        sortBy: nextCriteria.sortBy,
+        sortDirection: nextCriteria.sortDirection,
       },
       hasLoadedPreferences: true,
     }))
 
     const { useFileStore } = await import("./fileStore")
     const fileStore = useFileStore.getState()
-    if (fileStore.selectedFolderId !== null || fileStore.files.length > 0 || fileStore.searchQuery.trim()) {
+    if (
+      fileStore.selectedFolderId !== null ||
+      fileStore.files.length > 0 ||
+      fileStore.searchQuery.trim()
+    ) {
       void fileStore.runCurrentQuery()
     }
   },
