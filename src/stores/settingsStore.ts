@@ -9,12 +9,21 @@ const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
 const LIBRARY_VIEW_PREFERENCES_SETTING_KEY = "libraryViewPreferences";
 
 export type LibraryViewMode = "grid" | "list" | "adaptive";
+export type LibraryVisibleField = "name" | "ext" | "size" | "dimensions" | "tags";
+const LIBRARY_VISIBLE_FIELDS_VERSION = 2;
 
 export const DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED = 1;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MIN = 0.2;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MAX = 3;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_STEP = 0.1;
 export const DEFAULT_LIBRARY_VIEW_MODE: LibraryViewMode = "grid";
+export const DEFAULT_LIBRARY_VISIBLE_FIELDS: LibraryVisibleField[] = [
+  "name",
+  "ext",
+  "size",
+  "dimensions",
+  "tags",
+];
 export const LIBRARY_VIEW_SCALE_STEP = 0.02;
 const SHARED_TILE_VIEW_SCALE_MIN = 0.5;
 const SHARED_TILE_VIEW_SCALE_MAX = 1.8;
@@ -56,6 +65,10 @@ function isLibraryViewMode(value: unknown): value is LibraryViewMode {
   return value === "grid" || value === "list" || value === "adaptive";
 }
 
+function isLibraryVisibleField(value: unknown): value is LibraryVisibleField {
+  return value === "name" || value === "ext" || value === "size" || value === "dimensions" || value === "tags";
+}
+
 function isSharedTileViewMode(viewMode: LibraryViewMode) {
   return viewMode === "grid" || viewMode === "adaptive";
 }
@@ -93,13 +106,32 @@ function resolveLibraryViewScales(
   };
 }
 
+function resolveLibraryVisibleFields(value: unknown, version?: unknown) {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_LIBRARY_VISIBLE_FIELDS];
+  }
+
+  const fields = value.filter(isLibraryVisibleField);
+  if (version === LIBRARY_VISIBLE_FIELDS_VERSION) {
+    return [...fields];
+  }
+
+  if (!fields.includes("tags")) {
+    fields.push("tags");
+  }
+  return [...fields];
+}
+
 function serializeLibraryViewPreferences(
   mode: LibraryViewMode,
   scales: Record<LibraryViewMode, number>,
+  visibleFields: LibraryVisibleField[],
 ) {
   return JSON.stringify({
     mode,
     scales,
+    visibleFields,
+    visibleFieldsVersion: LIBRARY_VISIBLE_FIELDS_VERSION,
   });
 }
 
@@ -107,6 +139,7 @@ function scheduleLibraryViewPreferencesPersist(
   get: () => {
     libraryViewMode: LibraryViewMode;
     libraryViewScales: Record<LibraryViewMode, number>;
+    libraryVisibleFields: LibraryVisibleField[];
   },
 ) {
   if (libraryViewPreferencesPersistTimer) {
@@ -114,12 +147,13 @@ function scheduleLibraryViewPreferencesPersist(
   }
 
   libraryViewPreferencesPersistTimer = setTimeout(() => {
-    const { libraryViewMode, libraryViewScales } = get();
+    const { libraryViewMode, libraryViewScales, libraryVisibleFields } = get();
     void invoke("set_setting", {
       key: LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
       value: serializeLibraryViewPreferences(
         libraryViewMode,
         libraryViewScales,
+        libraryVisibleFields,
       ),
     }).catch((error) => {
       console.error("Failed to persist library view preferences:", error);
@@ -142,6 +176,7 @@ interface Settings {
   previewTrackpadZoomSpeed: number;
   libraryViewMode: LibraryViewMode;
   libraryViewScales: Record<LibraryViewMode, number>;
+  libraryVisibleFields: LibraryVisibleField[];
 }
 
 interface SettingsStore extends Settings {
@@ -155,6 +190,7 @@ interface SettingsStore extends Settings {
   setLibraryViewMode: (mode: LibraryViewMode) => void;
   setLibraryViewScale: (viewMode: LibraryViewMode, scale: number) => void;
   resetLibraryViewScale: (viewMode: LibraryViewMode) => void;
+  toggleLibraryVisibleField: (field: LibraryVisibleField) => void;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
 }
@@ -167,6 +203,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   previewTrackpadZoomSpeed: DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
   libraryViewMode: DEFAULT_LIBRARY_VIEW_MODE,
   libraryViewScales: { ...DEFAULT_LIBRARY_VIEW_SCALES },
+  libraryVisibleFields: [...DEFAULT_LIBRARY_VISIBLE_FIELDS],
 
   setTheme: async (theme) => {
     await invoke("set_setting", { key: "theme", value: theme });
@@ -230,6 +267,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     get().setLibraryViewScale(viewMode, DEFAULT_LIBRARY_VIEW_SCALES[viewMode]);
   },
 
+  toggleLibraryVisibleField: (field) => {
+    set((state) => ({
+      libraryVisibleFields: state.libraryVisibleFields.includes(field)
+        ? state.libraryVisibleFields.filter((item) => item !== field)
+        : [...state.libraryVisibleFields, field],
+    }));
+    scheduleLibraryViewPreferencesPersist(get);
+  },
+
   addIndexPath: async (path) => {
     await invoke("add_index_path", { path });
     const paths = await invoke<string[]>("get_index_paths");
@@ -254,6 +300,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
     let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
     let libraryViewScales = { ...DEFAULT_LIBRARY_VIEW_SCALES };
+    let libraryVisibleFields = [...DEFAULT_LIBRARY_VISIBLE_FIELDS];
 
     // Get theme
     try {
@@ -308,12 +355,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const parsedPreferences = JSON.parse(libraryViewPreferencesValue) as {
         mode?: unknown;
         scales?: Partial<Record<LibraryViewMode, unknown>>;
+        visibleFields?: unknown;
+        visibleFieldsVersion?: unknown;
       };
 
       if (isLibraryViewMode(parsedPreferences.mode)) {
         libraryViewMode = parsedPreferences.mode;
       }
       libraryViewScales = resolveLibraryViewScales(parsedPreferences.scales);
+      libraryVisibleFields = resolveLibraryVisibleFields(
+        parsedPreferences.visibleFields,
+        parsedPreferences.visibleFieldsVersion,
+      );
     } catch (e) {
       const errorMsg = String(e);
       if (!errorMsg.includes("Setting not found")) {
@@ -344,6 +397,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       previewTrackpadZoomSpeed,
       libraryViewMode,
       libraryViewScales,
+      libraryVisibleFields,
     });
   },
 

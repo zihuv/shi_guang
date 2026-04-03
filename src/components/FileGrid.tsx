@@ -4,7 +4,7 @@ import { ArrowUpDown, Play } from "lucide-react"
 import { toast } from "sonner"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
-import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, useSettingsStore } from "@/stores/settingsStore"
+import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, type LibraryVisibleField, useSettingsStore } from "@/stores/settingsStore"
 import { cn } from "@/lib/utils"
 import { startExternalFileDrag } from "@/lib/externalDrag"
 import FileTypeIcon from "./FileTypeIcon"
@@ -45,6 +45,20 @@ const SORT_FIELD_OPTIONS: Array<{ value: FileSortField; label: string }> = [
   { value: "size", label: "文件大小" },
 ]
 
+const VIEW_MODE_OPTIONS: Array<{ value: LibraryViewMode; label: string }> = [
+  { value: "grid", label: "网格" },
+  { value: "adaptive", label: "自适应" },
+  { value: "list", label: "列表" },
+]
+
+const INFO_FIELD_OPTIONS: Array<{ value: LibraryVisibleField; label: string }> = [
+  { value: "name", label: "名称" },
+  { value: "ext", label: "类型" },
+  { value: "size", label: "文件大小" },
+  { value: "dimensions", label: "尺寸" },
+  { value: "tags", label: "标签" },
+]
+
 type SelectionBox = {
   startX: number
   startY: number
@@ -53,6 +67,7 @@ type SelectionBox = {
 }
 
 type ArrowNavigationKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+type ToolbarMenu = "sort" | "layout" | "info"
 
 const imageSrcCache = new Map<string, string>()
 
@@ -173,13 +188,15 @@ export default function FileGrid() {
   const setSortDirection = useFilterStore((state) => state.setSortDirection)
   const viewMode = useSettingsStore((state) => state.libraryViewMode)
   const libraryViewScales = useSettingsStore((state) => state.libraryViewScales)
+  const libraryVisibleFields = useSettingsStore((state) => state.libraryVisibleFields)
   const setLibraryViewMode = useSettingsStore((state) => state.setLibraryViewMode)
   const setLibraryViewScale = useSettingsStore((state) => state.setLibraryViewScale)
   const resetLibraryViewScale = useSettingsStore((state) => state.resetLibraryViewScale)
+  const toggleLibraryVisibleField = useSettingsStore((state) => state.toggleLibraryVisibleField)
   const filteredFiles = files
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
-  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false)
+  const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenu | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
@@ -187,6 +204,10 @@ export default function FileGrid() {
   const scrollParentRef = useRef<HTMLDivElement>(null)
   const sortMenuRef = useRef<HTMLDivElement>(null)
   const sortMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const layoutMenuRef = useRef<HTMLDivElement>(null)
+  const layoutMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const infoMenuRef = useRef<HTMLDivElement>(null)
+  const infoMenuButtonRef = useRef<HTMLButtonElement>(null)
   const currentViewScaleRef = useRef(viewMode === "list" ? libraryViewScales.list : libraryViewScales.grid)
   const wheelScaleRemainderRef = useRef(0)
   const sortDidMountRef = useRef(false)
@@ -202,6 +223,11 @@ export default function FileGrid() {
   const currentSortFieldLabel =
     SORT_FIELD_OPTIONS.find((option) => option.value === sortBy)?.label ?? "导入时间"
   const currentSortDirectionLabel = sortDirection === "asc" ? "升序" : "降序"
+  const currentViewModeLabel =
+    VIEW_MODE_OPTIONS.find((option) => option.value === viewMode)?.label ?? "网格"
+  const visibleInfoFieldLabels = INFO_FIELD_OPTIONS
+    .filter((option) => libraryVisibleFields.includes(option.value))
+    .map((option) => option.label)
 
   useEffect(() => {
     selectionBoxRef.current = selectionBox
@@ -231,7 +257,7 @@ export default function FileGrid() {
   }, [runCurrentQuery, sortBy, sortDirection])
 
   useEffect(() => {
-    if (!isSortMenuOpen) {
+    if (!openToolbarMenu) {
       return
     }
 
@@ -241,19 +267,29 @@ export default function FileGrid() {
         return
       }
 
-      if (
-        sortMenuRef.current?.contains(target) ||
-        sortMenuButtonRef.current?.contains(target)
-      ) {
+      const activeMenuRef =
+        openToolbarMenu === "sort"
+          ? sortMenuRef
+          : openToolbarMenu === "layout"
+            ? layoutMenuRef
+            : infoMenuRef
+      const activeButtonRef =
+        openToolbarMenu === "sort"
+          ? sortMenuButtonRef
+          : openToolbarMenu === "layout"
+            ? layoutMenuButtonRef
+            : infoMenuButtonRef
+
+      if (activeMenuRef.current?.contains(target) || activeButtonRef.current?.contains(target)) {
         return
       }
 
-      setIsSortMenuOpen(false)
+      setOpenToolbarMenu(null)
     }
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setIsSortMenuOpen(false)
+        setOpenToolbarMenu(null)
       }
     }
 
@@ -264,7 +300,7 @@ export default function FileGrid() {
       window.removeEventListener("mousedown", handlePointerDown)
       window.removeEventListener("keydown", handleEscape)
     }
-  }, [isSortMenuOpen])
+  }, [openToolbarMenu])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -335,7 +371,7 @@ export default function FileGrid() {
     Math.floor((Math.max(containerWidth, adaptiveTargetWidth) - GRID_GAP * (adaptiveColumns - 1)) / adaptiveColumns),
   )
   const adaptiveColumnWidth = Math.min(adaptiveTargetWidth, adaptiveAvailableColumnWidth)
-  const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth)
+  const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth, libraryVisibleFields)
   const adaptiveColumnsData = buildAdaptiveColumns(adaptiveLayout.items, adaptiveColumns)
 
   const listRowVirtualizer = useVirtualizer({
@@ -352,6 +388,7 @@ export default function FileGrid() {
   const handleViewModeChange = (nextViewMode: LibraryViewMode) => {
     wheelScaleRemainderRef.current = 0
     setLibraryViewMode(nextViewMode)
+    setOpenToolbarMenu(null)
   }
 
   const applyCurrentViewScale = (nextScale: number) => {
@@ -369,6 +406,10 @@ export default function FileGrid() {
     wheelScaleRemainderRef.current = 0
     currentViewScaleRef.current = DEFAULT_LIBRARY_VIEW_SCALES[viewMode]
     resetLibraryViewScale(viewMode)
+  }
+
+  const toggleToolbarMenu = (menu: ToolbarMenu) => {
+    setOpenToolbarMenu((currentMenu) => (currentMenu === menu ? null : menu))
   }
 
   const handleViewportWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -736,26 +777,26 @@ export default function FileGrid() {
             {pagination.totalPages > 1 && ` (第 ${pagination.page}/${pagination.totalPages} 页)`}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="relative">
             <button
               ref={sortMenuButtonRef}
               type="button"
-              onClick={() => setIsSortMenuOpen((open) => !open)}
+              onClick={() => toggleToolbarMenu("sort")}
               className={cn(
                 "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
-                isSortMenuOpen
+                openToolbarMenu === "sort"
                   ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
                   : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
               )}
               title={`排序：${currentSortFieldLabel} · ${currentSortDirectionLabel}`}
               aria-label="排序"
-              aria-expanded={isSortMenuOpen}
+              aria-expanded={openToolbarMenu === "sort"}
             >
               <ArrowUpDown className="h-4 w-4" />
             </button>
 
-            {isSortMenuOpen && (
+            {openToolbarMenu === "sort" && (
               <div
                 ref={sortMenuRef}
                 className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
@@ -771,7 +812,7 @@ export default function FileGrid() {
                       type="button"
                       onClick={() => {
                         setSortDirection(option.value)
-                        setIsSortMenuOpen(false)
+                        setOpenToolbarMenu(null)
                       }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
@@ -804,7 +845,7 @@ export default function FileGrid() {
                       type="button"
                       onClick={() => {
                         setSortBy(option.value)
-                        setIsSortMenuOpen(false)
+                        setOpenToolbarMenu(null)
                       }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
@@ -826,6 +867,118 @@ export default function FileGrid() {
               </div>
             )}
           </div>
+          <div className="relative">
+            <button
+              ref={infoMenuButtonRef}
+              type="button"
+              onClick={() => toggleToolbarMenu("info")}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
+                openToolbarMenu === "info"
+                  ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
+                  : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
+              )}
+              title={`信息显示：${visibleInfoFieldLabels.join(" · ") || "无"}`}
+              aria-label="信息显示"
+              aria-expanded={openToolbarMenu === "info"}
+            >
+              <InfoDisplayIcon className="h-4 w-4" />
+            </button>
+
+            {openToolbarMenu === "info" && (
+              <div
+                ref={infoMenuRef}
+                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+              >
+                <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                  信息显示
+                </div>
+                {INFO_FIELD_OPTIONS.map((option) => {
+                  const isActive = libraryVisibleFields.includes(option.value)
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => toggleLibraryVisibleField(option.value)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        isActive
+                          ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "flex h-4 w-4 items-center justify-center rounded border text-[10px]",
+                          isActive
+                            ? "border-current bg-current/10"
+                            : "border-gray-300 text-transparent dark:border-gray-600",
+                        )}
+                      >
+                        ✓
+                      </span>
+                      <span>{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              ref={layoutMenuButtonRef}
+              type="button"
+              onClick={() => toggleToolbarMenu("layout")}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
+                openToolbarMenu === "layout"
+                  ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
+                  : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
+              )}
+              title={`布局：${currentViewModeLabel}`}
+              aria-label="布局"
+              aria-expanded={openToolbarMenu === "layout"}
+            >
+              <ViewModeIcon mode={viewMode} className="h-4 w-4" />
+            </button>
+
+            {openToolbarMenu === "layout" && (
+              <div
+                ref={layoutMenuRef}
+                className="absolute right-0 top-10 z-30 w-44 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+              >
+                <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                  布局
+                </div>
+                {VIEW_MODE_OPTIONS.map((option) => {
+                  const isActive = viewMode === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleViewModeChange(option.value)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        isActive
+                          ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          isActive ? "bg-current" : "bg-transparent",
+                        )}
+                      />
+                      <ViewModeIcon mode={option.value} className="h-4 w-4 flex-shrink-0" />
+                      <span>{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           <div
             className="hidden items-center sm:flex"
             onDoubleClick={resetCurrentViewScale}
@@ -840,35 +993,6 @@ export default function FileGrid() {
               className="h-1 w-16 cursor-pointer accent-gray-400 opacity-75 transition-opacity hover:opacity-100 dark:accent-gray-500"
               aria-label="当前视图缩放"
             />
-          </div>
-          <div className="flex gap-1">
-            <button
-              onClick={() => handleViewModeChange("adaptive")}
-              className={`rounded p-1.5 ${viewMode === "adaptive" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
-              title="自适应大小"
-            >
-              <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => handleViewModeChange("grid")}
-              className={`rounded p-1.5 ${viewMode === "grid" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
-              title="网格视图"
-            >
-              <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => handleViewModeChange("list")}
-              className={`rounded p-1.5 ${viewMode === "list" ? "bg-gray-200 dark:bg-dark-border" : "hover:bg-gray-100 dark:hover:bg-dark-border"}`}
-              title="列表视图"
-            >
-              <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
           </div>
         </div>
       </div>
@@ -910,6 +1034,7 @@ export default function FileGrid() {
                     >
                       <AdaptiveFileCard
                         file={file}
+                        visibleFields={libraryVisibleFields}
                         isSelected={selectedFile?.id === file.id}
                         isMultiSelected={selectedFiles.includes(file.id)}
                         isDragging={draggingFileId === file.id}
@@ -949,6 +1074,7 @@ export default function FileGrid() {
                           key={`grid-${rowIndex}-${offset}`}
                           file={file}
                           footerHeight={gridMetadataHeight}
+                          visibleFields={libraryVisibleFields}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.includes(file.id)}
                           isDragging={draggingFileId === file.id}
@@ -982,6 +1108,7 @@ export default function FileGrid() {
                     <FileRow
                       file={file}
                       thumbnailSize={listThumbnailSize}
+                      visibleFields={libraryVisibleFields}
                       isSelected={selectedFile?.id === file.id}
                       isMultiSelected={selectedFiles.includes(file.id)}
                       isDragging={draggingFileId === file.id}
@@ -1166,7 +1293,7 @@ function findAdaptiveNeighborIndex(items: AdaptiveLayoutItem[], currentIndex: nu
   return bestIndex
 }
 
-function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: number) {
+function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: number, visibleFields: LibraryVisibleField[]) {
   if (files.length === 0 || columnWidth <= 0) {
     return { items: [] as AdaptiveLayoutItem[], totalHeight: 0, columnWidth: 0, trackWidth: 0 }
   }
@@ -1176,7 +1303,7 @@ function buildAdaptiveLayout(files: FileItem[], columns: number, columnWidth: nu
   const heights = Array.from({ length: columns }, () => 0)
   const items: AdaptiveLayoutItem[] = files.map((file, index) => {
     const imageHeight = getAdaptiveImageHeight(file, visualWidth)
-    const totalHeight = imageHeight + getAdaptiveFooterHeight(file)
+    const totalHeight = imageHeight + getAdaptiveFooterHeight(file, visibleFields)
     let columnIndex = 0
 
     for (let i = 1; i < heights.length; i += 1) {
@@ -1229,8 +1356,10 @@ function getAdaptiveImageHeight(file: FileItem, width: number) {
   return Math.max(80, Math.round((file.height / file.width) * width))
 }
 
-function getAdaptiveFooterHeight(file: FileItem) {
-  return file.tags.length > 0 ? ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT : ADAPTIVE_CARD_FOOTER_HEIGHT
+function getAdaptiveFooterHeight(file: FileItem, visibleFields: LibraryVisibleField[]) {
+  return shouldShowTags(file, visibleFields)
+    ? ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT
+    : ADAPTIVE_CARD_FOOTER_HEIGHT
 }
 
 function useVisibility(rootRef: RefObject<HTMLElement | null>) {
@@ -1322,6 +1451,7 @@ function handleExternalFileDragStart(event: DragEvent<HTMLElement>, fileId: numb
 
 type FileCardBaseProps = {
   file: FileItem
+  visibleFields: LibraryVisibleField[]
   isSelected: boolean
   isMultiSelected: boolean
   isDragging: boolean
@@ -1332,11 +1462,14 @@ type FileCardBaseProps = {
   onDragEnd: () => void
 }
 
-function FileCard({ file, footerHeight, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { footerHeight: number }) {
+function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { footerHeight: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
   const isVideo = isVideoFile(file.ext)
+  const showName = visibleFields.includes("name")
+  const metaTokens = getFileInfoTokens(file, visibleFields)
+  const showTags = shouldShowTags(file, visibleFields)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -1397,11 +1530,15 @@ function FileCard({ file, footerHeight, isSelected, isMultiSelected, isDragging,
             className="flex min-h-0 flex-1 flex-col bg-white px-2 py-1.5 dark:bg-dark-surface"
             style={{ minHeight: `${footerHeight}px` }}
           >
-            <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
-            <p className="mt-0.5 text-xs leading-4 text-gray-400">
-              {file.ext.toUpperCase()} · {formatSize(file.size)}
-            </p>
-            {file.tags.length > 0 && (
+            {showName && (
+              <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            )}
+            {metaTokens.length > 0 && (
+              <p className={cn("truncate text-xs leading-4 text-gray-400", showName && "mt-0.5")}>
+                {metaTokens.join(" · ")}
+              </p>
+            )}
+            {showTags && (
               <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
@@ -1422,12 +1559,15 @@ function FileCard({ file, footerHeight, isSelected, isMultiSelected, isDragging,
   )
 }
 
-function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
   const isVideo = isVideoFile(file.ext)
-  const footerHeight = getAdaptiveFooterHeight(file)
+  const footerHeight = getAdaptiveFooterHeight(file, visibleFields)
+  const showName = visibleFields.includes("name")
+  const metaTokens = getFileInfoTokens(file, visibleFields)
+  const showTags = shouldShowTags(file, visibleFields)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -1495,11 +1635,15 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
             className="flex min-h-0 flex-1 flex-col bg-white px-2 py-1.5 dark:bg-dark-surface"
             style={{ minHeight: `${footerHeight}px` }}
           >
-            <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
-            <p className="mt-0.5 text-xs leading-4 text-gray-400">
-              {file.ext.toUpperCase()} · {formatSize(file.size)}
-            </p>
-            {file.tags.length > 0 && (
+            {showName && (
+              <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            )}
+            {metaTokens.length > 0 && (
+              <p className={cn("truncate text-xs leading-4 text-gray-400", showName && "mt-0.5")}>
+                {metaTokens.join(" · ")}
+              </p>
+            )}
+            {showTags && (
               <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
@@ -1522,12 +1666,15 @@ function AdaptiveFileCard({ file, isSelected, isMultiSelected, isDragging, scrol
   )
 }
 
-function FileRow({ file, thumbnailSize, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { thumbnailSize: number }) {
+function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { thumbnailSize: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
   const isVideo = isVideoFile(file.ext)
-  const visibleTags = file.tags.slice(0, LIST_MAX_VISIBLE_TAGS)
+  const showTags = shouldShowTags(file, visibleFields)
+  const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : []
+  const showName = visibleFields.includes("name")
+  const metaTokens = getFileInfoTokens(file, visibleFields)
   const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
@@ -1582,10 +1729,17 @@ function FileRow({ file, thumbnailSize, isSelected, isMultiSelected, isDragging,
             {isVideo && <VideoPlayBadge compact className="absolute inset-0" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
-            <div className="mt-0.5 flex items-center gap-1 overflow-hidden text-xs text-gray-400">
-              <span className="flex-shrink-0">{getFileMetaText(file)}</span>
-              {visibleTags.length > 0 && <span className="text-gray-300 dark:text-gray-600">·</span>}
+            {showName && (
+              <p className="truncate text-sm text-gray-700 dark:text-gray-200">{getNameWithoutExt(file.name)}</p>
+            )}
+            <div className={cn("flex items-center gap-1 overflow-hidden text-xs text-gray-400", showName && "mt-0.5")}>
+              {metaTokens.map((token, index) => (
+                <span key={`${token}-${index}`} className="flex min-w-0 items-center gap-1">
+                  {index > 0 && <span className="text-gray-300 dark:text-gray-600">·</span>}
+                  <span className="truncate">{token}</span>
+                </span>
+              ))}
+              {metaTokens.length > 0 && visibleTags.length > 0 && <span className="text-gray-300 dark:text-gray-600">·</span>}
               {visibleTags.map((tag) => (
                 <span
                   key={tag.id}
@@ -1598,14 +1752,10 @@ function FileRow({ file, thumbnailSize, isSelected, isMultiSelected, isDragging,
                   <span className="truncate">{tag.name}</span>
                 </span>
               ))}
-              {file.tags.length > LIST_MAX_VISIBLE_TAGS && (
+              {showTags && file.tags.length > LIST_MAX_VISIBLE_TAGS && (
                 <span className="flex-shrink-0 text-[10px] text-gray-400">+{file.tags.length - LIST_MAX_VISIBLE_TAGS}</span>
               )}
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
-            <span className="text-xs text-gray-400">{file.ext.toUpperCase()}</span>
           </div>
         </div>
       </div>
@@ -1613,12 +1763,84 @@ function FileRow({ file, thumbnailSize, isSelected, isMultiSelected, isDragging,
   )
 }
 
-function getFileMetaText(file: FileItem) {
+function getFileDimensionsText(file: FileItem) {
   if (file.width > 0 && file.height > 0) {
-    return `${file.width} x ${file.height}`
+    return `${file.width} × ${file.height}`
   }
 
-  return "无预览尺寸"
+  return null
+}
+
+function shouldShowTags(file: FileItem, visibleFields: LibraryVisibleField[]) {
+  return visibleFields.includes("tags") && file.tags.length > 0
+}
+
+function getFileInfoTokens(file: FileItem, visibleFields: LibraryVisibleField[]) {
+  const tokens: string[] = []
+
+  INFO_FIELD_OPTIONS.forEach((option) => {
+    if (!visibleFields.includes(option.value)) {
+      return
+    }
+
+    switch (option.value) {
+      case "ext":
+        tokens.push(file.ext.toUpperCase())
+        break
+      case "size":
+        tokens.push(formatSize(file.size))
+        break
+      case "dimensions": {
+        const dimensionsText = getFileDimensionsText(file)
+        if (dimensionsText) {
+          tokens.push(dimensionsText)
+        }
+        break
+      }
+      default:
+        break
+    }
+  })
+
+  return tokens
+}
+
+function InfoDisplayIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 7h12M10 12h8M10 17h8" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6.5 6.5h.01v.01H6.5zM6.5 11.5h.01v.01H6.5zM6.5 16.5h.01v.01H6.5z" />
+    </svg>
+  )
+}
+
+function ViewModeIcon({ mode, className }: { mode: LibraryViewMode; className?: string }) {
+  if (mode === "list") {
+    return (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 7h12M6 12h12M6 17h12" />
+      </svg>
+    )
+  }
+
+  if (mode === "adaptive") {
+    return (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="5" width="6" height="14" rx="1.5" strokeWidth={1.8} />
+        <rect x="14" y="5" width="6" height="8" rx="1.5" strokeWidth={1.8} />
+        <rect x="14" y="15" width="6" height="4" rx="1.5" strokeWidth={1.8} />
+      </svg>
+    )
+  }
+
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="5" width="6" height="6" rx="1.5" strokeWidth={1.8} />
+      <rect x="14" y="5" width="6" height="6" rx="1.5" strokeWidth={1.8} />
+      <rect x="4" y="13" width="6" height="6" rx="1.5" strokeWidth={1.8} />
+      <rect x="14" y="13" width="6" height="6" rx="1.5" strokeWidth={1.8} />
+    </svg>
+  )
 }
 
 type VideoPlayBadgeProps = {
