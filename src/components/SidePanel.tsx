@@ -27,9 +27,11 @@ export default function SidePanel({ width }: SidePanelProps) {
         setSelectedFolderId(defaultFolder.id);
         await loadFilesInFolder(defaultFolder.id);
       } else if (folders.length > 0) {
-        // No default folder, but we have folders - select the first one
-        selectFolder(folders[0].id);
-        await loadFilesInFolder(folders[0].id);
+        const firstUserFolder = folders.find((folder) => !folder.isSystem) ?? null;
+        if (firstUserFolder) {
+          selectFolder(firstUserFolder.id);
+          await loadFilesInFolder(firstUserFolder.id);
+        }
       }
       // If no folders at all, don't load any files
     };

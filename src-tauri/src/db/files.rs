@@ -31,7 +31,9 @@ impl Database {
             "modified_at" => format!("{modified_at} {direction}, {imported_at} DESC, {id} ASC"),
             "created_at" => format!("{created_at} {direction}, {imported_at} DESC, {id} ASC"),
             "name" => format!("LOWER({name}) {direction}, {imported_at} DESC, {id} ASC"),
-            "ext" => format!("LOWER({ext}) {direction}, LOWER({name}) ASC, {imported_at} DESC, {id} ASC"),
+            "ext" => {
+                format!("LOWER({ext}) {direction}, LOWER({name}) ASC, {imported_at} DESC, {id} ASC")
+            }
             "size" => format!("{size} {direction}, {imported_at} DESC, {id} ASC"),
             _ => format!("{imported_at} {direction}, {id} ASC"),
         }
@@ -660,9 +662,22 @@ impl Database {
             Some((r, g, b)) => (Some(r as i64), Some(g as i64), Some(b as i64)),
             None => (None, None, None),
         };
+        let sync_id = generate_sync_id("file");
+        let updated_at = current_timestamp();
 
         self.conn.execute(
-            "INSERT INTO files (path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at, rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b, color_distribution) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+            "INSERT INTO files (
+                path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
+                rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b, color_distribution,
+                sync_id, content_hash, fs_modified_at, updated_at
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                COALESCE((SELECT sync_id FROM files WHERE path = ?1), ?19),
+                (SELECT content_hash FROM files WHERE path = ?1),
+                ?20,
+                ?21
+            )
              ON CONFLICT(path) DO UPDATE SET
                 name = excluded.name,
                 ext = excluded.ext,
@@ -680,10 +695,39 @@ impl Database {
                 dominant_r = excluded.dominant_r,
                 dominant_g = excluded.dominant_g,
                 dominant_b = excluded.dominant_b,
-                color_distribution = excluded.color_distribution",
-            params![file.path, file.name, file.ext, file.size, file.width, file.height, file.folder_id, file.created_at, file.modified_at, imported_at, rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b, color_distribution],
+                color_distribution = excluded.color_distribution,
+                content_hash = excluded.content_hash,
+                fs_modified_at = excluded.fs_modified_at,
+                deleted_at = NULL",
+            params![
+                file.path,
+                file.name,
+                file.ext,
+                file.size,
+                file.width,
+                file.height,
+                file.folder_id,
+                file.created_at,
+                file.modified_at,
+                imported_at,
+                rating,
+                description,
+                source_url,
+                dominant_color,
+                dominant_r,
+                dominant_g,
+                dominant_b,
+                color_distribution,
+                sync_id,
+                file.modified_at,
+                updated_at
+            ],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        self.conn.query_row(
+            "SELECT id FROM files WHERE path = ?1",
+            [file.path.as_str()],
+            |row| row.get(0),
+        )
     }
 
     pub fn get_file_by_path(&self, path: &str) -> Result<Option<FileWithTags>> {

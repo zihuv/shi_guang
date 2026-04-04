@@ -24,14 +24,6 @@ fn cleanup_dot_folders(db: &db::Database) -> Result<(), String> {
     Ok(())
 }
 
-fn init_browser_collection_folder_internal(db: &db::Database) -> Result<(), String> {
-    db.ensure_browser_collection_folder()
-        .map(|folder| {
-            log::info!("Browser collection folder ready: {}", folder.path);
-        })
-        .map_err(|e| e.to_string())
-}
-
 // Track recent imports to prevent duplicate imports within a short time
 pub struct RecentImports {
     entries: Vec<(String, Instant)>,
@@ -103,21 +95,31 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
 
             // Migrate database from old location to new location if needed
-            let db_path = storage::migrate_or_get_db_path(&app_data_dir)
+            let (db_path, index_path) = storage::migrate_or_get_db_path(&app_data_dir)
                 .expect("Failed to migrate or get database path");
 
             log::info!("Using database at: {:?}", db_path);
 
             let database = db::Database::new(&db_path).expect("Failed to initialize database");
+            let current_index_path = index_path.to_string_lossy().to_string();
+            let needs_index_path_sync = database
+                .get_index_paths()
+                .map(|paths| {
+                    paths
+                        .first()
+                        .map(|path| path != &current_index_path)
+                        .unwrap_or(true)
+                })
+                .unwrap_or(true);
+            if needs_index_path_sync {
+                database
+                    .set_index_path(&current_index_path)
+                    .expect("Failed to synchronize index path");
+            }
 
             // Clean up dot-folders from database
             if let Err(e) = cleanup_dot_folders(&database) {
                 log::warn!("Failed to cleanup dot-folders: {}", e);
-            }
-
-            // Initialize browser collection folder (system folder) first
-            if let Err(e) = init_browser_collection_folder_internal(&database) {
-                log::warn!("Failed to initialize browser collection folder: {}", e);
             }
 
             app.manage(AppState {
@@ -157,6 +159,7 @@ pub fn run() {
             commands::indexing::get_index_paths,
             commands::indexing::get_default_index_path,
             commands::indexing::add_index_path,
+            commands::indexing::switch_index_path_and_restart,
             commands::indexing::get_thumbnail_path,
             commands::indexing::get_thumbnail_cache_path,
             commands::indexing::save_thumbnail_cache,

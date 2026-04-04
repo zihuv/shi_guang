@@ -43,6 +43,35 @@ pub fn add_index_path(state: State<AppState>, path: String) -> Result<(), String
 }
 
 #[tauri::command]
+pub fn switch_index_path_and_restart(state: State<AppState>, path: String) -> Result<(), String> {
+    let index_path = Path::new(&path);
+    if !index_path.exists() {
+        fs::create_dir_all(index_path).map_err(|e| e.to_string())?;
+    }
+    storage::ensure_storage_dirs(index_path)?;
+
+    let current_path = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.get_index_paths()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+    };
+
+    if current_path
+        .as_deref()
+        .map(|current| Path::new(current) == index_path)
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    storage::persist_index_path(&state.app_data_dir, index_path)?;
+    state.app_handle.request_restart();
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_thumbnail_path(
     state: State<AppState>,
     file_path: String,

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 const DB_FILE_NAME: &str = "shiguang.db";
+const CURRENT_INDEX_PATH_FILE_NAME: &str = "current-index-path.txt";
 const THUMBNAIL_QUALITY: u8 = 82;
 pub const THUMBNAIL_SIZE: u32 = 320;
 
@@ -42,6 +43,41 @@ pub fn is_hidden_name(name: &str) -> bool {
 
 fn get_legacy_app_db_path(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(DB_FILE_NAME)
+}
+
+fn get_current_index_path_config_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(CURRENT_INDEX_PATH_FILE_NAME)
+}
+
+pub fn read_persisted_index_path(app_data_dir: &Path) -> Option<PathBuf> {
+    let config_path = get_current_index_path_config_path(app_data_dir);
+    let raw = fs::read_to_string(config_path).ok()?;
+    let path = raw.trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(path))
+    }
+}
+
+pub fn persist_index_path(app_data_dir: &Path, index_path: &Path) -> Result<(), String> {
+    fs::create_dir_all(app_data_dir).map_err(|e| {
+        format!(
+            "Failed to create app data directory {:?}: {}",
+            app_data_dir, e
+        )
+    })?;
+
+    let config_path = get_current_index_path_config_path(app_data_dir);
+    let normalized_path = crate::path_utils::normalize_path(index_path);
+    fs::write(&config_path, normalized_path).map_err(|e| {
+        format!(
+            "Failed to write current index path {:?}: {}",
+            config_path, e
+        )
+    })?;
+
+    Ok(())
 }
 
 pub fn ensure_storage_dirs(index_path: &Path) -> Result<(), String> {
@@ -241,13 +277,18 @@ fn move_sqlite_bundle(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
+pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
     let legacy_app_db_path = get_legacy_app_db_path(app_data_dir);
+    let persisted_index_path = read_persisted_index_path(app_data_dir);
+    let legacy_index_path = read_index_path_from_db(&legacy_app_db_path);
 
-    let index_path =
-        read_index_path_from_db(&legacy_app_db_path).unwrap_or_else(|| get_default_index_path());
+    let index_path = persisted_index_path
+        .clone()
+        .or(legacy_index_path)
+        .unwrap_or_else(get_default_index_path);
 
     ensure_storage_dirs(&index_path)?;
+    persist_index_path(app_data_dir, &index_path)?;
 
     let new_db_path = get_db_path(&index_path);
     let legacy_index_db_path = get_legacy_index_db_path(&index_path);
@@ -261,7 +302,7 @@ pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
         move_sqlite_bundle(&legacy_index_db_path, &new_db_path)?;
     }
 
-    if legacy_app_db_path.exists() && !new_db_path.exists() {
+    if persisted_index_path.is_none() && legacy_app_db_path.exists() && !new_db_path.exists() {
         log::info!(
             "Migrating database from app data {:?} to {:?}",
             legacy_app_db_path,
@@ -270,5 +311,5 @@ pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<PathBuf, String> {
         move_sqlite_bundle(&legacy_app_db_path, &new_db_path)?;
     }
 
-    Ok(new_db_path)
+    Ok((new_db_path, index_path))
 }

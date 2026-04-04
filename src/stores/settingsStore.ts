@@ -239,8 +239,7 @@ interface Settings {
 
 interface SettingsStore extends Settings {
   setTheme: (theme: "light" | "dark") => Promise<void>;
-  addIndexPath: (path: string) => Promise<void>;
-  removeIndexPath: (path: string) => Promise<void>;
+  switchIndexPath: (path: string) => Promise<void>;
   setDeleteMode: (useTrash: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
@@ -348,20 +347,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     schedulePanelLayoutPersist(get);
   },
 
-  addIndexPath: async (path) => {
-    await invoke("add_index_path", { path });
-    const paths = await invoke<string[]>("get_index_paths");
-    set({ indexPaths: paths });
-    await invoke("sync_index_path", { path });
-    // Reload folders and files in UI
-    useFolderStore.getState().loadFolders();
-    loadFilesInCurrentFolder();
-  },
+  switchIndexPath: async (path) => {
+    const nextPath = path.trim();
+    if (!nextPath || get().indexPaths[0] === nextPath) {
+      return;
+    }
 
-  removeIndexPath: async (path) => {
-    await invoke("remove_index_path", { path });
-    const paths = await invoke<string[]>("get_index_paths");
-    set({ indexPaths: paths });
+    await invoke("switch_index_path_and_restart", { path: nextPath });
   },
 
   loadSettings: async () => {

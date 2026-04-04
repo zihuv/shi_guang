@@ -347,7 +347,12 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
   }
 
   const isInternalFileDrag = (e: React.DragEvent) => {
-    return Array.from(e.dataTransfer.types).includes(INTERNAL_FILE_DRAG_MIME)
+    if (Array.from(e.dataTransfer.types).includes(INTERNAL_FILE_DRAG_MIME)) {
+      return true
+    }
+
+    const { isDraggingInternal, draggedFileIds } = useFileStore.getState()
+    return isDraggingInternal && draggedFileIds.length > 0
   }
 
   const isExternalFileDrag = (e: React.DragEvent) => {

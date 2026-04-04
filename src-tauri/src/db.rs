@@ -4,6 +4,9 @@ use image::GenericImageView;
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static SYNC_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Parse a hex color string (#RRGGBB) to RGB components
 fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
@@ -15,6 +18,27 @@ fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
     let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
     let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
     Some((r, g, b))
+}
+
+pub fn current_timestamp() -> String {
+    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+pub fn generate_sync_id(prefix: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let counter = SYNC_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    format!(
+        "{prefix}_{:x}{:08x}{:x}{:x}",
+        duration.as_secs(),
+        duration.subsec_nanos(),
+        std::process::id(),
+        counter
+    )
 }
 
 /// Get image dimensions
@@ -60,7 +84,7 @@ pub fn save_and_import_image(
 
     // Get file metadata
     let metadata = fs::metadata(dest_path).map_err(|e| e.to_string())?;
-    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = current_timestamp();
 
     Ok(FileRecord {
         id: 0,
@@ -171,7 +195,7 @@ pub struct Database {
 
 pub const BROWSER_COLLECTION_FOLDER_NAME: &str = "浏览器采集";
 pub const BROWSER_COLLECTION_FOLDER_SORT_ORDER: i32 = -1;
-const DB_SCHEMA_VERSION: i32 = 4;
+const DB_SCHEMA_VERSION: i32 = 6;
 
 mod files;
 mod folders;

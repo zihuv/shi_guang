@@ -87,7 +87,10 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   initDefaultFolder: async () => {
     try {
-      const folder = await invoke<{ id: number; name: string; path: string; parent_id: number | null; created_at: string }>('init_default_folder')
+      const folder = await invoke<{ id: number; name: string; path: string; parent_id: number | null; created_at: string } | null>('init_default_folder')
+      if (!folder) {
+        return null
+      }
       await get().loadFolders()
       set({ selectedFolderId: folder.id })
       return folder

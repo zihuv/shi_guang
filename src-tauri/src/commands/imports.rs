@@ -1,18 +1,20 @@
 use super::*;
 
-fn get_import_dir() -> Result<std::path::PathBuf, String> {
-    // Try to get user's Pictures directory
-    let pictures_dir =
-        dirs::picture_dir().ok_or_else(|| "Could not find Pictures directory".to_string())?;
+fn get_import_dir(db: &Database) -> Result<std::path::PathBuf, String> {
+    let index_path = db
+        .get_index_paths()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .next()
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::picture_dir().map(|pictures_dir| pictures_dir.join("shiguang")))
+        .ok_or_else(|| "Could not resolve import directory".to_string())?;
 
-    let import_dir = pictures_dir.join("shiguang");
-
-    // Create shiguang directory if it doesn't exist
-    if !import_dir.exists() {
-        fs::create_dir_all(&import_dir).map_err(|e| e.to_string())?;
+    if !index_path.exists() {
+        fs::create_dir_all(&index_path).map_err(|e| e.to_string())?;
     }
 
-    Ok(import_dir)
+    Ok(index_path)
 }
 
 /// 获取导入目标目录：如果指定了 folder_id，使用该文件夹路径；否则使用默认导入目录
@@ -20,12 +22,17 @@ fn get_target_dir(db: &Database, folder_id: Option<i64>) -> Result<std::path::Pa
     let target_dir = if let Some(fid) = folder_id {
         let folders = db.get_all_folders().map_err(|e| e.to_string())?;
         if let Some(folder) = folders.iter().find(|f| f.id == fid) {
-            Path::new(&folder.path).to_path_buf()
+            let folder_path = Path::new(&folder.path);
+            if folder_path.is_absolute() {
+                folder_path.to_path_buf()
+            } else {
+                get_import_dir(db)?.join(folder_path)
+            }
         } else {
-            get_import_dir()?
+            get_import_dir(db)?
         }
     } else {
-        get_import_dir()?
+        get_import_dir(db)?
     };
 
     if !target_dir.exists() {

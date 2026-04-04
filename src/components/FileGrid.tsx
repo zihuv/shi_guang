@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ArrowUpDown, Play } from "lucide-react"
-import { toast } from "sonner"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, type LibraryVisibleField, useSettingsStore } from "@/stores/settingsStore"
 import { cn } from "@/lib/utils"
-import { startExternalFileDrag } from "@/lib/externalDrag"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -1016,7 +1014,7 @@ export default function FileGrid() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           <p className="text-lg font-medium">暂无文件</p>
-          <p className="mt-1 text-sm">请在设置中添加索引目录</p>
+          <p className="mt-1 text-sm">当前目录下暂无文件</p>
         </div>
       ) : (
         <div
@@ -1452,19 +1450,6 @@ function useLazyImageSrc(path: string, ext: string, cacheKey: string, isVisible:
   }
 }
 
-function handleExternalFileDragStart(event: DragEvent<HTMLElement>, fileId: number) {
-  event.preventDefault()
-  event.stopPropagation()
-
-  const { selectedFiles } = useFileStore.getState()
-  const fileIds = selectedFiles.includes(fileId) ? selectedFiles : [fileId]
-
-  void startExternalFileDrag(fileIds).catch((error) => {
-    console.error("Failed to start external drag:", error)
-    toast.error("拖拽到外部应用失败")
-  })
-}
-
 type FileCardBaseProps = {
   file: FileItem
   visibleFields: LibraryVisibleField[]
@@ -1520,8 +1505,6 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
-            draggable
-            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1625,8 +1608,6 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
             style={{ paddingBottom: getAspectRatio() }}
-            draggable
-            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1725,8 +1706,6 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
           <div
             className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
-            draggable
-            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
           >
             {!isVisible || imageSrc === null ? (
               <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

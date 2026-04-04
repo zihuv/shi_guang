@@ -28,8 +28,14 @@ impl Database {
 
     pub fn create_tag(&self, name: &str, color: &str, parent_id: Option<i64>) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO tags (name, color, parent_id) VALUES (?1, ?2, ?3)",
-            params![name, color, parent_id],
+            "INSERT INTO tags (name, color, parent_id, sync_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                name,
+                color,
+                parent_id,
+                generate_sync_id("tag"),
+                current_timestamp()
+            ],
         )?;
         Ok(self.conn.last_insert_rowid())
     }

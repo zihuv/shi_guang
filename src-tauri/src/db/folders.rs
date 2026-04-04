@@ -62,18 +62,24 @@ impl Database {
         is_system: bool,
         sort_order: i32,
     ) -> Result<i64> {
+        let now = current_timestamp();
         self.conn.execute(
-            "INSERT INTO folders (path, name, parent_id, created_at, is_system, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO folders (path, name, parent_id, created_at, is_system, sort_order, sync_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 path,
                 name,
                 parent_id,
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                now,
                 is_system as i32,
-                sort_order
+                sort_order,
+                generate_sync_id("folder"),
+                current_timestamp()
             ],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        self.conn
+            .query_row("SELECT id FROM folders WHERE path = ?1", [path], |row| {
+                row.get(0)
+            })
     }
 
     pub fn update_folder_sort_order(&self, id: i64, sort_order: i32) -> Result<()> {
@@ -353,16 +359,16 @@ impl Database {
         Ok(count)
     }
 
-    /// Check if file is unchanged (by size and modified_at)
+    /// Check if file is unchanged (by size and filesystem modified time)
     pub fn is_file_unchanged(&self, path: &str, size: i64, modified_at: &str) -> Result<bool> {
         let mut stmt = self
             .conn
-            .prepare("SELECT size, modified_at FROM files WHERE path = ?1")?;
+            .prepare("SELECT size, fs_modified_at FROM files WHERE path = ?1")?;
         let mut rows = stmt.query([path])?;
         if let Some(row) = rows.next()? {
             let db_size: i64 = row.get(0)?;
             let db_modified_at: String = row.get(1)?;
-            // Compare size and modified_at
+            // Compare size and filesystem modified time
             Ok(db_size == size && db_modified_at == modified_at)
         } else {
             Ok(false)
@@ -383,7 +389,7 @@ impl Database {
         modified_at: &str,
     ) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET name = ?1, ext = ?2, size = ?3, width = ?4, height = ?5, folder_id = ?6, created_at = ?7, modified_at = ?8 WHERE path = ?9",
+            "UPDATE files SET name = ?1, ext = ?2, size = ?3, width = ?4, height = ?5, folder_id = ?6, created_at = ?7, modified_at = ?8, fs_modified_at = ?8 WHERE path = ?9",
             params![name, ext, size, width, height, folder_id, created_at, modified_at, path],
         )?;
         Ok(())

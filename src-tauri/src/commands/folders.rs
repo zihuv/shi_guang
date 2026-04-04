@@ -175,51 +175,23 @@ pub fn scan_folders(state: State<AppState>) -> Result<usize, String> {
 }
 
 #[tauri::command]
-pub fn init_default_folder(state: State<AppState>) -> Result<Folder, String> {
+pub fn init_default_folder(state: State<AppState>) -> Result<Option<Folder>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
-    // Check if there are any folders
     let folders = db.get_all_folders().map_err(|e| e.to_string())?;
 
-    if !folders.is_empty() {
-        // Return the first root folder (parent_id = NULL)
-        if let Some(root_folder) = folders.iter().find(|f| f.parent_id.is_none()) {
-            return Ok(root_folder.clone());
-        }
-        // Fallback: return the first folder
-        return Ok(folders[0].clone());
+    if let Some(root_folder) = folders
+        .iter()
+        .find(|f| f.parent_id.is_none() && !f.is_system)
+    {
+        return Ok(Some(root_folder.clone()));
     }
 
-    // No folders exist, create a default one
-    let paths = db.get_index_paths().map_err(|e| e.to_string())?;
-
-    if let Some(index_path) = paths.first() {
-        let default_folder_name = "默认文件夹";
-        let folder_path = join_path(index_path, default_folder_name);
-
-        // Create directory in file system
-        let path = Path::new(&folder_path);
-        if !path.exists() {
-            fs::create_dir_all(path).map_err(|e| e.to_string())?;
-        }
-
-        // Create folder in database
-        let id = db
-            .create_folder(&folder_path, default_folder_name, None, false)
-            .map_err(|e| e.to_string())?;
-
-        Ok(Folder {
-            id,
-            path: folder_path,
-            name: default_folder_name.to_string(),
-            parent_id: None,
-            created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            is_system: false,
-            sort_order: 0,
-        })
-    } else {
-        Err("No index path configured".to_string())
+    if let Some(folder) = folders.iter().find(|f| !f.is_system) {
+        return Ok(Some(folder.clone()));
     }
+
+    Ok(None)
 }
 
 #[tauri::command]

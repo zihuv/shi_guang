@@ -26,7 +26,6 @@ import { Button } from "@/components/ui/Button";
 import {
   Sun,
   Moon,
-  Trash2,
   Plus,
   Trash,
   AlertTriangle,
@@ -42,8 +41,7 @@ type SettingsSection = "general" | "shortcuts";
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const indexPaths = useSettingsStore((state) => state.indexPaths);
-  const addIndexPath = useSettingsStore((state) => state.addIndexPath);
-  const removeIndexPath = useSettingsStore((state) => state.removeIndexPath);
+  const switchIndexPath = useSettingsStore((state) => state.switchIndexPath);
   const theme = useSettingsStore((state) => state.theme);
   const setTheme = useSettingsStore((state) => state.setTheme);
   const useTrash = useSettingsStore((state) => state.useTrash);
@@ -72,6 +70,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     void loadSettings();
   }, [open, loadSettings]);
 
+  const currentIndexPath = indexPaths[0] ?? null;
+
   const handleAddPath = async () => {
     setIsAdding(true);
     try {
@@ -81,12 +81,19 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         title: "选择素材目录",
       });
       if (selected && typeof selected === "string") {
-        await addIndexPath(selected);
+        if (selected === currentIndexPath) {
+          toast.info("当前已经是这个索引目录");
+          return;
+        }
+
+        toast.info("正在切换索引目录，应用将自动重启");
+        await switchIndexPath(selected);
       }
     } catch (e) {
       console.error("Failed to select directory:", e);
+    } finally {
+      setIsAdding(false);
     }
-    setIsAdding(false);
   };
 
   const handleShortcutChange = async (
@@ -183,7 +190,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         素材目录
                       </h3>
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        管理会被索引的本地目录。
+                        当前只支持 1 个索引目录，更换后应用会自动重启。
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
@@ -193,7 +200,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         disabled={isAdding}
                       >
                         <Plus className="w-4 h-4" />
-                        {isAdding ? "选择中..." : "添加目录"}
+                        {isAdding ? "选择中..." : currentIndexPath ? "更换目录" : "选择目录"}
                       </Button>
                       <Button
                         variant="outline"
@@ -213,31 +220,22 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   </div>
 
                   <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:border-dark-border dark:bg-dark-bg/40">
-                    {indexPaths.length === 0 ? (
+                    {currentIndexPath === null ? (
                       <p className="px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
                         暂无素材目录
                       </p>
                     ) : (
-                      indexPaths.map((path) => (
-                        <div
-                          key={path}
-                          className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 last:border-b-0 dark:border-dark-border"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-300">
-                            {path}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeIndexPath(path)}
-                            className="text-gray-400 hover:text-red-500"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))
+                      <div className="px-4 py-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          当前索引目录
+                        </p>
+                        <p className="mt-2 break-all text-sm text-gray-700 dark:text-gray-300">
+                          {currentIndexPath}
+                        </p>
+                      </div>
                     )}
                   </div>
+
                 </section>
 
                 <section className="space-y-4 border-t border-gray-200 pt-8 dark:border-dark-border">
