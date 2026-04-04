@@ -180,8 +180,6 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
-  const compactTrashCount = trashCount > 99 ? '99+' : String(trashCount)
-
   return (
     <>
       {variant === 'header' ? (
@@ -193,11 +191,6 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
           aria-label={trashCount > 0 ? `回收站，${trashCount} 个文件` : '回收站'}
         >
           <Trash2 className="h-4 w-4" />
-          {trashCount > 0 && (
-            <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[10px] leading-4 text-white shadow-sm">
-              {compactTrashCount}
-            </span>
-          )}
         </button>
       ) : (
         <div
