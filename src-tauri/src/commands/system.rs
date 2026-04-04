@@ -286,7 +286,23 @@ pub fn start_drag_files(
             .collect::<Result<Vec<_>, _>>()?
     };
 
-    #[cfg(target_os = "windows")]
+    let file_paths = file_paths
+        .into_iter()
+        .map(|path| {
+            if !path.exists() {
+                return Err(format!("File does not exist: {}", path.display()));
+            }
+
+            if path.is_absolute() {
+                Ok(path)
+            } else {
+                fs::canonicalize(&path)
+                    .map_err(|e| format!("Failed to resolve file path '{}': {}", path.display(), e))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         drag::start_drag(
             &window,
@@ -298,7 +314,7 @@ pub fn start_drag_files(
         .map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = window;
         let _ = file_paths;
