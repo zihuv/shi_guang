@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { ArrowUpDown, Play } from "lucide-react"
+import { ArrowUpDown, Filter, Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, type LibraryVisibleField, useSettingsStore } from "@/stores/settingsStore"
@@ -67,6 +67,18 @@ type SelectionBox = {
 
 type ArrowNavigationKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
 type ToolbarMenu = "sort" | "layout" | "info"
+
+const TOOLBAR_BUTTON_CLASS_NAME =
+  "relative inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors"
+
+function getToolbarButtonClassName(isActive: boolean) {
+  return cn(
+    TOOLBAR_BUTTON_CLASS_NAME,
+    isActive
+      ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
+      : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
+  )
+}
 
 const imageSrcCache = new Map<string, string>()
 
@@ -184,6 +196,15 @@ export default function FileGrid() {
     setPage,
     setPageSize,
   } = useFileStore()
+  const isFilterPanelOpen = useFilterStore((state) => state.isFilterPanelOpen)
+  const toggleFilterPanel = useFilterStore((state) => state.toggleFilterPanel)
+  const activeFilterCount = useFilterStore((state) => {
+    let count = 0
+    if (state.criteria.fileType !== "all") count += 1
+    if (state.criteria.tagIds.length > 0) count += 1
+    if (state.criteria.dominantColor) count += 1
+    return count
+  })
   const sortBy = useFilterStore((state) => state.criteria.sortBy)
   const sortDirection = useFilterStore((state) => state.criteria.sortDirection)
   const setSortBy = useFilterStore((state) => state.setSortBy)
@@ -789,17 +810,30 @@ export default function FileGrid() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setOpenToolbarMenu(null)
+              toggleFilterPanel()
+            }}
+            className={getToolbarButtonClassName(isFilterPanelOpen)}
+            title={activeFilterCount > 0 ? `筛选：已启用 ${activeFilterCount} 项` : "筛选"}
+            aria-label="筛选"
+            aria-pressed={isFilterPanelOpen}
+          >
+            <Filter className="h-4 w-4" />
+            {activeFilterCount > 0 && (
+              <span className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-500 px-1 text-[10px] font-medium leading-none text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
           <div className="relative">
             <button
               ref={sortMenuButtonRef}
               type="button"
               onClick={() => toggleToolbarMenu("sort")}
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
-                openToolbarMenu === "sort"
-                  ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
-                  : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
-              )}
+              className={getToolbarButtonClassName(openToolbarMenu === "sort")}
               title={`排序：${currentSortFieldLabel} · ${currentSortDirectionLabel}`}
               aria-label="排序"
               aria-expanded={openToolbarMenu === "sort"}
@@ -883,12 +917,7 @@ export default function FileGrid() {
               ref={infoMenuButtonRef}
               type="button"
               onClick={() => toggleToolbarMenu("info")}
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
-                openToolbarMenu === "info"
-                  ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
-                  : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
-              )}
+              className={getToolbarButtonClassName(openToolbarMenu === "info")}
               title={`信息显示：${visibleInfoFieldLabels.join(" · ") || "无"}`}
               aria-label="信息显示"
               aria-expanded={openToolbarMenu === "info"}
@@ -941,12 +970,7 @@ export default function FileGrid() {
               ref={layoutMenuButtonRef}
               type="button"
               onClick={() => toggleToolbarMenu("layout")}
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-md border text-gray-500 transition-colors",
-                openToolbarMenu === "layout"
-                  ? "border-gray-300 bg-gray-200 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
-                  : "border-gray-200/80 bg-white/70 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:border-dark-border dark:bg-dark-bg/80 dark:hover:bg-dark-border dark:hover:text-gray-200",
-              )}
+              className={getToolbarButtonClassName(openToolbarMenu === "layout")}
               title={`布局：${currentViewModeLabel}`}
               aria-label="布局"
               aria-expanded={openToolbarMenu === "layout"}

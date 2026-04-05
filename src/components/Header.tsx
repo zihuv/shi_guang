@@ -1,10 +1,9 @@
 import { useFileStore } from "@/stores/fileStore";
-import { useFilterStore } from "@/stores/filterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Search, Sun, Moon, Settings, Download, Filter } from "lucide-react";
+import { Search, Sun, Moon, Settings, Download } from "lucide-react";
 
 interface HeaderProps {
   onOpenSettings: () => void;
@@ -13,8 +12,6 @@ interface HeaderProps {
 export default function Header({ onOpenSettings }: HeaderProps) {
   const { searchQuery, setSearchQuery, importFiles, importTask } =
     useFileStore();
-  const { isFilterPanelOpen, toggleFilterPanel, getActiveFilterCount } =
-    useFilterStore();
   const { theme, setTheme } = useSettingsStore();
   const isImporting =
     !!importTask &&
@@ -25,8 +22,6 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     ? Math.min(100, Math.round((importTask.processed / importTask.total) * 100))
     : 0;
   const importCountLabel = `${importTask?.processed ?? 0}/${importTask?.total ?? 0}`;
-
-  const activeFilterCount = getActiveFilterCount();
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
@@ -121,21 +116,6 @@ export default function Header({ onOpenSettings }: HeaderProps) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant={isFilterPanelOpen ? "default" : "outline"}
-            size="sm"
-            onClick={toggleFilterPanel}
-            className="relative"
-          >
-            <Filter className="w-4 h-4 mr-1" />
-            筛选
-            {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {activeFilterCount}
-              </span>
-            )}
-          </Button>
-
           <Button
             onClick={handleImport}
             disabled={isImporting}
