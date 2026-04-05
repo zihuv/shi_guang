@@ -32,7 +32,9 @@ const getMatchScore = (name: string, query: string) => {
   return matchIndex === -1 ? Number.MAX_SAFE_INTEGER : matchIndex + 2;
 };
 
-type SuggestionTag = ReturnType<typeof useTagStore.getState>["flatTags"][number];
+type SuggestionTag = ReturnType<
+  typeof useTagStore.getState
+>["flatTags"][number];
 
 type SuggestionItem =
   | {
@@ -51,10 +53,7 @@ interface FileTagInputProps {
   fileTags: FileTag[];
 }
 
-export default function FileTagInput({
-  fileId,
-  fileTags,
-}: FileTagInputProps) {
+export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { addTagToFile, removeTagFromFile } = useFileStore();
   const { flatTags, addTag } = useTagStore();
@@ -226,7 +225,10 @@ export default function FileTagInput({
 
   const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
     const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+    if (
+      nextTarget instanceof Node &&
+      event.currentTarget.contains(nextTarget)
+    ) {
       return;
     }
 
@@ -282,8 +284,8 @@ export default function FileTagInput({
           ref={inputRef}
           type="text"
           value={tagInput}
-          className="h-7 min-w-[88px] flex-1 border-0 bg-transparent px-1 py-0 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none dark:text-gray-200"
-          placeholder={fileTags.length > 0 ? "继续添加标签" : "添加标签"}
+          className="input-system-font h-7 min-w-[88px] flex-1 border-0 bg-transparent px-1 py-0 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none dark:text-gray-200"
+          placeholder={"添加标签"}
           aria-autocomplete="list"
           aria-controls={isDropdownOpen ? listboxId : undefined}
           aria-expanded={isDropdownOpen}

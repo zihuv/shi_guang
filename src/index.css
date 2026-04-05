@@ -19,6 +19,11 @@ body {
   min-height: 100vh;
 }
 
+/* WebView2 clips "_" inside form controls with the app font stack. */
+.input-system-font {
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
 #root {
   min-height: 100vh;
   display: flex;
