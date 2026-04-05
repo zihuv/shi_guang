@@ -68,7 +68,7 @@ impl Database {
             "SELECT ft.file_id, t.id, t.name, t.color, t.parent_id, t.sort_order FROM tags t
              INNER JOIN file_tags ft ON t.id = ft.tag_id
              WHERE ft.file_id IN ({})
-             ORDER BY t.sort_order ASC, t.name ASC",
+             ORDER BY ft.file_id ASC, ft.rowid ASC",
             placeholders.join(", ")
         );
 
@@ -110,7 +110,7 @@ impl Database {
             "SELECT t.id, t.name, t.color, t.parent_id, t.sort_order FROM tags t
              INNER JOIN file_tags ft ON t.id = ft.tag_id
              WHERE ft.file_id = ?1
-             ORDER BY t.sort_order ASC, t.name ASC",
+             ORDER BY ft.rowid ASC",
         )?;
         let tags = stmt
             .query_map([file_id], |row| {
@@ -142,5 +142,75 @@ impl Database {
             params![file_id, tag_id],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn setup_db() -> (Database, PathBuf) {
+        let path =
+            std::env::temp_dir().join(format!("shiguang-tags-test-{}.db", generate_sync_id("db")));
+        let db = Database::new(&path).unwrap();
+        (db, path)
+    }
+
+    #[test]
+    fn file_tags_follow_attachment_order() {
+        let (db, path) = setup_db();
+        let now = current_timestamp();
+
+        db.conn
+            .execute(
+                "INSERT INTO files (
+                    path, name, ext, size, width, height, folder_id, created_at, modified_at,
+                    imported_at, rating, description, source_url, dominant_color, color_distribution,
+                    sync_id, fs_modified_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                params![
+                    "/tmp/demo.png",
+                    "demo.png",
+                    "png",
+                    1_i64,
+                    1_i32,
+                    1_i32,
+                    Option::<i64>::None,
+                    &now,
+                    &now,
+                    &now,
+                    0_i32,
+                    "",
+                    "",
+                    "",
+                    "[]",
+                    generate_sync_id("file"),
+                    &now,
+                    &now,
+                ],
+            )
+            .unwrap();
+        let file_id = db.conn.last_insert_rowid();
+
+        let first_tag_id = db
+            .create_tag("z-last-added-first", "#111111", None)
+            .unwrap();
+        let second_tag_id = db
+            .create_tag("a-last-added-second", "#222222", None)
+            .unwrap();
+
+        db.add_tag_to_file(file_id, first_tag_id).unwrap();
+        db.add_tag_to_file(file_id, second_tag_id).unwrap();
+
+        let tags = db.get_file_tags(file_id).unwrap();
+
+        assert_eq!(
+            tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>(),
+            vec!["z-last-added-first", "a-last-added-second"]
+        );
+
+        drop(db);
+        let _ = std::fs::remove_file(path);
     }
 }

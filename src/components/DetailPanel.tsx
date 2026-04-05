@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore";
-import { useTagStore } from "@/stores/tagStore";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
 import FileTypeIcon from "@/components/FileTypeIcon";
+import FileTagInput from "@/components/FileTagInput";
 import { getFilePreviewMode, getFileSrc, getTextPreviewContent, getThumbnailImageSrc, getVideoThumbnailSrc, formatSize, findFolderById, debounce } from "@/utils";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -176,14 +176,11 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 
 function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const {
-    addTagToFile,
-    removeTagFromFile,
     deleteFile,
     updateFileMetadata,
     exportFile,
     updateFileName,
   } = useFileStore();
-  const { flatTags } = useTagStore();
   const { folders } = useFolderStore();
 
   // Find folder by file's folderId
@@ -198,8 +195,6 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
   const [isVideoPlayerLoading, setIsVideoPlayerLoading] = useState(false);
   const previewType = getFilePreviewMode(file.ext);
-  const [tagInput, setTagInput] = useState("");
-  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [rating, setRating] = useState(file.rating || 0);
   const [description, setDescription] = useState(file.description || "");
   const [sourceUrl, setSourceUrl] = useState(file.sourceUrl || "");
@@ -339,20 +334,6 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     setEditedName(getNameWithoutExt(file.name));
   }, [file.rating, file.description, file.sourceUrl, file.name]);
 
-  const fileTags = file.tags;
-  const availableTags = flatTags.filter(
-    (t) => !fileTags.some((ft) => ft.id === t.id),
-  );
-
-  // Filter tags based on input
-  const filteredTags = tagInput
-    ? flatTags.filter(
-        (t) =>
-          t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-          !fileTags.some((ft) => ft.id === t.id),
-      )
-    : availableTags;
-
   const handleDelete = async () => {
     await deleteFile(file.id);
   };
@@ -390,40 +371,6 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const handleSourceUrlChange = (value: string) => {
     setSourceUrl(value);
     saveMetadata(rating, description, value);
-  };
-
-  const handleAddTag = async (tagId: number) => {
-    await addTagToFile(file.id, tagId);
-    setTagInput("");
-    setShowTagSuggestions(false);
-  };
-
-  const handleCreateAndAddTag = async () => {
-    if (!tagInput.trim()) return;
-    // Create a new tag with random color
-    const colors = [
-      "#ef4444",
-      "#f97316",
-      "#eab308",
-      "#22c55e",
-      "#06b6d4",
-      "#3b82f6",
-      "#8b5cf6",
-      "#ec4899",
-    ];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    const { addTag } = useTagStore.getState();
-    await addTag(tagInput.trim(), randomColor);
-    // Reload tags and get the new tag
-    await useTagStore.getState().loadTags();
-    const newTag = useTagStore
-      .getState()
-      .flatTags.find((t) => t.name === tagInput.trim());
-    if (newTag) {
-      await addTagToFile(file.id, newTag.id);
-    }
-    setTagInput("");
-    setShowTagSuggestions(false);
   };
 
   const handleExport = async () => {
@@ -740,105 +687,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
         </div>
 
         {/* 2. Tags input with tags displayed inside */}
-        <div className="relative">
-          {/* 已添加的标签芯片（显示在输入框内） */}
-          {fileTags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-1">
-              {fileTags.map((tag) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full text-white"
-                  style={{ backgroundColor: tag.color }}
-                >
-                  {tag.name}
-                  <button
-                    onClick={() => removeTagFromFile(file.id, tag.id)}
-                    className="hover:opacity-70"
-                  >
-                    <svg
-                      className="w-3 h-3"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {/* 标签输入框 */}
-          <Input
-            type="text"
-            value={tagInput}
-            onChange={(e) => {
-              setTagInput(e.target.value);
-              setShowTagSuggestions(true);
-            }}
-            onFocus={() => setShowTagSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowTagSuggestions(false), 200)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                if (filteredTags.length > 0) {
-                  // 复用第一个匹配的标签
-                  handleAddTag(filteredTags[0].id);
-                } else if (tagInput.trim()) {
-                  // 创建新标签
-                  handleCreateAndAddTag();
-                }
-              }
-            }}
-            placeholder="添加标签"
-          />
-          {showTagSuggestions && tagInput && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-md shadow-lg max-h-40 overflow-auto">
-              {filteredTags.length > 0 ? (
-                filteredTags.map((tag) => (
-                  <button
-                    key={tag.id}
-                    onClick={() => handleAddTag(tag.id)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-border"
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {tag.name}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <button
-                  onClick={handleCreateAndAddTag}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary-600 dark:text-primary-400 hover:bg-gray-100 dark:hover:bg-dark-border"
-                >
-                  <svg
-                    className="w-3 h-3"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  创建标签 "{tagInput}"
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <FileTagInput fileId={file.id} fileTags={file.tags} />
 
         {/* 3. Description */}
         <div>
