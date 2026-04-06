@@ -11,7 +11,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "version:set": "node scripts/set-version.cjs",
+    "release": "node scripts/release.cjs",
     "docs:dev": "cd website && rspress dev",
     "docs:build": "cd website && rspress build",
     "docs:preview": "cd website && rspress preview"
