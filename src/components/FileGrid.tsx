@@ -4,11 +4,13 @@ import { ArrowUpDown, Filter, Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, type LibraryVisibleField, useSettingsStore } from "@/stores/settingsStore"
+import { startExternalFileDrag } from "@/lib/externalDrag"
 import { cn } from "@/lib/utils"
 import { REQUEST_FOCUS_FIRST_FILE_EVENT } from "@/lib/libraryNavigation"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
+import { toast } from "sonner"
 
 const TILE_CARD_BASE_WIDTH = 180
 const TILE_CARD_MIN_WIDTH = 90
@@ -30,6 +32,7 @@ const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
 const VIEW_SCALE_KEYBOARD_STEP = 0.1
 const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012
+const IS_MACOS = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform)
 
 const SORT_DIRECTION_OPTIONS: Array<{ value: SortDirection; label: string }> = [
   { value: "asc", label: "升序" },
@@ -1598,7 +1601,6 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
     event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
-    event.dataTransfer.setData("text/plain", draggedFileIds.join(","))
     onDragStart()
   }
 
@@ -1627,7 +1629,10 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
+            draggable={IS_MACOS}
+            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
+            title={IS_MACOS ? "拖拽到外部应用" : undefined}
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1694,7 +1699,6 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
     event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
-    event.dataTransfer.setData("text/plain", draggedFileIds.join(","))
     onDragStart()
   }
 
@@ -1730,7 +1734,10 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
+            draggable={IS_MACOS}
+            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: getAspectRatio() }}
+            title={IS_MACOS ? "拖拽到外部应用" : undefined}
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1799,7 +1806,6 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
     const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
     event.dataTransfer.effectAllowed = "move"
     event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
-    event.dataTransfer.setData("text/plain", draggedFileIds.join(","))
     onDragStart()
   }
 
@@ -1828,7 +1834,10 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
         >
           <div
             className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+            draggable={IS_MACOS}
+            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
+            title={IS_MACOS ? "拖拽到外部应用" : undefined}
           >
             {!isVisible || imageSrc === null ? (
               <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1921,6 +1930,25 @@ function getFileInfoTokens(file: FileItem, visibleFields: LibraryVisibleField[])
   })
 
   return tokens
+}
+
+function getExternalDragFileIds(fileId: number) {
+  const { selectedFiles } = useFileStore.getState()
+  return selectedFiles.includes(fileId) ? selectedFiles : [fileId]
+}
+
+function handleExternalFileDragStart(event: DragEvent<HTMLElement>, fileId: number) {
+  if (!IS_MACOS) {
+    return
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  void startExternalFileDrag(getExternalDragFileIds(fileId)).catch((error) => {
+    console.error("Failed to start external file drag:", error)
+    toast.error("拖拽到外部应用失败")
+  })
 }
 
 function InfoDisplayIcon({ className }: { className?: string }) {

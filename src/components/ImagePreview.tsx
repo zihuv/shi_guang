@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
@@ -320,9 +320,17 @@ export default function ImagePreview() {
     }
   }
 
-  const handleExternalDragStart = (event: React.DragEvent<HTMLElement>) => {
+  const suppressExternalDragEvent = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault()
     event.stopPropagation()
+  }
+
+  const handleExternalDragMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    suppressExternalDragEvent(event)
 
     void startExternalFileDrag([currentFile.id]).catch((error) => {
       console.error('Failed to start external drag:', error)
@@ -593,9 +601,10 @@ export default function ImagePreview() {
           <img
             src={imageSrc}
             alt={currentFile.name}
-            draggable
-            onDragStart={handleExternalDragStart}
-            className="max-h-full max-w-full select-none object-contain"
+            onMouseDown={handleExternalDragMouseDown}
+            onClick={suppressExternalDragEvent}
+            className="max-h-full max-w-full cursor-grab select-none object-contain active:cursor-grabbing"
+            title="拖拽到外部应用"
           />
         </div>
       ) : (
@@ -885,15 +894,16 @@ export default function ImagePreview() {
       </ContextMenu>
 
       <div className="px-4 py-1 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border text-xs flex items-center justify-between">
-        <div
-          className="flex min-w-0 items-center gap-2 cursor-grab active:cursor-grabbing"
-          draggable
-          onDragStart={handleExternalDragStart}
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 border-0 bg-transparent p-0 text-left cursor-grab active:cursor-grabbing"
+          onMouseDown={handleExternalDragMouseDown}
+          onClick={suppressExternalDragEvent}
           title="拖拽到外部应用"
         >
           <FileTypeIcon ext={currentFile.ext} className="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-gray-400" />
           <span className="truncate text-gray-600 dark:text-gray-400">{currentFile.name}</span>
-        </div>
+        </button>
         <span className="text-gray-500 dark:text-gray-500">{previewMeta} · {formatSize(currentFile.size)}</span>
       </div>
 
