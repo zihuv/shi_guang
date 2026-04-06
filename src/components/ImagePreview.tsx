@@ -334,14 +334,12 @@ export default function ImagePreview() {
       return {
         onMouseDown: handleExternalDragMouseDown,
         onClick: suppressExternalDragEvent,
-        title: '拖拽到外部应用',
       }
     }
 
     return {
       draggable: true,
       onDragStart: handleExternalDragStart,
-      title: '拖拽到外部应用',
     }
   }
 

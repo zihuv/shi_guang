@@ -1630,7 +1630,6 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
             draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
-            title="拖拽到外部应用"
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1735,7 +1734,6 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
             draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: getAspectRatio() }}
-            title="拖拽到外部应用"
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1835,7 +1833,6 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
             draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
-            title="拖拽到外部应用"
           >
             {!isVisible || imageSrc === null ? (
               <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
