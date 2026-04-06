@@ -28,6 +28,7 @@ const FIT_MODE_SNAP_EPSILON = 0.5
 const BASE_WHEEL_ZOOM_SENSITIVITY = 0.002
 const OVERLAY_BUTTON_CLASS = 'flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/80 backdrop-blur transition hover:bg-black/70 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
 const OVERLAY_CHIP_CLASS = 'rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-xs text-white/70 backdrop-blur'
+const IS_MACOS = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 
 function clampZoom(value: number) {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value))
@@ -303,13 +304,23 @@ export default function ImagePreview() {
     }
   }
 
+  const handleExternalDragStart = (event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    void startExternalFileDrag([currentFile.id]).catch((error) => {
+      console.error('Failed to start external drag:', error)
+      toast.error('拖拽到外部应用失败')
+    })
+  }
+
   const suppressExternalDragEvent = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault()
     event.stopPropagation()
   }
 
   const handleExternalDragMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
-    if (event.button !== 0) {
+    if (!IS_MACOS || event.button !== 0) {
       return
     }
 
@@ -320,6 +331,24 @@ export default function ImagePreview() {
       toast.error('拖拽到外部应用失败')
     })
   }
+
+  const getExternalDragProps = () => {
+    if (IS_MACOS) {
+      return {
+        onMouseDown: handleExternalDragMouseDown,
+        onClick: suppressExternalDragEvent,
+        title: '拖拽到外部应用',
+      }
+    }
+
+    return {
+      draggable: true,
+      onDragStart: handleExternalDragStart,
+      title: '拖拽到外部应用',
+    }
+  }
+
+  const externalDragProps = getExternalDragProps()
 
   // 复制到
   const handleCopyFile = async (targetFolderId: number | null) => {
@@ -584,10 +613,8 @@ export default function ImagePreview() {
           <img
             src={imageSrc}
             alt={currentFile.name}
-            onMouseDown={handleExternalDragMouseDown}
-            onClick={suppressExternalDragEvent}
             className="max-h-full max-w-full cursor-grab select-none object-contain active:cursor-grabbing"
-            title="拖拽到外部应用"
+            {...externalDragProps}
           />
         </div>
       ) : (
@@ -869,9 +896,7 @@ export default function ImagePreview() {
         <button
           type="button"
           className="flex min-w-0 items-center gap-2 border-0 bg-transparent p-0 text-left cursor-grab active:cursor-grabbing"
-          onMouseDown={handleExternalDragMouseDown}
-          onClick={suppressExternalDragEvent}
-          title="拖拽到外部应用"
+          {...externalDragProps}
         >
           <FileTypeIcon ext={currentFile.ext} className="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-gray-400" />
           <span className="truncate text-gray-600 dark:text-gray-400">{currentFile.name}</span>

@@ -32,8 +32,6 @@ const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
 const VIEW_SCALE_KEYBOARD_STEP = 0.1
 const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012
-const IS_MACOS = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform)
-
 const SORT_DIRECTION_OPTIONS: Array<{ value: SortDirection; label: string }> = [
   { value: "asc", label: "升序" },
   { value: "desc", label: "降序" },
@@ -1629,10 +1627,10 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
-            draggable={IS_MACOS}
+            draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
-            title={IS_MACOS ? "拖拽到外部应用" : undefined}
+            title="拖拽到外部应用"
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1734,10 +1732,10 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
-            draggable={IS_MACOS}
+            draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: getAspectRatio() }}
-            title={IS_MACOS ? "拖拽到外部应用" : undefined}
+            title="拖拽到外部应用"
           >
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1834,10 +1832,10 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
         >
           <div
             className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
-            draggable={IS_MACOS}
+            draggable
             onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
-            title={IS_MACOS ? "拖拽到外部应用" : undefined}
+            title="拖拽到外部应用"
           >
             {!isVisible || imageSrc === null ? (
               <svg className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1938,10 +1936,6 @@ function getExternalDragFileIds(fileId: number) {
 }
 
 function handleExternalFileDragStart(event: DragEvent<HTMLElement>, fileId: number) {
-  if (!IS_MACOS) {
-    return
-  }
-
   event.preventDefault()
   event.stopPropagation()
 
