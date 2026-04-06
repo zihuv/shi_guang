@@ -5,6 +5,7 @@ import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
 import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
+import { buildVisibleTreeItems, useTreeKeyboardNavigation } from '@/hooks/useTreeKeyboardNavigation'
 import { requestFocusFirstFile } from '@/lib/libraryNavigation'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
@@ -43,18 +44,7 @@ import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move, 
 
 const INTERNAL_FILE_DRAG_MIME = 'application/x-shiguang-file-ids'
 
-type VisibleFolderItem = {
-  id: number | null
-  depth: number
-  hasChildren: boolean
-  isExpanded: boolean
-}
-
-const ROOT_FOLDER_ITEM_KEY = 'root'
-
 // Helper functions for folder tree operations
-const getFolderItemKey = (folderId: number | null) => (folderId === null ? ROOT_FOLDER_ITEM_KEY : folderId.toString())
-
 const findFolderById = (folders: FolderNode[], folderId: number): FolderNode | null => {
   for (const folder of folders) {
     if (folder.id === folderId) return folder
@@ -119,25 +109,6 @@ const isDescendant = (folders: FolderNode[], parentId: number, childId: number):
 
   return checkDescendant(parent.children, childId)
 }
-
-const buildVisibleFolderItems = (
-  folders: FolderNode[],
-  expandedFolderIds: number[],
-  depth = 0,
-): VisibleFolderItem[] =>
-  folders.flatMap((folder) => {
-    const isExpanded = expandedFolderIds.includes(folder.id)
-    const hasChildren = folder.children.length > 0
-    return [
-      {
-        id: folder.id,
-        depth,
-        hasChildren,
-        isExpanded,
-      },
-      ...(hasChildren && isExpanded ? buildVisibleFolderItems(folder.children, expandedFolderIds, depth + 1) : []),
-    ]
-  })
 
 async function selectFolderFromTree(folderId: number | null) {
   const folderStore = useFolderStore.getState()
@@ -676,8 +647,40 @@ export default function FolderTree() {
 
   // Track mouse position for drag between folders
   const mouseYRef = useRef<number>(0)
-  const treeContainerRef = useRef<HTMLDivElement>(null)
-  const keyboardItemRefs = useRef(new Map<string, HTMLDivElement>())
+  const visibleFolderItems = useMemo(
+    () => [
+      {
+        id: null,
+        parentId: null,
+        depth: 0,
+        hasChildren: false,
+        isExpanded: false,
+      },
+      ...buildVisibleTreeItems(folders, {
+        expandedIds: expandedFolderIds,
+        getId: (folder) => folder.id,
+        getChildren: (folder) => folder.children,
+      }),
+    ],
+    [expandedFolderIds, folders],
+  )
+  const {
+    containerRef: treeContainerRef,
+    focusContainer: focusTree,
+    registerItem: registerKeyboardItem,
+    handleKeyDown: handleTreeKeyDown,
+  } = useTreeKeyboardNavigation({
+    items: visibleFolderItems,
+    selectedId: selectedFolderId,
+    onSelect: async (folderId) => {
+      focusTree()
+      await selectFolderFromTree(folderId)
+    },
+    onToggle: (folderId) => {
+      useFolderStore.getState().toggleFolder(folderId)
+    },
+    onActivate: requestFocusFirstFile,
+  })
 
   // Listen for drag events from child FolderItem components
   useEffect(() => {
@@ -1034,121 +1037,9 @@ export default function FolderTree() {
     })
   }, [folders, moveFolder, reorderFolders, setFolders, uniqueContextId])
 
-  const focusTree = () => {
-    treeContainerRef.current?.focus({ preventScroll: true })
-  }
-
-  const registerKeyboardItem = (folderId: number, element: HTMLDivElement | null) => {
-    const key = getFolderItemKey(folderId)
-    if (element) {
-      keyboardItemRefs.current.set(key, element)
-      return
-    }
-    keyboardItemRefs.current.delete(key)
-  }
-
-  const scrollFolderItemIntoView = (folderId: number | null) => {
-    keyboardItemRefs.current.get(getFolderItemKey(folderId))?.scrollIntoView({ block: 'nearest' })
-  }
-
   const selectFolderForKeyboard = async (folderId: number | null) => {
     focusTree()
     await selectFolderFromTree(folderId)
-  }
-
-  const visibleFolderItems = useMemo(
-    () => [
-      {
-        id: null,
-        depth: 0,
-        hasChildren: false,
-        isExpanded: false,
-      },
-      ...buildVisibleFolderItems(folders, expandedFolderIds),
-    ],
-    [expandedFolderIds, folders],
-  )
-
-  useEffect(() => {
-    scrollFolderItemIntoView(selectedFolderId)
-  }, [selectedFolderId, visibleFolderItems])
-
-  const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const nativeEvent = event.nativeEvent as KeyboardEvent
-
-    if (
-      event.defaultPrevented ||
-      nativeEvent.isComposing ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey
-    ) {
-      return
-    }
-
-    if (
-      event.key !== 'ArrowUp' &&
-      event.key !== 'ArrowDown' &&
-      event.key !== 'ArrowLeft' &&
-      event.key !== 'ArrowRight' &&
-      event.key !== 'Enter'
-    ) {
-      return
-    }
-
-    const currentIndex = visibleFolderItems.findIndex((item) => item.id === selectedFolderId)
-    const resolvedIndex = currentIndex === -1 ? 0 : currentIndex
-    const currentItem = visibleFolderItems[resolvedIndex]
-
-    if (!currentItem) {
-      return
-    }
-
-    event.preventDefault()
-    event.stopPropagation()
-
-    switch (event.key) {
-      case 'ArrowUp': {
-        const previousItem = visibleFolderItems[Math.max(0, resolvedIndex - 1)]
-        if (previousItem) {
-          void selectFolderForKeyboard(previousItem.id)
-        }
-        return
-      }
-      case 'ArrowDown': {
-        const nextItem = visibleFolderItems[Math.min(visibleFolderItems.length - 1, resolvedIndex + 1)]
-        if (nextItem) {
-          void selectFolderForKeyboard(nextItem.id)
-        }
-        return
-      }
-      case 'ArrowLeft': {
-        if (currentItem.id === null) {
-          return
-        }
-
-        if (currentItem.hasChildren && currentItem.isExpanded) {
-          useFolderStore.getState().toggleFolder(currentItem.id)
-          return
-        }
-
-        const parentId = findFolderParentId(folders, currentItem.id, null)
-        if (parentId !== null || selectedFolderId !== null) {
-          void selectFolderForKeyboard(parentId)
-        }
-        return
-      }
-      case 'ArrowRight':
-        requestFocusFirstFile()
-        return
-      case 'Enter':
-        if (currentItem.id !== null && currentItem.hasChildren) {
-          useFolderStore.getState().toggleFolder(currentItem.id)
-          return
-        }
-        requestFocusFirstFile()
-        return
-    }
   }
 
   const handleAddFolder = async () => {
@@ -1235,13 +1126,7 @@ export default function FolderTree() {
           <div className="space-y-1">
             {/* Virtual "全部文件" (All Files) item - cannot be deleted */}
             <div
-              ref={(element) => {
-                if (element) {
-                  keyboardItemRefs.current.set(ROOT_FOLDER_ITEM_KEY, element)
-                  return
-                }
-                keyboardItemRefs.current.delete(ROOT_FOLDER_ITEM_KEY)
-              }}
+              ref={(element) => registerKeyboardItem(null, element)}
               className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
                 selectedFolderId === null
                   ? 'bg-primary-100 dark:bg-primary-900/30'

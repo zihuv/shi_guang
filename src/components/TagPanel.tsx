@@ -4,6 +4,7 @@ import { attachClosestEdge, extractClosestEdge } from "@atlaskit/pragmatic-drag-
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine"
 import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
+import { buildVisibleTreeItems, useTreeKeyboardNavigation } from "@/hooks/useTreeKeyboardNavigation"
 import {
   Dialog,
   DialogContent,
@@ -36,15 +37,6 @@ const TAG_COLORS = [
 type DragPosition =
   | { type: "none" }
   | { type: "sort"; targetId: number; before: boolean }
-
-type VisibleTagItem = {
-  id: number | null
-  depth: number
-  hasChildren: boolean
-  isExpanded: boolean
-}
-
-const ROOT_TAG_ITEM_KEY = "root"
 
 const findTagParentId = (tags: Tag[], tagId: number, parentId: number | null = null): number | null => {
   for (const tag of tags) {
@@ -86,23 +78,6 @@ const isDescendant = (tags: Tag[], parentId: number, childId: number): boolean =
 
   return check(parent.children)
 }
-
-const getTagItemKey = (tagId: number | null) => (tagId === null ? ROOT_TAG_ITEM_KEY : tagId.toString())
-
-const buildVisibleTagItems = (tags: Tag[], expandedIds: number[], depth = 0): VisibleTagItem[] =>
-  tags.flatMap((tag) => {
-    const isExpanded = expandedIds.includes(tag.id)
-    const hasChildren = tag.children.length > 0
-    return [
-      {
-        id: tag.id,
-        depth,
-        hasChildren,
-        isExpanded,
-      },
-      ...(hasChildren && isExpanded ? buildVisibleTagItems(tag.children, expandedIds, depth + 1) : []),
-    ]
-  })
 
 async function selectTagFromTree(tagId: number | null) {
   const tagStore = useTagStore.getState()
@@ -371,8 +346,41 @@ export default function TagPanel() {
   const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" })
   const [expandedIds, setExpandedIds] = useState<number[]>([])
   const [deletingTag, setDeletingTag] = useState<Tag | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const keyboardItemRefs = useRef(new Map<string, HTMLDivElement>())
+  const handleToggle = (id: number) => {
+    setExpandedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
+  }
+  const visibleTagItems = useMemo(
+    () => [
+      {
+        id: null,
+        parentId: null,
+        depth: 0,
+        hasChildren: false,
+        isExpanded: false,
+      },
+      ...buildVisibleTreeItems(tags, {
+        expandedIds,
+        getId: (tag) => tag.id,
+        getChildren: (tag) => tag.children,
+      }),
+    ],
+    [expandedIds, tags],
+  )
+  const {
+    containerRef: panelRef,
+    focusContainer: focusPanel,
+    registerItem: registerKeyboardItem,
+    handleKeyDown: handlePanelKeyDown,
+  } = useTreeKeyboardNavigation({
+    items: visibleTagItems,
+    selectedId: selectedTagId,
+    onSelect: async (tagId) => {
+      focusPanel()
+      await selectTagFromTree(tagId)
+    },
+    onToggle: handleToggle,
+    onActivate: requestFocusFirstFile,
+  })
 
   useEffect(() => {
     setExpandedIds((prev) => {
@@ -383,44 +391,10 @@ export default function TagPanel() {
     })
   }, [tags])
 
-  const focusPanel = () => {
-    panelRef.current?.focus({ preventScroll: true })
-  }
-
-  const registerKeyboardItem = (tagId: number, element: HTMLDivElement | null) => {
-    const key = getTagItemKey(tagId)
-    if (element) {
-      keyboardItemRefs.current.set(key, element)
-      return
-    }
-    keyboardItemRefs.current.delete(key)
-  }
-
-  const scrollTagItemIntoView = (tagId: number | null) => {
-    keyboardItemRefs.current.get(getTagItemKey(tagId))?.scrollIntoView({ block: "nearest" })
-  }
-
   const selectTagForKeyboard = async (tagId: number | null) => {
     focusPanel()
     await selectTagFromTree(tagId)
   }
-
-  const visibleTagItems = useMemo(
-    () => [
-      {
-        id: null,
-        depth: 0,
-        hasChildren: false,
-        isExpanded: false,
-      },
-      ...buildVisibleTagItems(tags, expandedIds),
-    ],
-    [expandedIds, tags],
-  )
-
-  useEffect(() => {
-    scrollTagItemIntoView(selectedTagId)
-  }, [selectedTagId, visibleTagItems])
 
   useEffect(() => {
     return monitorForElements({
@@ -508,88 +482,6 @@ export default function TagPanel() {
     })
   }, [tags, reorderTags])
 
-  const handleToggle = (id: number) => {
-    setExpandedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
-  }
-
-  const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const nativeEvent = event.nativeEvent as KeyboardEvent
-
-    if (
-      event.defaultPrevented ||
-      nativeEvent.isComposing ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey
-    ) {
-      return
-    }
-
-    if (
-      event.key !== "ArrowUp" &&
-      event.key !== "ArrowDown" &&
-      event.key !== "ArrowLeft" &&
-      event.key !== "ArrowRight" &&
-      event.key !== "Enter"
-    ) {
-      return
-    }
-
-    const currentIndex = visibleTagItems.findIndex((item) => item.id === selectedTagId)
-    const resolvedIndex = currentIndex === -1 ? 0 : currentIndex
-    const currentItem = visibleTagItems[resolvedIndex]
-
-    if (!currentItem) {
-      return
-    }
-
-    event.preventDefault()
-    event.stopPropagation()
-
-    switch (event.key) {
-      case "ArrowUp": {
-        const previousItem = visibleTagItems[Math.max(0, resolvedIndex - 1)]
-        if (previousItem) {
-          void selectTagForKeyboard(previousItem.id)
-        }
-        return
-      }
-      case "ArrowDown": {
-        const nextItem = visibleTagItems[Math.min(visibleTagItems.length - 1, resolvedIndex + 1)]
-        if (nextItem) {
-          void selectTagForKeyboard(nextItem.id)
-        }
-        return
-      }
-      case "ArrowLeft": {
-        if (currentItem.id === null) {
-          return
-        }
-
-        if (currentItem.hasChildren && currentItem.isExpanded) {
-          handleToggle(currentItem.id)
-          return
-        }
-
-        const parentId = findTagParentId(tags, currentItem.id)
-        if (parentId !== null || selectedTagId !== null) {
-          void selectTagForKeyboard(parentId)
-        }
-        return
-      }
-      case "ArrowRight":
-        requestFocusFirstFile()
-        return
-      case "Enter":
-        if (currentItem.id !== null && currentItem.hasChildren) {
-          handleToggle(currentItem.id)
-          return
-        }
-        requestFocusFirstFile()
-        return
-    }
-  }
-
   const openAddDialog = (parent: Tag | null = null) => {
     setAddingParent(parent)
     setIsAdding(true)
@@ -658,13 +550,7 @@ export default function TagPanel() {
       >
         <div className="space-y-1">
           <div
-            ref={(element) => {
-              if (element) {
-                keyboardItemRefs.current.set(ROOT_TAG_ITEM_KEY, element)
-                return
-              }
-              keyboardItemRefs.current.delete(ROOT_TAG_ITEM_KEY)
-            }}
+            ref={(element) => registerKeyboardItem(null, element)}
             className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
               selectedTagId === null
                 ? "bg-primary-100 dark:bg-primary-900/30"
