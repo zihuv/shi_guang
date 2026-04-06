@@ -743,7 +743,7 @@ export default function ImagePreview() {
                   </button>
                   <button
                     onClick={handleFitToView}
-                    className={`${OVERLAY_BUTTON_CLASS} ${isFitMode ? 'bg-white/15 text-white' : ''}`}
+                    className={OVERLAY_BUTTON_CLASS}
                     title="适应视图"
                     aria-pressed={isFitMode}
                   >
@@ -876,7 +876,7 @@ export default function ImagePreview() {
               {supportsZoom && (
                 <button
                   onClick={handleFitToView}
-                  className={`rounded p-1.5 ${isFitMode ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                  className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
                   title="适应视图"
                   aria-pressed={isFitMode}
                 >
