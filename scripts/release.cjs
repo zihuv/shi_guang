@@ -107,7 +107,6 @@ function updateVersions(versionFiles, version) {
     const parsed = readJson(filePath);
     parsed.version = version;
     fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
-    console.log(`Updated ${file} -> ${version}`);
   }
 }
 
@@ -186,24 +185,17 @@ function main() {
 
   const commitMessage = `发布 ${version}`;
 
-  console.log(`Setting version to ${version}`);
   updateVersions(VERSION_FILES, version);
 
-  console.log(`Validating release metadata for ${version}`);
-  run(process.execPath, [path.join("scripts", "prepare-release.cjs"), version], {
-    stdio: "inherit",
-  });
+  run(process.execPath, [path.join("scripts", "prepare-release.cjs"), version]);
 
-  console.log("Creating release commit");
-  runGit(["add", ...VERSION_FILES], { stdio: "inherit" });
-  runGit(["commit", "-m", commitMessage], { stdio: "inherit" });
+  runGit(["add", ...VERSION_FILES]);
+  runGit(["commit", "-m", commitMessage]);
 
-  console.log(`Creating annotated tag ${version}`);
-  runGit(["tag", "-a", version, "-m", commitMessage], { stdio: "inherit" });
+  runGit(["tag", "-a", version, "-m", commitMessage]);
 
   if (!noPush) {
-    console.log("Pushing branch and tag");
-    runGit(["push", "--follow-tags"], { stdio: "inherit" });
+    runGit(["push", "--follow-tags"]);
   }
 }
 
