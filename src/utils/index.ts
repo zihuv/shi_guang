@@ -405,15 +405,15 @@ export async function getThumbnailImageSrc(path: string, ext?: string): Promise<
   }
 
   try {
-    const thumbnailPath = await invoke<string | null>('get_thumbnail_path', {
+    const thumbnailDataBase64 = await invoke<string | null>('get_thumbnail_data_base64', {
       filePath: path,
     })
 
-    if (!thumbnailPath) {
+    if (!thumbnailDataBase64) {
       return ''
     }
 
-    return await getFileSrc(thumbnailPath)
+    return `data:image/jpeg;base64,${thumbnailDataBase64}`
   } catch (e) {
     if (isMissingFileError(e)) {
       scheduleMissingFileCleanup(path)

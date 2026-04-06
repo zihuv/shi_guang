@@ -1,3 +1,4 @@
+use base64::Engine;
 use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, ColorType, DynamicImage};
 use rusqlite::Connection;
 use std::collections::hash_map::DefaultHasher;
@@ -209,6 +210,20 @@ pub fn get_or_create_thumbnail(
     Ok(Some(output_path))
 }
 
+pub fn get_or_create_thumbnail_base64(
+    index_paths: &[String],
+    file_path: &Path,
+) -> Result<Option<String>, String> {
+    let Some(output_path) = get_or_create_thumbnail(index_paths, file_path)? else {
+        return Ok(None);
+    };
+
+    let bytes = fs::read(&output_path)
+        .map_err(|e| format!("Failed to read thumbnail file {:?}: {}", output_path, e))?;
+
+    Ok(Some(base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 pub fn remove_thumbnail_for_file(index_paths: &[String], file_path: &Path) -> Result<(), String> {
     if !file_path.exists() {
         return Ok(());
@@ -312,4 +327,45 @@ pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<(PathBuf, PathBuf),
     }
 
     Ok((new_db_path, index_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_storage_dirs, get_or_create_thumbnail_base64, get_thumbnail_cache_path};
+    use image::{Rgb, RgbImage};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_temp_dir() -> PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("shiguang-thumbnail-test-{unique_suffix}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn thumbnail_base64_reads_generated_thumbnail() {
+        let index_path = create_temp_dir();
+        ensure_storage_dirs(&index_path).unwrap();
+
+        let source_path = index_path.join("sample.png");
+        let image = RgbImage::from_pixel(24, 24, Rgb([12, 34, 56]));
+        image.save(&source_path).unwrap();
+
+        let index_paths = vec![index_path.to_string_lossy().to_string()];
+        let thumbnail_base64 =
+            get_or_create_thumbnail_base64(&index_paths, &source_path).unwrap();
+        assert!(thumbnail_base64.is_some());
+        assert!(!thumbnail_base64.unwrap().is_empty());
+
+        let thumbnail_path = get_thumbnail_cache_path(&index_paths, &source_path).unwrap();
+        assert!(thumbnail_path.is_some());
+        assert!(thumbnail_path.unwrap().exists());
+
+        fs::remove_dir_all(index_path).unwrap();
+    }
 }

@@ -161,6 +161,7 @@ pub fn run() {
             commands::indexing::add_index_path,
             commands::indexing::switch_index_path_and_restart,
             commands::indexing::get_thumbnail_path,
+            commands::indexing::get_thumbnail_data_base64,
             commands::indexing::get_thumbnail_cache_path,
             commands::indexing::save_thumbnail_cache,
             commands::indexing::remove_index_path,

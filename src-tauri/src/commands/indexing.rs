@@ -85,6 +85,18 @@ pub fn get_thumbnail_path(
 }
 
 #[tauri::command]
+pub fn get_thumbnail_data_base64(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<Option<String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
+    drop(db);
+
+    storage::get_or_create_thumbnail_base64(&index_paths, Path::new(&file_path))
+}
+
+#[tauri::command]
 pub fn get_thumbnail_cache_path(
     state: State<AppState>,
     file_path: String,
