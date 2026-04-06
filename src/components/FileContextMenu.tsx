@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 import { useFileStore, FileItem } from '@/stores/fileStore'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { copyFilesToClipboard } from '@/lib/clipboard'
@@ -24,8 +25,45 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   const { deleteFile, deleteFiles, setSelectedFile, selectedFiles, moveFiles, copyFiles } = useFileStore()
   const { folders } = useFolderStore()
   const [frozenFileIds, setFrozenFileIds] = useState<number[] | null>(null)
+  const frozenFileIdsRef = useRef<number[] | null>(null)
+  const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null)
   const liveActiveFileIds = selectedFiles.includes(file.id) ? selectedFiles : [file.id]
   const activeFileIds = frozenFileIds ?? liveActiveFileIds
+
+  const snapshotActiveFileIds = () => {
+    const { selectedFiles: latestSelectedFiles } = useFileStore.getState()
+    const nextFileIds = latestSelectedFiles.includes(file.id) ? [...latestSelectedFiles] : [file.id]
+    frozenFileIdsRef.current = nextFileIds
+    setFrozenFileIds(nextFileIds)
+    console.log('[FileContextMenu] snapshotActiveFileIds', { fileId: file.id, nextFileIds })
+    return nextFileIds
+  }
+
+  const getActionFileIds = () => {
+    if (frozenFileIdsRef.current && frozenFileIdsRef.current.length > 0) {
+      return frozenFileIdsRef.current
+    }
+
+    const { selectedFiles: latestSelectedFiles } = useFileStore.getState()
+    return latestSelectedFiles.includes(file.id) ? [...latestSelectedFiles] : [file.id]
+  }
+
+  const clearActionFileIds = () => {
+    frozenFileIdsRef.current = null
+    setFrozenFileIds(null)
+    lastMenuActionRef.current = null
+  }
+
+  const triggerMenuAction = (key: string, action: () => void | Promise<void>) => {
+    const now = Date.now()
+    const lastAction = lastMenuActionRef.current
+    if (lastAction && lastAction.key === key && now - lastAction.timestamp < 250) {
+      return
+    }
+
+    lastMenuActionRef.current = { key, timestamp: now }
+    void action()
+  }
 
   // Flatten folder tree for display in submenu
   const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {
@@ -40,12 +78,6 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   }
 
   const flatFolders = flattenFolders(folders)
-
-  // Add root option at the beginning (for copy only)
-  const copyMenuItems = [
-    { id: null, name: '根目录', sortOrder: -1 as const },
-    ...flatFolders
-  ]
 
   // Open file with default application (using Rust backend)
   const handleOpenFile = async () => {
@@ -67,39 +99,44 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
 
   const handleCopyFilesToClipboard = async () => {
     try {
-      await copyFilesToClipboard(activeFileIds)
+      await copyFilesToClipboard(getActionFileIds())
     } catch (e) {
       console.error('Failed to copy files to clipboard:', e)
+      toast.error(`复制到剪贴板失败: ${String(e)}`)
     }
   }
 
   // Copy file to a folder
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
-      await copyFiles(activeFileIds, targetFolderId)
+      await copyFiles(getActionFileIds(), targetFolderId)
     } catch (e) {
       console.error('Failed to copy file:', e)
+      toast.error(`复制文件失败: ${String(e)}`)
     }
   }
 
   // Move file to a folder
   const handleMoveFile = async (targetFolderId: number | null) => {
     try {
-      await moveFiles(activeFileIds, targetFolderId)
+      await moveFiles(getActionFileIds(), targetFolderId)
     } catch (e) {
       console.error('Failed to move file:', e)
+      toast.error(`移动文件失败: ${String(e)}`)
     }
   }
 
   // Delete file
   const handleDeleteFile = async () => {
     try {
-      if (activeFileIds.length > 1) {
-        await deleteFiles(activeFileIds)
+      const fileIds = getActionFileIds()
+
+      if (fileIds.length > 1) {
+        await deleteFiles(fileIds)
         return
       }
 
-      await deleteFile(activeFileIds[0] ?? file.id)
+      await deleteFile(fileIds[0] ?? file.id)
       setSelectedFile(null)
     } catch (e) {
       console.error('Failed to delete file:', e)
@@ -108,12 +145,11 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
 
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      const { selectedFiles: latestSelectedFiles } = useFileStore.getState()
-      setFrozenFileIds(latestSelectedFiles.includes(file.id) ? [...latestSelectedFiles] : [file.id])
+      snapshotActiveFileIds()
       return
     }
 
-    setFrozenFileIds(null)
+    clearActionFileIds()
   }
 
   return (
@@ -122,15 +158,15 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onClick={handleOpenFile}>
+        <ContextMenuItem onSelect={() => triggerMenuAction('open', handleOpenFile)} onClick={() => triggerMenuAction('open', handleOpenFile)}>
           <ExternalLink className="w-4 h-4 mr-2" />
           默认应用打开
         </ContextMenuItem>
-        <ContextMenuItem onClick={handleShowInExplorer}>
+        <ContextMenuItem onSelect={() => triggerMenuAction('explorer', handleShowInExplorer)} onClick={() => triggerMenuAction('explorer', handleShowInExplorer)}>
           <FolderOpen className="w-4 h-4 mr-2" />
           在资源管理器中显示
         </ContextMenuItem>
-        <ContextMenuItem onClick={handleCopyFilesToClipboard}>
+        <ContextMenuItem onSelect={() => triggerMenuAction('clipboard', handleCopyFilesToClipboard)} onClick={() => triggerMenuAction('clipboard', handleCopyFilesToClipboard)}>
           <Copy className="w-4 h-4 mr-2" />
           复制到剪贴板
         </ContextMenuItem>
@@ -143,15 +179,28 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
             {activeFileIds.length > 1 ? `复制 ${activeFileIds.length} 个文件到` : '复制到'}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {copyMenuItems.map((folder) => (
-              <ContextMenuItem
-                key={folder.id === null ? 'root' : folder.id}
-                onClick={() => handleCopyFile(folder.id)}
-                style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
-              >
-                {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+            {flatFolders.length > 0 ? (
+              flatFolders.map((folder) => (
+                <ContextMenuItem
+                  key={folder.id}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) {
+                      return
+                    }
+                    triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))
+                  }}
+                  onSelect={() => triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))}
+                  onClick={() => triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))}
+                  style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
+                >
+                  {folder.name}
+                </ContextMenuItem>
+              ))
+            ) : (
+              <ContextMenuItem disabled>
+                暂无可用文件夹
               </ContextMenuItem>
-            ))}
+            )}
           </ContextMenuSubContent>
         </ContextMenuSub>
 
@@ -162,21 +211,35 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
             {activeFileIds.length > 1 ? `移动 ${activeFileIds.length} 个文件到` : '移动到'}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {flatFolders.map((folder) => (
-              <ContextMenuItem
-                key={folder.id}
-                onClick={() => handleMoveFile(folder.id)}
-                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
-              >
-                {folder.name}
+            {flatFolders.length > 0 ? (
+              flatFolders.map((folder) => (
+                <ContextMenuItem
+                  key={folder.id}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) {
+                      return
+                    }
+                    triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))
+                  }}
+                  onSelect={() => triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))}
+                  onClick={() => triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))}
+                  style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
+                >
+                  {folder.name}
+                </ContextMenuItem>
+              ))
+            ) : (
+              <ContextMenuItem disabled>
+                暂无可用文件夹
               </ContextMenuItem>
-            ))}
+            )}
           </ContextMenuSubContent>
         </ContextMenuSub>
 
         <ContextMenuSeparator />
         <ContextMenuItem
-          onClick={handleDeleteFile}
+          onSelect={() => triggerMenuAction('delete', handleDeleteFile)}
+          onClick={() => triggerMenuAction('delete', handleDeleteFile)}
           className="text-red-600 dark:text-red-400"
         >
           <Trash2 className="w-4 h-4 mr-2" />

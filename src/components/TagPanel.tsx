@@ -237,18 +237,18 @@ function TagItem({
         </ContextMenuTrigger>
 
         <ContextMenuContent>
-          <ContextMenuItem onClick={() => onAddChild(tag)}>
+          <ContextMenuItem onSelect={() => onAddChild(tag)}>
             <Plus className="w-4 h-4 mr-2" />
             创建子标签
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => onEdit(tag)}>
+          <ContextMenuItem onSelect={() => onEdit(tag)}>
             <Pencil className="w-4 h-4 mr-2" />
             重命名
           </ContextMenuItem>
           <MoveTagMenu tag={tag} />
           <ContextMenuSeparator />
           <ContextMenuItem
-            onClick={() => onDelete(tag)}
+            onSelect={() => onDelete(tag)}
             className="text-red-600 dark:text-red-400"
           >
             <Trash2 className="w-4 h-4 mr-2" />
@@ -316,11 +316,11 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
         移动到
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
-        <ContextMenuItem onClick={() => moveTo(null)}>根标签</ContextMenuItem>
+        <ContextMenuItem onSelect={() => moveTo(null)}>根标签</ContextMenuItem>
         {options.map((item) => (
           <ContextMenuItem
             key={item.id}
-            onClick={() => moveTo(item.id)}
+            onSelect={() => moveTo(item.id)}
             style={{ paddingLeft: `${item.depth * 12 + 8}px` }}
           >
             {item.name}

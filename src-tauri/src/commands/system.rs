@@ -59,6 +59,40 @@ fn resolve_target_folder_path(
     }
 }
 
+fn ensure_target_folder_exists(target_folder_path: &str) -> Result<(), String> {
+    if target_folder_path.trim().is_empty() {
+        return Err("Target folder path is empty".to_string());
+    }
+
+    fs::create_dir_all(target_folder_path)
+        .map_err(|e| format!("Failed to create target folder '{}': {}", target_folder_path, e))
+}
+
+fn move_file_with_fallback(from: &Path, to: &Path) -> Result<(), String> {
+    match fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(rename_err) => {
+            fs::copy(from, to).map_err(|copy_err| {
+                format!(
+                    "Failed to move '{}' to '{}': {} / copy failed: {}",
+                    from.display(),
+                    to.display(),
+                    rename_err,
+                    copy_err
+                )
+            })?;
+            fs::remove_file(from).map_err(|remove_err| {
+                format!(
+                    "Moved '{}' by copy but failed to remove original file: {}",
+                    from.display(),
+                    remove_err
+                )
+            })?;
+            Ok(())
+        }
+    }
+}
+
 fn resolve_available_target_path(
     db: &Database,
     source_path: &Path,
@@ -124,6 +158,7 @@ fn move_single_file(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
     let target_path = resolve_target_folder_path(db, target_folder_id)?;
+    ensure_target_folder_exists(&target_path)?;
     let old_path = Path::new(&file.path);
     let new_path_obj =
         resolve_available_target_path(db, old_path, &target_path, Some(file_id), "moved")?;
@@ -137,7 +172,7 @@ fn move_single_file(
     );
 
     if old_path != new_path_obj && old_path.exists() {
-        fs::rename(old_path, &new_path_obj).map_err(|e| e.to_string())?;
+        move_file_with_fallback(old_path, &new_path_obj)?;
     }
 
     let modified_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -157,6 +192,7 @@ fn copy_single_file(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
     let target_path = resolve_target_folder_path(db, target_folder_id)?;
+    ensure_target_folder_exists(&target_path)?;
     let source_path = Path::new(&file.path);
     let new_path_obj = resolve_available_target_path(db, source_path, &target_path, None, "copy")?;
     let new_path = new_path_obj.to_string_lossy().to_string();

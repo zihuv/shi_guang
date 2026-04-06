@@ -63,6 +63,7 @@ export default function ImagePreview() {
   const [isPanning, setIsPanning] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null)
   const panStateRef = useRef<{
     pointerId: number
     startX: number
@@ -273,10 +274,6 @@ export default function ImagePreview() {
   }
 
   const flatFolders = flattenFolders(folders)
-  const menuItems = [
-    { id: null, name: '根目录', sortOrder: -1 as const },
-    ...flatFolders
-  ]
 
   // 打开文件
   const handleOpenFile = async () => {
@@ -350,12 +347,24 @@ export default function ImagePreview() {
 
   const externalDragProps = getExternalDragProps()
 
+  const triggerMenuAction = (key: string, action: () => void | Promise<void>) => {
+    const now = Date.now()
+    const lastAction = lastMenuActionRef.current
+    if (lastAction && lastAction.key === key && now - lastAction.timestamp < 250) {
+      return
+    }
+
+    lastMenuActionRef.current = { key, timestamp: now }
+    void action()
+  }
+
   // 复制到
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
       await copyFiles([currentFile.id], targetFolderId)
     } catch (e) {
       console.error('Failed to copy file:', e)
+      toast.error(`复制文件失败: ${String(e)}`)
     }
   }
 
@@ -365,6 +374,7 @@ export default function ImagePreview() {
       await moveFiles([currentFile.id], targetFolderId)
     } catch (e) {
       console.error('Failed to move file:', e)
+      toast.error(`移动文件失败: ${String(e)}`)
     }
   }
 
@@ -655,15 +665,15 @@ export default function ImagePreview() {
 
   const previewContextMenu = (
     <ContextMenuContent>
-      <ContextMenuItem onClick={handleOpenFile}>
+      <ContextMenuItem onSelect={() => triggerMenuAction('open', handleOpenFile)} onClick={() => triggerMenuAction('open', handleOpenFile)}>
         <ExternalLink className="w-4 h-4 mr-2" />
         默认应用打开
       </ContextMenuItem>
-      <ContextMenuItem onClick={handleShowInExplorer}>
+      <ContextMenuItem onSelect={() => triggerMenuAction('explorer', handleShowInExplorer)} onClick={() => triggerMenuAction('explorer', handleShowInExplorer)}>
         <FolderOpen className="w-4 h-4 mr-2" />
         在资源管理器中显示
       </ContextMenuItem>
-      <ContextMenuItem onClick={handleCopyFileToClipboard}>
+      <ContextMenuItem onSelect={() => triggerMenuAction('clipboard', handleCopyFileToClipboard)} onClick={() => triggerMenuAction('clipboard', handleCopyFileToClipboard)}>
         <Copy className="w-4 h-4 mr-2" />
         复制到剪贴板
       </ContextMenuItem>
@@ -675,15 +685,28 @@ export default function ImagePreview() {
           复制到
         </ContextMenuSubTrigger>
         <ContextMenuSubContent>
-          {menuItems.map((folder) => (
-            <ContextMenuItem
-              key={folder.id === null ? 'root' : folder.id}
-              onClick={() => handleCopyFile(folder.id)}
-              style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
-            >
-              {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+          {flatFolders.length > 0 ? (
+            flatFolders.map((folder) => (
+              <ContextMenuItem
+                key={folder.id}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) {
+                    return
+                  }
+                  triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))
+                }}
+                onSelect={() => triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))}
+                onClick={() => triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))}
+                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
+              >
+                {folder.name}
+              </ContextMenuItem>
+            ))
+          ) : (
+            <ContextMenuItem disabled>
+              暂无可用文件夹
             </ContextMenuItem>
-          ))}
+          )}
         </ContextMenuSubContent>
       </ContextMenuSub>
 
@@ -693,21 +716,35 @@ export default function ImagePreview() {
           移动到
         </ContextMenuSubTrigger>
         <ContextMenuSubContent>
-          {menuItems.map((folder) => (
-            <ContextMenuItem
-              key={folder.id === null ? 'root' : folder.id}
-              onClick={() => handleMoveFile(folder.id)}
-              style={{ paddingLeft: `${(folder.sortOrder === -1 ? 0 : folder.sortOrder || 0) * 12 + 8}px` }}
-            >
-              {folder.sortOrder === -1 ? '📁 ' + folder.name : folder.name}
+          {flatFolders.length > 0 ? (
+            flatFolders.map((folder) => (
+              <ContextMenuItem
+                key={folder.id}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) {
+                    return
+                  }
+                  triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))
+                }}
+                onSelect={() => triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))}
+                onClick={() => triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))}
+                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
+              >
+                {folder.name}
+              </ContextMenuItem>
+            ))
+          ) : (
+            <ContextMenuItem disabled>
+              暂无可用文件夹
             </ContextMenuItem>
-          ))}
+          )}
         </ContextMenuSubContent>
       </ContextMenuSub>
 
       <ContextMenuSeparator />
       <ContextMenuItem
-        onClick={handleDeleteFile}
+        onSelect={() => triggerMenuAction('delete', handleDeleteFile)}
+        onClick={() => triggerMenuAction('delete', handleDeleteFile)}
         className="text-red-600 dark:text-red-400"
       >
         <Trash2 className="w-4 h-4 mr-2" />

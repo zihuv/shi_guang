@@ -326,23 +326,19 @@ function FolderItem({
     )
   }, [folder.id, canDrag, hasChildren, folders, uniqueContextId])
 
-  const handleAddSubfolder = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleAddSubfolder = () => {
     setAddingSubfolder(folder)
   }
 
-  const handleRename = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleRename = () => {
     setEditingFolder(folder)
   }
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleDelete = () => {
     setDeleteConfirm(folder)
   }
 
-  const handleShowInExplorer = async (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleShowInExplorer = async () => {
     try {
       await invoke('show_folder_in_explorer', { folderId: folder.id })
     } catch (err) {
@@ -536,26 +532,26 @@ function FolderItem({
         </ContextMenuTrigger>
 
         <ContextMenuContent>
-          <ContextMenuItem onClick={handleShowInExplorer}>
+          <ContextMenuItem onSelect={handleShowInExplorer}>
             <FolderOpen className="w-4 h-4 mr-2" />
             显示在资源管理器
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem onClick={handleAddSubfolder}>
+          <ContextMenuItem onSelect={handleAddSubfolder}>
             <Plus className="w-4 h-4 mr-2" />
             创建子文件夹
           </ContextMenuItem>
-          <ContextMenuItem onClick={handleRename}>
+          <ContextMenuItem onSelect={handleRename}>
             <Pencil className="w-4 h-4 mr-2" />
             重命名
           </ContextMenuItem>
           {!isSystemFolder && (
-            <ContextMenuItem disabled={!canMoveUp} onClick={() => moveFolderByStep(-1)}>
+            <ContextMenuItem disabled={!canMoveUp} onSelect={() => moveFolderByStep(-1)}>
               上移
             </ContextMenuItem>
           )}
           {!isSystemFolder && (
-            <ContextMenuItem disabled={!canMoveDown} onClick={() => moveFolderByStep(1)}>
+            <ContextMenuItem disabled={!canMoveDown} onSelect={() => moveFolderByStep(1)}>
               下移
             </ContextMenuItem>
           )}
@@ -568,7 +564,7 @@ function FolderItem({
               {menuItems.map((target) => (
                 <ContextMenuItem
                   key={target.id === null ? 'root' : target.id}
-                  onClick={() => moveFolder(folder.id, target.id)}
+                  onSelect={() => moveFolder(folder.id, target.id)}
                   style={{ paddingLeft: `${((target.sortOrder as number) === -1 ? 0 : target.sortOrder || 0) * 12 + 8}px` }}
                 >
                   {(target.sortOrder as number) === -1 ? '📁 ' + target.name : target.name}
@@ -577,7 +573,7 @@ function FolderItem({
             </ContextMenuSubContent>
           </ContextMenuSub>
           <ContextMenuSeparator />
-          <ContextMenuItem onClick={handleDelete} className="text-red-600">
+          <ContextMenuItem onSelect={handleDelete} className="text-red-600">
             <Trash2 className="w-4 h-4 mr-2" />
             删除
           </ContextMenuItem>
