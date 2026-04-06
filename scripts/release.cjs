@@ -4,10 +4,7 @@ const { spawnSync } = require("child_process");
 
 const VERSION_PATTERN =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const VERSION_FILES = [
-  "package.json",
-  "src-tauri/tauri.conf.json",
-];
+const VERSION_FILES = ["package.json", "src-tauri/tauri.conf.json"];
 
 function parseArgs(argv) {
   const flags = new Set();
@@ -139,7 +136,7 @@ function ensureUpstreamExists(runGit) {
 }
 
 function printPlan(version, noPush) {
-  const commitMessage = `发布 ${version}`;
+  const commitMessage = `${version}`;
 
   console.log("Release plan:");
   console.log(`- update ${VERSION_FILES.join(", ")} to ${version}`);
@@ -183,7 +180,7 @@ function main() {
     return;
   }
 
-  const commitMessage = `发布 ${version}`;
+  const commitMessage = `${version}`;
 
   updateVersions(VERSION_FILES, version);
 
