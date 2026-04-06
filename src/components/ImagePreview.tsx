@@ -19,7 +19,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from '@/components/ui/ContextMenu'
-import { ExternalLink, FolderOpen, Copy, Move, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
+import { ExternalLink, FolderOpen, Copy, Move, Scan, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 10000
@@ -522,6 +522,17 @@ export default function ImagePreview() {
     setIsPanning(false)
   }
 
+  const handleFitToView = () => {
+    const panState = panStateRef.current
+    if (panState) {
+      finishPan(panState.pointerId)
+    }
+
+    pendingScrollRef.current = null
+    shouldCenterImageRef.current = false
+    setZoom('auto')
+  }
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!canPanImage || e.button !== 0) return
 
@@ -730,6 +741,14 @@ export default function ImagePreview() {
                   >
                     <ZoomIn className="h-5 w-5" />
                   </button>
+                  <button
+                    onClick={handleFitToView}
+                    className={`${OVERLAY_BUTTON_CLASS} ${isFitMode ? 'bg-white/15 text-white' : ''}`}
+                    title="适应视图"
+                    aria-pressed={isFitMode}
+                  >
+                    <Scan className="h-5 w-5" />
+                  </button>
                 </>
               )}
             </div>
@@ -853,13 +872,25 @@ export default function ImagePreview() {
           )}
 
           {previewType !== 'none' && (
-            <button
-              onClick={toggleFullscreen}
-              className="px-2 py-1 text-sm rounded hover:bg-gray-200 dark:hover:bg-gray-700"
-              title={isFullscreen ? '退出全屏 (F)' : '全屏预览 (F)'}
-            >
-              {isFullscreen ? '退出全屏' : '全屏'}
-            </button>
+            <>
+              {supportsZoom && (
+                <button
+                  onClick={handleFitToView}
+                  className={`rounded p-1.5 ${isFitMode ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                  title="适应视图"
+                  aria-pressed={isFitMode}
+                >
+                  <Scan className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                onClick={toggleFullscreen}
+                className="px-2 py-1 text-sm rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                title={isFullscreen ? '退出全屏 (F)' : '全屏预览 (F)'}
+              >
+                {isFullscreen ? '退出全屏' : '全屏'}
+              </button>
+            </>
           )}
 
           <button
