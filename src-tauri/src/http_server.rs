@@ -583,8 +583,6 @@ pub async fn start_http_server(db_path: std::path::PathBuf, app_handle: AppHandl
     let addr = SocketAddr::from(([127, 0, 0, 1], 7845));
     log::info!("Starting HTTP server on http://{}", addr);
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }

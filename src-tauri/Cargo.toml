@@ -19,25 +19,25 @@ tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 walkdir = "2"
 image = "0.25"
 chrono = "0.4"
 log = "0.4"
 env_logger = "0.11"
 base64 = "0.22"
-tauri-plugin-devtools = "2.0.0"
-tauri-plugin-dialog = "2"
+tauri-plugin-devtools = "2.1.0"
+tauri-plugin-dialog = "2.7"
 dirs = "6.0.0"
-tauri-plugin-fs = "2"
-tauri-plugin-mcp-bridge = "0.9"
-axum = "0.6"
-reqwest = { version = "0.12", features = ["rustls-tls", "stream"] }
+tauri-plugin-fs = "2.5"
+tauri-plugin-mcp-bridge = "0.10"
+axum = "0.8"
+reqwest = { version = "0.13", features = ["rustls", "stream"] }
 tokio = { version = "1", features = ["full"] }
-tower = "0.4"
+tower = "0.5"
 tower-service = "0.3"
 bytes = "1"
-http = "0.2"
+http = "1.4"
 arboard = "3"
 drag = "2.1.0"
 
