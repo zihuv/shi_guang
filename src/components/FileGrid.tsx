@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ArrowUpDown, Filter, Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, type LibraryVisibleField, useSettingsStore } from "@/stores/settingsStore"
 import { cn } from "@/lib/utils"
+import { REQUEST_FOCUS_FIRST_FILE_EVENT } from "@/lib/libraryNavigation"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
@@ -472,6 +473,8 @@ export default function FileGrid() {
   }
 
   const handleFileClick = (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => {
+    scrollParentRef.current?.focus({ preventScroll: true })
+
     if (event.ctrlKey || event.metaKey) {
       const nextSelectedIds = new Set<number>(selectedFiles)
 
@@ -518,6 +521,8 @@ export default function FileGrid() {
     if (!container) {
       return
     }
+
+    container.focus({ preventScroll: true })
 
     if (selectedFiles.length > 0) {
       clearSelection()
@@ -603,7 +608,7 @@ export default function FileGrid() {
     }
   }, [isSelecting])
 
-  const scrollIndexIntoView = (index: number) => {
+  const scrollIndexIntoView = useCallback((index: number) => {
     const container = scrollParentRef.current
     if (!container) {
       return
@@ -617,7 +622,7 @@ export default function FileGrid() {
       itemBottom = itemTop + listRowHeight
     } else if (viewMode === "grid") {
       const row = Math.floor(index / gridColumns)
-      itemTop = row * gridRowHeight
+      itemTop = row * gridRowSpan
       itemBottom = itemTop + gridRowHeight
     } else {
       const item = adaptiveLayout.items[index]
@@ -640,7 +645,43 @@ export default function FileGrid() {
     if (itemBottom > viewportBottom - padding) {
       container.scrollTo({ top: Math.max(0, itemBottom - container.clientHeight + padding) })
     }
-  }
+  }, [adaptiveLayout.items, gridColumns, gridRowHeight, gridRowSpan, listRowHeight, viewMode])
+
+  const focusGridContainer = useCallback(() => {
+    scrollParentRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  const selectFileAtIndex = useCallback((index: number) => {
+    const nextFile = filteredFiles[index]
+    focusGridContainer()
+
+    if (!nextFile) {
+      return
+    }
+
+    if (selectedFiles.length > 0) {
+      clearSelection()
+    }
+
+    setSelectedFile(nextFile)
+    scrollIndexIntoView(index)
+  }, [clearSelection, filteredFiles, focusGridContainer, scrollIndexIntoView, selectedFiles.length, setSelectedFile])
+
+  useEffect(() => {
+    const handleRequestFocusFirstFile = () => {
+      focusGridContainer()
+      if (filteredFiles.length === 0) {
+        return
+      }
+
+      selectFileAtIndex(0)
+    }
+
+    window.addEventListener(REQUEST_FOCUS_FIRST_FILE_EVENT, handleRequestFocusFirstFile)
+    return () => {
+      window.removeEventListener(REQUEST_FOCUS_FIRST_FILE_EVENT, handleRequestFocusFirstFile)
+    }
+  }, [filteredFiles.length, focusGridContainer, selectFileAtIndex])
 
   useEffect(() => {
     const handleWindowZoomKeyDown = (event: KeyboardEvent) => {
@@ -768,13 +809,7 @@ export default function FileGrid() {
         return
       }
 
-      const nextFile = filteredFiles[nextIndex]
-      if (!nextFile) {
-        return
-      }
-
-      setSelectedFile(nextFile)
-      scrollIndexIntoView(nextIndex)
+      selectFileAtIndex(nextIndex)
     }
 
     window.addEventListener("keydown", handleWindowKeyDown)
@@ -790,7 +825,7 @@ export default function FileGrid() {
     listRowHeight,
     selectedFile,
     selectedFiles.length,
-    setSelectedFile,
+    selectFileAtIndex,
     viewMode,
   ])
 
@@ -1043,7 +1078,8 @@ export default function FileGrid() {
       ) : (
         <div
           ref={scrollParentRef}
-          className="relative flex-1 overflow-auto p-4 select-none"
+          className="relative flex-1 overflow-auto p-4 select-none focus:outline-none"
+          tabIndex={0}
           onMouseDown={handleSelectionStart}
           onWheel={handleViewportWheel}
         >
@@ -1279,10 +1315,31 @@ function findAdaptiveNeighborIndex(items: AdaptiveLayoutItem[], currentIndex: nu
     return currentIndex
   }
 
+  const currentLeft = currentItem.left
+  const currentRight = currentItem.left + currentItem.width
+  const currentTop = currentItem.top
+  const currentBottom = currentItem.top + currentItem.height
   const currentCenterX = currentItem.left + currentItem.width / 2
   const currentCenterY = currentItem.top + currentItem.height / 2
   let bestIndex = currentIndex
-  let bestScore = Number.POSITIVE_INFINITY
+  let bestRank: [number, number, number, number] | null = null
+
+  const compareRank = (nextRank: [number, number, number, number]) => {
+    if (!bestRank) {
+      return true
+    }
+
+    for (let index = 0; index < nextRank.length; index += 1) {
+      if (nextRank[index] < bestRank[index]) {
+        return true
+      }
+      if (nextRank[index] > bestRank[index]) {
+        return false
+      }
+    }
+
+    return false
+  }
 
   items.forEach((item, index) => {
     if (index === currentIndex) {
@@ -1293,38 +1350,80 @@ function findAdaptiveNeighborIndex(items: AdaptiveLayoutItem[], currentIndex: nu
     const candidateCenterY = item.top + item.height / 2
     const deltaX = candidateCenterX - currentCenterX
     const deltaY = candidateCenterY - currentCenterY
-    let score = Number.POSITIVE_INFINITY
+    const candidateLeft = item.left
+    const candidateRight = item.left + item.width
+    const candidateTop = item.top
+    const candidateBottom = item.top + item.height
 
     switch (direction) {
-      case "ArrowUp":
+      case "ArrowUp": {
         if (deltaY >= -4) {
           return
         }
-        score = Math.abs(deltaX) + Math.abs(deltaY) * 3
+        const overlap = Math.max(0, Math.min(currentRight, candidateRight) - Math.max(currentLeft, candidateLeft))
+        const rank: [number, number, number, number] = [
+          overlap > 0 ? 0 : 1,
+          Math.max(0, currentTop - candidateBottom),
+          Math.abs(deltaX),
+          Math.abs(deltaY),
+        ]
+        if (compareRank(rank)) {
+          bestIndex = index
+          bestRank = rank
+        }
         break
-      case "ArrowDown":
+      }
+      case "ArrowDown": {
         if (deltaY <= 4) {
           return
         }
-        score = Math.abs(deltaX) + deltaY * 3
+        const overlap = Math.max(0, Math.min(currentRight, candidateRight) - Math.max(currentLeft, candidateLeft))
+        const rank: [number, number, number, number] = [
+          overlap > 0 ? 0 : 1,
+          Math.max(0, candidateTop - currentBottom),
+          Math.abs(deltaX),
+          Math.abs(deltaY),
+        ]
+        if (compareRank(rank)) {
+          bestIndex = index
+          bestRank = rank
+        }
         break
-      case "ArrowLeft":
+      }
+      case "ArrowLeft": {
         if (deltaX >= -4) {
           return
         }
-        score = Math.abs(deltaY) + Math.abs(deltaX) * 3
+        const overlap = Math.max(0, Math.min(currentBottom, candidateBottom) - Math.max(currentTop, candidateTop))
+        const rank: [number, number, number, number] = [
+          overlap > 0 ? 0 : 1,
+          Math.max(0, currentLeft - candidateRight),
+          Math.abs(deltaY),
+          Math.abs(deltaX),
+        ]
+        if (compareRank(rank)) {
+          bestIndex = index
+          bestRank = rank
+        }
         break
-      case "ArrowRight":
+      }
+      case "ArrowRight": {
         if (deltaX <= 4) {
           return
         }
-        score = Math.abs(deltaY) + deltaX * 3
+        const overlap = Math.max(0, Math.min(currentBottom, candidateBottom) - Math.max(currentTop, candidateTop))
+        const rank: [number, number, number, number] = [
+          overlap > 0 ? 0 : 1,
+          Math.max(0, candidateLeft - currentRight),
+          Math.abs(deltaY),
+          Math.abs(deltaX),
+        ]
+        if (compareRank(rank)) {
+          bestIndex = index
+          bestRank = rank
+        }
         break
-    }
-
-    if (score < bestScore) {
-      bestScore = score
-      bestIndex = index
+      }
     }
   })
 

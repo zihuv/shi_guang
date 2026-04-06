@@ -5,6 +5,7 @@ import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
 import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
+import { requestFocusFirstFile } from '@/lib/libraryNavigation'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
 import { useFileStore } from '@/stores/fileStore'
 import { useFilterStore } from '@/stores/filterStore'
@@ -42,7 +43,29 @@ import { ChevronRight, Folder as FolderIcon, Plus, Trash2, Pencil, Globe, Move, 
 
 const INTERNAL_FILE_DRAG_MIME = 'application/x-shiguang-file-ids'
 
+type VisibleFolderItem = {
+  id: number | null
+  depth: number
+  hasChildren: boolean
+  isExpanded: boolean
+}
+
+const ROOT_FOLDER_ITEM_KEY = 'root'
+
 // Helper functions for folder tree operations
+const getFolderItemKey = (folderId: number | null) => (folderId === null ? ROOT_FOLDER_ITEM_KEY : folderId.toString())
+
+const findFolderById = (folders: FolderNode[], folderId: number): FolderNode | null => {
+  for (const folder of folders) {
+    if (folder.id === folderId) return folder
+    if (folder.children && folder.children.length > 0) {
+      const found = findFolderById(folder.children, folderId)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 const findFolderParentId = (folders: FolderNode[], folderId: number, parentId: number | null): number | null => {
   for (const folder of folders) {
     if (folder.id === folderId) return parentId
@@ -83,18 +106,7 @@ const getAllFolderIds = (folders: FolderNode[]): number[] => {
 
 // Check if a folder is a descendant of another
 const isDescendant = (folders: FolderNode[], parentId: number, childId: number): boolean => {
-  const findFolder = (items: FolderNode[], id: number): FolderNode | null => {
-    for (const item of items) {
-      if (item.id === id) return item
-      if (item.children) {
-        const found = findFolder(item.children, id)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
-  const parent = findFolder(folders, parentId)
+  const parent = findFolderById(folders, parentId)
   if (!parent || !parent.children) return false
 
   const checkDescendant = (items: FolderNode[], targetId: number): boolean => {
@@ -106,6 +118,51 @@ const isDescendant = (folders: FolderNode[], parentId: number, childId: number):
   }
 
   return checkDescendant(parent.children, childId)
+}
+
+const buildVisibleFolderItems = (
+  folders: FolderNode[],
+  expandedFolderIds: number[],
+  depth = 0,
+): VisibleFolderItem[] =>
+  folders.flatMap((folder) => {
+    const isExpanded = expandedFolderIds.includes(folder.id)
+    const hasChildren = folder.children.length > 0
+    return [
+      {
+        id: folder.id,
+        depth,
+        hasChildren,
+        isExpanded,
+      },
+      ...(hasChildren && isExpanded ? buildVisibleFolderItems(folder.children, expandedFolderIds, depth + 1) : []),
+    ]
+  })
+
+async function selectFolderFromTree(folderId: number | null) {
+  const folderStore = useFolderStore.getState()
+  const fileStore = useFileStore.getState()
+  const filterStore = useFilterStore.getState()
+
+  if (filterStore.isFilterPanelOpen || folderId === null) {
+    filterStore.setFolderId(null)
+  }
+
+  if (folderStore.selectedFolderId === folderId) {
+    fileStore.clearSelection()
+    fileStore.closePreview()
+    if (fileStore.selectedFile) {
+      fileStore.setSelectedFile(null)
+    }
+    return
+  }
+
+  folderStore.selectFolder(folderId)
+  fileStore.setSelectedFolderId(folderId)
+  fileStore.clearSelection()
+  fileStore.closePreview()
+  fileStore.setSelectedFile(null)
+  await fileStore.loadFilesInFolder(folderId)
 }
 
 // Flatten folder tree for "Move to" submenu
@@ -155,15 +212,25 @@ interface FolderItemProps {
   dragPosition: DragPosition
   activeId: number | null
   onDragPositionChange: (position: DragPosition) => void
-  allFolderIds: number[]
+  focusTree: () => void
+  onSelectFolder: (folderId: number) => Promise<void>
+  registerKeyboardItem: (folderId: number, element: HTMLDivElement | null) => void
   registerItem?: ({ itemId, element }: { itemId: string; element: HTMLElement }) => CleanupFn
 }
 
-function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChange, allFolderIds, registerItem }: FolderItemProps) {
-  const { folders, selectedFolderId, expandedFolderIds, selectFolder, toggleFolder, moveFolder, reorderFolders, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile, clearSelection, closePreview } = useFileStore()
+function FolderItem({
+  folder,
+  depth,
+  dragPosition,
+  activeId,
+  onDragPositionChange,
+  focusTree,
+  onSelectFolder,
+  registerKeyboardItem,
+  registerItem,
+}: FolderItemProps) {
+  const { folders, selectedFolderId, expandedFolderIds, toggleFolder, moveFolder, reorderFolders, uniqueContextId, dragOverFolderId, setDragOverFolderId } = useFolderStore()
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore()
-  const { setFolderId, isFilterPanelOpen } = useFilterStore()
   const isExpanded = expandedFolderIds.includes(folder.id)
   const isSelected = selectedFolderId === folder.id
   const hasChildren = folder.children && folder.children.length > 0
@@ -287,30 +354,6 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
       })
     )
   }, [folder.id, canDrag, hasChildren, folders, uniqueContextId])
-
-  const handleClick = async () => {
-    // When filter panel is open and switching folders, clear the folder filter
-    // so the filter follows the sidebar folder selection
-    if (isFilterPanelOpen) {
-      setFolderId(null)
-    }
-
-    if (selectedFolderId === folder.id) {
-      clearSelection()
-      closePreview()
-      if (selectedFile) {
-        setSelectedFile(null)
-      }
-      return
-    }
-
-    selectFolder(folder.id)
-    setSelectedFolderId(folder.id)
-    clearSelection()
-    closePreview()
-    setSelectedFile(null)
-    await loadFilesInFolder(folder.id)
-  }
 
   const handleAddSubfolder = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -459,7 +502,10 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            ref={draggableRef}
+            ref={(element) => {
+              draggableRef.current = element
+              registerKeyboardItem(folder.id, element)
+            }}
             data-folder-id={folder.id}
             className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${
               isBeingDragged
@@ -477,7 +523,10 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
                   : 'hover:bg-gray-100 dark:hover:bg-dark-border'
             }`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
-            onClick={handleClick}
+            onClick={() => {
+              focusTree()
+              void onSelectFolder(folder.id)
+            }}
             onDragEnter={handleExternalDragEnter}
             onDragOver={handleExternalDragOver}
             onDragLeave={handleExternalDragLeave}
@@ -574,7 +623,9 @@ function FolderItem({ folder, depth, dragPosition, activeId, onDragPositionChang
               dragPosition={dragPosition}
               activeId={activeId}
               onDragPositionChange={onDragPositionChange}
-              allFolderIds={allFolderIds}
+              focusTree={focusTree}
+              onSelectFolder={onSelectFolder}
+              registerKeyboardItem={registerKeyboardItem}
               registerItem={registerItem}
             />
           ))}
@@ -598,6 +649,7 @@ export default function FolderTree() {
   const {
     folders,
     selectedFolderId,
+    expandedFolderIds,
     isLoading,
     loadFolders,
     createFolder,
@@ -615,7 +667,7 @@ export default function FolderTree() {
     setFolders,
     uniqueContextId,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId, setSelectedFile, selectedFile, clearSelection, closePreview } = useFileStore()
+  const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
   const [isAdding, setIsAdding] = useState(false)
 
   // Drag state - simplified to track only what's needed
@@ -624,6 +676,8 @@ export default function FolderTree() {
 
   // Track mouse position for drag between folders
   const mouseYRef = useRef<number>(0)
+  const treeContainerRef = useRef<HTMLDivElement>(null)
+  const keyboardItemRefs = useRef(new Map<string, HTMLDivElement>())
 
   // Listen for drag events from child FolderItem components
   useEffect(() => {
@@ -980,6 +1034,123 @@ export default function FolderTree() {
     })
   }, [folders, moveFolder, reorderFolders, setFolders, uniqueContextId])
 
+  const focusTree = () => {
+    treeContainerRef.current?.focus({ preventScroll: true })
+  }
+
+  const registerKeyboardItem = (folderId: number, element: HTMLDivElement | null) => {
+    const key = getFolderItemKey(folderId)
+    if (element) {
+      keyboardItemRefs.current.set(key, element)
+      return
+    }
+    keyboardItemRefs.current.delete(key)
+  }
+
+  const scrollFolderItemIntoView = (folderId: number | null) => {
+    keyboardItemRefs.current.get(getFolderItemKey(folderId))?.scrollIntoView({ block: 'nearest' })
+  }
+
+  const selectFolderForKeyboard = async (folderId: number | null) => {
+    focusTree()
+    await selectFolderFromTree(folderId)
+  }
+
+  const visibleFolderItems = useMemo(
+    () => [
+      {
+        id: null,
+        depth: 0,
+        hasChildren: false,
+        isExpanded: false,
+      },
+      ...buildVisibleFolderItems(folders, expandedFolderIds),
+    ],
+    [expandedFolderIds, folders],
+  )
+
+  useEffect(() => {
+    scrollFolderItemIntoView(selectedFolderId)
+  }, [selectedFolderId, visibleFolderItems])
+
+  const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const nativeEvent = event.nativeEvent as KeyboardEvent
+
+    if (
+      event.defaultPrevented ||
+      nativeEvent.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    ) {
+      return
+    }
+
+    if (
+      event.key !== 'ArrowUp' &&
+      event.key !== 'ArrowDown' &&
+      event.key !== 'ArrowLeft' &&
+      event.key !== 'ArrowRight' &&
+      event.key !== 'Enter'
+    ) {
+      return
+    }
+
+    const currentIndex = visibleFolderItems.findIndex((item) => item.id === selectedFolderId)
+    const resolvedIndex = currentIndex === -1 ? 0 : currentIndex
+    const currentItem = visibleFolderItems[resolvedIndex]
+
+    if (!currentItem) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    switch (event.key) {
+      case 'ArrowUp': {
+        const previousItem = visibleFolderItems[Math.max(0, resolvedIndex - 1)]
+        if (previousItem) {
+          void selectFolderForKeyboard(previousItem.id)
+        }
+        return
+      }
+      case 'ArrowDown': {
+        const nextItem = visibleFolderItems[Math.min(visibleFolderItems.length - 1, resolvedIndex + 1)]
+        if (nextItem) {
+          void selectFolderForKeyboard(nextItem.id)
+        }
+        return
+      }
+      case 'ArrowLeft': {
+        if (currentItem.id === null) {
+          return
+        }
+
+        if (currentItem.hasChildren && currentItem.isExpanded) {
+          useFolderStore.getState().toggleFolder(currentItem.id)
+          return
+        }
+
+        const parentId = findFolderParentId(folders, currentItem.id, null)
+        if (parentId !== null || selectedFolderId !== null) {
+          void selectFolderForKeyboard(parentId)
+        }
+        return
+      }
+      case 'ArrowRight':
+        requestFocusFirstFile()
+        return
+      case 'Enter':
+        if (currentItem.id !== null && currentItem.hasChildren) {
+          useFolderStore.getState().toggleFolder(currentItem.id)
+          return
+        }
+        requestFocusFirstFile()
+        return
+    }
+  }
+
   const handleAddFolder = async () => {
     if (newFolderName.trim()) {
       await createFolder(newFolderName.trim(), null)
@@ -1028,10 +1199,6 @@ export default function FolderTree() {
     }
   }
 
-  // Memoize expensive computations
-  const allFolderIds = useMemo(() => getAllFolderIds(folders), [folders])
-  const memoizedFolders = useMemo(() => folders, [folders])
-
   return (
     <div className="flex flex-col">
       <div className="p-3 border-b border-gray-200 dark:border-dark-border">
@@ -1052,7 +1219,10 @@ export default function FolderTree() {
 
       <div
         id="folder-tree-container"
-        className="relative flex-1 overflow-auto p-2"
+        ref={treeContainerRef}
+        className="relative flex-1 overflow-auto p-2 focus:outline-none"
+        tabIndex={0}
+        onKeyDown={handleTreeKeyDown}
       >
         {isLoading && folders.length === 0 ? (
           <div className="flex items-center justify-center p-4">
@@ -1065,6 +1235,13 @@ export default function FolderTree() {
           <div className="space-y-1">
             {/* Virtual "全部文件" (All Files) item - cannot be deleted */}
             <div
+              ref={(element) => {
+                if (element) {
+                  keyboardItemRefs.current.set(ROOT_FOLDER_ITEM_KEY, element)
+                  return
+                }
+                keyboardItemRefs.current.delete(ROOT_FOLDER_ITEM_KEY)
+              }}
               className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
                 selectedFolderId === null
                   ? 'bg-primary-100 dark:bg-primary-900/30'
@@ -1072,23 +1249,8 @@ export default function FolderTree() {
               }`}
               style={{ paddingLeft: '8px' }}
               onClick={() => {
-                if (selectedFolderId === null) {
-                  clearSelection()
-                  closePreview()
-                  if (selectedFile) {
-                    setSelectedFile(null)
-                  }
-                  useFilterStore.getState().setFolderId(null)
-                  return
-                }
-
-                selectFolder(null)
-                setSelectedFolderId(null)
-                clearSelection()
-                closePreview()
-                setSelectedFile(null)
-                loadFilesInFolder(null)
-                useFilterStore.getState().setFolderId(null)
+                focusTree()
+                void selectFolderForKeyboard(null)
               }}
             >
               <span className="w-5" />
@@ -1096,7 +1258,7 @@ export default function FolderTree() {
               <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">全部文件</span>
             </div>
 
-            {memoizedFolders.map((folder) => (
+            {folders.map((folder) => (
               <FolderItem
                 key={folder.id}
                 folder={folder}
@@ -1104,7 +1266,9 @@ export default function FolderTree() {
                 dragPosition={dragPosition}
                 activeId={activeId}
                 onDragPositionChange={setDragPosition}
-                allFolderIds={allFolderIds}
+                focusTree={focusTree}
+                onSelectFolder={selectFolderForKeyboard}
+                registerKeyboardItem={registerKeyboardItem}
                 registerItem={registerTreeItem}
               />
             ))}
