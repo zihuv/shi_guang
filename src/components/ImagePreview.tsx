@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
@@ -19,14 +19,15 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from '@/components/ui/ContextMenu'
-import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
+import { ExternalLink, FolderOpen, Copy, Move, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 10000
+const BUTTON_ZOOM_FACTOR = 1.2
+const FIT_MODE_SNAP_EPSILON = 0.5
 const BASE_WHEEL_ZOOM_SENSITIVITY = 0.002
 const OVERLAY_BUTTON_CLASS = 'flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/80 backdrop-blur transition hover:bg-black/70 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
 const OVERLAY_CHIP_CLASS = 'rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-xs text-white/70 backdrop-blur'
-const OVERLAY_ACTION_CLASS = 'rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-sm text-white/80 backdrop-blur transition hover:bg-black/70 hover:text-white'
 
 function clampZoom(value: number) {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value))
@@ -54,7 +55,7 @@ export default function ImagePreview() {
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [textContent, setTextContent] = useState<string>("")
   const [imageError, setImageError] = useState(false)
-  const [zoom, setZoom] = useState<number | 'auto'>('auto')  // 'auto' = 适应窗口, 100 = 原始尺寸, 其他数字 = 缩放比例
+  const [zoom, setZoom] = useState<number | 'auto'>('auto')  // 'auto' = 适应视图, 其他数字 = 手动缩放比例
   const [isLoading, setIsLoading] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -102,13 +103,9 @@ export default function ImagePreview() {
 
     const previousFileId = lastPreviewFileIdRef.current
     if (previousFileId !== null && previousFileId !== currentFile.id) {
-      const nextPreviewType = getFilePreviewMode(currentFile.ext)
-      if (nextPreviewType === 'image') {
-        shouldCenterImageRef.current = true
-        setZoom(100)
-      } else {
-        setZoom('auto')
-      }
+      shouldCenterImageRef.current = false
+      pendingScrollRef.current = null
+      setZoom('auto')
       panStateRef.current = null
       setIsPanning(false)
     }
@@ -224,57 +221,43 @@ export default function ImagePreview() {
     return () => observer.disconnect()
   }, [isFullscreen, previewIndex, previewMode])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = viewportRef.current
-    if (!container || zoom === 'auto') {
+    if (!container) {
       previousZoomRef.current = zoom
       return
     }
 
-    if (!pendingScrollRef.current && (previousZoomRef.current === 'auto' || shouldCenterImageRef.current)) {
-      requestAnimationFrame(() => {
-        const nextContainer = viewportRef.current
-        if (!nextContainer) return
-        nextContainer.scrollLeft = Math.max(0, (nextContainer.scrollWidth - nextContainer.clientWidth) / 2)
-        nextContainer.scrollTop = Math.max(0, (nextContainer.scrollHeight - nextContainer.clientHeight) / 2)
-      })
+    if (zoom === 'auto') {
+      pendingScrollRef.current = null
+      container.scrollLeft = 0
+      container.scrollTop = 0
+      shouldCenterImageRef.current = false
+      previousZoomRef.current = zoom
+      return
+    }
+
+    const pendingScroll = pendingScrollRef.current
+    if (pendingScroll) {
+      const maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth)
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
+
+      container.scrollLeft = clampValue(pendingScroll.left, 0, maxScrollLeft)
+      container.scrollTop = clampValue(pendingScroll.top, 0, maxScrollTop)
+      pendingScrollRef.current = null
+      shouldCenterImageRef.current = false
+      previousZoomRef.current = zoom
+      return
+    }
+
+    if (previousZoomRef.current === 'auto' || shouldCenterImageRef.current) {
+      container.scrollLeft = Math.max(0, (container.scrollWidth - container.clientWidth) / 2)
+      container.scrollTop = Math.max(0, (container.scrollHeight - container.clientHeight) / 2)
       shouldCenterImageRef.current = false
     }
 
     previousZoomRef.current = zoom
-  }, [zoom, previewIndex, isFullscreen])
-
-  useEffect(() => {
-    if (zoom === 'auto') {
-      pendingScrollRef.current = null
-      return
-    }
-
-    const container = viewportRef.current
-    const pendingScroll = pendingScrollRef.current
-    if (!container || !pendingScroll) {
-      return
-    }
-
-    requestAnimationFrame(() => {
-      const nextContainer = viewportRef.current
-      const nextPendingScroll = pendingScrollRef.current
-      if (!nextContainer || !nextPendingScroll) return
-
-      const maxScrollLeft = Math.max(0, nextContainer.scrollWidth - nextContainer.clientWidth)
-      const maxScrollTop = Math.max(0, nextContainer.scrollHeight - nextContainer.clientHeight)
-
-      nextContainer.scrollLeft = clampValue(nextPendingScroll.left, 0, maxScrollLeft)
-      nextContainer.scrollTop = clampValue(nextPendingScroll.top, 0, maxScrollTop)
-      pendingScrollRef.current = null
-    })
   }, [zoom, previewIndex, isFullscreen, viewportSize.width, viewportSize.height])
-
-  useEffect(() => {
-    if (zoom === 'auto') {
-      viewportRef.current?.scrollTo({ left: 0, top: 0 })
-    }
-  }, [zoom, previewIndex])
 
   // 扁平化文件夹树
   const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {
@@ -408,38 +391,73 @@ export default function ImagePreview() {
     !isFitMode && imageHeight
       ? Math.max(1, Math.round(imageHeight * manualZoomScale))
       : null
-  const manualCanvasWidth =
-    scaledImageWidth !== null
-      ? Math.max(scaledImageWidth, viewportSize.width)
-      : null
-  const manualCanvasHeight =
-    scaledImageHeight !== null
-      ? Math.max(scaledImageHeight, viewportSize.height)
-      : null
-  const manualImageOffsetLeft =
-    scaledImageWidth !== null && manualCanvasWidth !== null
-      ? Math.max(0, Math.round((manualCanvasWidth - scaledImageWidth) / 2))
-      : 0
-  const manualImageOffsetTop =
-    scaledImageHeight !== null && manualCanvasHeight !== null
-      ? Math.max(0, Math.round((manualCanvasHeight - scaledImageHeight) / 2))
-      : 0
 
-  // 处理缩放滑块
-  const handleZoomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value)
-    setZoom(clampZoom(value))
+  const applyZoom = (
+    nextZoomInput: number | ((currentZoom: number) => number),
+    anchor?: { x: number; y: number },
+  ) => {
+    const container = viewportRef.current
+    if (!container) return
+
+    const anchorX = anchor?.x ?? container.clientWidth / 2
+    const anchorY = anchor?.y ?? container.clientHeight / 2
+    const currentScrollLeft = container.scrollLeft
+    const currentScrollTop = container.scrollTop
+
+    setZoom(prevZoom => {
+      const baseZoom = prevZoom === 'auto' ? fitZoomPercent : prevZoom
+      const nextZoom = clampZoom(
+        typeof nextZoomInput === 'function' ? nextZoomInput(baseZoom) : nextZoomInput,
+      )
+
+      if (nextZoom <= fitZoomPercent + FIT_MODE_SNAP_EPSILON) {
+        pendingScrollRef.current = null
+        shouldCenterImageRef.current = false
+        return 'auto'
+      }
+
+      const currentScale = baseZoom / 100
+      const nextScale = nextZoom / 100
+
+      if (imageWidth && imageHeight) {
+        const currentCanvasWidth = Math.max(imageWidth * currentScale, viewportSize.width)
+        const currentCanvasHeight = Math.max(imageHeight * currentScale, viewportSize.height)
+        const currentImageOffsetLeft = Math.max(0, (currentCanvasWidth - imageWidth * currentScale) / 2)
+        const currentImageOffsetTop = Math.max(0, (currentCanvasHeight - imageHeight * currentScale) / 2)
+        const nextCanvasWidth = Math.max(imageWidth * nextScale, viewportSize.width)
+        const nextCanvasHeight = Math.max(imageHeight * nextScale, viewportSize.height)
+        const nextImageOffsetLeft = Math.max(0, (nextCanvasWidth - imageWidth * nextScale) / 2)
+        const nextImageOffsetTop = Math.max(0, (nextCanvasHeight - imageHeight * nextScale) / 2)
+
+        const imageCoordinateX = clampValue(
+          (currentScrollLeft + anchorX - currentImageOffsetLeft) / currentScale,
+          0,
+          imageWidth,
+        )
+        const imageCoordinateY = clampValue(
+          (currentScrollTop + anchorY - currentImageOffsetTop) / currentScale,
+          0,
+          imageHeight,
+        )
+
+        pendingScrollRef.current = {
+          left: nextImageOffsetLeft + imageCoordinateX * nextScale - anchorX,
+          top: nextImageOffsetTop + imageCoordinateY * nextScale - anchorY,
+        }
+      } else {
+        shouldCenterImageRef.current = true
+      }
+
+      return Math.round(nextZoom * 100) / 100
+    })
   }
 
-  // 适应窗口
-  const handleZoomFit = () => {
-    setZoom('auto')
+  const handleZoomOut = () => {
+    applyZoom(currentZoom => currentZoom / BUTTON_ZOOM_FACTOR)
   }
 
-  // 1:1 缩放
-  const handleZoom100 = () => {
-    shouldCenterImageRef.current = true
-    setZoom(100)
+  const handleZoomIn = () => {
+    applyZoom(currentZoom => currentZoom * BUTTON_ZOOM_FACTOR)
   }
 
   const toggleFullscreen = () => {
@@ -457,46 +475,13 @@ export default function ImagePreview() {
     const rect = container.getBoundingClientRect()
     const pointerX = e.clientX - rect.left
     const pointerY = e.clientY - rect.top
-    const currentScrollLeft = container.scrollLeft
-    const currentScrollTop = container.scrollTop
 
     const deltaY = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 16 : e.deltaY
 
-    setZoom(prevZoom => {
-      const baseZoom = prevZoom === 'auto' ? fitZoomPercent : prevZoom
-      const nextZoom = clampZoom(baseZoom * Math.exp(-deltaY * wheelZoomSensitivity))
-      const currentScale = baseZoom / 100
-      const nextScale = nextZoom / 100
-
-      if (imageWidth && imageHeight) {
-        const currentCanvasWidth = Math.max(imageWidth * currentScale, viewportSize.width)
-        const currentCanvasHeight = Math.max(imageHeight * currentScale, viewportSize.height)
-        const currentImageOffsetLeft = Math.max(0, (currentCanvasWidth - imageWidth * currentScale) / 2)
-        const currentImageOffsetTop = Math.max(0, (currentCanvasHeight - imageHeight * currentScale) / 2)
-        const nextCanvasWidth = Math.max(imageWidth * nextScale, viewportSize.width)
-        const nextCanvasHeight = Math.max(imageHeight * nextScale, viewportSize.height)
-        const nextImageOffsetLeft = Math.max(0, (nextCanvasWidth - imageWidth * nextScale) / 2)
-        const nextImageOffsetTop = Math.max(0, (nextCanvasHeight - imageHeight * nextScale) / 2)
-
-        const imageCoordinateX = clampValue(
-          (currentScrollLeft + pointerX - currentImageOffsetLeft) / currentScale,
-          0,
-          imageWidth,
-        )
-        const imageCoordinateY = clampValue(
-          (currentScrollTop + pointerY - currentImageOffsetTop) / currentScale,
-          0,
-          imageHeight,
-        )
-
-        pendingScrollRef.current = {
-          left: nextImageOffsetLeft + imageCoordinateX * nextScale - pointerX,
-          top: nextImageOffsetTop + imageCoordinateY * nextScale - pointerY,
-        }
-      }
-
-      return Math.round(nextZoom * 100) / 100
-    })
+    applyZoom(
+      currentZoom => currentZoom * Math.exp(-deltaY * wheelZoomSensitivity),
+      { x: pointerX, y: pointerY },
+    )
   }
 
   const finishPan = (pointerId: number) => {
@@ -549,8 +534,6 @@ export default function ImagePreview() {
   const canGoPrev = previewIndex > 0
   const canGoNext = previewIndex < totalFiles - 1
   const previewMeta = getPreviewMetaText(currentFile)
-  const zoomLabel = `${Math.round(zoom === 'auto' ? fitZoomPercent : zoom)}%`
-  const showZoomLabel = zoom !== 'auto' && zoom !== 100
   const renderedPreviewContent = isLoading ? (
     <div className="flex h-full min-h-full items-center justify-center p-4">
       <svg className="h-10 w-10 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
@@ -596,7 +579,7 @@ export default function ImagePreview() {
         </object>
       </div>
     ) : isImageLike ? (
-      isFitMode || manualCanvasWidth === null || manualCanvasHeight === null || scaledImageWidth === null || scaledImageHeight === null ? (
+      isFitMode || scaledImageWidth === null || scaledImageHeight === null ? (
         <div className="flex h-full min-h-full items-center justify-center p-4">
           <img
             src={imageSrc}
@@ -609,22 +592,22 @@ export default function ImagePreview() {
         </div>
       ) : (
         <div
-          className="relative"
+          className="grid place-items-center"
           style={{
-            width: `${manualCanvasWidth}px`,
-            height: `${manualCanvasHeight}px`,
+            width: `${scaledImageWidth}px`,
+            height: `${scaledImageHeight}px`,
+            minWidth: '100%',
+            minHeight: '100%',
           }}
         >
           <img
             src={imageSrc}
             alt={currentFile.name}
             draggable={false}
-            className="absolute block select-none"
+            className="block select-none"
             style={{
               width: `${scaledImageWidth}px`,
               height: `${scaledImageHeight}px`,
-              left: `${manualImageOffsetLeft}px`,
-              top: `${manualImageOffsetTop}px`,
             }}
           />
         </div>
@@ -707,20 +690,19 @@ export default function ImagePreview() {
               {supportsZoom && (
                 <>
                   <button
-                    onClick={handleZoomFit}
-                    className={`${OVERLAY_ACTION_CLASS} ${zoom === 'auto' ? 'border-white/20 bg-white/20 text-white' : ''}`}
-                    title="适应窗口"
+                    onClick={handleZoomOut}
+                    className={OVERLAY_BUTTON_CLASS}
+                    title="缩小"
                   >
-                    适应
+                    <ZoomOut className="h-5 w-5" />
                   </button>
                   <button
-                    onClick={handleZoom100}
-                    className={`${OVERLAY_ACTION_CLASS} ${zoom === 100 ? 'border-white/20 bg-white/20 text-white' : ''}`}
-                    title="原始尺寸"
+                    onClick={handleZoomIn}
+                    className={OVERLAY_BUTTON_CLASS}
+                    title="放大"
                   >
-                    100%
+                    <ZoomIn className="h-5 w-5" />
                   </button>
-                  {showZoomLabel && <span className={OVERLAY_CHIP_CLASS}>{zoomLabel}</span>}
                 </>
               )}
             </div>
@@ -770,6 +752,7 @@ export default function ImagePreview() {
             <div
               ref={viewportRef}
               className={`preview-wheel-container h-full w-full overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+              style={{ scrollbarGutter: 'stable' }}
               onWheel={handleWheel}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
@@ -820,34 +803,22 @@ export default function ImagePreview() {
 
         <div className="flex items-center gap-3">
           {supportsZoom ? (
-            <>
-              <div className="flex items-center">
-                <input
-                  type="range"
-                  min={MIN_ZOOM}
-                  max={MAX_ZOOM}
-                  value={zoom === 'auto' ? fitZoomPercent : zoom}
-                  onChange={handleZoomChange}
-                  className="w-28"
-                />
-              </div>
-
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleZoomFit}
-                className={`px-2 py-1 text-sm rounded ${zoom === 'auto' ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                title="适应窗口"
+                onClick={handleZoomOut}
+                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+                title="缩小"
               >
-                适应
+                <ZoomOut className="h-4 w-4" />
               </button>
-
               <button
-                onClick={handleZoom100}
-                className={`px-2 py-1 text-sm rounded ${zoom === 100 ? 'bg-gray-300 dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                title="原始尺寸"
+                onClick={handleZoomIn}
+                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+                title="放大"
               >
-                1:1
+                <ZoomIn className="h-4 w-4" />
               </button>
-            </>
+            </div>
           ) : (
             <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
               {previewType === 'video' ? '视频播放' : previewType === 'pdf' ? 'PDF 预览' : '文件预览'}
@@ -881,6 +852,7 @@ export default function ImagePreview() {
           <div
             ref={viewportRef}
             className={`preview-wheel-container flex-1 overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+            style={{ scrollbarGutter: 'stable' }}
             onWheel={handleWheel}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
