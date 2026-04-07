@@ -90,6 +90,14 @@ export default function ImagePreview() {
   const supportsZoom = previewType === 'image'
   const wheelZoomSensitivity = BASE_WHEEL_ZOOM_SENSITIVITY * previewTrackpadZoomSpeed
 
+  const handleCopyFileToClipboard = useCallback(async () => {
+    try {
+      await copyFilesToClipboard([currentFile.id])
+    } catch (e) {
+      console.error('Failed to copy file to clipboard:', e)
+    }
+  }, [currentFile])
+
   // 切换预览时同步更新选中文件
   useEffect(() => {
     if (currentFile) {
@@ -290,14 +298,6 @@ export default function ImagePreview() {
       await invoke('show_in_explorer', { fileId: currentFile.id })
     } catch (e) {
       console.error('Failed to open directory:', e)
-    }
-  }
-
-  const handleCopyFileToClipboard = async () => {
-    try {
-      await copyFilesToClipboard([currentFile.id])
-    } catch (e) {
-      console.error('Failed to copy file to clipboard:', e)
     }
   }
 

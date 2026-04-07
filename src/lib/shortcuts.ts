@@ -1,5 +1,11 @@
 export const SHORTCUT_ACTIONS = [
   {
+    id: "copySelectedToClipboard",
+    label: "复制选中图片到剪贴板",
+    description: "复制当前选中的图片；单张图片复制像素内容，多选时复制文件引用",
+    defaultShortcut: "Mod+C",
+  },
+  {
     id: "undoDelete",
     label: "撤销删除",
     description: "恢复最近一次删除操作",

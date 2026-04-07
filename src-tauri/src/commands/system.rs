@@ -1,5 +1,7 @@
 use super::imports::uuid_simple_shared as uuid_simple;
 use super::*;
+use arboard::ImageData;
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 const EXTERNAL_DRAG_PREVIEW_ICON: &[u8] = include_bytes!("../../icons/32x32.png");
@@ -293,10 +295,30 @@ pub fn copy_files_to_clipboard(state: State<AppState>, file_ids: Vec<i64>) -> Re
     };
 
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+
+    if file_paths.len() == 1 {
+        if let Some(image) = load_clipboard_image_data(&file_paths[0]) {
+            clipboard.set_image(image).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
+
     clipboard
         .set()
         .file_list(&file_paths)
         .map_err(|e| e.to_string())
+}
+
+fn load_clipboard_image_data(path: &Path) -> Option<ImageData<'static>> {
+    let decoded = image::open(path).ok()?;
+    let rgba = decoded.into_rgba8();
+    let (width, height) = rgba.dimensions();
+
+    Some(ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: Cow::Owned(rgba.into_raw()),
+    })
 }
 
 #[tauri::command]

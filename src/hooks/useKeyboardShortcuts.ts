@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { copyFilesToClipboard } from "@/lib/clipboard";
 import { SHORTCUT_ACTIONS, matchShortcut, type ShortcutActionId } from "@/lib/shortcuts";
 import { useFileStore } from "@/stores/fileStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -16,11 +17,30 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 function isDialogTarget(target: EventTarget | null) {
-  return target instanceof HTMLElement && Boolean(target.closest("[role='dialog']"));
+  return target instanceof HTMLElement && Boolean(target.closest("[role='dialog'], [role='menu']"));
+}
+
+function getCopyTargetFileIds() {
+  const fileStore = useFileStore.getState();
+
+  if (fileStore.previewMode) {
+    const currentPreviewFile = fileStore.previewFiles[fileStore.previewIndex];
+    return currentPreviewFile ? [currentPreviewFile.id] : [];
+  }
+
+  if (fileStore.selectedFiles.length > 0) {
+    return fileStore.selectedFiles;
+  }
+
+  return fileStore.selectedFile ? [fileStore.selectedFile.id] : [];
 }
 
 function canRunShortcut(actionId: ShortcutActionId) {
   const fileStore = useFileStore.getState();
+
+  if (actionId === "copySelectedToClipboard") {
+    return getCopyTargetFileIds().length > 0;
+  }
 
   if (actionId === "undoDelete") {
     return fileStore.undoStack.length > 0;
@@ -33,7 +53,21 @@ function canRunShortcut(actionId: ShortcutActionId) {
   return true;
 }
 
-function runShortcut(actionId: ShortcutActionId) {
+async function runShortcut(actionId: ShortcutActionId) {
+  if (actionId === "copySelectedToClipboard") {
+    const fileIds = getCopyTargetFileIds();
+    if (fileIds.length === 0) {
+      return;
+    }
+
+    try {
+      await copyFilesToClipboard(fileIds);
+    } catch (error) {
+      console.error("Failed to copy files to clipboard:", error);
+    }
+    return;
+  }
+
   if (actionId === "undoDelete") {
     void useFileStore.getState().undo();
     return;
@@ -68,7 +102,7 @@ export function useKeyboardShortcuts() {
         }
 
         event.preventDefault();
-        runShortcut(action.id);
+        void runShortcut(action.id);
         return;
       }
     };
