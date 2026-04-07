@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Search, Sun, Moon, Settings, Download } from "lucide-react";
+import appLogo from "@/assets/app-icon.png";
 
 interface HeaderProps {
   onOpenSettings: () => void;
@@ -84,19 +85,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     <header className="border-b border-gray-200 bg-white dark:border-dark-border dark:bg-dark-surface">
       <div className="flex items-center gap-4 px-4 py-3">
         <div className="flex items-center gap-2">
-          <svg
-            className="w-6 h-6 text-primary-600"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
+          <img src={appLogo} alt="" className="h-6 w-6" />
           <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
             拾光
           </h1>
