@@ -2,13 +2,6 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   checkConnection();
-  loadStats();
-
-  // Refresh button
-  document.getElementById('refreshBtn').addEventListener('click', () => {
-    checkConnection();
-    loadStats();
-  });
 });
 
 async function checkConnection() {
@@ -29,14 +22,5 @@ async function checkConnection() {
   } catch (error) {
     statusDot.className = 'status-dot disconnected';
     statusText.textContent = '未连接';
-  }
-}
-
-async function loadStats() {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: 'getStats' });
-    document.getElementById('collectedCount').textContent = response.collected || 0;
-  } catch (error) {
-    document.getElementById('collectedCount').textContent = '0';
   }
 }

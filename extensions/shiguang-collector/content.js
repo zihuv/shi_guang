@@ -2,12 +2,136 @@
 // 处理小红书自定义右键菜单，注入"发送到拾光"选项
 
 const SHIGUANG_SERVER_URL = 'http://127.0.0.1:7845';
+const TOAST_CONTAINER_ID = 'shiguang-toast-container';
+const TOAST_REMOVE_DELAY = 240;
 
 // 保存最后一次右键点击时的图片 URL
 let lastImageUrl = null;
 
 // 保存最后一次右键点击时的目标元素
 let lastRightClickTarget = null;
+
+function ensureToastContainer() {
+  let container = document.getElementById(TOAST_CONTAINER_ID);
+  if (container) {
+    return container;
+  }
+
+  container = document.createElement('div');
+  container.id = TOAST_CONTAINER_ID;
+  container.setAttribute('aria-live', 'polite');
+  container.style.cssText = [
+    'position: fixed',
+    'top: 16px',
+    'right: 16px',
+    'display: flex',
+    'flex-direction: column',
+    'align-items: flex-end',
+    'gap: 10px',
+    'width: min(360px, calc(100vw - 32px))',
+    'z-index: 2147483647',
+    'pointer-events: none'
+  ].join(';');
+
+  (document.body || document.documentElement).appendChild(container);
+  return container;
+}
+
+function showToast(message, type = 'info', duration = 3000) {
+  const theme = {
+    success: {
+      border: '#16a34a',
+      icon: '✓'
+    },
+    error: {
+      border: '#dc2626',
+      icon: '!'
+    },
+    info: {
+      border: '#2563eb',
+      icon: 'i'
+    }
+  };
+
+  const currentTheme = theme[type] || theme.info;
+  const container = ensureToastContainer();
+  const toast = document.createElement('div');
+  toast.setAttribute('role', 'status');
+  toast.style.cssText = [
+    'display: flex',
+    'align-items: flex-start',
+    'gap: 10px',
+    'width: 100%',
+    'padding: 12px 14px',
+    'border-radius: 12px',
+    'border: 1px solid rgba(255, 255, 255, 0.12)',
+    `border-left: 4px solid ${currentTheme.border}`,
+    'background: rgba(17, 24, 39, 0.94)',
+    'box-shadow: 0 14px 30px rgba(15, 23, 42, 0.28)',
+    'color: #f9fafb',
+    'font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    'transform: translateY(-8px)',
+    'opacity: 0',
+    'transition: opacity 0.24s ease, transform 0.24s ease',
+    'backdrop-filter: blur(10px)',
+    'pointer-events: none'
+  ].join(';');
+
+  const icon = document.createElement('div');
+  icon.textContent = currentTheme.icon;
+  icon.style.cssText = [
+    'width: 18px',
+    'height: 18px',
+    'border-radius: 999px',
+    `background: ${currentTheme.border}`,
+    'color: #fff',
+    'display: flex',
+    'align-items: center',
+    'justify-content: center',
+    'font-size: 12px',
+    'font-weight: 700',
+    'flex-shrink: 0',
+    'margin-top: 1px'
+  ].join(';');
+
+  const content = document.createElement('div');
+  content.textContent = message;
+  content.style.cssText = [
+    'flex: 1',
+    'min-width: 0',
+    'word-break: break-word'
+  ].join(';');
+
+  toast.appendChild(icon);
+  toast.appendChild(content);
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  });
+
+  const removeToast = () => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-8px)';
+    window.setTimeout(() => {
+      toast.remove();
+      if (!container.childElementCount) {
+        container.remove();
+      }
+    }, TOAST_REMOVE_DELAY);
+  };
+
+  window.setTimeout(removeToast, duration);
+}
+
+function getErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || '网络错误');
+  if (message === 'Failed to fetch') {
+    return '无法连接到拾光应用，请确保应用正在运行';
+  }
+  return message;
+}
 
 // 尝试从元素中获取图片 URL
 function getImageUrlFromElement(target) {
@@ -156,7 +280,7 @@ function injectMenuItem(menuContainer) {
 
     // 如果还是没有图片，提示用户
     if (!imageUrl) {
-      alert('未找到图片，请右键点击图片后重试');
+      showToast('未找到图片，请右键点击图片后重试', 'error');
       return;
     }
 
@@ -179,26 +303,28 @@ function injectMenuItem(menuContainer) {
         })
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP ${response.status}`);
+      }
+
       const result = await response.json();
 
       if (result.success) {
-        menuItem.textContent = '✓ 已发送到拾光';
-        setTimeout(() => {
-          menuItem.textContent = '发送到拾光';
-        }, 2000);
+        menuItem.textContent = '发送到拾光';
       } else {
-        menuItem.textContent = '发送失败: ' + (result.error || '未知错误');
+        const errorMsg = result.error || '未知错误';
+        menuItem.textContent = '发送失败: ' + errorMsg;
+        showToast('发送失败: ' + errorMsg, 'error', 3600);
         setTimeout(() => {
           menuItem.textContent = '发送到拾光';
         }, 3000);
       }
     } catch (error) {
       console.error('发送到拾光失败:', error);
-      let errorMsg = error.message || '网络错误';
-      if (error.message === 'Failed to fetch') {
-        errorMsg = '无法连接到拾光应用，请确保应用正在运行';
-      }
+      const errorMsg = getErrorMessage(error);
       menuItem.textContent = '发送失败: ' + errorMsg;
+      showToast('发送失败: ' + errorMsg, 'error', 3600);
       setTimeout(() => {
         menuItem.textContent = '发送到拾光';
       }, 3000);
@@ -228,6 +354,13 @@ if (window.location.hostname.includes('xiaohongshu.com')) {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === 'getLastImageUrl') {
     sendResponse({ imageUrl: lastImageUrl });
+    return true;
+  }
+
+  if (message.action === 'showToast') {
+    const payload = message.payload || {};
+    showToast(payload.message || '', payload.type || 'info', payload.duration || 3000);
+    sendResponse({ success: true });
     return true;
   }
 });

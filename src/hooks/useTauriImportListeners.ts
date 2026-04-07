@@ -113,7 +113,6 @@ export function useTauriImportListeners({
       );
 
       unlistenFileImported = await listen("file-imported", async () => {
-        toast.success("图片导入成功");
         const fileStore = useFileStore.getState();
         await Promise.all([
           fileStore.runCurrentQuery(fileStore.selectedFolderId),

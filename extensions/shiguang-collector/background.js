@@ -2,6 +2,49 @@
 
 const SHIGUANG_SERVER_URL = 'http://127.0.0.1:7845';
 
+async function showPageToast(tabId, message, type = 'info', duration = 3000) {
+  if (!tabId) {
+    return false;
+  }
+
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      action: 'showToast',
+      payload: {
+        message,
+        type,
+        duration
+      }
+    });
+    return true;
+  } catch (error) {
+    console.warn('Failed to show page toast:', error);
+    return false;
+  }
+}
+
+function getErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || '未知错误');
+  if (message === 'Failed to fetch') {
+    return '无法连接到拾光应用，请确保应用正在运行';
+  }
+  return message;
+}
+
+async function notifyResult(tabId, message, type = 'info', duration = 3000) {
+  const shownInPage = await showPageToast(tabId, message, type, duration);
+  if (shownInPage) {
+    return;
+  }
+
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icons/icon48.png',
+    title: '拾光采集器',
+    message
+  });
+}
+
 // Create context menu when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   // 使用 'page' context 然后在 content script 中检查点击的是否是图片
@@ -15,13 +58,16 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Listen for context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  const tabId = tab?.id;
+  const referer = tab?.url || info.pageUrl;
+
   // 优先使用 srcUrl
   let imageUrl = info.srcUrl;
 
   // 如果没有 srcUrl，从 content script 获取最后一次右键点击的图片
-  if (!imageUrl) {
+  if (!imageUrl && tabId) {
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, {
+      const response = await chrome.tabs.sendMessage(tabId, {
         action: 'getLastImageUrl'
       });
       if (response && response.imageUrl) {
@@ -34,14 +80,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   if (imageUrl) {
     try {
-      // Show notification that we're processing
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: '拾光采集器',
-        message: '正在采集图片...'
-      });
-
       // Send image URL and page URL (referer) to backend for downloading
       const importResponse = await fetch(`${SHIGUANG_SERVER_URL}/api/import-from-url`, {
         method: 'POST',
@@ -50,7 +88,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         },
         body: JSON.stringify({
           image_url: imageUrl,
-          referer: tab.url
+          referer
         })
       });
 
@@ -62,40 +100,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const result = await importResponse.json();
 
       if (result.success) {
-        // Update stats
-        const stats = await getStats();
-        await setStats(stats.collected + 1);
-
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: '拾光采集器',
-          message: `图片已采集成功！共采集 ${stats.collected + 1} 张图片`
-        });
+        return;
       } else {
         throw new Error(result.error || 'Unknown error');
       }
     } catch (error) {
       console.error('Failed to import image:', error);
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: '拾光采集器',
-        message: `采集失败: ${error.message}`
-      });
+      await notifyResult(tabId, `发送失败: ${getErrorMessage(error)}`, 'error', 3600);
     }
+  } else {
+    await notifyResult(tabId, '未找到图片，请右键点击图片后重试', 'error');
   }
 });
-
-// Stats management
-async function getStats() {
-  const result = await chrome.storage.local.get('stats');
-  return result.stats || { collected: 0 };
-}
-
-async function setStats(stats) {
-  await chrome.storage.local.set({ stats });
-}
 
 // Check server connection
 async function checkServerConnection() {
@@ -112,13 +128,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === 'checkConnection') {
     checkServerConnection().then(connected => {
       sendResponse({ connected });
-    });
-    return true;
-  }
-
-  if (message.action === 'getStats') {
-    getStats().then(stats => {
-      sendResponse(stats);
     });
     return true;
   }

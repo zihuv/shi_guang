@@ -64,32 +64,6 @@ body {
   color: #333;
 }
 
-.stats-section {
-  background: white;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
-  text-align: center;
-}
-
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.stat-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: #333;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #666;
-  margin-top: 4px;
-}
-
 .info-section {
   background: white;
   border-radius: 8px;
@@ -105,27 +79,4 @@ body {
 
 .info-section strong {
   color: #333;
-}
-
-.footer {
-  text-align: center;
-}
-
-.refresh-btn {
-  background-color: #f0f0f0;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 16px;
-  font-size: 12px;
-  color: #666;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.refresh-btn:hover {
-  background-color: #e0e0e0;
-}
-
-.refresh-btn:active {
-  background-color: #d0d0d0;
 }
