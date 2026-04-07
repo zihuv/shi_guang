@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ArrowUpDown, Filter, Play } from "lucide-react"
 import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore"
 import { useFilterStore, type FileSortField, type SortDirection } from "@/stores/filterStore"
 import { clampLibraryViewScale, DEFAULT_LIBRARY_VIEW_SCALES, getLibraryViewScaleRange, LIBRARY_VIEW_SCALE_STEP, type LibraryViewMode, type LibraryVisibleField, useSettingsStore } from "@/stores/settingsStore"
-import { startExternalFileDrag } from "@/lib/externalDrag"
 import { cn } from "@/lib/utils"
 import { REQUEST_FOCUS_FIRST_FILE_EVENT } from "@/lib/libraryNavigation"
+import { useExternalFileDrag } from "@/hooks/useExternalFileDrag"
 import FileTypeIcon from "./FileTypeIcon"
 import { canGenerateThumbnail, getImageSrc, getThumbnailImageSrc, getVideoThumbnailSrc, isImageFile, isVideoFile, formatSize } from "@/utils"
 import FileContextMenu from "./FileContextMenu"
-import { toast } from "sonner"
 
 const TILE_CARD_BASE_WIDTH = 180
 const TILE_CARD_MIN_WIDTH = 90
@@ -26,7 +25,6 @@ const ADAPTIVE_CARD_FOOTER_HEIGHT = 44
 const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 62
 const VIEWPORT_OVERSCAN_PX = 600
 const IMAGE_SRC_CACHE_LIMIT = 300
-const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids"
 const SELECTION_DRAG_THRESHOLD = 10
 const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
@@ -220,7 +218,6 @@ export default function FileGrid() {
   const toggleLibraryVisibleField = useSettingsStore((state) => state.toggleLibraryVisibleField)
   const filteredFiles = files
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
-  const [draggingFileId, setDraggingFileId] = useState<number | null>(null)
   const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenu | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
@@ -1109,12 +1106,9 @@ export default function FileGrid() {
                         visibleFields={libraryVisibleFields}
                         isSelected={selectedFile?.id === file.id}
                         isMultiSelected={selectedFiles.includes(file.id)}
-                        isDragging={draggingFileId === file.id}
                         scrollRootRef={scrollParentRef}
                         onClick={(e) => handleFileClick(file, e)}
                         onDoubleClick={() => handleFileDoubleClick(index)}
-                        onDragStart={() => setDraggingFileId(file.id)}
-                        onDragEnd={() => setDraggingFileId(null)}
                       />
                     </div>
                   ))}
@@ -1152,12 +1146,9 @@ export default function FileGrid() {
                           visibleFields={libraryVisibleFields}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.includes(file.id)}
-                          isDragging={draggingFileId === file.id}
                           scrollRootRef={scrollParentRef}
                           onClick={(e) => handleFileClick(file, e)}
                           onDoubleClick={() => handleFileDoubleClick(startIndex + offset)}
-                          onDragStart={() => setDraggingFileId(file.id)}
-                          onDragEnd={() => setDraggingFileId(null)}
                         />
                       ))}
                     </div>
@@ -1186,12 +1177,9 @@ export default function FileGrid() {
                       visibleFields={libraryVisibleFields}
                       isSelected={selectedFile?.id === file.id}
                       isMultiSelected={selectedFiles.includes(file.id)}
-                      isDragging={draggingFileId === file.id}
                       scrollRootRef={scrollParentRef}
                       onClick={(e) => handleFileClick(file, e)}
                       onDoubleClick={() => handleFileDoubleClick(virtualRow.index)}
-                      onDragStart={() => setDraggingFileId(file.id)}
-                      onDragEnd={() => setDraggingFileId(null)}
                     />
                   </div>
                 )
@@ -1579,15 +1567,12 @@ type FileCardBaseProps = {
   visibleFields: LibraryVisibleField[]
   isSelected: boolean
   isMultiSelected: boolean
-  isDragging: boolean
   scrollRootRef: RefObject<HTMLDivElement | null>
   onClick: (e: ReactMouseEvent<HTMLDivElement>) => void
   onDoubleClick?: () => void
-  onDragStart: () => void
-  onDragEnd: () => void
 }
 
-function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { footerHeight: number }) {
+function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelected, scrollRootRef, onClick, onDoubleClick }: FileCardBaseProps & { footerHeight: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -1595,29 +1580,17 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
   const showName = visibleFields.includes("name")
   const metaTokens = getFileInfoTokens(file, visibleFields)
   const showTags = shouldShowTags(file, visibleFields)
-  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
-    const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
-    event.dataTransfer.effectAllowed = "move"
-    event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
-    onDragStart()
-  }
-
-  const handleNativeDragEnd = () => {
-    useFileStore.getState().clearInternalFileDrag()
-    onDragEnd()
-  }
+  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id)
 
   return (
     <FileContextMenu file={file}>
       <div ref={visibilityRef} className="h-full">
         <div
-          draggable
           data-file-id={file.id}
+          {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          onDragStart={handleNativeDragStart}
-          onDragEnd={handleNativeDragEnd}
-          className={`file-card group relative flex h-full flex-col overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+          className={`file-card group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg transition-all ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
               : isSelected
@@ -1627,8 +1600,6 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
-            draggable
-            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
           >
             {!isVisible || imageSrc === null ? (
@@ -1642,6 +1613,7 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
                 src={imageSrc}
                 alt={file.name}
                 className="absolute inset-0 h-full w-full object-contain"
+                draggable={false}
                 onError={() => setImageError(true)}
                 loading="lazy"
               />
@@ -1683,7 +1655,7 @@ function FileCard({ file, visibleFields, footerHeight, isSelected, isMultiSelect
   )
 }
 
-function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps) {
+function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, scrollRootRef, onClick, onDoubleClick }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -1692,17 +1664,7 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
   const showName = visibleFields.includes("name")
   const metaTokens = getFileInfoTokens(file, visibleFields)
   const showTags = shouldShowTags(file, visibleFields)
-  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
-    const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
-    event.dataTransfer.effectAllowed = "move"
-    event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
-    onDragStart()
-  }
-
-  const handleNativeDragEnd = () => {
-    useFileStore.getState().clearInternalFileDrag()
-    onDragEnd()
-  }
+  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id)
 
   const getAspectRatio = () => {
     if (!file.width || !file.height || file.width === 0) {
@@ -1715,13 +1677,11 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
     <FileContextMenu file={file}>
       <div ref={visibilityRef}>
         <div
-          draggable
           data-file-id={file.id}
+          {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          onDragStart={handleNativeDragStart}
-          onDragEnd={handleNativeDragEnd}
-          className={`file-card group relative flex flex-col overflow-hidden rounded-lg transition-all ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+          className={`file-card group relative flex cursor-pointer flex-col overflow-hidden rounded-lg transition-all ${
             isMultiSelected
               ? "ring-2 ring-primary-500 shadow-lg"
               : isSelected
@@ -1731,8 +1691,6 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
-            draggable
-            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ paddingBottom: getAspectRatio() }}
           >
             {!isVisible || imageSrc === null ? (
@@ -1746,6 +1704,7 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
                 src={imageSrc}
                 alt={file.name}
                 className="absolute inset-0 h-full w-full object-contain"
+                draggable={false}
                 onError={() => setImageError(true)}
                 loading="lazy"
               />
@@ -1789,7 +1748,7 @@ function AdaptiveFileCard({ file, visibleFields, isSelected, isMultiSelected, is
   )
 }
 
-function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelected, isDragging, scrollRootRef, onClick, onDoubleClick, onDragStart, onDragEnd }: FileCardBaseProps & { thumbnailSize: number }) {
+function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelected, scrollRootRef, onClick, onDoubleClick }: FileCardBaseProps & { thumbnailSize: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(file.path, file.ext, cacheKey, isVisible)
@@ -1798,29 +1757,17 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
   const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : []
   const showName = visibleFields.includes("name")
   const metaTokens = getFileInfoTokens(file, visibleFields)
-  const handleNativeDragStart = (event: DragEvent<HTMLDivElement>) => {
-    const draggedFileIds = useFileStore.getState().beginInternalFileDrag(file.id)
-    event.dataTransfer.effectAllowed = "move"
-    event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, JSON.stringify(draggedFileIds))
-    onDragStart()
-  }
-
-  const handleNativeDragEnd = () => {
-    useFileStore.getState().clearInternalFileDrag()
-    onDragEnd()
-  }
+  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id)
 
   return (
     <FileContextMenu file={file}>
       <div ref={visibilityRef}>
         <div
-          draggable
           data-file-id={file.id}
+          {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          onDragStart={handleNativeDragStart}
-          onDragEnd={handleNativeDragEnd}
-          className={`file-card flex items-center gap-3 rounded-lg p-2 transition-colors ${isDragging ? "opacity-50" : "cursor-pointer"} ${
+          className={`file-card flex cursor-pointer items-center gap-3 rounded-lg p-2 transition-colors ${
             isMultiSelected
               ? "bg-primary-50 dark:bg-primary-900/20"
               : isSelected
@@ -1830,8 +1777,6 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
         >
           <div
             className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
-            draggable
-            onDragStart={(event) => handleExternalFileDragStart(event, file.id)}
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
           >
             {!isVisible || imageSrc === null ? (
@@ -1843,6 +1788,7 @@ function FileRow({ file, visibleFields, thumbnailSize, isSelected, isMultiSelect
                 src={imageSrc}
                 alt={file.name}
                 className="max-h-full max-w-full object-contain"
+                draggable={false}
                 onError={() => setImageError(true)}
               />
             ) : (
@@ -1925,21 +1871,6 @@ function getFileInfoTokens(file: FileItem, visibleFields: LibraryVisibleField[])
   })
 
   return tokens
-}
-
-function getExternalDragFileIds(fileId: number) {
-  const { selectedFiles } = useFileStore.getState()
-  return selectedFiles.includes(fileId) ? selectedFiles : [fileId]
-}
-
-function handleExternalFileDragStart(event: DragEvent<HTMLElement>, fileId: number) {
-  event.preventDefault()
-  event.stopPropagation()
-
-  void startExternalFileDrag(getExternalDragFileIds(fileId)).catch((error) => {
-    console.error("Failed to start external file drag:", error)
-    toast.error("拖拽到外部应用失败")
-  })
 }
 
 function InfoDisplayIcon({ className }: { className?: string }) {

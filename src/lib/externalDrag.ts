@@ -1,6 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 
 let activeDragPromise: Promise<void> | null = null;
+let activeDragFallbackTimer: number | null = null;
+
+const EXTERNAL_DRAG_LOCK_TIMEOUT_MS = 15000;
+
+function clearActiveDragLock() {
+  activeDragPromise = null;
+  if (activeDragFallbackTimer !== null) {
+    window.clearTimeout(activeDragFallbackTimer);
+    activeDragFallbackTimer = null;
+  }
+}
 
 export function startExternalFileDrag(fileIds: number[]) {
   const uniqueFileIds = Array.from(new Set(fileIds)).filter((fileId) =>
@@ -17,9 +28,11 @@ export function startExternalFileDrag(fileIds: number[]) {
 
   activeDragPromise = invoke<void>("start_drag_files", {
     fileIds: uniqueFileIds,
-  }).finally(() => {
-    activeDragPromise = null;
-  });
+  }).finally(clearActiveDragLock);
+
+  activeDragFallbackTimer = window.setTimeout(() => {
+    clearActiveDragLock();
+  }, EXTERNAL_DRAG_LOCK_TIMEOUT_MS);
 
   return activeDragPromise;
 }

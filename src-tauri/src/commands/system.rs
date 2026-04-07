@@ -340,14 +340,22 @@ pub fn start_drag_files(
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
-        drag::start_drag(
-            &window,
-            drag::DragItem::Files(file_paths),
-            drag::Image::Raw(EXTERNAL_DRAG_PREVIEW_ICON.to_vec()),
-            |_result, _cursor_position| {},
-            drag::Options::default(),
-        )
-        .map_err(|e| e.to_string())
+        let drag_window = window.clone();
+        let drag_preview_icon = EXTERNAL_DRAG_PREVIEW_ICON.to_vec();
+
+        window
+            .run_on_main_thread(move || {
+                if let Err(error) = drag::start_drag(
+                    &drag_window,
+                    drag::DragItem::Files(file_paths),
+                    drag::Image::Raw(drag_preview_icon),
+                    |_result, _cursor_position| {},
+                    drag::Options::default(),
+                ) {
+                    eprintln!("Failed to start external file drag: {error}");
+                }
+            })
+            .map_err(|e| e.to_string())
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
