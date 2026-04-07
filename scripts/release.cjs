@@ -2,9 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const VERSION_PATTERN =
-  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const VERSION_FILES = ["package.json", "src-tauri/tauri.conf.json"];
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
+const VERSION_FILES = [
+  "package.json",
+  "src-tauri/tauri.conf.json",
+  "extensions/shiguang-collector/manifest.json",
+];
 
 function parseArgs(argv) {
   const flags = new Set();
@@ -73,7 +76,7 @@ function createGitRunner(repoRoot) {
 function ensureValidVersion(version) {
   if (!version || !VERSION_PATTERN.test(version)) {
     throw new Error(
-      `Invalid version: ${version || "<empty>"}\nExpected format like 0.1.0 or 0.1.0-beta.1`,
+      `Invalid version: ${version || "<empty>"}\nExpected a numeric version like 0.1.0 or 0.1.0.1 because the browser extension manifest is released together with the app.`,
     );
   }
 }

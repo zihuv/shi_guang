@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version. Must match package.json and src-tauri/tauri.conf.json."
+        description: "Release version. Must match package.json, src-tauri/tauri.conf.json, and the browser extension manifest."
         required: true
         type: string
 
@@ -100,6 +100,30 @@ jobs:
 
             core.setOutput("release_id", String(release.id));
 
+  package_extension:
+    name: Package browser extension
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create browser extension archive
+        run: |
+          mkdir -p dist
+          git archive \
+            --format=zip \
+            --output="dist/shiguang-collector_${{ needs.prepare.outputs.version }}.zip" \
+            HEAD:extensions/shiguang-collector
+
+      - name: Upload browser extension asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          draft: true
+          fail_on_unmatched_files: true
+          files: dist/shiguang-collector_${{ needs.prepare.outputs.version }}.zip
+
   build:
     name: Build ${{ matrix.name }}
     needs: prepare
@@ -171,7 +195,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [prepare, build]
+    needs: [prepare, package_extension, build]
     runs-on: ubuntu-22.04
     steps:
       - name: Publish draft release
