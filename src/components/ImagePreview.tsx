@@ -13,7 +13,7 @@ import { startExternalFileDrag } from '@/lib/externalDrag'
 import { updateFileDimensions } from '@/services/tauri/files'
 import { openFile, showInExplorer } from '@/services/tauri/system'
 import FileTypeIcon from '@/components/FileTypeIcon'
-import { formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
+import { buildAiImageDataUrl, formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -24,7 +24,20 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from '@/components/ui/ContextMenu'
-import { ExternalLink, FolderOpen, Copy, Move, Scan, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
+import { ExternalLink, FolderOpen, Copy, Move, Scan, Sparkles, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
+
+const AI_IMAGE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'bmp',
+  'gif',
+  'tif',
+  'tiff',
+  'ico',
+  'avif',
+])
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 10000
@@ -52,6 +65,7 @@ export default function ImagePreview() {
   const setSelectedFile = useSelectionStore((state) => state.setSelectedFile)
   const moveFiles = useLibraryQueryStore((state) => state.moveFiles)
   const copyFiles = useLibraryQueryStore((state) => state.copyFiles)
+  const analyzeFileMetadata = useLibraryQueryStore((state) => state.analyzeFileMetadata)
   const deleteFile = useTrashStore((state) => state.deleteFile)
 
   const { folders, selectedFolderId } = useFolderStore()
@@ -93,6 +107,7 @@ export default function ImagePreview() {
   const isVideo = currentFile ? isVideoFile(currentFile.ext) : false
   const isPdf = currentFile ? isPdfFile(currentFile.ext) : false
   const isImageLike = previewType === 'image'
+  const canAnalyzeWithAi = currentFile ? AI_IMAGE_EXTENSIONS.has(currentFile.ext.toLowerCase()) : false
   const supportsZoom = previewType === 'image'
   const wheelZoomSensitivity = BASE_WHEEL_ZOOM_SENSITIVITY * previewTrackpadZoomSpeed
 
@@ -103,6 +118,23 @@ export default function ImagePreview() {
       console.error('Failed to copy file to clipboard:', e)
     }
   }, [currentFile])
+
+  const handleAnalyzeMetadata = async () => {
+    if (!currentFile || !canAnalyzeWithAi) {
+      toast.error('当前仅支持对图片执行 AI 分析')
+      return
+    }
+
+    const loadingToast = toast.loading('AI 分析中...')
+    try {
+      const imageDataUrl = await buildAiImageDataUrl(currentFile.path)
+      await analyzeFileMetadata(currentFile.id, imageDataUrl)
+      toast.success('AI 已更新名称、标签和备注', { id: loadingToast })
+    } catch (e) {
+      console.error('Failed to analyze file metadata:', e)
+      toast.error(`AI 分析失败: ${String(e)}`, { id: loadingToast })
+    }
+  }
 
   // 切换预览时同步更新选中文件
   useEffect(() => {
@@ -768,6 +800,14 @@ export default function ImagePreview() {
       <ContextMenuItem onSelect={() => triggerMenuAction('clipboard', handleCopyFileToClipboard)} onClick={() => triggerMenuAction('clipboard', handleCopyFileToClipboard)}>
         <Copy className="w-4 h-4 mr-2" />
         复制到剪贴板
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={!canAnalyzeWithAi}
+        onSelect={() => triggerMenuAction('ai', handleAnalyzeMetadata)}
+        onClick={() => triggerMenuAction('ai', handleAnalyzeMetadata)}
+      >
+        <Sparkles className="w-4 h-4 mr-2" />
+        AI 分析
       </ContextMenuItem>
       <ContextMenuSeparator />
 

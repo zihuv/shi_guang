@@ -1,9 +1,11 @@
 import { create } from "zustand"
 import { useFilterStore, getSortConfig } from "@/stores/filterStore"
 import { useFolderStore } from "@/stores/folderStore"
+import { usePreviewStore } from "@/stores/previewStore"
 import { useSelectionStore } from "@/stores/selectionStore"
 import { useTagStore } from "@/stores/tagStore"
 import {
+  analyzeFileMetadata as analyzeFileMetadataCommand,
   extractColor,
   exportFile,
   filterFiles as filterFilesCommand,
@@ -64,6 +66,7 @@ interface LibraryQueryStore {
   extractColor: (fileId: number) => Promise<string>
   exportFile: (fileId: number) => Promise<string>
   updateFileName: (fileId: number, newName: string) => Promise<void>
+  analyzeFileMetadata: (fileId: number, imageDataUrl?: string) => Promise<FileItem>
 }
 
 let fileListRequestId = 0
@@ -101,6 +104,30 @@ function applyPaginatedFilesResult(
 
 async function refreshFolders() {
   await useFolderStore.getState().loadFolders()
+}
+
+function syncUpdatedFileAcrossStores(
+  updatedFile: FileItem,
+  set: (
+    partial:
+      | Partial<LibraryQueryStore>
+      | ((state: LibraryQueryStore) => Partial<LibraryQueryStore>),
+  ) => void,
+) {
+  set((state) => ({
+    files: state.files.map((file) => (file.id === updatedFile.id ? updatedFile : file)),
+  }))
+
+  const { selectedFile } = useSelectionStore.getState()
+  if (selectedFile?.id === updatedFile.id) {
+    useSelectionStore.getState().setSelectedFile(updatedFile)
+  }
+
+  usePreviewStore.setState((state) => ({
+    previewFiles: state.previewFiles.map((file) =>
+      file.id === updatedFile.id ? updatedFile : file,
+    ),
+  }))
 }
 
 export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
@@ -290,15 +317,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   updateFileMetadata: async (fileId, rating, description, sourceUrl) => {
     await updateFileMetadata({ fileId, rating, description, sourceUrl })
     const updatedFile = parseFile(await getFile(fileId))
-
-    set((state) => ({
-      files: state.files.map((file) => (file.id === fileId ? updatedFile : file)),
-    }))
-
-    const { selectedFile } = useSelectionStore.getState()
-    if (selectedFile?.id === fileId) {
-      useSelectionStore.getState().setSelectedFile(updatedFile)
-    }
+    syncUpdatedFileAcrossStores(updatedFile, set)
   },
 
   moveFile: async (fileId, targetFolderId) => {
@@ -324,15 +343,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   extractColor: async (fileId) => {
     const color = await extractColor(fileId)
     const updatedFile = parseFile(await getFile(fileId))
-
-    set((state) => ({
-      files: state.files.map((file) => (file.id === fileId ? updatedFile : file)),
-    }))
-
-    const { selectedFile } = useSelectionStore.getState()
-    if (selectedFile?.id === fileId) {
-      useSelectionStore.getState().setSelectedFile(updatedFile)
-    }
+    syncUpdatedFileAcrossStores(updatedFile, set)
 
     return color
   },
@@ -342,14 +353,13 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   updateFileName: async (fileId, newName) => {
     await updateFileName({ fileId, newName })
     const updatedFile = parseFile(await getFile(fileId))
+    syncUpdatedFileAcrossStores(updatedFile, set)
+  },
 
-    set((state) => ({
-      files: state.files.map((file) => (file.id === fileId ? updatedFile : file)),
-    }))
-
-    const { selectedFile } = useSelectionStore.getState()
-    if (selectedFile?.id === fileId) {
-      useSelectionStore.getState().setSelectedFile(updatedFile)
-    }
+  analyzeFileMetadata: async (fileId, imageDataUrl) => {
+    const updatedFile = parseFile(await analyzeFileMetadataCommand(fileId, imageDataUrl))
+    syncUpdatedFileAcrossStores(updatedFile, set)
+    await useTagStore.getState().loadTags()
+    return updatedFile
   },
 }))

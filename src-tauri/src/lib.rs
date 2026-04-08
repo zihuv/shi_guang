@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod http_server;
 mod indexer;
+mod openai;
 mod path_utils;
 mod storage;
 
@@ -144,6 +145,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::ai::analyze_file_metadata,
             commands::files::get_all_files,
             commands::files::search_files,
             commands::tags::get_all_tags,

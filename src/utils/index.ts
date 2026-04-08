@@ -9,6 +9,7 @@ const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
   gif: 'image/gif',
   webp: 'image/webp',
+  avif: 'image/avif',
   svg: 'image/svg+xml',
   bmp: 'image/bmp',
   ico: 'image/x-icon',
@@ -26,7 +27,7 @@ const MIME_TYPES: Record<string, string> = {
   '3gp': 'video/3gpp',
 }
 
-const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff']
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp', 'ico', 'tif', 'tiff']
 const VIDEO_EXTENSIONS = ['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm', 'm4v', '3gp']
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma']
 const ARCHIVE_EXTENSIONS = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz']
@@ -397,6 +398,66 @@ export async function getVideoThumbnailSrc(path: string): Promise<string> {
 // Helper to get image URL from file path using fs plugin
 export async function getImageSrc(path: string): Promise<string> {
   return getFileSrc(path)
+}
+
+export async function buildAiImageDataUrl(path: string): Promise<string> {
+  const sourceUrl = await getFileSrc(path)
+  if (!sourceUrl) {
+    throw new Error("无法读取图片文件")
+  }
+
+  return await new Promise<string>((resolve, reject) => {
+    const image = new Image()
+
+    const cleanup = () => {
+      image.onload = null
+      image.onerror = null
+      if (sourceUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(sourceUrl)
+      }
+    }
+
+    image.onload = () => {
+      const width = image.naturalWidth || image.width
+      const height = image.naturalHeight || image.height
+      if (!width || !height) {
+        cleanup()
+        reject(new Error("图片尺寸无效"))
+        return
+      }
+
+      const maxEdge = 1280
+      const scale = Math.min(1, maxEdge / Math.max(width, height))
+      const canvas = document.createElement("canvas")
+      canvas.width = Math.max(1, Math.round(width * scale))
+      canvas.height = Math.max(1, Math.round(height * scale))
+      const ctx = canvas.getContext("2d")
+
+      if (!ctx) {
+        cleanup()
+        reject(new Error("无法创建图片画布"))
+        return
+      }
+
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+      try {
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
+        cleanup()
+        resolve(dataUrl)
+      } catch (error) {
+        cleanup()
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    }
+
+    image.onerror = () => {
+      cleanup()
+      reject(new Error("浏览器无法解码该图片"))
+    }
+
+    image.src = sourceUrl
+  })
 }
 
 export async function getThumbnailImageSrc(path: string, ext?: string): Promise<string> {

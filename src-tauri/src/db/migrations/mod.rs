@@ -258,4 +258,3 @@ pub(super) fn normalize_relative_paths(db: &Database) -> Result<()> {
 
     Ok(())
 }
-

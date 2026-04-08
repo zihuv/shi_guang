@@ -60,6 +60,7 @@ pub struct ImportTaskSnapshot {
 }
 
 pub(crate) mod files;
+pub(crate) mod ai;
 pub(crate) mod folders;
 pub(crate) mod imports;
 pub(crate) mod indexing;

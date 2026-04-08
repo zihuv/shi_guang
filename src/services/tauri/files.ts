@@ -87,6 +87,13 @@ export function updateFileName(args: { fileId: number; newName: string }) {
   return invokeTauri<void>("update_file_name", args)
 }
 
+export function analyzeFileMetadata(fileId: number, imageDataUrl?: string) {
+  return invokeTauri<FileItem>("analyze_file_metadata", {
+    fileId,
+    imageDataUrl,
+  })
+}
+
 export function importFile(args: {
   sourcePath: string
   folderId?: number | null

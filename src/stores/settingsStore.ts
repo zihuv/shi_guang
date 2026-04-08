@@ -19,6 +19,7 @@ const SHORTCUTS_SETTING_KEY = "shortcuts";
 const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
 const LIBRARY_VIEW_PREFERENCES_SETTING_KEY = "libraryViewPreferences";
 const PANEL_LAYOUT_SETTING_KEY = "panelLayout";
+const AI_CONFIG_SETTING_KEY = "aiConfig";
 
 export type LibraryViewMode = "grid" | "list" | "adaptive";
 export type LibraryVisibleField = "name" | "ext" | "size" | "dimensions" | "tags";
@@ -63,6 +64,23 @@ const LIBRARY_VIEW_SCALE_LIMITS: Record<
 let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null =
   null;
 let panelLayoutPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let aiConfigPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+export interface AiConfig {
+  baseUrl: string;
+  apiKey: string;
+  multimodalModel: string;
+  embeddingModel: string;
+  rerankerModel: string;
+}
+
+export const DEFAULT_AI_CONFIG: AiConfig = {
+  baseUrl: "https://api.openai.com/v1",
+  apiKey: "",
+  multimodalModel: "",
+  embeddingModel: "",
+  rerankerModel: "",
+};
 
 export function clampPreviewTrackpadZoomSpeed(value: number) {
   if (!Number.isFinite(value)) {
@@ -228,6 +246,45 @@ function schedulePanelLayoutPersist(
   }, 120);
 }
 
+function resolveAiConfig(value: unknown): AiConfig {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_AI_CONFIG };
+  }
+
+  const config = value as Partial<Record<keyof AiConfig, unknown>>;
+  return {
+    baseUrl:
+      typeof config.baseUrl === "string" && config.baseUrl.trim()
+        ? config.baseUrl
+        : DEFAULT_AI_CONFIG.baseUrl,
+    apiKey: typeof config.apiKey === "string" ? config.apiKey : "",
+    multimodalModel:
+      typeof config.multimodalModel === "string" ? config.multimodalModel : "",
+    embeddingModel:
+      typeof config.embeddingModel === "string" ? config.embeddingModel : "",
+    rerankerModel:
+      typeof config.rerankerModel === "string" ? config.rerankerModel : "",
+  };
+}
+
+function scheduleAiConfigPersist(
+  get: () => {
+    aiConfig: AiConfig;
+  },
+) {
+  if (aiConfigPersistTimer) {
+    clearTimeout(aiConfigPersistTimer);
+  }
+
+  aiConfigPersistTimer = setTimeout(() => {
+    void setSetting(AI_CONFIG_SETTING_KEY, JSON.stringify(get().aiConfig)).catch(
+      (error) => {
+        console.error("Failed to persist AI config:", error);
+      },
+    );
+  }, 180);
+}
+
 const loadFilesInCurrentFolder = async () => {
   const libraryStore = useLibraryQueryStore.getState();
   await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
@@ -237,6 +294,7 @@ interface Settings {
   theme: "light" | "dark";
   indexPaths: string[];
   useTrash: boolean;
+  aiConfig: AiConfig;
   shortcuts: ShortcutConfig;
   previewTrackpadZoomSpeed: number;
   libraryViewMode: LibraryViewMode;
@@ -250,6 +308,10 @@ interface SettingsStore extends Settings {
   setTheme: (theme: "light" | "dark") => Promise<void>;
   switchIndexPath: (path: string) => Promise<void>;
   setDeleteMode: (useTrash: boolean) => Promise<void>;
+  setAiConfigField: <K extends keyof AiConfig>(
+    key: K,
+    value: AiConfig[K],
+  ) => void;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
   setPreviewTrackpadZoomSpeed: (speed: number) => Promise<void>;
@@ -267,6 +329,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   theme: "light",
   indexPaths: [],
   useTrash: true,
+  aiConfig: { ...DEFAULT_AI_CONFIG },
   shortcuts: { ...DEFAULT_SHORTCUTS },
   previewTrackpadZoomSpeed: DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
   libraryViewMode: DEFAULT_LIBRARY_VIEW_MODE,
@@ -283,6 +346,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setDeleteMode: async (useTrash: boolean) => {
     await setDeleteModeCommand(useTrash);
     set({ useTrash });
+  },
+
+  setAiConfigField: (key, value) => {
+    set((state) => ({
+      aiConfig: {
+        ...state.aiConfig,
+        [key]: value,
+      },
+    }));
+    scheduleAiConfigPersist(get);
   },
 
   setShortcut: async (actionId, shortcut) => {
@@ -363,6 +436,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let theme: "light" | "dark" = "light";
     let indexPaths: string[] = [];
     let useTrash: boolean = true;
+    let aiConfig = { ...DEFAULT_AI_CONFIG };
     let shortcuts = { ...DEFAULT_SHORTCUTS };
     let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
     let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
@@ -395,6 +469,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       indexPaths = await getIndexPaths();
     } catch (e) {
       console.error("Failed to load index paths:", e);
+    }
+
+    try {
+      const aiConfigValue = await getSetting(AI_CONFIG_SETTING_KEY);
+      aiConfig = resolveAiConfig(JSON.parse(aiConfigValue));
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load AI config:", e);
+      }
     }
 
     try {
@@ -478,6 +562,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       theme,
       indexPaths: indexPaths || [],
       useTrash,
+      aiConfig,
       shortcuts,
       previewTrackpadZoomSpeed,
       libraryViewMode,

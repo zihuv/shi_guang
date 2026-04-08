@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import {
   Sun,
   Moon,
@@ -37,7 +38,7 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type SettingsSection = "general" | "shortcuts";
+type SettingsSection = "general" | "ai" | "shortcuts";
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const indexPaths = useSettingsStore((state) => state.indexPaths);
@@ -48,6 +49,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setDeleteMode = useSettingsStore((state) => state.setDeleteMode);
   const rebuildIndex = useSettingsStore((state) => state.rebuildIndex);
   const loadSettings = useSettingsStore((state) => state.loadSettings);
+  const aiConfig = useSettingsStore((state) => state.aiConfig);
+  const setAiConfigField = useSettingsStore((state) => state.setAiConfigField);
   const shortcuts = useSettingsStore((state) => state.shortcuts);
   const setShortcut = useSettingsStore((state) => state.setShortcut);
   const resetShortcut = useSettingsStore((state) => state.resetShortcut);
@@ -165,6 +168,17 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 }`}
               >
                 通用
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSection("ai")}
+                className={`rounded-lg px-3 py-2 text-sm font-medium text-left transition-colors ${
+                  activeSection === "ai"
+                    ? "bg-white text-gray-900 shadow-sm dark:bg-dark-surface dark:text-gray-100"
+                    : "text-gray-500 hover:bg-white/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-dark-surface/70 dark:hover:text-gray-200"
+                }`}
+              >
+                AI
               </button>
               <button
                 type="button"
@@ -370,6 +384,100 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                           深色
                         </Button>
                       </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            ) : activeSection === "ai" ? (
+              <div className="space-y-8">
+                <section className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      OpenAI 兼容配置
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      当前 AI 分析只使用多模态模型。Embedding 和 Reranker 先保留配置，不会自动参与流程。
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-border dark:bg-dark-bg/40">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        Base URL
+                      </label>
+                      <Input
+                        value={aiConfig.baseUrl}
+                        onChange={(event) =>
+                          setAiConfigField("baseUrl", event.target.value)
+                        }
+                        placeholder="https://api.openai.com/v1"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        API Key
+                      </label>
+                      <Input
+                        type="password"
+                        value={aiConfig.apiKey}
+                        onChange={(event) =>
+                          setAiConfigField("apiKey", event.target.value)
+                        }
+                        placeholder="sk-..."
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        多模态模型
+                      </label>
+                      <Input
+                        value={aiConfig.multimodalModel}
+                        onChange={(event) =>
+                          setAiConfigField("multimodalModel", event.target.value)
+                        }
+                        placeholder="gpt-4.1-mini"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4 border-t border-gray-200 pt-8 dark:border-dark-border">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      预留模型
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      先保存，后续如果接语义检索或重排可以直接复用。
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-border dark:bg-dark-bg/40">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        Embedding 模型
+                      </label>
+                      <Input
+                        value={aiConfig.embeddingModel}
+                        onChange={(event) =>
+                          setAiConfigField("embeddingModel", event.target.value)
+                        }
+                        placeholder="text-embedding-3-small"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        Reranker 模型
+                      </label>
+                      <Input
+                        value={aiConfig.rerankerModel}
+                        onChange={(event) =>
+                          setAiConfigField("rerankerModel", event.target.value)
+                        }
+                        placeholder="bge-reranker-v2-m3"
+                      />
                     </div>
                   </div>
                 </section>

@@ -7,6 +7,7 @@ import { useSelectionStore } from '@/stores/selectionStore'
 import { useTrashStore } from '@/stores/trashStore'
 import { copyFilesToClipboard } from '@/lib/clipboard'
 import { openFile, showInExplorer } from '@/services/tauri/system'
+import { buildAiImageDataUrl } from '@/utils'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -17,7 +18,20 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from '@/components/ui/ContextMenu'
-import { ExternalLink, FolderOpen, Copy, Move, Trash2 } from 'lucide-react'
+import { ExternalLink, FolderOpen, Copy, Move, Sparkles, Trash2 } from 'lucide-react'
+
+const AI_IMAGE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'bmp',
+  'gif',
+  'tif',
+  'tiff',
+  'ico',
+  'avif',
+])
 
 interface FileContextMenuProps {
   file: FileItem
@@ -29,6 +43,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   const deleteFiles = useTrashStore((state) => state.deleteFiles)
   const setSelectedFile = useSelectionStore((state) => state.setSelectedFile)
   const selectedFiles = useSelectionStore((state) => state.selectedFiles)
+  const analyzeFileMetadata = useLibraryQueryStore((state) => state.analyzeFileMetadata)
   const moveFiles = useLibraryQueryStore((state) => state.moveFiles)
   const copyFiles = useLibraryQueryStore((state) => state.copyFiles)
   const { folders } = useFolderStore()
@@ -37,6 +52,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null)
   const liveActiveFileIds = selectedFiles.includes(file.id) ? selectedFiles : [file.id]
   const activeFileIds = frozenFileIds ?? liveActiveFileIds
+  const canAnalyzeWithAi = AI_IMAGE_EXTENSIONS.has(file.ext.toLowerCase())
 
   const snapshotActiveFileIds = () => {
     const { selectedFiles: latestSelectedFiles } = useSelectionStore.getState()
@@ -114,6 +130,23 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     }
   }
 
+  const handleAnalyzeMetadata = async () => {
+    if (!canAnalyzeWithAi) {
+      toast.error('当前仅支持对图片执行 AI 分析')
+      return
+    }
+
+    const loadingToast = toast.loading('AI 分析中...')
+    try {
+      const imageDataUrl = await buildAiImageDataUrl(file.path)
+      await analyzeFileMetadata(file.id, imageDataUrl)
+      toast.success('AI 已更新名称、标签和备注', { id: loadingToast })
+    } catch (e) {
+      console.error('Failed to analyze file metadata:', e)
+      toast.error(`AI 分析失败: ${String(e)}`, { id: loadingToast })
+    }
+  }
+
   // Copy file to a folder
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
@@ -177,6 +210,14 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
         <ContextMenuItem onSelect={() => triggerMenuAction('clipboard', handleCopyFilesToClipboard)} onClick={() => triggerMenuAction('clipboard', handleCopyFilesToClipboard)}>
           <Copy className="w-4 h-4 mr-2" />
           复制到剪贴板
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!canAnalyzeWithAi || activeFileIds.length !== 1}
+          onSelect={() => triggerMenuAction('ai', handleAnalyzeMetadata)}
+          onClick={() => triggerMenuAction('ai', handleAnalyzeMetadata)}
+        >
+          <Sparkles className="w-4 h-4 mr-2" />
+          AI 分析
         </ContextMenuItem>
         <ContextMenuSeparator />
 
