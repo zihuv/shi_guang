@@ -1,8 +1,11 @@
 import { useEffect } from "react";
 import { copyFilesToClipboard } from "@/lib/clipboard";
 import { SHORTCUT_ACTIONS, matchShortcut, type ShortcutActionId } from "@/lib/shortcuts";
-import { useFileStore } from "@/stores/fileStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { usePreviewStore } from "@/stores/previewStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useSelectionStore } from "@/stores/selectionStore";
+import { useTrashStore } from "@/stores/trashStore";
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
@@ -21,33 +24,36 @@ function isDialogTarget(target: EventTarget | null) {
 }
 
 function getCopyTargetFileIds() {
-  const fileStore = useFileStore.getState();
+  const previewStore = usePreviewStore.getState();
+  const selectionStore = useSelectionStore.getState();
 
-  if (fileStore.previewMode) {
-    const currentPreviewFile = fileStore.previewFiles[fileStore.previewIndex];
+  if (previewStore.previewMode) {
+    const currentPreviewFile = previewStore.previewFiles[previewStore.previewIndex];
     return currentPreviewFile ? [currentPreviewFile.id] : [];
   }
 
-  if (fileStore.selectedFiles.length > 0) {
-    return fileStore.selectedFiles;
+  if (selectionStore.selectedFiles.length > 0) {
+    return selectionStore.selectedFiles;
   }
 
-  return fileStore.selectedFile ? [fileStore.selectedFile.id] : [];
+  return selectionStore.selectedFile ? [selectionStore.selectedFile.id] : [];
 }
 
 function canRunShortcut(actionId: ShortcutActionId) {
-  const fileStore = useFileStore.getState();
+  const previewStore = usePreviewStore.getState();
+  const libraryStore = useLibraryQueryStore.getState();
+  const trashStore = useTrashStore.getState();
 
   if (actionId === "copySelectedToClipboard") {
     return getCopyTargetFileIds().length > 0;
   }
 
   if (actionId === "undoDelete") {
-    return fileStore.undoStack.length > 0;
+    return trashStore.undoStack.length > 0;
   }
 
   if (actionId === "selectAllCurrentPageFiles") {
-    return !fileStore.previewMode && fileStore.files.length > 0;
+    return !previewStore.previewMode && libraryStore.files.length > 0;
   }
 
   return true;
@@ -69,12 +75,12 @@ async function runShortcut(actionId: ShortcutActionId) {
   }
 
   if (actionId === "undoDelete") {
-    void useFileStore.getState().undo();
+    void useTrashStore.getState().undo();
     return;
   }
 
   if (actionId === "selectAllCurrentPageFiles") {
-    useFileStore.getState().toggleSelectAll();
+    useSelectionStore.getState().toggleSelectAll();
   }
 }
 

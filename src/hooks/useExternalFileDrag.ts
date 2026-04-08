@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import { toast } from "sonner"
 import { startExternalFileDrag } from "@/lib/externalDrag"
-import { useFileStore } from "@/stores/fileStore"
+import { useSelectionStore } from "@/stores/selectionStore"
 
 const EXTERNAL_DRAG_THRESHOLD = 6
 const EXTERNAL_DRAG_REGION_SELECTOR = "[data-external-drag-region='true']"
@@ -13,7 +13,7 @@ type PendingExternalDrag = {
 }
 
 function getExternalDragFileIds(fileId: number) {
-  const { selectedFiles } = useFileStore.getState()
+  const { selectedFiles } = useSelectionStore.getState()
   return selectedFiles.includes(fileId) ? selectedFiles : [fileId]
 }
 
@@ -57,7 +57,7 @@ export function useExternalFileDrag(fileId: number) {
 
       current.started = true
       clearPendingExternalDrag()
-      useFileStore.getState().clearInternalFileDrag()
+      useSelectionStore.getState().clearInternalFileDrag()
 
       void startExternalFileDrag(getExternalDragFileIds(fileId)).catch((error) => {
         console.error("Failed to start external file drag:", error)

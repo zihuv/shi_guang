@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
 import { readFile, readTextFile } from '@tauri-apps/plugin-fs'
-import { useFileStore } from '@/stores/fileStore'
+import { getIndexPaths, getThumbnailDataBase64, saveThumbnailCache, syncIndexPath } from '@/services/tauri/indexing'
+import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
 import { FolderNode, useFolderStore } from '@/stores/folderStore'
 
 const MIME_TYPES: Record<string, string> = {
@@ -104,8 +104,8 @@ function findMatchingIndexPath(filePath: string, indexPaths: string[]): string |
 async function refreshVisibleLibraryState() {
   try {
     await useFolderStore.getState().loadFolders()
-    const fileStore = useFileStore.getState()
-    await fileStore.loadFilesInFolder(fileStore.selectedFolderId)
+    const libraryStore = useLibraryQueryStore.getState()
+    await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId)
   } catch (error) {
     console.error('Failed to refresh library state:', error)
   }
@@ -114,7 +114,7 @@ async function refreshVisibleLibraryState() {
 function scheduleMissingFileCleanup(path: string) {
   void (async () => {
     try {
-      const indexPaths = await invoke<string[]>('get_index_paths')
+      const indexPaths = await getIndexPaths()
       const matchingIndexPath = findMatchingIndexPath(path, indexPaths)
       if (!matchingIndexPath || missingFileSyncs.has(matchingIndexPath)) {
         return
@@ -122,7 +122,7 @@ function scheduleMissingFileCleanup(path: string) {
 
       missingFileSyncs.add(matchingIndexPath)
       try {
-        await invoke('sync_index_path', { path: matchingIndexPath })
+        await syncIndexPath(matchingIndexPath)
         await refreshVisibleLibraryState()
       } finally {
         missingFileSyncs.delete(matchingIndexPath)
@@ -357,7 +357,7 @@ async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<v
   }
 
   try {
-    await invoke('save_thumbnail_cache', {
+    await saveThumbnailCache({
       filePath: path,
       dataBase64,
     })
@@ -405,9 +405,7 @@ export async function getThumbnailImageSrc(path: string, ext?: string): Promise<
   }
 
   try {
-    const thumbnailDataBase64 = await invoke<string | null>('get_thumbnail_data_base64', {
-      filePath: path,
-    })
+    const thumbnailDataBase64 = await getThumbnailDataBase64(path)
 
     if (!thumbnailDataBase64) {
       return ''

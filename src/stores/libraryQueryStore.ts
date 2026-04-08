@@ -1,0 +1,355 @@
+import { create } from "zustand"
+import { useFilterStore, getSortConfig } from "@/stores/filterStore"
+import { useFolderStore } from "@/stores/folderStore"
+import { useSelectionStore } from "@/stores/selectionStore"
+import { useTagStore } from "@/stores/tagStore"
+import {
+  extractColor,
+  exportFile,
+  filterFiles as filterFilesCommand,
+  getAllFiles,
+  getFile,
+  getFilesInFolder,
+  searchFiles,
+  updateFileMetadata,
+  updateFileName,
+} from "@/services/tauri/files"
+import { copyFiles, moveFile, moveFiles } from "@/services/tauri/system"
+import {
+  addTagToFile as addTagToFileCommand,
+  removeTagFromFile as removeTagFromFileCommand,
+} from "@/services/tauri/tags"
+import { buildFileFilterPayload, hasStructuredFilters } from "@/features/filters/schema"
+import { parseFile, parseFileList, type FileItem, type PaginatedFilesResponse } from "@/stores/fileTypes"
+
+interface LibraryPagination {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+interface FilterFilesInput {
+  query?: string
+  folderId?: number | null
+}
+
+interface LibraryQueryStore {
+  files: FileItem[]
+  selectedFolderId: number | null
+  searchQuery: string
+  isLoading: boolean
+  pagination: LibraryPagination
+  setPage: (page: number) => void
+  setPageSize: (pageSize: number) => void
+  resetPage: () => void
+  setSearchQuery: (query: string) => void
+  setSelectedFolderId: (folderId: number | null) => void
+  loadFiles: () => Promise<void>
+  loadFilesInFolder: (folderId: number | null) => Promise<void>
+  searchFiles: (query: string) => Promise<void>
+  runCurrentQuery: (folderIdOverride?: number | null) => Promise<void>
+  filterFiles: (filter?: FilterFilesInput) => Promise<void>
+  addTagToFile: (fileId: number, tagId: number) => Promise<void>
+  removeTagFromFile: (fileId: number, tagId: number) => Promise<void>
+  updateFileMetadata: (
+    fileId: number,
+    rating: number,
+    description: string,
+    sourceUrl: string,
+  ) => Promise<void>
+  moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
+  moveFiles: (fileIds: number[], targetFolderId: number | null) => Promise<void>
+  copyFiles: (fileIds: number[], targetFolderId: number | null) => Promise<void>
+  extractColor: (fileId: number) => Promise<string>
+  exportFile: (fileId: number) => Promise<string>
+  updateFileName: (fileId: number, newName: string) => Promise<void>
+}
+
+let fileListRequestId = 0
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function getCurrentSortConfig() {
+  return getSortConfig(useFilterStore.getState().criteria)
+}
+
+function applyPaginatedFilesResult(
+  result: PaginatedFilesResponse,
+  requestId: number,
+  set: (partial: Partial<LibraryQueryStore>) => void,
+) {
+  if (requestId !== fileListRequestId) {
+    return false
+  }
+
+  const parsedFiles = parseFileList(result.files)
+  useSelectionStore.getState().reconcileVisibleSelection(parsedFiles)
+
+  set({
+    files: parsedFiles,
+    isLoading: false,
+    pagination: {
+      page: result.page,
+      pageSize: result.page_size,
+      total: result.total,
+      totalPages: result.total_pages,
+    },
+  })
+
+  return true
+}
+
+async function refreshFolders() {
+  await useFolderStore.getState().loadFolders()
+}
+
+export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
+  files: [],
+  selectedFolderId: null,
+  searchQuery: "",
+  isLoading: false,
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    total: 0,
+    totalPages: 0,
+  },
+
+  setPage: (page) => {
+    set((state) => ({ pagination: { ...state.pagination, page } }))
+    void get().runCurrentQuery()
+  },
+
+  setPageSize: (pageSize) => {
+    set((state) => ({ pagination: { ...state.pagination, pageSize, page: 1 } }))
+    void get().runCurrentQuery()
+  },
+
+  resetPage: () => {
+    set((state) => ({ pagination: { ...state.pagination, page: 1 } }))
+  },
+
+  setSearchQuery: (query) => {
+    set({ searchQuery: query })
+    useFilterStore.getState().setSearchQuery(query)
+    get().resetPage()
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+
+    searchDebounceTimer = setTimeout(() => {
+      void get().runCurrentQuery()
+    }, 250)
+  },
+
+  setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
+
+  loadFiles: async () => {
+    const { pagination } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
+    const requestId = ++fileListRequestId
+    set({ isLoading: true })
+
+    try {
+      const result = await getAllFiles({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        sortBy,
+        sortDirection,
+      })
+      applyPaginatedFilesResult(result, requestId, set)
+    } catch (error) {
+      console.error("Failed to load files:", error)
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
+    }
+  },
+
+  loadFilesInFolder: async (folderId) => {
+    set({ selectedFolderId: folderId })
+    const criteria = useFilterStore.getState().criteria
+    if (hasStructuredFilters(criteria) || get().searchQuery.trim()) {
+      await get().runCurrentQuery(folderId)
+      return
+    }
+
+    const { pagination } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
+    const requestId = ++fileListRequestId
+    set({ isLoading: true })
+
+    try {
+      const result =
+        folderId === null
+          ? await getAllFiles({
+              page: pagination.page,
+              pageSize: pagination.pageSize,
+              sortBy,
+              sortDirection,
+            })
+          : await getFilesInFolder({
+              folderId,
+              page: pagination.page,
+              pageSize: pagination.pageSize,
+              sortBy,
+              sortDirection,
+            })
+
+      applyPaginatedFilesResult(result, requestId, set)
+    } catch (error) {
+      console.error("Failed to load files in folder:", error)
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
+    }
+  },
+
+  searchFiles: async (query) => {
+    const { pagination } = get()
+    const { sortBy, sortDirection } = getCurrentSortConfig()
+    const requestId = ++fileListRequestId
+    set({ isLoading: true })
+
+    try {
+      const result = await searchFiles({
+        query,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        sortBy,
+        sortDirection,
+      })
+      applyPaginatedFilesResult(result, requestId, set)
+    } catch (error) {
+      console.error("Failed to search files:", error)
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
+    }
+  },
+
+  runCurrentQuery: async (folderIdOverride) => {
+    const { searchQuery, selectedFolderId } = get()
+    const criteria = useFilterStore.getState().criteria
+    const folderId = folderIdOverride !== undefined ? folderIdOverride : selectedFolderId
+
+    if (hasStructuredFilters(criteria)) {
+      await get().filterFiles({
+        query: searchQuery || undefined,
+        folderId,
+      })
+      return
+    }
+
+    if (searchQuery.trim()) {
+      await get().searchFiles(searchQuery)
+      return
+    }
+
+    await get().loadFilesInFolder(folderId)
+  },
+
+  filterFiles: async (filter) => {
+    const { pagination } = get()
+    const requestId = ++fileListRequestId
+    const criteria = useFilterStore.getState().criteria
+    set({ isLoading: true })
+
+    try {
+      const result = await filterFilesCommand({
+        filter: buildFileFilterPayload({
+          criteria,
+          fallbackQuery: filter?.query,
+          folderId: filter?.folderId,
+        }),
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+      })
+      applyPaginatedFilesResult(result, requestId, set)
+    } catch (error) {
+      console.error("Failed to filter files:", error)
+      if (requestId === fileListRequestId) {
+        set({ isLoading: false })
+      }
+    }
+  },
+
+  addTagToFile: async (fileId, tagId) => {
+    await addTagToFileCommand({ fileId, tagId })
+    await get().loadFilesInFolder(get().selectedFolderId)
+    await useTagStore.getState().loadTags()
+  },
+
+  removeTagFromFile: async (fileId, tagId) => {
+    await removeTagFromFileCommand({ fileId, tagId })
+    await get().loadFilesInFolder(get().selectedFolderId)
+    await useTagStore.getState().loadTags()
+  },
+
+  updateFileMetadata: async (fileId, rating, description, sourceUrl) => {
+    await updateFileMetadata({ fileId, rating, description, sourceUrl })
+    const updatedFile = parseFile(await getFile(fileId))
+
+    set((state) => ({
+      files: state.files.map((file) => (file.id === fileId ? updatedFile : file)),
+    }))
+
+    const { selectedFile } = useSelectionStore.getState()
+    if (selectedFile?.id === fileId) {
+      useSelectionStore.getState().setSelectedFile(updatedFile)
+    }
+  },
+
+  moveFile: async (fileId, targetFolderId) => {
+    await moveFile({ fileId, targetFolderId })
+    await get().loadFilesInFolder(get().selectedFolderId)
+    await refreshFolders()
+  },
+
+  moveFiles: async (fileIds, targetFolderId) => {
+    await moveFiles({ fileIds, targetFolderId })
+    useSelectionStore.getState().clearSelection()
+    useSelectionStore.getState().setSelectedFile(null)
+    await get().loadFilesInFolder(get().selectedFolderId)
+    await refreshFolders()
+  },
+
+  copyFiles: async (fileIds, targetFolderId) => {
+    await copyFiles({ fileIds, targetFolderId })
+    await get().loadFilesInFolder(get().selectedFolderId)
+    await refreshFolders()
+  },
+
+  extractColor: async (fileId) => {
+    const color = await extractColor(fileId)
+    const updatedFile = parseFile(await getFile(fileId))
+
+    set((state) => ({
+      files: state.files.map((file) => (file.id === fileId ? updatedFile : file)),
+    }))
+
+    const { selectedFile } = useSelectionStore.getState()
+    if (selectedFile?.id === fileId) {
+      useSelectionStore.getState().setSelectedFile(updatedFile)
+    }
+
+    return color
+  },
+
+  exportFile: async (fileId) => exportFile(fileId),
+
+  updateFileName: async (fileId, newName) => {
+    await updateFileName({ fileId, newName })
+    const updatedFile = parseFile(await getFile(fileId))
+
+    set((state) => ({
+      files: state.files.map((file) => (file.id === fileId ? updatedFile : file)),
+    }))
+
+    const { selectedFile } = useSelectionStore.getState()
+    if (selectedFile?.id === fileId) {
+      useSelectionStore.getState().setSelectedFile(updatedFile)
+    }
+  },
+}))

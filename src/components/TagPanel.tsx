@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/ContextMenu"
 import { requestFocusFirstFile } from "@/lib/libraryNavigation"
 import { useFilterStore } from "@/stores/filterStore"
-import { useFileStore } from "@/stores/fileStore"
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore"
 import { collectTagIds, flattenTagTree, Tag, useTagStore } from "@/stores/tagStore"
 import { ChevronRight, Move, Pencil, Plus, Tag as TagIcon, Tags, Trash2, X } from "lucide-react"
 
@@ -82,19 +82,19 @@ const isDescendant = (tags: Tag[], parentId: number, childId: number): boolean =
 async function selectTagFromTree(tagId: number | null) {
   const tagStore = useTagStore.getState()
   const { setTagIds } = useFilterStore.getState()
-  const fileStore = useFileStore.getState()
+  const libraryStore = useLibraryQueryStore.getState()
 
   if (tagId === null) {
     tagStore.setSelectedTagId(null)
     setTagIds([])
-    await fileStore.runCurrentQuery(fileStore.selectedFolderId)
+    await libraryStore.runCurrentQuery(libraryStore.selectedFolderId)
     return
   }
 
   tagStore.setSelectedTagId(tagId)
   const selectedTag = flattenTagTree(tagStore.tags).find((item) => item.id === tagId)
   setTagIds(selectedTag ? collectTagIds(selectedTag) : [tagId])
-  await fileStore.runCurrentQuery(fileStore.selectedFolderId)
+  await libraryStore.runCurrentQuery(libraryStore.selectedFolderId)
 }
 
 interface TagItemProps {
@@ -333,7 +333,8 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
 
 export default function TagPanel() {
   const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } = useTagStore()
-  const { runCurrentQuery, selectedFolderId } = useFileStore()
+  const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery)
+  const selectedFolderId = useLibraryQueryStore((state) => state.selectedFolderId)
   const { setTagIds } = useFilterStore()
   const [isAdding, setIsAdding] = useState(false)
   const [addingParent, setAddingParent] = useState<Tag | null>(null)

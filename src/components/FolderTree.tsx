@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
@@ -7,9 +6,13 @@ import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-
 import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
 import { buildVisibleTreeItems, useTreeKeyboardNavigation } from '@/hooks/useTreeKeyboardNavigation'
 import { requestFocusFirstFile } from '@/lib/libraryNavigation'
+import { deleteFolder } from '@/services/tauri/folders'
+import { showFolderInExplorer } from '@/services/tauri/system'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
-import { useFileStore } from '@/stores/fileStore'
 import { useFilterStore } from '@/stores/filterStore'
+import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
+import { usePreviewStore } from '@/stores/previewStore'
+import { useSelectionStore } from '@/stores/selectionStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import TrashPanel from '@/components/TrashPanel'
@@ -112,28 +115,29 @@ const isDescendant = (folders: FolderNode[], parentId: number, childId: number):
 
 async function selectFolderFromTree(folderId: number | null) {
   const folderStore = useFolderStore.getState()
-  const fileStore = useFileStore.getState()
   const filterStore = useFilterStore.getState()
+  const libraryStore = useLibraryQueryStore.getState()
+  const selectionStore = useSelectionStore.getState()
+  const previewStore = usePreviewStore.getState()
 
   if (filterStore.isFilterPanelOpen || folderId === null) {
     filterStore.setFolderId(null)
   }
 
   if (folderStore.selectedFolderId === folderId) {
-    fileStore.clearSelection()
-    fileStore.closePreview()
-    if (fileStore.selectedFile) {
-      fileStore.setSelectedFile(null)
+    selectionStore.clearSelection()
+    previewStore.closePreview()
+    if (selectionStore.selectedFile) {
+      selectionStore.setSelectedFile(null)
     }
     return
   }
 
   folderStore.selectFolder(folderId)
-  fileStore.setSelectedFolderId(folderId)
-  fileStore.clearSelection()
-  fileStore.closePreview()
-  fileStore.setSelectedFile(null)
-  await fileStore.loadFilesInFolder(folderId)
+  selectionStore.clearSelection()
+  previewStore.closePreview()
+  selectionStore.setSelectedFile(null)
+  await libraryStore.loadFilesInFolder(folderId)
 }
 
 // Flatten folder tree for "Move to" submenu
@@ -340,7 +344,7 @@ function FolderItem({
 
   const handleShowInExplorer = async () => {
     try {
-      await invoke('show_folder_in_explorer', { folderId: folder.id })
+      await showFolderInExplorer(folder.id)
     } catch (err) {
       console.error('Failed to show folder in explorer:', err)
     }
@@ -361,7 +365,7 @@ function FolderItem({
       return true
     }
 
-    const { isDraggingInternal, draggedFileIds } = useFileStore.getState()
+    const { isDraggingInternal, draggedFileIds } = useSelectionStore.getState()
     return isDraggingInternal && draggedFileIds.length > 0
   }
 
@@ -382,7 +386,7 @@ function FolderItem({
       }
     }
 
-    return useFileStore.getState().draggedFileIds
+    return useSelectionStore.getState().draggedFileIds
   }
 
   const handleExternalDragEnter = (e: React.DragEvent) => {
@@ -427,17 +431,17 @@ function FolderItem({
       console.log('[FolderTree] internal drop', {
         folderId: folder.id,
         fileIds,
-        currentDragSessionId: useFileStore.getState().currentDragSessionId,
+        currentDragSessionId: useSelectionStore.getState().currentDragSessionId,
       })
-      if (!useFileStore.getState().markInternalDropHandled()) {
+      if (!useSelectionStore.getState().markInternalDropHandled()) {
         return
       }
       if (fileIds.length > 1) {
-        await useFileStore.getState().moveFiles(fileIds, folder.id)
+        await useLibraryQueryStore.getState().moveFiles(fileIds, folder.id)
       } else if (fileIds.length === 1) {
-        await useFileStore.getState().moveFile(fileIds[0], folder.id)
+        await useLibraryQueryStore.getState().moveFile(fileIds[0], folder.id)
       }
-      useFileStore.getState().clearInternalFileDrag()
+      useSelectionStore.getState().clearInternalFileDrag()
       setDragOverFolderId(null)
       return
     }
@@ -634,7 +638,7 @@ export default function FolderTree() {
     setFolders,
     uniqueContextId,
   } = useFolderStore()
-  const { loadFilesInFolder, setSelectedFolderId } = useFileStore()
+  const loadFilesInFolder = useLibraryQueryStore((state) => state.loadFilesInFolder)
   const [isAdding, setIsAdding] = useState(false)
 
   // Drag state - simplified to track only what's needed
@@ -1068,7 +1072,7 @@ export default function FolderTree() {
       const deletedId = deleteConfirm.id
       setDeleteConfirm(null)
 
-      await import('@tauri-apps/api/core').then(m => m.invoke('delete_folder', { id: deletedId }))
+      await deleteFolder(deletedId)
       await loadFolders()
 
       if (selectedFolderId === deletedId) {
@@ -1076,10 +1080,9 @@ export default function FolderTree() {
         if (folders.length > 0) {
           const firstFolder = folders[0]
           selectFolder(firstFolder.id)
-          setSelectedFolderId(firstFolder.id)
           await loadFilesInFolder(firstFolder.id)
         } else {
-          setSelectedFolderId(null)
+          selectFolder(null)
           await loadFilesInFolder(null)
         }
       }

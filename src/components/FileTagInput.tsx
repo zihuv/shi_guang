@@ -6,7 +6,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import { cn } from "@/lib/utils";
-import { useFileStore, type Tag as FileTag } from "@/stores/fileStore";
+import type { Tag as FileTag } from "@/stores/fileTypes";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useTagStore } from "@/stores/tagStore";
 
 const TAG_COLORS = [
@@ -55,7 +56,8 @@ interface FileTagInputProps {
 
 export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { addTagToFile, removeTagFromFile } = useFileStore();
+  const addTagToFile = useLibraryQueryStore((state) => state.addTagToFile);
+  const removeTagFromFile = useLibraryQueryStore((state) => state.removeTagFromFile);
   const { flatTags, addTag } = useTagStore();
   const [tagInput, setTagInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);

@@ -1,12 +1,17 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent, type SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
-import { useFileStore, FileItem } from '@/stores/fileStore'
+import type { FileItem } from '@/stores/fileTypes'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
+import { usePreviewStore } from '@/stores/previewStore'
+import { useSelectionStore } from '@/stores/selectionStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useTrashStore } from '@/stores/trashStore'
 import { copyFilesToClipboard } from '@/lib/clipboard'
 import { startExternalFileDrag } from '@/lib/externalDrag'
+import { updateFileDimensions } from '@/services/tauri/files'
+import { openFile, showInExplorer } from '@/services/tauri/system'
 import FileTypeIcon from '@/components/FileTypeIcon'
 import { formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
 import {
@@ -39,16 +44,15 @@ function clampValue(value: number, min: number, max: number) {
 }
 
 export default function ImagePreview() {
-  const {
-    previewMode,
-    previewIndex,
-    previewFiles,
-    setPreviewIndex,
-    closePreview,
-    setSelectedFile,
-    moveFiles,
-    copyFiles,
-  } = useFileStore()
+  const previewMode = usePreviewStore((state) => state.previewMode)
+  const previewIndex = usePreviewStore((state) => state.previewIndex)
+  const previewFiles = usePreviewStore((state) => state.previewFiles)
+  const setPreviewIndex = usePreviewStore((state) => state.setPreviewIndex)
+  const closePreview = usePreviewStore((state) => state.closePreview)
+  const setSelectedFile = useSelectionStore((state) => state.setSelectedFile)
+  const moveFiles = useLibraryQueryStore((state) => state.moveFiles)
+  const copyFiles = useLibraryQueryStore((state) => state.copyFiles)
+  const deleteFile = useTrashStore((state) => state.deleteFile)
 
   const { folders, selectedFolderId } = useFolderStore()
   const previewTrackpadZoomSpeed = useSettingsStore((state) => state.previewTrackpadZoomSpeed)
@@ -61,6 +65,7 @@ export default function ImagePreview() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [isPanning, setIsPanning] = useState(false)
+  const [loadedImageSize, setLoadedImageSize] = useState({ width: 0, height: 0 })
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null)
@@ -75,6 +80,7 @@ export default function ImagePreview() {
   const shouldCenterImageRef = useRef(false)
   const lastPreviewFileIdRef = useRef<number | null>(null)
   const pendingScrollRef = useRef<{ left: number; top: number } | null>(null)
+  const persistedDimensionsRef = useRef<Record<number, string>>({})
 
   // 获取当前文件夹名称
   const currentFolderName = selectedFolderId
@@ -122,6 +128,10 @@ export default function ImagePreview() {
 
     lastPreviewFileIdRef.current = currentFile.id
   }, [currentFile])
+
+  useEffect(() => {
+    setLoadedImageSize({ width: 0, height: 0 })
+  }, [currentFile?.id])
 
   // 加载图片
   useEffect(() => {
@@ -286,7 +296,7 @@ export default function ImagePreview() {
   // 打开文件
   const handleOpenFile = async () => {
     try {
-      await invoke('open_file', { fileId: currentFile.id })
+      await openFile(currentFile.id)
     } catch (e) {
       console.error('Failed to open file:', e)
     }
@@ -295,7 +305,7 @@ export default function ImagePreview() {
   // 在资源管理器中显示
   const handleShowInExplorer = async () => {
     try {
-      await invoke('show_in_explorer', { fileId: currentFile.id })
+      await showInExplorer(currentFile.id)
     } catch (e) {
       console.error('Failed to open directory:', e)
     }
@@ -379,7 +389,7 @@ export default function ImagePreview() {
   // 删除文件
   const handleDeleteFile = async () => {
     try {
-      await invoke('delete_file', { fileId: currentFile.id })
+      await deleteFile(currentFile.id)
       closePreview()
     } catch (e) {
       console.error('Failed to delete file:', e)
@@ -404,8 +414,18 @@ export default function ImagePreview() {
   const isFitMode = zoom === 'auto'
   const canPanImage = isImageLike && !isFitMode
   const manualZoomScale = typeof zoom === 'number' ? zoom / 100 : 1
-  const imageWidth = currentFile.width > 0 ? currentFile.width : null
-  const imageHeight = currentFile.height > 0 ? currentFile.height : null
+  const imageWidth =
+    currentFile.width > 0
+      ? currentFile.width
+      : loadedImageSize.width > 0
+        ? loadedImageSize.width
+        : null
+  const imageHeight =
+    currentFile.height > 0
+      ? currentFile.height
+      : loadedImageSize.height > 0
+        ? loadedImageSize.height
+        : null
   const fitZoomPercent =
     imageWidth && imageHeight && viewportSize.width > 0 && viewportSize.height > 0
       ? clampZoom(
@@ -501,25 +521,97 @@ export default function ImagePreview() {
     setIsFullscreen(prev => !prev)
   }
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+  const handleNativeWheel = useCallback((event: WheelEvent) => {
     if (!supportsZoom) return
-    if (!e.ctrlKey && !e.metaKey) return
+    if (!event.ctrlKey && !event.metaKey) return
 
-    e.preventDefault()
+    event.preventDefault()
     const container = viewportRef.current
     if (!container) return
 
     const rect = container.getBoundingClientRect()
-    const pointerX = e.clientX - rect.left
-    const pointerY = e.clientY - rect.top
-
-    const deltaY = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 16 : e.deltaY
+    const pointerX = event.clientX - rect.left
+    const pointerY = event.clientY - rect.top
+    const deltaY =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 16 : event.deltaY
 
     applyZoom(
       currentZoom => currentZoom * Math.exp(-deltaY * wheelZoomSensitivity),
       { x: pointerX, y: pointerY },
     )
-  }
+  }, [applyZoom, supportsZoom, wheelZoomSensitivity])
+
+  useEffect(() => {
+    const container = viewportRef.current
+    if (!container) {
+      return
+    }
+
+    container.addEventListener('wheel', handleNativeWheel, { passive: false })
+    return () => {
+      container.removeEventListener('wheel', handleNativeWheel)
+    }
+  }, [handleNativeWheel, isFullscreen, previewMode, previewIndex])
+
+  const hydrateCurrentFileDimensions = useCallback((width: number, height: number) => {
+    if (!currentFile || width <= 0 || height <= 0) {
+      return
+    }
+
+    setLoadedImageSize((current) => {
+      if (current.width === width && current.height === height) {
+        return current
+      }
+      return { width, height }
+    })
+
+    if (currentFile.width === width && currentFile.height === height) {
+      return
+    }
+
+    const patch = { width, height }
+
+    usePreviewStore.setState((state) => ({
+      previewFiles: state.previewFiles.map((file) =>
+        file.id === currentFile.id ? { ...file, ...patch } : file,
+      ),
+    }))
+
+    useLibraryQueryStore.setState((state) => ({
+      files: state.files.map((file) =>
+        file.id === currentFile.id ? { ...file, ...patch } : file,
+      ),
+    }))
+
+    const { selectedFile } = useSelectionStore.getState()
+    if (selectedFile?.id === currentFile.id) {
+      useSelectionStore.getState().setSelectedFile({
+        ...selectedFile,
+        ...patch,
+      })
+    }
+
+    const persistedKey = `${width}x${height}`
+    if (
+      (currentFile.width <= 0 || currentFile.height <= 0) &&
+      persistedDimensionsRef.current[currentFile.id] !== persistedKey
+    ) {
+      persistedDimensionsRef.current[currentFile.id] = persistedKey
+      void updateFileDimensions({
+        fileId: currentFile.id,
+        width,
+        height,
+      }).catch((error) => {
+        console.error('Failed to persist file dimensions:', error)
+        delete persistedDimensionsRef.current[currentFile.id]
+      })
+    }
+  }, [currentFile])
+
+  const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    const target = event.currentTarget
+    hydrateCurrentFileDimensions(target.naturalWidth, target.naturalHeight)
+  }, [hydrateCurrentFileDimensions])
 
   const finishPan = (pointerId: number) => {
     const container = viewportRef.current
@@ -581,7 +673,7 @@ export default function ImagePreview() {
   const currentNum = previewIndex + 1
   const canGoPrev = previewIndex > 0
   const canGoNext = previewIndex < totalFiles - 1
-  const previewMeta = getPreviewMetaText(currentFile)
+  const previewMeta = getPreviewMetaText(currentFile, loadedImageSize)
   const renderedPreviewContent = isLoading ? (
     <div className="flex h-full min-h-full items-center justify-center p-4">
       <svg className="h-10 w-10 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
@@ -633,6 +725,7 @@ export default function ImagePreview() {
             src={imageSrc}
             alt={currentFile.name}
             className="max-h-full max-w-full cursor-grab select-none object-contain active:cursor-grabbing"
+            onLoad={handleImageLoad}
             {...externalDragProps}
           />
         </div>
@@ -651,6 +744,7 @@ export default function ImagePreview() {
             alt={currentFile.name}
             draggable={false}
             className="block select-none"
+            onLoad={handleImageLoad}
             style={{
               width: `${scaledImageWidth}px`,
               height: `${scaledImageHeight}px`,
@@ -834,7 +928,6 @@ export default function ImagePreview() {
               ref={viewportRef}
               className={`preview-wheel-container h-full w-full overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
               style={{ scrollbarGutter: 'stable' }}
-              onWheel={handleWheel}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -946,7 +1039,6 @@ export default function ImagePreview() {
             ref={viewportRef}
             className={`preview-wheel-container flex-1 overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
             style={{ scrollbarGutter: 'stable' }}
-            onWheel={handleWheel}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -1056,9 +1148,15 @@ function ThumbnailItem({ file }: { file: FileItem }) {
   )
 }
 
-function getPreviewMetaText(file: FileItem) {
-  if (file.width > 0 && file.height > 0) {
-    return `${file.width} x ${file.height}`
+function getPreviewMetaText(
+  file: FileItem,
+  fallbackDimensions?: { width: number; height: number },
+) {
+  const width = file.width > 0 ? file.width : fallbackDimensions?.width ?? 0
+  const height = file.height > 0 ? file.height : fallbackDimensions?.height ?? 0
+
+  if (width > 0 && height > 0) {
+    return `${width} x ${height}`
   }
 
   return file.ext.toUpperCase()

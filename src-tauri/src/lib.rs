@@ -176,6 +176,7 @@ pub fn run() {
             commands::folders::get_folder_tree,
             commands::files::get_files_in_folder,
             commands::files::get_file,
+            commands::files::update_file_dimensions,
             commands::folders::create_folder,
             commands::folders::move_file,
             commands::folders::move_files,

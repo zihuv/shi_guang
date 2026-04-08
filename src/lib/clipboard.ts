@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { copyFilesToClipboard as copyFilesToClipboardCommand } from "@/services/tauri/system";
 
 export async function copyFilesToClipboard(fileIds: number[]) {
-  await invoke("copy_files_to_clipboard", { fileIds });
+  await copyFilesToClipboardCommand(fileIds);
 }

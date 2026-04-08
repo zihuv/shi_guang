@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useFileStore, FileItem, getNameWithoutExt } from "@/stores/fileStore";
+import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useSelectionStore } from "@/stores/selectionStore";
+import { useTrashStore } from "@/stores/trashStore";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileTagInput from "@/components/FileTagInput";
 import { getFilePreviewMode, getFileSrc, getTextPreviewContent, getThumbnailImageSrc, getVideoThumbnailSrc, formatSize, findFolderById, debounce } from "@/utils";
@@ -20,7 +23,7 @@ interface DetailPanelProps {
 }
 
 export default function DetailPanel({ width }: DetailPanelProps) {
-  const { selectedFile } = useFileStore();
+  const selectedFile = useSelectionStore((state) => state.selectedFile);
   const { folders, selectedFolderId } = useFolderStore();
 
   // Find the selected folder
@@ -175,12 +178,10 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 }
 
 function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
-  const {
-    deleteFile,
-    updateFileMetadata,
-    exportFile,
-    updateFileName,
-  } = useFileStore();
+  const deleteFile = useTrashStore((state) => state.deleteFile);
+  const updateFileMetadata = useLibraryQueryStore((state) => state.updateFileMetadata);
+  const exportFile = useLibraryQueryStore((state) => state.exportFile);
+  const updateFileName = useLibraryQueryStore((state) => state.updateFileName);
   const { folders } = useFolderStore();
 
   // Find folder by file's folderId

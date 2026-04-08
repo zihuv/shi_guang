@@ -1,9 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
-import { useFileStore, FileItem } from '@/stores/fileStore'
+import type { FileItem } from '@/stores/fileTypes'
 import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
+import { useSelectionStore } from '@/stores/selectionStore'
+import { useTrashStore } from '@/stores/trashStore'
 import { copyFilesToClipboard } from '@/lib/clipboard'
+import { openFile, showInExplorer } from '@/services/tauri/system'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -22,7 +25,12 @@ interface FileContextMenuProps {
 }
 
 export default function FileContextMenu({ file, children }: FileContextMenuProps) {
-  const { deleteFile, deleteFiles, setSelectedFile, selectedFiles, moveFiles, copyFiles } = useFileStore()
+  const deleteFile = useTrashStore((state) => state.deleteFile)
+  const deleteFiles = useTrashStore((state) => state.deleteFiles)
+  const setSelectedFile = useSelectionStore((state) => state.setSelectedFile)
+  const selectedFiles = useSelectionStore((state) => state.selectedFiles)
+  const moveFiles = useLibraryQueryStore((state) => state.moveFiles)
+  const copyFiles = useLibraryQueryStore((state) => state.copyFiles)
   const { folders } = useFolderStore()
   const [frozenFileIds, setFrozenFileIds] = useState<number[] | null>(null)
   const frozenFileIdsRef = useRef<number[] | null>(null)
@@ -31,7 +39,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   const activeFileIds = frozenFileIds ?? liveActiveFileIds
 
   const snapshotActiveFileIds = () => {
-    const { selectedFiles: latestSelectedFiles } = useFileStore.getState()
+    const { selectedFiles: latestSelectedFiles } = useSelectionStore.getState()
     const nextFileIds = latestSelectedFiles.includes(file.id) ? [...latestSelectedFiles] : [file.id]
     frozenFileIdsRef.current = nextFileIds
     setFrozenFileIds(nextFileIds)
@@ -44,7 +52,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
       return frozenFileIdsRef.current
     }
 
-    const { selectedFiles: latestSelectedFiles } = useFileStore.getState()
+    const { selectedFiles: latestSelectedFiles } = useSelectionStore.getState()
     return latestSelectedFiles.includes(file.id) ? [...latestSelectedFiles] : [file.id]
   }
 
@@ -82,7 +90,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   // Open file with default application (using Rust backend)
   const handleOpenFile = async () => {
     try {
-      await invoke('open_file', { fileId: file.id })
+      await openFile(file.id)
     } catch (e) {
       console.error('Failed to open file:', e)
     }
@@ -91,7 +99,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   // Open file in file explorer (using Rust backend)
   const handleShowInExplorer = async () => {
     try {
-      await invoke('show_in_explorer', { fileId: file.id })
+      await showInExplorer(file.id)
     } catch (e) {
       console.error('Failed to open directory:', e)
     }

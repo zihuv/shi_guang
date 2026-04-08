@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 import {
   MAX_DETAIL_PANEL_WIDTH,
@@ -7,16 +7,16 @@ import {
   clampSidebarWidth,
   useSettingsStore,
 } from "@/stores/settingsStore";
-import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
+import { useImportStore } from "@/stores/importStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { usePreviewStore } from "@/stores/previewStore";
+import { useSelectionStore } from "@/stores/selectionStore";
 import Header from "@/components/Header";
 import SidePanel from "@/components/SidePanel";
 import FileGrid from "@/components/FileGrid";
 import DetailPanel from "@/components/DetailPanel";
-import SettingsModal from "@/components/SettingsModal";
-import ImagePreview from "@/components/ImagePreview";
-import FilterPanel from "@/components/FilterPanel";
 import DragPreview from "@/components/DragPreview";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useClipboardImport } from "@/hooks/useClipboardImport";
@@ -32,6 +32,9 @@ const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_LAYOUT_WIDTH * 2;
 const MIN_MAIN_PANEL_WIDTH = 240;
 const MIN_RENDERED_SIDEBAR_WIDTH = 72;
 const MIN_RENDERED_DETAIL_PANEL_WIDTH = 120;
+const FilterPanel = lazy(() => import("@/components/FilterPanel"));
+const ImagePreview = lazy(() => import("@/components/ImagePreview"));
+const SettingsModal = lazy(() => import("@/components/SettingsModal"));
 
 type ResizeHandle = "sidebar" | "detail";
 
@@ -135,12 +138,12 @@ function App() {
   const {
     importImagesFromBase64,
     importFiles,
-    previewMode,
-    files,
-  } = useFileStore();
+  } = useImportStore();
+  const previewMode = usePreviewStore((state) => state.previewMode);
+  const files = useLibraryQueryStore((state) => state.files);
   const { dragOverFolderId, setDragOverFolderId } = useFolderStore();
   const { isFilterPanelOpen } = useFilterStore();
-  const { isDraggingInternal } = useFileStore();
+  const isDraggingInternal = useSelectionStore((state) => state.isDraggingInternal);
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
@@ -201,12 +204,18 @@ function App() {
   useEffect(() => {
     Object.assign(window as Window & {
       __SHIGUANG_DEBUG__?: {
-        fileStore: typeof useFileStore;
+        importStore: typeof useImportStore;
+        libraryQueryStore: typeof useLibraryQueryStore;
+        previewStore: typeof usePreviewStore;
+        selectionStore: typeof useSelectionStore;
         folderStore: typeof useFolderStore;
       };
     }, {
       __SHIGUANG_DEBUG__: {
-        fileStore: useFileStore,
+        importStore: useImportStore,
+        libraryQueryStore: useLibraryQueryStore,
+        previewStore: usePreviewStore,
+        selectionStore: useSelectionStore,
         folderStore: useFolderStore,
       },
     });
@@ -474,8 +483,10 @@ function App() {
         />
 
         <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          {isFilterPanelOpen && <FilterPanel />}
-          {previewMode ? <ImagePreview /> : <FileGrid />}
+          <Suspense fallback={null}>
+            {isFilterPanelOpen && <FilterPanel />}
+            {previewMode ? <ImagePreview /> : <FileGrid />}
+          </Suspense>
         </main>
 
         <PanelResizeHandle
@@ -499,10 +510,12 @@ function App() {
         </div>
       )}
 
-      <SettingsModal
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
+      <Suspense fallback={null}>
+        <SettingsModal
+          open={showSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      </Suspense>
       <Toaster position="bottom-right" />
     </div>
   );

@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import { useFileStore } from "@/stores/fileStore";
 import { useFolderStore } from "@/stores/folderStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useSelectionStore } from "@/stores/selectionStore";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -47,13 +48,13 @@ export function useTauriImportListeners({
 
     const setupListeners = async () => {
       unlistenDragEnter = await listen("tauri://drag-enter", () => {
-        if (!useFileStore.getState().isDraggingInternal) {
+        if (!useSelectionStore.getState().isDraggingInternal) {
           setIsDragging(true);
         }
       });
 
       unlistenDragLeave = await listen("tauri://drag-leave", () => {
-        if (!useFileStore.getState().isDraggingInternal) {
+        if (!useSelectionStore.getState().isDraggingInternal) {
           setIsDragging(false);
         }
       });
@@ -61,7 +62,7 @@ export function useTauriImportListeners({
       unlistenDragDrop = await listen<{ paths: string[] }>(
         "tauri://drag-drop",
         async (event) => {
-          if (useFileStore.getState().isDraggingInternal) {
+          if (useSelectionStore.getState().isDraggingInternal) {
             return;
           }
 
@@ -113,9 +114,9 @@ export function useTauriImportListeners({
       );
 
       unlistenFileImported = await listen("file-imported", async () => {
-        const fileStore = useFileStore.getState();
+        const libraryStore = useLibraryQueryStore.getState();
         await Promise.all([
-          fileStore.runCurrentQuery(fileStore.selectedFolderId),
+          libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
           useFolderStore.getState().loadFolders(),
         ]);
       });

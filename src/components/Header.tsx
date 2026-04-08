@@ -1,4 +1,5 @@
-import { useFileStore } from "@/stores/fileStore";
+import { useImportStore } from "@/stores/importStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/Button";
@@ -11,8 +12,10 @@ interface HeaderProps {
 }
 
 export default function Header({ onOpenSettings }: HeaderProps) {
-  const { searchQuery, setSearchQuery, importFiles, importTask } =
-    useFileStore();
+  const searchQuery = useLibraryQueryStore((state) => state.searchQuery);
+  const setSearchQuery = useLibraryQueryStore((state) => state.setSearchQuery);
+  const importFiles = useImportStore((state) => state.importFiles);
+  const importTask = useImportStore((state) => state.importTask);
   const { theme, setTheme } = useSettingsStore();
   const isImporting =
     !!importTask &&

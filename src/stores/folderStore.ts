@@ -1,6 +1,15 @@
 import { create } from 'zustand'
-import { invoke } from '@tauri-apps/api/core'
-import { useFileStore } from './fileStore'
+import {
+  createFolder,
+  deleteFolder,
+  getFolderTree,
+  initDefaultFolder,
+  moveFolder,
+  reorderFolders,
+  renameFolder,
+  type FolderSummary,
+} from '@/services/tauri/folders'
+import { useLibraryQueryStore } from './libraryQueryStore'
 
 export interface FolderNode {
   id: number
@@ -33,7 +42,7 @@ interface FolderStore {
   dragOverFolderId: number | null
   uniqueContextId: string
   loadFolders: () => Promise<void>
-  initDefaultFolder: () => Promise<{ id: number; name: string; path: string; parent_id: number | null; created_at: string } | null>
+  initDefaultFolder: () => Promise<FolderSummary | null>
   selectFolder: (folderId: number | null) => void
   toggleFolder: (folderId: number) => void
   createFolder: (name: string, parentId: number | null) => Promise<void>
@@ -72,7 +81,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     const requestId = ++loadFoldersRequestId
     set({ isLoading: true })
     try {
-      const folders = await invoke<FolderNode[]>('get_folder_tree')
+      const folders = await getFolderTree()
       if (requestId !== loadFoldersRequestId) {
         return
       }
@@ -87,7 +96,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   initDefaultFolder: async () => {
     try {
-      const folder = await invoke<{ id: number; name: string; path: string; parent_id: number | null; created_at: string } | null>('init_default_folder')
+      const folder = await initDefaultFolder()
       if (!folder) {
         return null
       }
@@ -115,7 +124,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   createFolder: async (name, parentId) => {
     try {
-      await invoke('create_folder', { name, parentId })
+      await createFolder({ name, parentId })
       await get().loadFolders()
     } catch (e) {
       console.error('Failed to create folder:', e)
@@ -124,7 +133,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   deleteFolder: async (id) => {
     try {
-      await invoke('delete_folder', { id })
+      await deleteFolder(id)
       await get().loadFolders()
     } catch (e) {
       console.error('Failed to delete folder:', e)
@@ -133,7 +142,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   renameFolder: async (id, name) => {
     try {
-      await invoke('rename_folder', { id, name })
+      await renameFolder({ id, name })
       await get().loadFolders()
     } catch (e) {
       console.error('Failed to rename folder:', e)
@@ -142,7 +151,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   moveFile: async (fileId, targetFolderId) => {
     try {
-      await invoke('move_file', { fileId, targetFolderId })
+      await useLibraryQueryStore.getState().moveFile(fileId, targetFolderId)
       await get().loadFolders()
     } catch (e) {
       console.error('Failed to move file:', e)
@@ -151,11 +160,11 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   moveFolder: async (folderId, newParentId) => {
     try {
-      await invoke('move_folder', { folderId, newParentId, sortOrder: 0 })
+      await moveFolder({ folderId, newParentId, sortOrder: 0 })
       await get().loadFolders()
       // Reload files to reflect the new paths after folder move
-      const { selectedFolderId } = useFileStore.getState()
-      await useFileStore.getState().loadFilesInFolder(selectedFolderId)
+      const libraryStore = useLibraryQueryStore.getState()
+      await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId)
     } catch (e) {
       console.error('Failed to move folder:', e)
     }
@@ -163,7 +172,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   reorderFolders: async (folderIds) => {
     try {
-      await invoke('reorder_folders', { folderIds })
+      await reorderFolders(folderIds)
       // Reload folders to reflect the new order
       await get().loadFolders()
     } catch (e) {

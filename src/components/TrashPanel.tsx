@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useFileStore } from '@/stores/fileStore'
+import { useTrashStore } from '@/stores/trashStore'
 import { Button } from '@/components/ui/Button'
 import FileTypeIcon from '@/components/FileTypeIcon'
 import {
@@ -105,7 +105,7 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
     restoreFiles,
     permanentDeleteFiles,
     emptyTrash,
-  } = useFileStore()
+  } = useTrashStore()
 
   const [selectedTrashFiles, setSelectedTrashFiles] = useState<number[]>([])
   const [showTrashView, setShowTrashView] = useState(false)

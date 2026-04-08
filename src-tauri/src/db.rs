@@ -199,6 +199,8 @@ const DB_SCHEMA_VERSION: i32 = 6;
 
 mod files;
 mod folders;
+mod migrations;
+mod query;
 mod schema;
 mod settings;
 mod tags;

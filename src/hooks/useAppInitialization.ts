@@ -1,12 +1,8 @@
 import { useEffect, useRef } from "react";
-import { useFilterStore } from "@/stores/filterStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useTagStore } from "@/stores/tagStore";
+import { useBootstrapStore } from "@/stores/bootstrapStore";
 
 export function useAppInitialization() {
-  const { loadPreferences } = useFilterStore();
-  const { loadSettings } = useSettingsStore();
-  const { loadTags } = useTagStore();
+  const bootstrap = useBootstrapStore((state) => state.bootstrap);
   const initRef = useRef(false);
 
   useEffect(() => {
@@ -15,8 +11,6 @@ export function useAppInitialization() {
     }
 
     initRef.current = true;
-    loadPreferences();
-    loadSettings();
-    loadTags();
-  }, [loadPreferences, loadSettings, loadTags]);
+    void bootstrap();
+  }, [bootstrap]);
 }

@@ -1,8 +1,19 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { DEFAULT_SHORTCUTS, resolveShortcuts, type ShortcutActionId, type ShortcutConfig } from "@/lib/shortcuts";
 import { useFolderStore } from "@/stores/folderStore";
-import { useFileStore } from "@/stores/fileStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import {
+  addIndexPath,
+  getDefaultIndexPath,
+  getIndexPaths,
+  getSetting,
+  rebuildLibraryIndex,
+  setSetting,
+  switchIndexPathAndRestart,
+  syncIndexPath,
+} from "@/services/tauri/indexing";
+import { scanFolders } from "@/services/tauri/folders";
+import { getDeleteMode, setDeleteMode as setDeleteModeCommand } from "@/services/tauri/trash";
 
 const SHORTCUTS_SETTING_KEY = "shortcuts";
 const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
@@ -176,14 +187,14 @@ function scheduleLibraryViewPreferencesPersist(
 
   libraryViewPreferencesPersistTimer = setTimeout(() => {
     const { libraryViewMode, libraryViewScales, libraryVisibleFields } = get();
-    void invoke("set_setting", {
-      key: LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
-      value: serializeLibraryViewPreferences(
+    void setSetting(
+      LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
+      serializeLibraryViewPreferences(
         libraryViewMode,
         libraryViewScales,
         libraryVisibleFields,
       ),
-    }).catch((error) => {
+    ).catch((error) => {
       console.error("Failed to persist library view preferences:", error);
     });
   }, 120);
@@ -208,20 +219,18 @@ function schedulePanelLayoutPersist(
 
   panelLayoutPersistTimer = setTimeout(() => {
     const { sidebarWidth, detailPanelWidth } = get();
-    void invoke("set_setting", {
-      key: PANEL_LAYOUT_SETTING_KEY,
-      value: serializePanelLayout(sidebarWidth, detailPanelWidth),
-    }).catch((error) => {
+    void setSetting(
+      PANEL_LAYOUT_SETTING_KEY,
+      serializePanelLayout(sidebarWidth, detailPanelWidth),
+    ).catch((error) => {
       console.error("Failed to persist panel layout:", error);
     });
   }, 120);
 }
 
 const loadFilesInCurrentFolder = async () => {
-  const selectedFolderId = useFolderStore.getState().selectedFolderId;
-  if (selectedFolderId) {
-    await useFileStore.getState().loadFilesInFolder(selectedFolderId);
-  }
+  const libraryStore = useLibraryQueryStore.getState();
+  await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
 };
 
 interface Settings {
@@ -267,12 +276,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   detailPanelWidth: DEFAULT_DETAIL_PANEL_WIDTH,
 
   setTheme: async (theme) => {
-    await invoke("set_setting", { key: "theme", value: theme });
+    await setSetting("theme", theme);
     set({ theme });
   },
 
   setDeleteMode: async (useTrash: boolean) => {
-    await invoke("set_delete_mode", { useTrash });
+    await setDeleteModeCommand(useTrash);
     set({ useTrash });
   },
 
@@ -281,10 +290,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       ...get().shortcuts,
       [actionId]: shortcut,
     };
-    await invoke("set_setting", {
-      key: SHORTCUTS_SETTING_KEY,
-      value: JSON.stringify(nextShortcuts),
-    });
+    await setSetting(SHORTCUTS_SETTING_KEY, JSON.stringify(nextShortcuts));
     set({ shortcuts: nextShortcuts });
   },
 
@@ -294,10 +300,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setPreviewTrackpadZoomSpeed: async (speed) => {
     const nextSpeed = clampPreviewTrackpadZoomSpeed(speed);
-    await invoke("set_setting", {
-      key: PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY,
-      value: String(nextSpeed),
-    });
+    await setSetting(PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY, String(nextSpeed));
     set({ previewTrackpadZoomSpeed: nextSpeed });
   },
 
@@ -353,7 +356,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       return;
     }
 
-    await invoke("switch_index_path_and_restart", { path: nextPath });
+    await switchIndexPathAndRestart(nextPath);
   },
 
   loadSettings: async () => {
@@ -370,7 +373,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
     // Get theme
     try {
-      const themeValue = await invoke<string>("get_setting", { key: "theme" });
+      const themeValue = await getSetting("theme");
       theme = (themeValue as "light" | "dark") || "light";
     } catch (e) {
       // Silently handle "Setting not found" - first run has no settings
@@ -382,20 +385,20 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
     // Get delete mode
     try {
-      useTrash = await invoke<boolean>("get_delete_mode");
+      useTrash = await getDeleteMode();
     } catch (e) {
       console.error("Failed to load delete mode:", e);
     }
 
     // Get index paths
     try {
-      indexPaths = await invoke<string[]>("get_index_paths");
+      indexPaths = await getIndexPaths();
     } catch (e) {
       console.error("Failed to load index paths:", e);
     }
 
     try {
-      const shortcutsValue = await invoke<string>("get_setting", { key: SHORTCUTS_SETTING_KEY });
+      const shortcutsValue = await getSetting(SHORTCUTS_SETTING_KEY);
       shortcuts = resolveShortcuts(JSON.parse(shortcutsValue) as Partial<Record<ShortcutActionId, string | null>>);
     } catch (e) {
       const errorMsg = String(e);
@@ -405,7 +408,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
-      const speedValue = await invoke<string>("get_setting", { key: PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY });
+      const speedValue = await getSetting(PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY);
       previewTrackpadZoomSpeed = clampPreviewTrackpadZoomSpeed(Number.parseFloat(speedValue));
     } catch (e) {
       const errorMsg = String(e);
@@ -415,9 +418,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
-      const libraryViewPreferencesValue = await invoke<string>("get_setting", {
-        key: LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
-      });
+      const libraryViewPreferencesValue = await getSetting(
+        LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
+      );
       const parsedPreferences = JSON.parse(libraryViewPreferencesValue) as {
         mode?: unknown;
         scales?: Partial<Record<LibraryViewMode, unknown>>;
@@ -441,9 +444,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
-      const panelLayoutValue = await invoke<string>("get_setting", {
-        key: PANEL_LAYOUT_SETTING_KEY,
-      });
+      const panelLayoutValue = await getSetting(PANEL_LAYOUT_SETTING_KEY);
       const parsedLayout = JSON.parse(panelLayoutValue) as {
         sidebarWidth?: unknown;
         detailPanelWidth?: unknown;
@@ -461,10 +462,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     // If no index paths configured, add default path (user's Pictures/shiguang folder)
     if (!indexPaths || indexPaths.length === 0) {
       try {
-        const defaultPath = await invoke<string>("get_default_index_path");
-        await invoke("add_index_path", { path: defaultPath });
+        const defaultPath = await getDefaultIndexPath();
+        await addIndexPath(defaultPath);
         indexPaths = [defaultPath];
-        await invoke("sync_index_path", { path: defaultPath });
+        await syncIndexPath(defaultPath);
         // Reload folders and files in UI
         useFolderStore.getState().loadFolders();
         loadFilesInCurrentFolder();
@@ -488,8 +489,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   rebuildIndex: async () => {
-    await invoke("rebuild_library_index");
-    await invoke("scan_folders");
+    await rebuildLibraryIndex();
+    await scanFolders();
     await useFolderStore.getState().loadFolders();
     await loadFilesInCurrentFolder();
   },

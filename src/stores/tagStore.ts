@@ -1,5 +1,12 @@
 import { create } from "zustand"
-import { invoke } from "@tauri-apps/api/core"
+import {
+  createTag,
+  deleteTag,
+  getAllTags,
+  moveTag,
+  reorderTags,
+  updateTag,
+} from "@/services/tauri/tags"
 
 export interface Tag {
   id: number
@@ -95,7 +102,7 @@ export const useTagStore = create<TagStore>((set, get) => ({
 
   loadTags: async () => {
     try {
-      const tags = await invoke<RawTag[]>("get_all_tags")
+      const tags = await getAllTags()
       syncTags(set, tags)
     } catch (e) {
       console.error("Failed to load tags:", e)
@@ -103,23 +110,23 @@ export const useTagStore = create<TagStore>((set, get) => ({
   },
 
   addTag: async (name, color, parentId = null) => {
-    await invoke("create_tag", { name, color, parentId })
+    await createTag({ name, color, parentId })
     await get().loadTags()
   },
 
   deleteTag: async (id) => {
-    await invoke("delete_tag", { id })
+    await deleteTag(id)
     await get().loadTags()
   },
 
   updateTag: async (id, name, color) => {
-    await invoke("update_tag", { id, name, color })
+    await updateTag({ id, name, color })
     await get().loadTags()
   },
 
   reorderTags: async (tagIds, parentId = null) => {
     try {
-      await invoke("reorder_tags", { tagIds, parentId })
+      await reorderTags({ tagIds, parentId })
       await get().loadTags()
     } catch (e) {
       console.error("Failed to reorder tags:", e)
@@ -128,7 +135,7 @@ export const useTagStore = create<TagStore>((set, get) => ({
 
   moveTag: async (tagId, newParentId, sortOrder = 0) => {
     try {
-      await invoke("move_tag", { tagId, newParentId, sortOrder })
+      await moveTag({ tagId, newParentId, sortOrder })
       await get().loadTags()
     } catch (e) {
       console.error("Failed to move tag:", e)

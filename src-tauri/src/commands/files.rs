@@ -127,6 +127,18 @@ pub fn update_file_metadata(
 }
 
 #[tauri::command]
+pub fn update_file_dimensions(
+    state: State<AppState>,
+    file_id: i64,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.update_file_dimensions(file_id, width, height)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn extract_color(state: State<AppState>, file_id: i64) -> Result<String, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 

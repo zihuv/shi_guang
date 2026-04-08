@@ -1,18 +1,18 @@
-import { invoke } from "@tauri-apps/api/core"
 import { create } from "zustand"
+import {
+  type FileSortField,
+  type FilterCriteria,
+  type SortDirection,
+  initialFilterCriteria,
+} from "@/features/filters/types"
+import { getActiveFilterCount as getSchemaActiveFilterCount } from "@/features/filters/schema"
+import { getSetting, setSetting } from "@/services/tauri/indexing"
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore"
+
+export type { FileSortField, FilterCriteria, SortDirection } from "@/features/filters/types"
 
 const FILTER_PREFERENCES_SETTING_KEY = "libraryFilterPreferences"
 let filterPreferencesPersistTimer: ReturnType<typeof setTimeout> | null = null
-
-export type FileSortField =
-  | "imported_at"
-  | "created_at"
-  | "modified_at"
-  | "name"
-  | "ext"
-  | "size"
-
-export type SortDirection = "asc" | "desc"
 
 type LegacyFileSortOption =
   | "imported_desc"
@@ -24,9 +24,6 @@ type LegacyFileSortOption =
   | "size_desc"
   | "size_asc"
 
-export const DEFAULT_FILE_SORT_BY: FileSortField = "imported_at"
-export const DEFAULT_SORT_DIRECTION: SortDirection = "desc"
-
 const FILE_TYPES = new Set(["all", "image", "video", "document"])
 
 type PersistedFilterPreferences = {
@@ -36,21 +33,6 @@ type PersistedFilterPreferences = {
   sortBy?: unknown
   sortDirection?: unknown
   sort?: unknown
-}
-
-export interface FilterCriteria {
-  searchQuery: string
-  fileType: "all" | "image" | "video" | "document"
-  dateRange: { start: string | null; end: string | null }
-  sizeRange: { min: number | null; max: number | null }
-  tagIds: number[]
-  minRating: number
-  favoritesOnly: boolean
-  dominantColor: string | null
-  keyword: string
-  folderId: number | null
-  sortBy: FileSortField
-  sortDirection: SortDirection
 }
 
 interface FilterStore {
@@ -76,21 +58,6 @@ interface FilterStore {
   setSortDirection: (sortDirection: SortDirection) => void
   setSort: (sortBy: FileSortField, sortDirection?: SortDirection) => void
   loadPreferences: () => Promise<void>
-}
-
-const initialCriteria: FilterCriteria = {
-  searchQuery: "",
-  fileType: "all",
-  dateRange: { start: null, end: null },
-  sizeRange: { min: null, max: null },
-  tagIds: [],
-  minRating: 0,
-  favoritesOnly: false,
-  dominantColor: null,
-  keyword: "",
-  folderId: null,
-  sortBy: DEFAULT_FILE_SORT_BY,
-  sortDirection: DEFAULT_SORT_DIRECTION,
 }
 
 function isFileSortField(value: unknown): value is FileSortField {
@@ -170,10 +137,10 @@ function scheduleFilterPreferencesPersist(
       return
     }
 
-    void invoke("set_setting", {
-      key: FILTER_PREFERENCES_SETTING_KEY,
-      value: serializeFilterPreferences(criteria),
-    }).catch((error) => {
+    void setSetting(
+      FILTER_PREFERENCES_SETTING_KEY,
+      serializeFilterPreferences(criteria),
+    ).catch((error) => {
       console.error("Failed to persist filter preferences:", error)
     })
   }, 120)
@@ -219,7 +186,7 @@ export function getSortConfig(criteria: Pick<FilterCriteria, "sortBy" | "sortDir
 }
 
 export const useFilterStore = create<FilterStore>((set, get) => ({
-  criteria: { ...initialCriteria },
+  criteria: { ...initialFilterCriteria },
   isFilterPanelOpen: false,
   hasLoadedPreferences: false,
 
@@ -282,7 +249,7 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
   clearFilters: () => {
     set((state) => ({
       criteria: {
-        ...initialCriteria,
+        ...initialFilterCriteria,
         searchQuery: state.criteria.searchQuery,
         sortBy: state.criteria.sortBy,
         sortDirection: state.criteria.sortDirection,
@@ -344,21 +311,14 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
   },
 
   getActiveFilterCount: () => {
-    const { criteria } = get()
-    let count = 0
-    if (criteria.fileType !== "all") count += 1
-    if (criteria.tagIds.length > 0) count += 1
-    if (criteria.dominantColor) count += 1
-    return count
+    return getSchemaActiveFilterCount(get().criteria)
   },
 
   loadPreferences: async () => {
     let nextCriteria = { ...get().criteria }
 
     try {
-      const rawValue = await invoke<string>("get_setting", {
-        key: FILTER_PREFERENCES_SETTING_KEY,
-      })
+      const rawValue = await getSetting(FILTER_PREFERENCES_SETTING_KEY)
       const parsed = JSON.parse(rawValue) as PersistedFilterPreferences
       nextCriteria = restoreFilterPreferences(nextCriteria, parsed)
     } catch (error) {
@@ -380,14 +340,13 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
       hasLoadedPreferences: true,
     }))
 
-    const { useFileStore } = await import("./fileStore")
-    const fileStore = useFileStore.getState()
+    const libraryStore = useLibraryQueryStore.getState()
     if (
-      fileStore.selectedFolderId !== null ||
-      fileStore.files.length > 0 ||
-      fileStore.searchQuery.trim()
+      libraryStore.selectedFolderId !== null ||
+      libraryStore.files.length > 0 ||
+      libraryStore.searchQuery.trim()
     ) {
-      void fileStore.runCurrentQuery()
+      void libraryStore.runCurrentQuery()
     }
   },
 }))
