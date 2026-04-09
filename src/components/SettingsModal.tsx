@@ -194,7 +194,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: "选择 Chinese-CLIP 模型目录",
+        title: "选择 fgclip2 ONNX 模型目录",
       });
 
       if (selected && typeof selected === "string") {
@@ -568,7 +568,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       本地自然语言搜图
                     </h3>
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      使用本地 Chinese-CLIP 模型为图片建立视觉向量索引，搜索不依赖远端 Embedding。
+                      使用本地 fgclip2 ONNX 模型为图片建立视觉向量索引，搜索不依赖远端 Embedding。
                     </p>
                   </div>
 
@@ -646,7 +646,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                             setVisualSearchField("modelPath", event.target.value)
                           }
                           onBlur={() => void handleValidateModelDir()}
-                          placeholder="支持 manifest 目录，或 Hugging Face/Xenova 的 Chinese-CLIP 目录"
+                          placeholder="选择包含 fgclip2_text / fgclip2_image ONNX 的目录"
                         />
                         <div className="flex gap-2">
                           <Button
@@ -667,36 +667,38 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       </div>
                       <div className="rounded-lg border border-dashed border-gray-200 bg-white/70 px-3 py-3 text-xs leading-6 dark:border-dark-border dark:bg-dark-surface/40">
                         <p className="text-gray-500 dark:text-gray-400">
-                          支持两种目录格式：一是设计文档里的 manifest 双模型目录；二是 Hugging Face
-                          Xenova 仓库这类单模型目录，至少包含 `config.json`、`onnx/*.onnx`、
-                          `vocab.txt` 和 `tokenizer_config.json`。项目根目录下的
-                          `.debug-models/chinese-clip-vit-base-patch16` 会在首次加载时自动回填。
+                          支持 manifest 目录，或 fgclip2 ONNX 导出目录。目录内至少包含
+                          `fgclip2_text_short_b1_s64.onnx`、`fgclip2_image_core_posin_dynamic.onnx`
+                          和 `assets/vision_pos_embedding_16x16x768_f32.bin`。`tokenizer.json`
+                          可放在模型目录，也可放在相邻的 `models/fg-clip2-base/` 下。
+                          项目根目录下的 `.debug-models/fgclip2` 或 `.onnx-wrapper-test`
+                          会在首次加载时自动回填；也可通过 `SHIGUANG_VISUAL_MODEL_DIR` 指定。
                           对于浏览器能解码、但后端当前无法直接读取的图片，重建索引时会自动尝试前端解码回退。
                         </p>
                         <div className="mt-2 flex flex-wrap gap-3">
                           <a
-                            href="https://github.com/OFA-Sys/Chinese-CLIP"
+                            href="https://github.com/360CVGroup/FG-CLIP"
                             target="_blank"
                             rel="noreferrer"
                             className="text-blue-600 hover:underline dark:text-blue-400"
                           >
-                            官方模型项目
+                            官方项目
                           </a>
                           <a
-                            href="https://github.com/OFA-Sys/Chinese-CLIP/blob/master/deployment.md"
+                            href="https://huggingface.co/qihoo360/fg-clip2-base"
                             target="_blank"
                             rel="noreferrer"
                             className="text-blue-600 hover:underline dark:text-blue-400"
                           >
-                            ONNX 转换说明
+                            Hugging Face 模型
                           </a>
                           <a
-                            href="https://huggingface.co/Xenova/chinese-clip-vit-base-patch16"
+                            href="https://360cvgroup.github.io/FG-CLIP"
                             target="_blank"
                             rel="noreferrer"
                             className="text-blue-600 hover:underline dark:text-blue-400"
                           >
-                            Hugging Face ONNX
+                            项目主页
                           </a>
                         </div>
                       </div>

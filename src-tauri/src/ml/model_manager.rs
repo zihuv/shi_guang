@@ -1,34 +1,25 @@
-use super::image_preprocess::DEFAULT_IMAGE_SIZE;
 use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 pub const VISUAL_SEARCH_SETTING_KEY: &str = "visualSearch";
 pub const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY: &str = "aiAutoAnalyzeOnImport";
 
-const DEFAULT_IMAGE_MODEL_FILE: &str = "model.img.fp32.onnx";
-const DEFAULT_TEXT_MODEL_FILE: &str = "model.txt.fp32.onnx";
-const DEFAULT_COMBINED_MODEL_FILE: &str = "model.onnx";
-const DEFAULT_VOCAB_FILE: &str = "vocab.txt";
-const DEFAULT_TOKENIZER_CONFIG_FILE: &str = "tokenizer_config.json";
-const DEFAULT_PREPROCESSOR_CONFIG_FILE: &str = "preprocessor_config.json";
+const DEFAULT_TEXT_MODEL_FILE: &str = "fgclip2_text_short_b1_s64.onnx";
+const DEFAULT_IMAGE_MODEL_FILE: &str = "fgclip2_image_core_posin_dynamic.onnx";
+const DEFAULT_TOKENIZER_JSON_FILE: &str = "tokenizer.json";
 const DEFAULT_MANIFEST_FILE: &str = "manifest.json";
-const DEFAULT_HUGGINGFACE_CONFIG_FILE: &str = "config.json";
-const DEFAULT_HUGGINGFACE_ONNX_DIR: &str = "onnx";
-const DEFAULT_HUGGINGFACE_CONTEXT_LENGTH: usize = 52;
-const DEBUG_VISUAL_MODEL_RELATIVE_DIR: &str = ".debug-models/chinese-clip-vit-base-patch16";
-const HUGGINGFACE_MODEL_FILE_PREFERENCES: [&str; 7] = [
-    "model_quantized.onnx",
-    "model_uint8.onnx",
-    "model_fp16.onnx",
-    "model.onnx",
-    "model_q4f16.onnx",
-    "model_q4.onnx",
-    "model_bnb4.onnx",
-];
+const DEFAULT_ASSETS_DIR: &str = "assets";
+const DEFAULT_VISION_POS_EMBEDDING_FILE: &str = "assets/vision_pos_embedding_16x16x768_f32.bin";
+const DEFAULT_LOGIT_PARAMS_FILE: &str = "assets/logit_params.json";
+const DEFAULT_CONTEXT_LENGTH: usize = 64;
+const DEFAULT_EMBEDDING_DIM: usize = 768;
+const DEBUG_VISUAL_MODEL_RELATIVE_DIRS: [&str; 2] = [".debug-models/fgclip2", ".onnx-wrapper-test"];
+const VISUAL_MODEL_DIR_ENV: &str = "SHIGUANG_VISUAL_MODEL_DIR";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,7 +59,11 @@ pub struct VisualModelValidationResult {
 pub struct ModelManifest {
     pub model_id: String,
     pub version: String,
+    #[serde(default)]
+    pub model_type: String,
+    #[serde(default = "default_embedding_dim")]
     pub embedding_dim: usize,
+    #[serde(default = "default_context_length")]
     pub context_length: usize,
     #[serde(default)]
     pub source_url: String,
@@ -78,24 +73,22 @@ pub struct ModelManifest {
     pub image_model_file: Option<String>,
     #[serde(default, alias = "textModelFile", alias = "text_model_file")]
     pub text_model_file: Option<String>,
-    #[serde(default, alias = "modelFile", alias = "model_file")]
-    pub model_file: Option<String>,
-    #[serde(default, alias = "vocabFile", alias = "vocab_file")]
-    pub vocab_file: Option<String>,
     #[serde(
         default,
-        alias = "tokenizerConfigFile",
-        alias = "tokenizer_config_file"
+        alias = "tokenizerFile",
+        alias = "tokenizer_file",
+        alias = "tokenizerJsonFile",
+        alias = "tokenizer_json_file"
     )]
-    pub tokenizer_config_file: Option<String>,
+    pub tokenizer_json_file: Option<String>,
     #[serde(
         default,
-        alias = "preprocessorConfigFile",
-        alias = "preprocessor_config_file"
+        alias = "visionPosEmbeddingFile",
+        alias = "vision_pos_embedding_file"
     )]
-    pub preprocessor_config_file: Option<String>,
-    #[serde(default, alias = "imageSize", alias = "image_size")]
-    pub image_size: Option<usize>,
+    pub vision_pos_embedding_file: Option<String>,
+    #[serde(default, alias = "logitParamsFile", alias = "logit_params_file")]
+    pub logit_params_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -106,84 +99,23 @@ pub enum ManifestSha256 {
 }
 
 #[derive(Debug, Clone)]
-pub enum ResolvedModelFiles {
-    Split {
-        image_model_path: PathBuf,
-        text_model_path: PathBuf,
-    },
-    Combined {
-        model_path: PathBuf,
-    },
-}
-
-#[derive(Debug, Clone)]
 pub struct ResolvedModelPaths {
     pub root: PathBuf,
     pub manifest_path: Option<PathBuf>,
-    pub model_files: ResolvedModelFiles,
-    pub vocab_path: PathBuf,
-    pub tokenizer_config_path: PathBuf,
-    pub preprocessor_config_path: Option<PathBuf>,
+    pub text_model_path: PathBuf,
+    pub image_model_path: PathBuf,
+    pub tokenizer_json_path: PathBuf,
+    pub vision_pos_embedding_path: PathBuf,
+    pub logit_params_path: Option<PathBuf>,
     pub manifest: ModelManifest,
-    pub image_size: usize,
-    pub do_lower_case: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct HuggingFaceConfig {
-    #[serde(rename = "_name_or_path", default)]
-    name_or_path: String,
-    #[serde(default)]
-    model_type: String,
-    #[serde(default)]
-    projection_dim: Option<usize>,
-    #[serde(default)]
-    transformers_version: String,
+fn default_context_length() -> usize {
+    DEFAULT_CONTEXT_LENGTH
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct HuggingFaceTokenizerConfig {
-    #[serde(default = "default_do_lower_case")]
-    do_lower_case: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct HuggingFacePreprocessorConfig {
-    #[serde(default)]
-    size: Option<ImageSizeValue>,
-    #[serde(default)]
-    crop_size: Option<ImageSizeValue>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum ImageSizeValue {
-    Scalar(usize),
-    Map {
-        height: Option<usize>,
-        width: Option<usize>,
-        shortest_edge: Option<usize>,
-    },
-}
-
-impl ImageSizeValue {
-    fn resolve(&self) -> Option<usize> {
-        match self {
-            Self::Scalar(value) => (*value > 0).then_some(*value),
-            Self::Map {
-                height,
-                width,
-                shortest_edge,
-            } => (*height)
-                .filter(|value| *value > 0)
-                .or_else(|| (*width).filter(|value| *value > 0))
-                .or_else(|| (*shortest_edge).filter(|value| *value > 0)),
-        }
-    }
-}
-
-fn default_do_lower_case() -> bool {
-    true
+fn default_embedding_dim() -> usize {
+    DEFAULT_EMBEDDING_DIM
 }
 
 pub fn load_visual_search_config(db: &Database) -> Result<VisualSearchConfig, String> {
@@ -210,6 +142,13 @@ pub fn load_auto_analyze_on_import(db: &Database) -> Result<bool, String> {
 }
 
 pub fn find_recommended_visual_model_path() -> Option<String> {
+    if let Ok(path) = std::env::var(VISUAL_MODEL_DIR_ENV) {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() && resolve_model_paths(trimmed).is_ok() {
+            return Some(canonical_string(Path::new(trimmed)));
+        }
+    }
+
     let mut roots = Vec::new();
 
     if let Ok(current_dir) = std::env::current_dir() {
@@ -228,19 +167,16 @@ pub fn find_recommended_visual_model_path() -> Option<String> {
             continue;
         }
 
-        let candidate = root.join(DEBUG_VISUAL_MODEL_RELATIVE_DIR);
-        if !candidate.is_dir() {
-            continue;
-        }
+        for relative_dir in DEBUG_VISUAL_MODEL_RELATIVE_DIRS {
+            let candidate = root.join(relative_dir);
+            if !candidate.is_dir() {
+                continue;
+            }
 
-        let candidate_string = candidate.to_string_lossy().to_string();
-        if resolve_model_paths(&candidate_string).is_ok() {
-            return Some(
-                fs::canonicalize(&candidate)
-                    .unwrap_or(candidate)
-                    .to_string_lossy()
-                    .to_string(),
-            );
+            let candidate_string = candidate.to_string_lossy().to_string();
+            if resolve_model_paths(&candidate_string).is_ok() {
+                return Some(canonical_string(&candidate));
+            }
         }
     }
 
@@ -252,7 +188,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
     if normalized_model_path.is_empty() {
         return VisualModelValidationResult {
             valid: false,
-            message: "请先选择 Chinese-CLIP 模型目录".to_string(),
+            message: "请先选择 fgclip2 ONNX 模型目录".to_string(),
             normalized_model_path,
             model_id: None,
             version: None,
@@ -265,7 +201,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
     match resolve_model_paths(model_path) {
         Ok(resolved) => VisualModelValidationResult {
             valid: true,
-            message: "模型目录可用".to_string(),
+            message: "fgclip2 模型目录可用".to_string(),
             normalized_model_path: resolved.root.to_string_lossy().to_string(),
             model_id: Some(resolved.manifest.model_id.clone()),
             version: Some(resolved.manifest.version.clone()),
@@ -292,7 +228,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
 pub fn resolve_model_paths(model_path: &str) -> Result<ResolvedModelPaths, String> {
     let trimmed = model_path.trim();
     if trimmed.is_empty() {
-        return Err("请先选择 Chinese-CLIP 模型目录".to_string());
+        return Err("请先选择 fgclip2 ONNX 模型目录".to_string());
     }
 
     let root = PathBuf::from(trimmed);
@@ -307,22 +243,30 @@ pub fn resolve_model_paths(model_path: &str) -> Result<ResolvedModelPaths, Strin
         if let Some(resolved) = try_resolve_manifest_layout(&candidate_root)? {
             return Ok(resolved);
         }
-        if let Some(resolved) = try_resolve_huggingface_layout(&candidate_root)? {
+        if let Some(resolved) = try_resolve_fgclip2_layout(&candidate_root)? {
             return Ok(resolved);
         }
     }
 
-    Err("模型目录缺少 manifest.json，也不是可识别的 Hugging Face Chinese-CLIP 目录".to_string())
+    Err(
+        "模型目录缺少 fgclip2 ONNX 文件；请选择包含 ONNX、assets 和 tokenizer.json 的目录"
+            .to_string(),
+    )
 }
 
 fn candidate_roots(root: &Path) -> Vec<PathBuf> {
     let mut roots = vec![root.to_path_buf()];
 
-    if root
+    let wrapper_child = root.join(".onnx-wrapper-test");
+    if wrapper_child.is_dir() {
+        roots.push(wrapper_child);
+    }
+
+    let name = root
         .file_name()
         .and_then(|value| value.to_str())
-        .is_some_and(|value| value.eq_ignore_ascii_case(DEFAULT_HUGGINGFACE_ONNX_DIR))
-    {
+        .unwrap_or("");
+    if matches!(name, "assets" | "fixtures") {
         if let Some(parent) = root.parent() {
             roots.push(parent.to_path_buf());
         }
@@ -341,183 +285,112 @@ fn try_resolve_manifest_layout(root: &Path) -> Result<Option<ResolvedModelPaths>
         fs::read_to_string(&manifest_path).map_err(|e| format!("无法读取 manifest.json: {}", e))?;
     let manifest: ModelManifest = serde_json::from_str(&manifest_content)
         .map_err(|e| format!("manifest.json 格式无效: {}", e))?;
-
     validate_manifest(&manifest)?;
 
-    let model_files = if let Some(model_file) = manifest.model_file.as_deref() {
-        let model_path = root.join(model_file);
-        if !model_path.exists() {
-            return Err("模型目录缺少 ONNX 模型".to_string());
-        }
-        ResolvedModelFiles::Combined { model_path }
-    } else {
-        let image_model_path = root.join(
-            manifest
-                .image_model_file
-                .as_deref()
-                .unwrap_or(DEFAULT_IMAGE_MODEL_FILE),
-        );
-        let text_model_path = root.join(
+    let text_model_path = require_file(
+        &root.join(
             manifest
                 .text_model_file
                 .as_deref()
                 .unwrap_or(DEFAULT_TEXT_MODEL_FILE),
-        );
-
-        for (path, label) in [
-            (&image_model_path, "图像 ONNX 模型"),
-            (&text_model_path, "文本 ONNX 模型"),
-        ] {
-            if !path.exists() {
-                return Err(format!("模型目录缺少 {label}"));
-            }
-        }
-
-        ResolvedModelFiles::Split {
-            image_model_path,
-            text_model_path,
-        }
-    };
-
-    let vocab_path = root.join(manifest.vocab_file.as_deref().unwrap_or(DEFAULT_VOCAB_FILE));
-    let tokenizer_config_path = root.join(
+        ),
+        "文本 ONNX 模型",
+    )?;
+    let image_model_path = require_file(
+        &root.join(
+            manifest
+                .image_model_file
+                .as_deref()
+                .unwrap_or(DEFAULT_IMAGE_MODEL_FILE),
+        ),
+        "图像 ONNX 模型",
+    )?;
+    let tokenizer_json_path =
+        if let Some(tokenizer_json_file) = manifest.tokenizer_json_file.as_ref() {
+            require_file(&root.join(tokenizer_json_file), "tokenizer.json")?
+        } else {
+            resolve_tokenizer_json_path(root)?
+        };
+    let vision_pos_embedding_path = require_file(
+        &root.join(
+            manifest
+                .vision_pos_embedding_file
+                .as_deref()
+                .unwrap_or(DEFAULT_VISION_POS_EMBEDDING_FILE),
+        ),
+        "vision position embedding",
+    )?;
+    let logit_params_path = resolve_optional_file(
+        root,
         manifest
-            .tokenizer_config_file
+            .logit_params_file
             .as_deref()
-            .unwrap_or(DEFAULT_TOKENIZER_CONFIG_FILE),
+            .unwrap_or(DEFAULT_LOGIT_PARAMS_FILE),
     );
-    let preprocessor_config_path = manifest
-        .preprocessor_config_file
-        .as_deref()
-        .map(|value| root.join(value));
-
-    for (path, label) in [
-        (&vocab_path, "vocab.txt"),
-        (&tokenizer_config_path, "tokenizer_config.json"),
-    ] {
-        if !path.exists() {
-            return Err(format!("模型目录缺少 {label}"));
-        }
-    }
-
-    if let Some(preprocessor_config_path) = preprocessor_config_path.as_ref() {
-        if !preprocessor_config_path.exists() {
-            return Err(format!(
-                "模型目录缺少 {}",
-                preprocessor_config_path
-                    .file_name()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or(DEFAULT_PREPROCESSOR_CONFIG_FILE)
-            ));
-        }
-    }
-
-    let do_lower_case = load_tokenizer_do_lower_case(&tokenizer_config_path)?;
-    let image_size = if let Some(preprocessor_config_path) = preprocessor_config_path.as_ref() {
-        load_preprocessor_image_size(preprocessor_config_path)?
-    } else {
-        manifest.image_size.unwrap_or(DEFAULT_IMAGE_SIZE)
-    };
 
     let resolved = ResolvedModelPaths {
-        root: fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
+        root: canonical_path(root),
         manifest_path: Some(manifest_path),
-        model_files,
-        vocab_path,
-        tokenizer_config_path,
-        preprocessor_config_path,
+        text_model_path,
+        image_model_path,
+        tokenizer_json_path,
+        vision_pos_embedding_path,
+        logit_params_path,
         manifest,
-        image_size,
-        do_lower_case,
     };
-
     verify_model_hashes(&resolved)?;
 
     Ok(Some(resolved))
 }
 
-fn try_resolve_huggingface_layout(root: &Path) -> Result<Option<ResolvedModelPaths>, String> {
-    let config_path = root.join(DEFAULT_HUGGINGFACE_CONFIG_FILE);
-    if !config_path.exists() {
+fn try_resolve_fgclip2_layout(root: &Path) -> Result<Option<ResolvedModelPaths>, String> {
+    let text_model_path = root.join(DEFAULT_TEXT_MODEL_FILE);
+    let image_model_path = root.join(DEFAULT_IMAGE_MODEL_FILE);
+    let vision_pos_embedding_path = root.join(DEFAULT_VISION_POS_EMBEDDING_FILE);
+
+    let has_any_fgclip2_file =
+        text_model_path.exists() || image_model_path.exists() || vision_pos_embedding_path.exists();
+    if !has_any_fgclip2_file {
         return Ok(None);
     }
 
-    let config_content =
-        fs::read_to_string(&config_path).map_err(|e| format!("无法读取 config.json: {}", e))?;
-    let config: HuggingFaceConfig = serde_json::from_str(&config_content)
-        .map_err(|e| format!("config.json 格式无效: {}", e))?;
-
-    if config.model_type.trim() != "chinese_clip" {
-        return Err("config.json 不是 Chinese-CLIP 模型".to_string());
-    }
-
-    let (model_relative_path, model_path) = resolve_huggingface_model_file(root)?;
-    let vocab_path = root.join(DEFAULT_VOCAB_FILE);
-    let tokenizer_config_path = root.join(DEFAULT_TOKENIZER_CONFIG_FILE);
-    let preprocessor_config_path = root.join(DEFAULT_PREPROCESSOR_CONFIG_FILE);
-
-    for (path, label) in [
-        (&vocab_path, "vocab.txt"),
-        (&tokenizer_config_path, "tokenizer_config.json"),
-    ] {
-        if !path.exists() {
-            return Err(format!("模型目录缺少 {label}"));
-        }
-    }
-
-    let do_lower_case = load_tokenizer_do_lower_case(&tokenizer_config_path)?;
-    let image_size = if preprocessor_config_path.exists() {
-        load_preprocessor_image_size(&preprocessor_config_path)?
-    } else {
-        DEFAULT_IMAGE_SIZE
-    };
-
-    let base_model_id = if config.name_or_path.trim().is_empty() {
-        root.file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("hf-chinese-clip")
-            .to_string()
-    } else {
-        config.name_or_path.trim().to_string()
-    };
-    let version = if config.transformers_version.trim().is_empty() {
-        "huggingface-onnx".to_string()
-    } else {
-        format!("transformers-{}", config.transformers_version.trim())
-    };
-    let relative_model_name = model_relative_path.to_string_lossy().replace('\\', "/");
+    let text_model_path = require_file(&text_model_path, "文本 ONNX 模型")?;
+    let image_model_path = require_file(&image_model_path, "图像 ONNX 模型")?;
+    let tokenizer_json_path = resolve_tokenizer_json_path(root)?;
+    let vision_pos_embedding_path =
+        require_file(&vision_pos_embedding_path, "vision position embedding")?;
+    let logit_params_path = resolve_optional_file(root, DEFAULT_LOGIT_PARAMS_FILE);
+    let fingerprint = model_metadata_fingerprint(&[&text_model_path, &image_model_path]);
     let manifest = ModelManifest {
-        model_id: format!("{base_model_id}@{relative_model_name}"),
-        version,
-        embedding_dim: config
-            .projection_dim
-            .ok_or_else(|| "config.json 缺少 projection_dim".to_string())?,
-        context_length: DEFAULT_HUGGINGFACE_CONTEXT_LENGTH,
+        model_id: format!("fgclip2-base@{fingerprint}"),
+        version: format!("onnx-wrapper:{fingerprint}"),
+        model_type: "fgclip2".to_string(),
+        embedding_dim: DEFAULT_EMBEDDING_DIM,
+        context_length: DEFAULT_CONTEXT_LENGTH,
         source_url: String::new(),
         sha256: None,
-        image_model_file: None,
-        text_model_file: None,
-        model_file: Some(relative_model_name),
-        vocab_file: Some(DEFAULT_VOCAB_FILE.to_string()),
-        tokenizer_config_file: Some(DEFAULT_TOKENIZER_CONFIG_FILE.to_string()),
-        preprocessor_config_file: preprocessor_config_path
-            .exists()
-            .then_some(DEFAULT_PREPROCESSOR_CONFIG_FILE.to_string()),
-        image_size: Some(image_size),
+        image_model_file: Some(DEFAULT_IMAGE_MODEL_FILE.to_string()),
+        text_model_file: Some(DEFAULT_TEXT_MODEL_FILE.to_string()),
+        tokenizer_json_file: tokenizer_json_path
+            .strip_prefix(root)
+            .ok()
+            .map(path_to_manifest_string),
+        vision_pos_embedding_file: Some(DEFAULT_VISION_POS_EMBEDDING_FILE.to_string()),
+        logit_params_file: logit_params_path
+            .as_ref()
+            .and_then(|path| path.strip_prefix(root).ok())
+            .map(path_to_manifest_string),
     };
 
     Ok(Some(ResolvedModelPaths {
-        root: fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
+        root: canonical_path(root),
         manifest_path: None,
-        model_files: ResolvedModelFiles::Combined { model_path },
-        vocab_path,
-        tokenizer_config_path,
-        preprocessor_config_path: preprocessor_config_path
-            .exists()
-            .then_some(preprocessor_config_path),
+        text_model_path,
+        image_model_path,
+        tokenizer_json_path,
+        vision_pos_embedding_path,
+        logit_params_path,
         manifest,
-        image_size,
-        do_lower_case,
     }))
 }
 
@@ -527,6 +400,9 @@ fn validate_manifest(manifest: &ModelManifest) -> Result<(), String> {
     }
     if manifest.version.trim().is_empty() {
         return Err("manifest.json 缺少 version".to_string());
+    }
+    if !manifest.model_type.trim().is_empty() && manifest.model_type.trim() != "fgclip2" {
+        return Err("manifest.json 不是 fgclip2 模型".to_string());
     }
     if manifest.embedding_dim == 0 {
         return Err("manifest.json 的 embedding_dim 无效".to_string());
@@ -538,80 +414,71 @@ fn validate_manifest(manifest: &ModelManifest) -> Result<(), String> {
     Ok(())
 }
 
-fn resolve_huggingface_model_file(root: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let onnx_dir = root.join(DEFAULT_HUGGINGFACE_ONNX_DIR);
-    if !onnx_dir.is_dir() {
-        return Err("模型目录缺少 onnx 子目录".to_string());
+fn resolve_tokenizer_json_path(root: &Path) -> Result<PathBuf, String> {
+    let mut candidates = vec![
+        root.join(DEFAULT_TOKENIZER_JSON_FILE),
+        root.join(DEFAULT_ASSETS_DIR)
+            .join(DEFAULT_TOKENIZER_JSON_FILE),
+    ];
+
+    if let Some(parent) = root.parent() {
+        candidates.push(
+            parent
+                .join("models")
+                .join("fg-clip2-base")
+                .join(DEFAULT_TOKENIZER_JSON_FILE),
+        );
+        candidates.push(
+            parent
+                .join("fg-clip2-base")
+                .join(DEFAULT_TOKENIZER_JSON_FILE),
+        );
     }
 
-    for file_name in HUGGINGFACE_MODEL_FILE_PREFERENCES {
-        let path = onnx_dir.join(file_name);
-        if path.exists() {
-            return Ok((
-                PathBuf::from(DEFAULT_HUGGINGFACE_ONNX_DIR).join(file_name),
-                path,
-            ));
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Ok(candidate);
         }
     }
 
-    let mut discovered = fs::read_dir(&onnx_dir)
-        .map_err(|e| format!("无法读取 onnx 目录: {}", e))?
-        .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .filter(|path| {
-            path.extension()
-                .and_then(|value| value.to_str())
-                .is_some_and(|value| value.eq_ignore_ascii_case("onnx"))
-        })
-        .collect::<Vec<_>>();
-    discovered.sort();
+    Err(
+        "模型目录缺少 tokenizer.json；可放在模型目录，或放在相邻的 models/fg-clip2-base/ 下"
+            .to_string(),
+    )
+}
 
-    if let Some(path) = discovered.into_iter().next() {
-        let relative_path = path
-            .strip_prefix(root)
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|_| {
-                PathBuf::from(DEFAULT_HUGGINGFACE_ONNX_DIR).join(DEFAULT_COMBINED_MODEL_FILE)
-            });
-        return Ok((relative_path, path));
+fn resolve_optional_file(root: &Path, relative_name: &str) -> Option<PathBuf> {
+    let path = root.join(relative_name);
+    path.is_file().then_some(path)
+}
+
+fn require_file(path: &Path, label: &str) -> Result<PathBuf, String> {
+    if path.is_file() {
+        Ok(path.to_path_buf())
+    } else {
+        Err(format!("模型目录缺少 {label}"))
     }
-
-    Err("onnx 目录中没有可用的 ONNX 模型文件".to_string())
 }
 
 fn collect_missing_files(root: &Path) -> Vec<String> {
-    if root.join(DEFAULT_MANIFEST_FILE).exists() {
-        return [
-            DEFAULT_MANIFEST_FILE,
-            DEFAULT_IMAGE_MODEL_FILE,
-            DEFAULT_TEXT_MODEL_FILE,
-            DEFAULT_VOCAB_FILE,
-            DEFAULT_TOKENIZER_CONFIG_FILE,
-        ]
-        .into_iter()
-        .filter(|name| !root.join(name).exists())
-        .map(str::to_string)
-        .collect();
-    }
+    let root = if root.join(".onnx-wrapper-test").is_dir() {
+        root.join(".onnx-wrapper-test")
+    } else {
+        root.to_path_buf()
+    };
 
-    let mut missing_files = Vec::new();
-    for name in [
-        DEFAULT_HUGGINGFACE_CONFIG_FILE,
-        DEFAULT_VOCAB_FILE,
-        DEFAULT_TOKENIZER_CONFIG_FILE,
-    ] {
-        if !root.join(name).exists() {
-            missing_files.push(name.to_string());
-        }
-    }
+    let mut missing_files = [
+        DEFAULT_TEXT_MODEL_FILE,
+        DEFAULT_IMAGE_MODEL_FILE,
+        DEFAULT_VISION_POS_EMBEDDING_FILE,
+    ]
+    .into_iter()
+    .filter(|name| !root.join(name).is_file())
+    .map(str::to_string)
+    .collect::<Vec<_>>();
 
-    let has_onnx_model = root.join(DEFAULT_HUGGINGFACE_ONNX_DIR).is_dir()
-        && HUGGINGFACE_MODEL_FILE_PREFERENCES.iter().any(|file_name| {
-            root.join(DEFAULT_HUGGINGFACE_ONNX_DIR)
-                .join(file_name)
-                .exists()
-        });
-    if !has_onnx_model {
-        missing_files.push("onnx/<model>.onnx".to_string());
+    if resolve_tokenizer_json_path(&root).is_err() {
+        missing_files.push(DEFAULT_TOKENIZER_JSON_FILE.to_string());
     }
 
     missing_files
@@ -639,48 +506,6 @@ fn verify_model_hashes(resolved: &ResolvedModelPaths) -> Result<(), String> {
     Ok(())
 }
 
-fn load_tokenizer_do_lower_case(tokenizer_config_path: &Path) -> Result<bool, String> {
-    let content = fs::read_to_string(tokenizer_config_path).map_err(|e| {
-        format!(
-            "无法读取 tokenizer_config.json '{}': {}",
-            tokenizer_config_path.display(),
-            e
-        )
-    })?;
-    let config: HuggingFaceTokenizerConfig = serde_json::from_str(&content).map_err(|e| {
-        format!(
-            "tokenizer_config.json 格式无效 '{}': {}",
-            tokenizer_config_path.display(),
-            e
-        )
-    })?;
-    Ok(config.do_lower_case)
-}
-
-fn load_preprocessor_image_size(preprocessor_config_path: &Path) -> Result<usize, String> {
-    let content = fs::read_to_string(preprocessor_config_path).map_err(|e| {
-        format!(
-            "无法读取 preprocessor_config.json '{}': {}",
-            preprocessor_config_path.display(),
-            e
-        )
-    })?;
-    let config: HuggingFacePreprocessorConfig = serde_json::from_str(&content).map_err(|e| {
-        format!(
-            "preprocessor_config.json 格式无效 '{}': {}",
-            preprocessor_config_path.display(),
-            e
-        )
-    })?;
-
-    Ok(config
-        .size
-        .as_ref()
-        .and_then(ImageSizeValue::resolve)
-        .or_else(|| config.crop_size.as_ref().and_then(ImageSizeValue::resolve))
-        .unwrap_or(DEFAULT_IMAGE_SIZE))
-}
-
 fn sha256_file(path: &Path) -> Result<String, String> {
     let bytes =
         fs::read(path).map_err(|e| format!("无法读取 '{}' 进行校验: {}", path.display(), e))?;
@@ -688,59 +513,97 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(format!("{digest:x}"))
 }
 
+fn model_metadata_fingerprint(paths: &[&Path]) -> String {
+    let mut hasher = Sha256::new();
+    for path in paths {
+        hasher.update(
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or(""),
+        );
+        if let Ok(metadata) = fs::metadata(path) {
+            hasher.update(metadata.len().to_le_bytes());
+            let modified_secs = metadata
+                .modified()
+                .ok()
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_secs())
+                .unwrap_or_default();
+            hasher.update(modified_secs.to_le_bytes());
+        }
+    }
+
+    format!("{:x}", hasher.finalize())
+        .chars()
+        .take(12)
+        .collect()
+}
+
+fn path_to_manifest_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn canonical_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn canonical_string(path: &Path) -> String {
+    canonical_path(path).to_string_lossy().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn resolve_huggingface_layout_prefers_quantized_model() {
-        let root = std::env::temp_dir().join(format!(
-            "shiguang-hf-model-{}-{}",
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "shiguang-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
-        let onnx_dir = root.join("onnx");
-        std::fs::create_dir_all(&onnx_dir).unwrap();
+        ))
+    }
 
-        std::fs::write(
-            root.join("config.json"),
-            r#"{
-  "_name_or_path": "OFA-Sys/chinese-clip-vit-base-patch16",
-  "model_type": "chinese_clip",
-  "projection_dim": 512,
-  "transformers_version": "4.36.0"
-}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("tokenizer_config.json"),
-            r#"{"do_lower_case": true}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("preprocessor_config.json"),
-            r#"{"size":{"height":224,"width":224}}"#,
-        )
-        .unwrap();
-        std::fs::write(root.join("vocab.txt"), "[PAD]\n[UNK]\n[CLS]\n[SEP]\n").unwrap();
-        std::fs::write(onnx_dir.join("model.onnx"), b"placeholder").unwrap();
-        std::fs::write(onnx_dir.join("model_quantized.onnx"), b"placeholder").unwrap();
+    fn write_minimal_fgclip2_wrapper(root: &Path) {
+        std::fs::create_dir_all(root.join("assets")).unwrap();
+        std::fs::write(root.join(DEFAULT_TEXT_MODEL_FILE), b"text").unwrap();
+        std::fs::write(root.join(DEFAULT_IMAGE_MODEL_FILE), b"image").unwrap();
+        std::fs::write(root.join(DEFAULT_VISION_POS_EMBEDDING_FILE), b"pos").unwrap();
+    }
 
-        let resolved = resolve_model_paths(root.to_string_lossy().as_ref()).unwrap();
-        let selected_model = match resolved.model_files {
-            ResolvedModelFiles::Combined { model_path } => model_path,
-            ResolvedModelFiles::Split { .. } => panic!("expected combined model layout"),
-        };
+    #[test]
+    fn resolves_wrapper_layout_with_sibling_huggingface_tokenizer() {
+        let parent = unique_temp_dir("fgclip2-parent");
+        let wrapper = parent.join(".onnx-wrapper-test");
+        let hf_model = parent.join("models").join("fg-clip2-base");
+        std::fs::create_dir_all(&hf_model).unwrap();
+        write_minimal_fgclip2_wrapper(&wrapper);
+        std::fs::write(hf_model.join("tokenizer.json"), b"{}").unwrap();
 
-        assert!(selected_model.ends_with(Path::new("onnx").join("model_quantized.onnx")));
-        assert_eq!(resolved.manifest.embedding_dim, 512);
-        assert_eq!(resolved.manifest.context_length, 52);
-        assert_eq!(resolved.image_size, 224);
-        assert!(resolved.do_lower_case);
+        let resolved = resolve_model_paths(wrapper.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(resolved.manifest.embedding_dim, 768);
+        assert_eq!(resolved.manifest.context_length, 64);
+        assert!(resolved.text_model_path.ends_with(DEFAULT_TEXT_MODEL_FILE));
+        assert!(resolved
+            .tokenizer_json_path
+            .ends_with("fg-clip2-base/tokenizer.json"));
 
-        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn resolves_parent_directory_that_contains_wrapper_child() {
+        let parent = unique_temp_dir("fgclip2-parent-child");
+        let wrapper = parent.join(".onnx-wrapper-test");
+        std::fs::create_dir_all(&parent).unwrap();
+        write_minimal_fgclip2_wrapper(&wrapper);
+        std::fs::write(wrapper.join(DEFAULT_TOKENIZER_JSON_FILE), b"{}").unwrap();
+
+        let resolved = resolve_model_paths(parent.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(resolved.root, canonical_path(&wrapper));
+
+        let _ = std::fs::remove_dir_all(parent);
     }
 }

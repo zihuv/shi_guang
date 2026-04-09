@@ -586,7 +586,7 @@ mod tests {
 
         db.upsert_file_visual_embedding(
             red_id,
-            "clip-cn",
+            "fgclip2-test",
             2,
             &embedding_blob(&[1.0, 0.0]),
             1,
@@ -595,7 +595,7 @@ mod tests {
         .unwrap();
         db.upsert_file_visual_embedding(
             blue_id,
-            "clip-cn",
+            "fgclip2-test",
             2,
             &embedding_blob(&[0.0, 1.0]),
             1,
@@ -606,7 +606,7 @@ mod tests {
         let result = db
             .search_files_by_visual_embedding(
                 make_filter("红色鞋子"),
-                "clip-cn",
+                "fgclip2-test",
                 &[1.0, 0.0],
                 Some(10),
                 Some(0),
@@ -646,7 +646,7 @@ mod tests {
 
         db.upsert_file_visual_embedding(
             file_id,
-            "clip-cn",
+            "fgclip2-test",
             2,
             &embedding_blob(&[1.0, 0.0]),
             1,
@@ -660,7 +660,7 @@ mod tests {
             )
             .unwrap();
 
-        let counts = db.get_visual_index_counts("clip-cn").unwrap();
+        let counts = db.get_visual_index_counts("fgclip2-test").unwrap();
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(counts.total_images, 1);

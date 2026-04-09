@@ -1,23 +1,22 @@
-pub mod chinese_clip;
+pub mod fgclip2;
 pub mod image_preprocess;
 pub mod model_manager;
-pub mod tokenizer;
 
-use self::chinese_clip::ChineseClipModel;
+use self::fgclip2::FgClip2Model;
 use self::model_manager::ResolvedModelPaths;
 use std::path::PathBuf;
 
 #[derive(Default)]
 pub struct VisualModelRuntime {
     loaded_root: Option<PathBuf>,
-    model: Option<ChineseClipModel>,
+    model: Option<FgClip2Model>,
 }
 
 impl VisualModelRuntime {
     pub fn get_or_load(
         &mut self,
         resolved_model: &ResolvedModelPaths,
-    ) -> Result<&mut ChineseClipModel, String> {
+    ) -> Result<&mut FgClip2Model, String> {
         let needs_reload = self
             .loaded_root
             .as_ref()
@@ -25,7 +24,7 @@ impl VisualModelRuntime {
             .unwrap_or(true);
 
         if needs_reload {
-            self.model = Some(ChineseClipModel::load(resolved_model)?);
+            self.model = Some(FgClip2Model::load(resolved_model)?);
             self.loaded_root = Some(resolved_model.root.clone());
         }
 
