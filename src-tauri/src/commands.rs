@@ -75,6 +75,16 @@ pub struct PaginatedFiles {
     pub page: u32,
     pub page_size: u32,
     pub total_pages: u32,
+    #[serde(rename = "debugScores", skip_serializing_if = "Option::is_none")]
+    pub debug_scores: Option<Vec<VisualSearchDebugScore>>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualSearchDebugScore {
+    pub file_id: i64,
+    pub name: String,
+    pub score: f32,
 }
 
 #[derive(Debug, Deserialize, Clone)]

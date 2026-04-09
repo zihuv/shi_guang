@@ -31,6 +31,7 @@ pub fn get_all_files(
         page,
         page_size: page_size as u32,
         total_pages,
+        debug_scores: None,
     })
 }
 
@@ -66,6 +67,7 @@ pub fn search_files(
         page,
         page_size: page_size as u32,
         total_pages,
+        debug_scores: None,
     })
 }
 
@@ -103,6 +105,7 @@ pub fn get_files_in_folder(
         page,
         page_size: page_size as u32,
         total_pages,
+        debug_scores: None,
     })
 }
 
@@ -272,7 +275,8 @@ pub async fn filter_files(
         .filter(|query| !query.is_empty())
         .map(str::to_string);
 
-    let (files, total) = if let Some(natural_language_query) = natural_language_query {
+    let (files, total, debug_scores) = if let Some(natural_language_query) = natural_language_query
+    {
         let resolved_model = {
             let db = state.db.lock().map_err(|e| e.to_string())?;
             let config = load_visual_search_config(&db)?;
@@ -312,14 +316,14 @@ pub async fn filter_files(
                 Some(offset),
             )
             .map_err(|e| e.to_string())?;
-        (result.files, result.total)
+        (result.files, result.total, result.debug_scores)
     } else {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let files = db
             .filter_files(filter.clone(), Some(page_size), Some(offset))
             .map_err(|e| e.to_string())?;
         let total = db.filter_files_count(&filter).map_err(|e| e.to_string())?;
-        (files, total)
+        (files, total, None)
     };
 
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
@@ -330,5 +334,6 @@ pub async fn filter_files(
         page,
         page_size: page_size as u32,
         total_pages,
+        debug_scores,
     })
 }

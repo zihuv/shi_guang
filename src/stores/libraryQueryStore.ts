@@ -104,6 +104,41 @@ function applyPaginatedFilesResult(
   return true
 }
 
+function logVisualSearchDebugScores(
+  result: PaginatedFilesResponse,
+  naturalLanguageQuery?: string,
+) {
+  if (!import.meta.env.DEV) {
+    return
+  }
+
+  const query = naturalLanguageQuery?.trim()
+  const debugScores = result.debugScores
+  if (!query || !debugScores?.length) {
+    return
+  }
+
+  console.debug("[visual-search] similarity scores", {
+    query,
+    page: result.page,
+    total: result.total,
+    results: debugScores.map((entry, index) => ({
+      rank: index + 1 + (result.page - 1) * result.page_size,
+      fileId: entry.fileId,
+      name: entry.name,
+      score: Number(entry.score.toFixed(6)),
+    })),
+  })
+  console.table(
+    debugScores.map((entry, index) => ({
+      rank: index + 1 + (result.page - 1) * result.page_size,
+      fileId: entry.fileId,
+      name: entry.name,
+      score: Number(entry.score.toFixed(6)),
+    })),
+  )
+}
+
 async function refreshFolders() {
   await useFolderStore.getState().loadFolders()
 }
@@ -280,6 +315,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
         page: pagination.page,
         pageSize: pagination.pageSize,
       })
+      logVisualSearchDebugScores(result, filter?.naturalLanguageQuery)
       applyPaginatedFilesResult(result, requestId, set)
     } catch (error) {
       const errorMessage = getErrorMessage(error)

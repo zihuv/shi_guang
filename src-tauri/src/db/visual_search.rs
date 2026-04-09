@@ -35,6 +35,7 @@ pub struct VisualIndexCounts {
 pub struct VisualSearchResult {
     pub files: Vec<FileWithTags>,
     pub total: i64,
+    pub debug_scores: Option<Vec<crate::commands::VisualSearchDebugScore>>,
 }
 
 #[derive(Debug)]
@@ -335,6 +336,7 @@ impl Database {
             return Ok(VisualSearchResult {
                 files: Vec::new(),
                 total: 0,
+                debug_scores: None,
             });
         }
 
@@ -373,14 +375,34 @@ impl Database {
             ranked.len()
         };
 
-        let files = ranked
+        let page_items = ranked
             .into_iter()
             .skip(start)
             .take(end.saturating_sub(start))
-            .map(|item| item.file)
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(VisualSearchResult { files, total })
+        #[cfg(debug_assertions)]
+        let debug_scores = Some(
+            page_items
+                .iter()
+                .map(|item| crate::commands::VisualSearchDebugScore {
+                    file_id: item.file.id,
+                    name: item.file.name.clone(),
+                    score: item.score,
+                })
+                .collect(),
+        );
+
+        #[cfg(not(debug_assertions))]
+        let debug_scores = None;
+
+        let files = page_items.into_iter().map(|item| item.file).collect();
+
+        Ok(VisualSearchResult {
+            files,
+            total,
+            debug_scores,
+        })
     }
 
     fn get_visual_embeddings_for_files(

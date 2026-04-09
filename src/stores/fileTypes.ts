@@ -31,6 +31,13 @@ export interface PaginatedFilesResponse {
   page: number
   page_size: number
   total_pages: number
+  debugScores?: VisualSearchDebugScore[]
+}
+
+export interface VisualSearchDebugScore {
+  fileId: number
+  name: string
+  score: number
 }
 
 export interface ImportTaskItemResult {
@@ -75,4 +82,3 @@ export const parseFile = (file: FileItem): FileItem => ({
 })
 
 export const parseFileList = (files: FileItem[]): FileItem[] => files.map(parseFile)
-
