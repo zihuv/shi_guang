@@ -221,7 +221,9 @@ pub fn get_or_create_thumbnail_base64(
     let bytes = fs::read(&output_path)
         .map_err(|e| format!("Failed to read thumbnail file {:?}: {}", output_path, e))?;
 
-    Ok(Some(base64::engine::general_purpose::STANDARD.encode(bytes)))
+    Ok(Some(
+        base64::engine::general_purpose::STANDARD.encode(bytes),
+    ))
 }
 
 pub fn remove_thumbnail_for_file(index_paths: &[String], file_path: &Path) -> Result<(), String> {
@@ -357,8 +359,7 @@ mod tests {
         image.save(&source_path).unwrap();
 
         let index_paths = vec![index_path.to_string_lossy().to_string()];
-        let thumbnail_base64 =
-            get_or_create_thumbnail_base64(&index_paths, &source_path).unwrap();
+        let thumbnail_base64 = get_or_create_thumbnail_base64(&index_paths, &source_path).unwrap();
         assert!(thumbnail_base64.is_some());
         assert!(!thumbnail_base64.unwrap().is_empty());
 

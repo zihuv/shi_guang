@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { toast } from "sonner"
 import { useFilterStore, getSortConfig } from "@/stores/filterStore"
 import { useFolderStore } from "@/stores/folderStore"
 import { usePreviewStore } from "@/stores/previewStore"
@@ -12,7 +13,6 @@ import {
   getAllFiles,
   getFile,
   getFilesInFolder,
-  searchFiles,
   updateFileMetadata,
   updateFileName,
 } from "@/services/tauri/files"
@@ -22,6 +22,7 @@ import {
   removeTagFromFile as removeTagFromFileCommand,
 } from "@/services/tauri/tags"
 import { buildFileFilterPayload, hasStructuredFilters } from "@/features/filters/schema"
+import { getErrorMessage } from "@/services/tauri/core"
 import { parseFile, parseFileList, type FileItem, type PaginatedFilesResponse } from "@/stores/fileTypes"
 
 interface LibraryPagination {
@@ -33,6 +34,7 @@ interface LibraryPagination {
 
 interface FilterFilesInput {
   query?: string
+  naturalLanguageQuery?: string
   folderId?: number | null
 }
 
@@ -234,26 +236,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   },
 
   searchFiles: async (query) => {
-    const { pagination } = get()
-    const { sortBy, sortDirection } = getCurrentSortConfig()
-    const requestId = ++fileListRequestId
-    set({ isLoading: true })
-
-    try {
-      const result = await searchFiles({
-        query,
-        page: pagination.page,
-        pageSize: pagination.pageSize,
-        sortBy,
-        sortDirection,
-      })
-      applyPaginatedFilesResult(result, requestId, set)
-    } catch (error) {
-      console.error("Failed to search files:", error)
-      if (requestId === fileListRequestId) {
-        set({ isLoading: false })
-      }
-    }
+    await get().filterFiles({ naturalLanguageQuery: query })
   },
 
   runCurrentQuery: async (folderIdOverride) => {
@@ -263,14 +246,17 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
     if (hasStructuredFilters(criteria)) {
       await get().filterFiles({
-        query: searchQuery || undefined,
+        naturalLanguageQuery: searchQuery || undefined,
         folderId,
       })
       return
     }
 
     if (searchQuery.trim()) {
-      await get().searchFiles(searchQuery)
+      await get().filterFiles({
+        naturalLanguageQuery: searchQuery,
+        folderId,
+      })
       return
     }
 
@@ -288,6 +274,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
         filter: buildFileFilterPayload({
           criteria,
           fallbackQuery: filter?.query,
+          naturalLanguageQuery: filter?.naturalLanguageQuery,
           folderId: filter?.folderId,
         }),
         page: pagination.page,
@@ -295,7 +282,12 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       })
       applyPaginatedFilesResult(result, requestId, set)
     } catch (error) {
-      console.error("Failed to filter files:", error)
+      const errorMessage = getErrorMessage(error)
+      console.error("Failed to filter files:", errorMessage)
+      const naturalLanguageQuery = filter?.naturalLanguageQuery?.trim()
+      if (naturalLanguageQuery) {
+        toast.error(errorMessage)
+      }
       if (requestId === fileListRequestId) {
         set({ isLoading: false })
       }

@@ -14,6 +14,7 @@ use tauri::Emitter;
 
 use crate::db::{Database, FileRecord};
 use crate::indexer;
+use crate::media;
 use chrono::Local;
 use image::GenericImageView;
 use reqwest::Client;
@@ -82,57 +83,6 @@ fn get_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-fn detect_extension_from_content_type(content_type: Option<&str>) -> String {
-    match content_type {
-        Some(ct) => match ct {
-            "image/png" => "png",
-            "image/jpeg" | "image/jpg" => "jpg",
-            "image/gif" => "gif",
-            "image/webp" => "webp",
-            "image/svg+xml" => "svg",
-            "image/bmp" => "bmp",
-            "image/x-icon" => "ico",
-            "image/tiff" | "image/tif" => "tiff",
-            _ => "png",
-        },
-        None => "png",
-    }
-    .to_string()
-}
-
-fn detect_extension_from_magic_bytes(data: &[u8]) -> String {
-    if data.len() < 4 {
-        return "png".to_string();
-    }
-
-    // PNG: 89 50 4E 47
-    if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
-        return "png".to_string();
-    }
-    // JPEG: FF D8 FF
-    if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        return "jpg".to_string();
-    }
-    // GIF: 47 49 46 38
-    if data.starts_with(&[0x47, 0x49, 0x46, 0x38]) {
-        return "gif".to_string();
-    }
-    // WebP: 52 49 46 46 ... 57 45 42 50
-    if data.len() >= 12 && data.starts_with(b"RIFF") && &data[8..12] == b"WEBP" {
-        return "webp".to_string();
-    }
-    // BMP: 42 4D
-    if data.starts_with(&[0x42, 0x4D]) {
-        return "bmp".to_string();
-    }
-    // SVG (text-based, check for "<svg")
-    if data.starts_with(b"<?xml") || data.starts_with(b"<svg") {
-        return "svg".to_string();
-    }
-
-    "png".to_string()
-}
-
 fn with_cors<B>(response: Response<B>) -> Response<B> {
     let (mut parts, body) = response.into_parts();
     parts
@@ -189,20 +139,16 @@ async fn import_image(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(';').next().unwrap_or(s).trim());
 
-    // Determine extension
-    let ext = if let Some(filename) = &query.filename {
-        filename.rsplit('.').next().unwrap_or("png").to_lowercase()
-    } else {
-        // Try to detect from content type first, then magic bytes
-        detect_extension_from_content_type(content_type)
-    };
-
-    // If still not sure, check magic bytes
-    let final_ext = if ext == "png" || ext.is_empty() {
-        detect_extension_from_magic_bytes(&data)
-    } else {
-        ext
-    };
+    let final_ext = media::detect_extension_from_content(content_type, &data)
+        .map(str::to_string)
+        .or_else(|| {
+            query
+                .filename
+                .as_deref()
+                .and_then(|filename| filename.rsplit('.').next())
+                .map(|ext| ext.to_ascii_lowercase())
+        })
+        .unwrap_or_else(|| "png".to_string());
 
     let folder = match ensure_browser_collection_folder(&state) {
         Ok(folder) => folder,
@@ -273,6 +219,7 @@ async fn import_image(
     match result {
         Ok(file_id) => {
             log::info!("Imported browser image: {} (id: {})", new_name, file_id);
+            crate::commands::ai::run_post_import_pipeline(state.app_handle.clone(), file_id);
 
             // Emit event to frontend to refresh file list
             let _ = state.app_handle.emit(
@@ -416,13 +363,9 @@ async fn import_image_from_url(
         ));
     }
 
-    // Determine extension
-    let ext = detect_extension_from_content_type(content_type.as_deref());
-    let final_ext = if ext == "png" || ext.is_empty() {
-        detect_extension_from_magic_bytes(&data)
-    } else {
-        ext
-    };
+    let final_ext = media::detect_extension_from_content(content_type.as_deref(), &data)
+        .unwrap_or("png")
+        .to_string();
 
     let folder = match ensure_browser_collection_folder(&state) {
         Ok(folder) => folder,
@@ -495,6 +438,7 @@ async fn import_image_from_url(
                 new_name,
                 file_id
             );
+            crate::commands::ai::run_post_import_pipeline(state.app_handle.clone(), file_id);
 
             // Emit event to frontend to refresh file list
             let _ = state.app_handle.emit(

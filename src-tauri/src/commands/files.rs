@@ -1,4 +1,5 @@
 use super::*;
+use crate::ml::model_manager::{load_visual_search_config, resolve_model_paths};
 
 #[tauri::command]
 pub fn get_all_files(
@@ -254,21 +255,73 @@ pub fn update_file_name(
 }
 
 #[tauri::command]
-pub fn filter_files(
-    state: State<AppState>,
+pub async fn filter_files(
+    state: State<'_, AppState>,
     filter: FileFilter,
     page: Option<u32>,
     page_size: Option<u32>,
 ) -> Result<PaginatedFiles, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(100).max(1).min(500) as i64;
     let offset = (page - 1) as i64 * page_size;
 
-    let files = db
-        .filter_files(filter.clone(), Some(page_size), Some(offset))
-        .map_err(|e| e.to_string())?;
-    let total = db.filter_files_count(&filter).map_err(|e| e.to_string())?;
+    let natural_language_query = filter
+        .natural_language_query
+        .as_deref()
+        .map(str::trim)
+        .filter(|query| !query.is_empty())
+        .map(str::to_string);
+
+    let (files, total) = if let Some(natural_language_query) = natural_language_query {
+        let resolved_model = {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            let config = load_visual_search_config(&db)?;
+            if !config.enabled {
+                return Err("请先在设置 > AI 中启用本地自然语言搜图".to_string());
+            }
+
+            let resolved_model = resolve_model_paths(&config.model_path)?;
+            let ready_count = db
+                .get_visual_index_counts(&resolved_model.manifest.model_id)
+                .map_err(|e| e.to_string())?;
+            if ready_count.ready == 0 {
+                return Err(
+                    "视觉索引为空或已过期，请先在设置 > AI 中配置模型并重建视觉索引".to_string(),
+                );
+            }
+
+            resolved_model
+        };
+
+        let query_embedding = {
+            let mut runtime = state
+                .visual_model_runtime
+                .lock()
+                .map_err(|e| e.to_string())?;
+            let model = runtime.get_or_load(&resolved_model)?;
+            model.encode_text(&natural_language_query)?
+        };
+
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let result = db
+            .search_files_by_visual_embedding(
+                filter.clone(),
+                &resolved_model.manifest.model_id,
+                &query_embedding,
+                Some(page_size),
+                Some(offset),
+            )
+            .map_err(|e| e.to_string())?;
+        (result.files, result.total)
+    } else {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let files = db
+            .filter_files(filter.clone(), Some(page_size), Some(offset))
+            .map_err(|e| e.to_string())?;
+        let total = db.filter_files_count(&filter).map_err(|e| e.to_string())?;
+        (files, total)
+    };
+
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as u32;
 
     Ok(PaginatedFiles {

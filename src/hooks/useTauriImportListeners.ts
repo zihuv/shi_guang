@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { useTagStore } from "@/stores/tagStore";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -45,6 +46,7 @@ export function useTauriImportListeners({
     let unlistenDragLeave: (() => void) | undefined;
     let unlistenFileImported: (() => void) | undefined;
     let unlistenFileImportError: (() => void) | undefined;
+    let unlistenFileUpdated: (() => void) | undefined;
 
     const setupListeners = async () => {
       unlistenDragEnter = await listen("tauri://drag-enter", () => {
@@ -128,6 +130,15 @@ export function useTauriImportListeners({
         },
       );
 
+      unlistenFileUpdated = await listen("file-updated", async () => {
+        const libraryStore = useLibraryQueryStore.getState();
+        await Promise.all([
+          libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
+          useFolderStore.getState().loadFolders(),
+          useTagStore.getState().loadTags(),
+        ]);
+      });
+
       dragDropState.listenersReady = true;
     };
 
@@ -139,6 +150,7 @@ export function useTauriImportListeners({
       unlistenDragLeave?.();
       unlistenFileImported?.();
       unlistenFileImportError?.();
+      unlistenFileUpdated?.();
       dragDropState.listenersReady = false;
     };
   }, [setIsDragging]);

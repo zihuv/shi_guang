@@ -13,6 +13,19 @@ import {
   syncIndexPath,
 } from "@/services/tauri/indexing";
 import { scanFolders } from "@/services/tauri/folders";
+import {
+  getRecommendedVisualModelPath as getRecommendedVisualModelPathCommand,
+  getVisualIndexRetryCandidates as getVisualIndexRetryCandidatesCommand,
+  getVisualIndexStatus as getVisualIndexStatusCommand,
+  rebuildVisualIndex as rebuildVisualIndexCommand,
+  reindexFileVisualEmbedding as reindexFileVisualEmbeddingCommand,
+  validateVisualModelPath as validateVisualModelPathCommand,
+  type VisualIndexRebuildResult,
+  type VisualIndexStatus,
+  type VisualIndexRetryCandidate,
+  type VisualModelValidationResult,
+} from "@/services/tauri/files";
+import { buildBrowserDecodedImageDataUrl } from "@/utils";
 import { getDeleteMode, setDeleteMode as setDeleteModeCommand } from "@/services/tauri/trash";
 
 const SHORTCUTS_SETTING_KEY = "shortcuts";
@@ -20,6 +33,8 @@ const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
 const LIBRARY_VIEW_PREFERENCES_SETTING_KEY = "libraryViewPreferences";
 const PANEL_LAYOUT_SETTING_KEY = "panelLayout";
 const AI_CONFIG_SETTING_KEY = "aiConfig";
+const VISUAL_SEARCH_SETTING_KEY = "visualSearch";
+const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY = "aiAutoAnalyzeOnImport";
 
 export type LibraryViewMode = "grid" | "list" | "adaptive";
 export type LibraryVisibleField = "name" | "ext" | "size" | "dimensions" | "tags";
@@ -65,22 +80,55 @@ let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null =
   null;
 let panelLayoutPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let aiConfigPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let visualSearchPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
-export interface AiConfig {
+export type AiConfigTarget = "metadata";
+
+export interface AiServiceConfig {
   baseUrl: string;
   apiKey: string;
-  multimodalModel: string;
-  embeddingModel: string;
-  rerankerModel: string;
+  model: string;
 }
 
-export const DEFAULT_AI_CONFIG: AiConfig = {
+export interface AiConfig {
+  metadata: AiServiceConfig;
+}
+
+export interface VisualSearchConfig {
+  enabled: boolean;
+  modelPath: string;
+  autoVectorizeOnImport: boolean;
+}
+
+export const DEFAULT_AI_SERVICE_CONFIG: AiServiceConfig = {
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
-  multimodalModel: "",
-  embeddingModel: "",
-  rerankerModel: "",
+  model: "",
 };
+
+export const DEFAULT_AI_CONFIG: AiConfig = {
+  metadata: { ...DEFAULT_AI_SERVICE_CONFIG },
+};
+
+export const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
+  enabled: false,
+  modelPath: "",
+  autoVectorizeOnImport: false,
+};
+
+function cloneAiConfig(config: AiConfig): AiConfig {
+  return {
+    metadata: { ...config.metadata },
+  };
+}
+
+function cloneVisualSearchConfig(config: VisualSearchConfig): VisualSearchConfig {
+  return {
+    enabled: config.enabled,
+    modelPath: config.modelPath,
+    autoVectorizeOnImport: config.autoVectorizeOnImport,
+  };
+}
 
 export function clampPreviewTrackpadZoomSpeed(value: number) {
   if (!Number.isFinite(value)) {
@@ -248,22 +296,56 @@ function schedulePanelLayoutPersist(
 
 function resolveAiConfig(value: unknown): AiConfig {
   if (!value || typeof value !== "object") {
-    return { ...DEFAULT_AI_CONFIG };
+    return cloneAiConfig(DEFAULT_AI_CONFIG);
   }
 
-  const config = value as Partial<Record<keyof AiConfig, unknown>>;
+  const config = value as Record<string, unknown>;
+  const resolveServiceConfig = (serviceValue: unknown, legacyModelKey?: string): AiServiceConfig => {
+    const serviceConfig =
+      serviceValue && typeof serviceValue === "object"
+        ? (serviceValue as Partial<Record<keyof AiServiceConfig, unknown>>)
+        : null;
+
+    const legacyBaseUrl = typeof config.baseUrl === "string" ? config.baseUrl : "";
+    const legacyApiKey = typeof config.apiKey === "string" ? config.apiKey : "";
+    const legacyModel =
+      legacyModelKey && typeof config[legacyModelKey] === "string"
+        ? (config[legacyModelKey] as string)
+        : "";
+
+    return {
+      baseUrl:
+        typeof serviceConfig?.baseUrl === "string" && serviceConfig.baseUrl.trim()
+          ? serviceConfig.baseUrl
+          : legacyBaseUrl.trim()
+            ? legacyBaseUrl
+            : DEFAULT_AI_SERVICE_CONFIG.baseUrl,
+      apiKey:
+        typeof serviceConfig?.apiKey === "string"
+          ? serviceConfig.apiKey
+          : legacyApiKey,
+      model:
+        typeof serviceConfig?.model === "string"
+          ? serviceConfig.model
+          : legacyModel,
+    };
+  };
+
   return {
-    baseUrl:
-      typeof config.baseUrl === "string" && config.baseUrl.trim()
-        ? config.baseUrl
-        : DEFAULT_AI_CONFIG.baseUrl,
-    apiKey: typeof config.apiKey === "string" ? config.apiKey : "",
-    multimodalModel:
-      typeof config.multimodalModel === "string" ? config.multimodalModel : "",
-    embeddingModel:
-      typeof config.embeddingModel === "string" ? config.embeddingModel : "",
-    rerankerModel:
-      typeof config.rerankerModel === "string" ? config.rerankerModel : "",
+    metadata: resolveServiceConfig(config.metadata, "multimodalModel"),
+  };
+}
+
+function resolveVisualSearchConfig(value: unknown): VisualSearchConfig {
+  if (!value || typeof value !== "object") {
+    return cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG);
+  }
+
+  const config = value as Partial<Record<keyof VisualSearchConfig, unknown>>;
+  return {
+    enabled: Boolean(config.enabled),
+    modelPath: typeof config.modelPath === "string" ? config.modelPath : "",
+    autoVectorizeOnImport: Boolean(config.autoVectorizeOnImport),
   };
 }
 
@@ -285,16 +367,65 @@ function scheduleAiConfigPersist(
   }, 180);
 }
 
+function scheduleVisualSearchPersist(
+  get: () => {
+    visualSearch: VisualSearchConfig;
+  },
+) {
+  if (visualSearchPersistTimer) {
+    clearTimeout(visualSearchPersistTimer);
+  }
+
+  visualSearchPersistTimer = setTimeout(() => {
+    void setSetting(
+      VISUAL_SEARCH_SETTING_KEY,
+      JSON.stringify(get().visualSearch),
+    ).catch((error) => {
+      console.error("Failed to persist visual search config:", error);
+    });
+  }, 180);
+}
+
 const loadFilesInCurrentFolder = async () => {
   const libraryStore = useLibraryQueryStore.getState();
   await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
 };
+
+async function retryVisualIndexWithBrowserDecode(
+  candidates: VisualIndexRetryCandidate[],
+) {
+  let recovered = 0;
+
+  for (const candidate of candidates) {
+    try {
+      const imageDataUrl = await buildBrowserDecodedImageDataUrl(candidate.path, {
+        maxEdge: 1280,
+        quality: 0.9,
+        outputMimeType: "image/jpeg",
+      });
+      await reindexFileVisualEmbeddingCommand(candidate.fileId, imageDataUrl);
+      recovered += 1;
+    } catch (error) {
+      console.warn("Failed to rebuild visual index via browser decode:", {
+        fileId: candidate.fileId,
+        path: candidate.path,
+        error,
+      });
+    }
+  }
+
+  return recovered;
+}
 
 interface Settings {
   theme: "light" | "dark";
   indexPaths: string[];
   useTrash: boolean;
   aiConfig: AiConfig;
+  visualSearch: VisualSearchConfig;
+  autoAnalyzeOnImport: boolean;
+  visualIndexStatus: VisualIndexStatus | null;
+  visualModelValidation: VisualModelValidationResult | null;
   shortcuts: ShortcutConfig;
   previewTrackpadZoomSpeed: number;
   libraryViewMode: LibraryViewMode;
@@ -308,10 +439,16 @@ interface SettingsStore extends Settings {
   setTheme: (theme: "light" | "dark") => Promise<void>;
   switchIndexPath: (path: string) => Promise<void>;
   setDeleteMode: (useTrash: boolean) => Promise<void>;
-  setAiConfigField: <K extends keyof AiConfig>(
+  setAiConfigField: <K extends keyof AiServiceConfig>(
+    target: AiConfigTarget,
     key: K,
-    value: AiConfig[K],
+    value: AiServiceConfig[K],
   ) => void;
+  setVisualSearchField: <K extends keyof VisualSearchConfig>(
+    key: K,
+    value: VisualSearchConfig[K],
+  ) => void;
+  setAutoAnalyzeOnImport: (enabled: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
   setPreviewTrackpadZoomSpeed: (speed: number) => Promise<void>;
@@ -323,13 +460,22 @@ interface SettingsStore extends Settings {
   setDetailPanelWidth: (width: number) => void;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
+  rebuildVisualIndex: () => Promise<VisualIndexRebuildResult>;
+  refreshVisualSearchStatus: () => Promise<void>;
+  validateVisualModelPath: (
+    modelPath?: string,
+  ) => Promise<VisualModelValidationResult>;
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
   theme: "light",
   indexPaths: [],
   useTrash: true,
-  aiConfig: { ...DEFAULT_AI_CONFIG },
+  aiConfig: cloneAiConfig(DEFAULT_AI_CONFIG),
+  visualSearch: cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG),
+  autoAnalyzeOnImport: false,
+  visualIndexStatus: null,
+  visualModelValidation: null,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   previewTrackpadZoomSpeed: DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
   libraryViewMode: DEFAULT_LIBRARY_VIEW_MODE,
@@ -348,14 +494,41 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ useTrash });
   },
 
-  setAiConfigField: (key, value) => {
+  setAiConfigField: (target, key, value) => {
     set((state) => ({
       aiConfig: {
         ...state.aiConfig,
-        [key]: value,
+        [target]: {
+          ...state.aiConfig[target],
+          [key]: value,
+        },
       },
     }));
     scheduleAiConfigPersist(get);
+  },
+
+  setVisualSearchField: (key, value) => {
+    set((state) => ({
+      visualSearch: {
+        ...state.visualSearch,
+        [key]: value,
+      },
+      ...(key === "modelPath"
+        ? {
+            visualModelValidation: null,
+            visualIndexStatus: null,
+          }
+        : {}),
+    }));
+    scheduleVisualSearchPersist(get);
+  },
+
+  setAutoAnalyzeOnImport: async (enabled) => {
+    await setSetting(
+      AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY,
+      enabled ? "true" : "false",
+    );
+    set({ autoAnalyzeOnImport: enabled });
   },
 
   setShortcut: async (actionId, shortcut) => {
@@ -436,7 +609,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let theme: "light" | "dark" = "light";
     let indexPaths: string[] = [];
     let useTrash: boolean = true;
-    let aiConfig = { ...DEFAULT_AI_CONFIG };
+    let aiConfig = cloneAiConfig(DEFAULT_AI_CONFIG);
+    let visualSearch = cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG);
+    let autoAnalyzeOnImport = false;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
     let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
     let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
@@ -478,6 +653,42 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const errorMsg = String(e);
       if (!errorMsg.includes("Setting not found")) {
         console.error("Failed to load AI config:", e);
+      }
+    }
+
+    try {
+      const visualSearchValue = await getSetting(VISUAL_SEARCH_SETTING_KEY);
+      visualSearch = resolveVisualSearchConfig(JSON.parse(visualSearchValue));
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load visual search config:", e);
+      }
+    }
+
+    if (!visualSearch.modelPath.trim()) {
+      try {
+        const recommendedModelPath = await getRecommendedVisualModelPathCommand();
+        if (recommendedModelPath) {
+          visualSearch = {
+            ...visualSearch,
+            modelPath: recommendedModelPath,
+          };
+          await setSetting(VISUAL_SEARCH_SETTING_KEY, JSON.stringify(visualSearch));
+        }
+      } catch (e) {
+        console.error("Failed to detect recommended visual model path:", e);
+      }
+    }
+
+    try {
+      const autoAnalyzeValue = await getSetting(AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY);
+      autoAnalyzeOnImport =
+        autoAnalyzeValue === "true" || autoAnalyzeValue === "1";
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load auto analyze setting:", e);
       }
     }
 
@@ -563,6 +774,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       indexPaths: indexPaths || [],
       useTrash,
       aiConfig,
+      visualSearch,
+      autoAnalyzeOnImport,
       shortcuts,
       previewTrackpadZoomSpeed,
       libraryViewMode,
@@ -571,6 +784,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       sidebarWidth,
       detailPanelWidth,
     });
+
+    void get().refreshVisualSearchStatus();
   },
 
   rebuildIndex: async () => {
@@ -578,5 +793,53 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     await scanFolders();
     await useFolderStore.getState().loadFolders();
     await loadFilesInCurrentFolder();
+  },
+
+  rebuildVisualIndex: async () => {
+    const result = await rebuildVisualIndexCommand();
+    let recoveredByBrowserDecode = 0;
+
+    if (result.failed > 0) {
+      const retryCandidates = await getVisualIndexRetryCandidatesCommand();
+      if (retryCandidates.length > 0) {
+        recoveredByBrowserDecode =
+          await retryVisualIndexWithBrowserDecode(retryCandidates);
+      }
+    }
+
+    await get().refreshVisualSearchStatus();
+    return {
+      ...result,
+      indexed: result.indexed + recoveredByBrowserDecode,
+      failed: Math.max(0, result.failed - recoveredByBrowserDecode),
+    };
+  },
+
+  refreshVisualSearchStatus: async () => {
+    try {
+      const [validation, status] = await Promise.all([
+        validateVisualModelPathCommand(get().visualSearch.modelPath),
+        getVisualIndexStatusCommand(),
+      ]);
+
+      set({
+        visualModelValidation: validation,
+        visualIndexStatus: status,
+      });
+    } catch (error) {
+      console.error("Failed to refresh visual search status:", error);
+      set({
+        visualModelValidation: null,
+        visualIndexStatus: null,
+      });
+    }
+  },
+
+  validateVisualModelPath: async (modelPath) => {
+    const validation = await validateVisualModelPathCommand(
+      modelPath ?? get().visualSearch.modelPath,
+    );
+    set({ visualModelValidation: validation });
+    return validation;
   },
 }));

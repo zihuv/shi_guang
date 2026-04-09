@@ -3,8 +3,6 @@ import { create } from "zustand"
 import {
   cancelImportTask as cancelImportTaskCommand,
   getImportTask,
-  importFile as importFileCommand,
-  importImageFromBase64 as importImageFromBase64Command,
   startImportTask,
 } from "@/services/tauri/files"
 import {
@@ -151,27 +149,11 @@ export const useImportStore = create<ImportStore>((set, get) => ({
   setImportTask: (task) => set({ importTask: task }),
 
   importFile: async (sourcePath, refresh = true, targetFolderId) => {
-    const selectedFolderId =
-      targetFolderId !== undefined
-        ? targetFolderId
-        : useLibraryQueryStore.getState().selectedFolderId
-
-    try {
-      const file = await importFileCommand({
-        sourcePath,
-        folderId: selectedFolderId,
-      })
-
-      if (refresh) {
-        await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId)
-        await useFolderStore.getState().loadFolders()
-      }
-
-      return file
-    } catch (error) {
-      console.error("Failed to import file:", error)
-      return null
+    const files = await get().importFiles([sourcePath], targetFolderId)
+    if (!refresh && files.length > 0) {
+      return files[0]
     }
+    return files[0] ?? null
   },
 
   importFiles: async (sourcePaths, targetFolderId) => {
@@ -206,28 +188,11 @@ export const useImportStore = create<ImportStore>((set, get) => ({
   },
 
   importImageFromBase64: async (base64Data, ext, refresh = true, targetFolderId) => {
-    const selectedFolderId =
-      targetFolderId !== undefined
-        ? targetFolderId
-        : useLibraryQueryStore.getState().selectedFolderId
-
-    try {
-      const file = await importImageFromBase64Command({
-        base64Data,
-        ext,
-        folderId: selectedFolderId,
-      })
-
-      if (refresh) {
-        await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId)
-        await useFolderStore.getState().loadFolders()
-      }
-
-      return file
-    } catch (error) {
-      console.error("Failed to import image from clipboard:", error)
-      return null
+    const files = await get().importImagesFromBase64([{ base64Data, ext }], targetFolderId)
+    if (!refresh && files.length > 0) {
+      return files[0]
     }
+    return files[0] ?? null
   },
 
   importImagesFromBase64: async (items, targetFolderId) => {
@@ -274,4 +239,3 @@ export const useImportStore = create<ImportStore>((set, get) => ({
     await cancelImportTaskCommand(task.id)
   },
 }))
-

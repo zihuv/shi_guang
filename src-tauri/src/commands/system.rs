@@ -66,8 +66,12 @@ fn ensure_target_folder_exists(target_folder_path: &str) -> Result<(), String> {
         return Err("Target folder path is empty".to_string());
     }
 
-    fs::create_dir_all(target_folder_path)
-        .map_err(|e| format!("Failed to create target folder '{}': {}", target_folder_path, e))
+    fs::create_dir_all(target_folder_path).map_err(|e| {
+        format!(
+            "Failed to create target folder '{}': {}",
+            target_folder_path, e
+        )
+    })
 }
 
 fn move_file_with_fallback(from: &Path, to: &Path) -> Result<(), String> {
@@ -188,7 +192,7 @@ fn copy_single_file(
     db: &Database,
     file_id: i64,
     target_folder_id: Option<i64>,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     let file = db
         .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
@@ -244,7 +248,7 @@ fn copy_single_file(
     )
     .map_err(|e| e.to_string())?;
 
-    Ok(())
+    Ok(imported_file.id)
 }
 
 fn remove_thumbnail_for_path(db: &Database, file_path: &str) -> Result<(), String> {
@@ -259,7 +263,11 @@ pub fn copy_file(
     target_folder_id: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    copy_single_file(&db, file_id, target_folder_id)
+    let imported_file_id = copy_single_file(&db, file_id, target_folder_id)?;
+    drop(db);
+
+    super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -269,9 +277,16 @@ pub fn copy_files(
     target_folder_id: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut imported_file_ids = Vec::new();
     for file_id in file_ids {
-        copy_single_file(&db, file_id, target_folder_id)?;
+        imported_file_ids.push(copy_single_file(&db, file_id, target_folder_id)?);
     }
+    drop(db);
+
+    for imported_file_id in imported_file_ids {
+        super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file_id);
+    }
+
     Ok(())
 }
 

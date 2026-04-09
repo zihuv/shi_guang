@@ -67,7 +67,7 @@ pub(crate) fn append_file_filter_sql(
                     let extensions: Vec<&str> = match ft.as_str() {
                         "image" => vec![
                             "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico", "tiff",
-                            "tif", "psd", "ai", "eps", "raw", "cr2", "nef", "arw", "dng",
+                            "tif", "avif", "psd", "ai", "eps", "raw", "cr2", "nef", "arw", "dng",
                             "heic", "heif",
                         ],
                         "video" => vec![

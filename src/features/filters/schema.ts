@@ -75,12 +75,14 @@ export function hasStructuredFilters(criteria: FilterCriteria) {
 export function buildFileFilterPayload(args: {
   criteria: FilterCriteria
   fallbackQuery?: string
+  naturalLanguageQuery?: string
   folderId?: number | null
 }): FileFilterPayload {
-  const { criteria, fallbackQuery, folderId } = args
+  const { criteria, fallbackQuery, naturalLanguageQuery, folderId } = args
 
   return {
     query: criteria.keyword || fallbackQuery || null,
+    natural_language_query: naturalLanguageQuery || null,
     folder_id: criteria.folderId ?? folderId ?? null,
     file_types: criteria.fileType !== "all" ? [criteria.fileType] : null,
     date_start: criteria.dateRange.start || null,

@@ -59,8 +59,8 @@ pub struct ImportTaskSnapshot {
     pub results: Vec<ImportTaskItemResult>,
 }
 
-pub(crate) mod files;
 pub(crate) mod ai;
+pub(crate) mod files;
 pub(crate) mod folders;
 pub(crate) mod imports;
 pub(crate) mod indexing;
@@ -80,6 +80,7 @@ pub struct PaginatedFiles {
 #[derive(Debug, Deserialize, Clone)]
 pub struct FileFilter {
     pub query: Option<String>,
+    pub natural_language_query: Option<String>,
     pub folder_id: Option<i64>,
     pub file_types: Option<Vec<String>>,
     pub date_start: Option<String>,

@@ -49,6 +49,17 @@ fn uuid_simple() -> String {
     format!("{:x}{:x}", duration.as_secs(), duration.subsec_nanos())
 }
 
+fn resolve_import_extension(fallback_ext: Option<&str>, file_data: &[u8]) -> String {
+    crate::media::detect_extension_from_content(None, file_data)
+        .map(str::to_string)
+        .or_else(|| {
+            fallback_ext
+                .map(|ext| ext.trim().trim_start_matches('.').to_ascii_lowercase())
+                .filter(|ext| !ext.is_empty())
+        })
+        .unwrap_or_else(|| "png".to_string())
+}
+
 fn import_file_with_database(
     db: &Database,
     source_path: &str,
@@ -60,16 +71,16 @@ fn import_file_with_database(
     }
 
     let target_dir = get_target_dir(db, folder_id)?;
-    let ext = source
+    let source_ext = source
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or("png")
-        .to_lowercase();
+        .map(|ext| ext.to_lowercase());
+    let image_data = fs::read(source).map_err(|e| e.to_string())?;
+    let ext = resolve_import_extension(source_ext.as_deref(), &image_data);
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
     let new_name = format!("{}_{}.{}", timestamp, uuid_simple(), ext);
     let dest_path = target_dir.join(&new_name);
 
-    let image_data = fs::read(source).map_err(|e| e.to_string())?;
     let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
     let created_at = metadata
         .created()
@@ -111,16 +122,12 @@ fn import_base64_with_database(
 ) -> Result<FileWithTags, String> {
     let target_dir = get_target_dir(db, folder_id)?;
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let final_ext = if ext.is_empty() {
-        "png".to_string()
-    } else {
-        ext.to_string()
-    };
-    let new_name = format!("paste_{}_{}.{}", timestamp, uuid_simple(), final_ext);
-    let dest_path = target_dir.join(&new_name);
 
     let engine = base64::engine::general_purpose::STANDARD;
     let image_data = engine.decode(base64_data).map_err(|e| e.to_string())?;
+    let final_ext = resolve_import_extension(Some(ext), &image_data);
+    let new_name = format!("paste_{}_{}.{}", timestamp, uuid_simple(), final_ext);
+    let dest_path = target_dir.join(&new_name);
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let file_record =
         crate::db::save_and_import_image(&image_data, &dest_path, folder_id, now.clone(), now)?;
@@ -169,7 +176,11 @@ pub fn import_file(
     }
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    import_file_with_database(&db, &source_path, folder_id)
+    let imported_file = import_file_with_database(&db, &source_path, folder_id)?;
+    drop(db);
+
+    super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file.id);
+    Ok(imported_file)
 }
 
 #[tauri::command]
@@ -180,7 +191,33 @@ pub fn import_image_from_base64(
     folder_id: Option<i64>,
 ) -> Result<FileWithTags, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    import_base64_with_database(&db, &base64_data, &ext, folder_id)
+    let imported_file = import_base64_with_database(&db, &base64_data, &ext, folder_id)?;
+    drop(db);
+
+    super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file.id);
+    Ok(imported_file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_import_extension;
+
+    #[test]
+    fn resolve_import_extension_prefers_detected_content() {
+        let bytes = [
+            0x00, 0x00, 0x00, 0x1C, b'f', b't', b'y', b'p', b'a', b'v', b'i', b'f', 0x00, 0x00,
+            0x00, 0x00,
+        ];
+
+        assert_eq!(resolve_import_extension(Some("png"), &bytes), "avif");
+    }
+
+    #[test]
+    fn resolve_import_extension_falls_back_to_source_ext() {
+        let bytes = b"not-an-image";
+
+        assert_eq!(resolve_import_extension(Some("pdf"), bytes), "pdf");
+    }
 }
 
 fn spawn_import_task(
@@ -273,6 +310,7 @@ fn spawn_import_task(
                     task.snapshot.processed += 1;
                     match result {
                         Ok(file) => {
+                            super::ai::run_post_import_pipeline(app_handle.clone(), file.id);
                             task.snapshot.success_count += 1;
                             task.snapshot.results.push(ImportTaskItemResult {
                                 index,

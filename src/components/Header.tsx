@@ -99,7 +99,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
               type="text"
-              placeholder="搜索文件名..."
+              placeholder="搜索图片，支持中文自然语言..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"

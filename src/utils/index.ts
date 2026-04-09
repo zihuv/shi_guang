@@ -157,6 +157,60 @@ export function getFileMimeType(path: string): string {
   return MIME_TYPES[ext] || 'application/octet-stream'
 }
 
+function hasSignature(bytes: Uint8Array, signature: number[], offset = 0): boolean {
+  if (bytes.length < offset + signature.length) {
+    return false
+  }
+
+  return signature.every((value, index) => bytes[offset + index] === value)
+}
+
+function asciiSlice(bytes: Uint8Array, start: number, end: number): string {
+  return Array.from(bytes.slice(start, end))
+    .map((byte) => String.fromCharCode(byte))
+    .join("")
+}
+
+function detectMimeTypeFromContents(bytes: Uint8Array, path: string): string {
+  if (hasSignature(bytes, [0xff, 0xd8, 0xff])) {
+    return "image/jpeg"
+  }
+  if (hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return "image/png"
+  }
+  if (asciiSlice(bytes, 0, 4) === "GIF8") {
+    return "image/gif"
+  }
+  if (asciiSlice(bytes, 0, 4) === "RIFF" && asciiSlice(bytes, 8, 12) === "WEBP") {
+    return "image/webp"
+  }
+  if (asciiSlice(bytes, 4, 8) === "ftyp") {
+    const brands = asciiSlice(bytes, 8, Math.min(bytes.length, 32))
+    if (brands.includes("avif") || brands.includes("avis")) {
+      return "image/avif"
+    }
+    if (brands.includes("mif1") || brands.includes("heic") || brands.includes("heif")) {
+      return "image/heif"
+    }
+  }
+  if (hasSignature(bytes, [0x42, 0x4d])) {
+    return "image/bmp"
+  }
+  if (hasSignature(bytes, [0x49, 0x49, 0x2a, 0x00]) || hasSignature(bytes, [0x4d, 0x4d, 0x00, 0x2a])) {
+    return "image/tiff"
+  }
+  if (hasSignature(bytes, [0x00, 0x00, 0x01, 0x00])) {
+    return "image/x-icon"
+  }
+
+  const textHead = new TextDecoder("utf-8", { fatal: false }).decode(bytes.slice(0, 256)).trimStart()
+  if (textHead.startsWith("<svg") || textHead.startsWith("<?xml")) {
+    return "image/svg+xml"
+  }
+
+  return getFileMimeType(path)
+}
+
 export function isImageFile(ext: string): boolean {
   return IMAGE_EXTENSIONS.includes(normalizeExt(ext))
 }
@@ -236,7 +290,7 @@ export function getFileKind(ext: string): FileKind {
 export async function getFileSrc(path: string): Promise<string> {
   try {
     const contents = await readFile(path)
-    const blob = new Blob([contents], { type: getFileMimeType(path) })
+    const blob = new Blob([contents], { type: detectMimeTypeFromContents(contents, path) })
     return URL.createObjectURL(blob)
   } catch (e: any) {
     if (isMissingFileError(e)) {
@@ -246,6 +300,12 @@ export async function getFileSrc(path: string): Promise<string> {
     console.error('Failed to read file:', e)
     return ''
   }
+}
+
+export interface BrowserDecodedImageOptions {
+  maxEdge?: number
+  quality?: number
+  outputMimeType?: string
 }
 
 export async function getTextPreviewContent(path: string, size?: number): Promise<string> {
@@ -400,7 +460,10 @@ export async function getImageSrc(path: string): Promise<string> {
   return getFileSrc(path)
 }
 
-export async function buildAiImageDataUrl(path: string): Promise<string> {
+export async function buildBrowserDecodedImageDataUrl(
+  path: string,
+  options: BrowserDecodedImageOptions = {},
+): Promise<string> {
   const sourceUrl = await getFileSrc(path)
   if (!sourceUrl) {
     throw new Error("无法读取图片文件")
@@ -426,7 +489,7 @@ export async function buildAiImageDataUrl(path: string): Promise<string> {
         return
       }
 
-      const maxEdge = 1280
+      const maxEdge = options.maxEdge ?? 1280
       const scale = Math.min(1, maxEdge / Math.max(width, height))
       const canvas = document.createElement("canvas")
       canvas.width = Math.max(1, Math.round(width * scale))
@@ -442,7 +505,10 @@ export async function buildAiImageDataUrl(path: string): Promise<string> {
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
 
       try {
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
+        const dataUrl = canvas.toDataURL(
+          options.outputMimeType ?? "image/jpeg",
+          options.quality ?? 0.85,
+        )
         cleanup()
         resolve(dataUrl)
       } catch (error) {
@@ -457,6 +523,14 @@ export async function buildAiImageDataUrl(path: string): Promise<string> {
     }
 
     image.src = sourceUrl
+  })
+}
+
+export async function buildAiImageDataUrl(path: string): Promise<string> {
+  return buildBrowserDecodedImageDataUrl(path, {
+    maxEdge: 1280,
+    quality: 0.85,
+    outputMimeType: "image/jpeg",
   })
 }
 

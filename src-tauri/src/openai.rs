@@ -4,19 +4,22 @@ use crate::db::{Database, FileWithTags, Tag};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 const AI_CONFIG_SETTING_KEY: &str = "aiConfig";
 const MAX_EXISTING_TAGS_IN_PROMPT: usize = 200;
+const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AiConfig {
+#[derive(Debug, Clone)]
+pub struct AiEndpointConfig {
     pub base_url: String,
     pub api_key: String,
-    pub multimodal_model: String,
-    pub embedding_model: Option<String>,
-    pub reranker_model: Option<String>,
+    pub model: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiConfig {
+    pub metadata: AiEndpointConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -26,39 +29,96 @@ pub struct AiMetadataSuggestion {
     pub description: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct EmbeddingRequest {
-    pub input: Vec<String>,
+fn summarize_success_text(prefix: &str, text: Option<String>) -> String {
+    let snippet = text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(48).collect::<String>());
+
+    match snippet {
+        Some(snippet) => format!("{prefix}，响应示例: {snippet}"),
+        None => prefix.to_string(),
+    }
 }
 
-#[derive(Debug, Clone)]
-pub struct RerankRequest {
-    pub query: String,
-    pub documents: Vec<String>,
-    pub top_n: Option<usize>,
+fn resolve_endpoint_config(root: &Value, key: &str, legacy_model_key: &str) -> AiEndpointConfig {
+    let endpoint = root.get(key).and_then(|value| value.as_object());
+    let legacy_base_url = root
+        .get("baseUrl")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim();
+    let legacy_api_key = root
+        .get("apiKey")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim();
+    let legacy_model = root
+        .get(legacy_model_key)
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim();
+
+    AiEndpointConfig {
+        base_url: endpoint
+            .and_then(|value| value.get("baseUrl"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| {
+                if legacy_base_url.is_empty() {
+                    DEFAULT_OPENAI_BASE_URL
+                } else {
+                    legacy_base_url
+                }
+            })
+            .to_string(),
+        api_key: endpoint
+            .and_then(|value| value.get("apiKey"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .unwrap_or(legacy_api_key)
+            .to_string(),
+        model: endpoint
+            .and_then(|value| value.get("model"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .unwrap_or(legacy_model)
+            .to_string(),
+    }
 }
 
-#[derive(Debug, Clone)]
-pub struct RerankResult {
-    pub index: usize,
-    pub relevance_score: f32,
-}
-
-pub fn load_ai_config(db: &Database) -> Result<AiConfig, String> {
+fn parse_ai_config(db: &Database) -> Result<AiConfig, String> {
     let raw = db
         .get_setting(AI_CONFIG_SETTING_KEY)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "请先在设置中填写 AI 配置".to_string())?;
-    let config: AiConfig = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let value: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
 
-    if config.base_url.trim().is_empty()
-        || config.api_key.trim().is_empty()
-        || config.multimodal_model.trim().is_empty()
-    {
-        return Err("AI 配置不完整，请填写 Base URL、API Key 和多模态模型".to_string());
+    Ok(AiConfig {
+        metadata: resolve_endpoint_config(&value, "metadata", "multimodalModel"),
+    })
+}
+
+fn validate_endpoint_config(
+    config: &AiEndpointConfig,
+    name: &str,
+) -> Result<AiEndpointConfig, String> {
+    if config.base_url.trim().is_empty() || config.api_key.trim().is_empty() {
+        return Err(format!("{name} 配置不完整，请填写 Base URL 和 API Key"));
     }
 
-    Ok(config)
+    if config.model.trim().is_empty() {
+        return Err(format!("{name} 配置不完整，请填写模型"));
+    }
+
+    Ok(config.clone())
+}
+
+pub fn load_ai_config(db: &Database) -> Result<AiEndpointConfig, String> {
+    let config = parse_ai_config(db)?;
+    validate_endpoint_config(&config.metadata, "图片元数据分析")
 }
 
 fn build_chat_completions_url(base_url: &str) -> String {
@@ -70,34 +130,7 @@ fn build_chat_completions_url(base_url: &str) -> String {
     }
 }
 
-fn build_api_url(base_url: &str, path: &str) -> String {
-    let trimmed = base_url.trim().trim_end_matches('/');
-    if trimmed.ends_with(path) {
-        trimmed.to_string()
-    } else {
-        format!("{trimmed}/{path}")
-    }
-}
-
-fn embedding_model(config: &AiConfig) -> Result<&str, String> {
-    config
-        .embedding_model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "未配置 Embedding 模型".to_string())
-}
-
-fn reranker_model(config: &AiConfig) -> Result<&str, String> {
-    config
-        .reranker_model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "未配置 Reranker 模型".to_string())
-}
-
-async fn post_json(config: &AiConfig, url: String, body: Value) -> Result<Value, String> {
+async fn post_json(config: &AiEndpointConfig, url: String, body: Value) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let response = client
         .post(url)
@@ -253,9 +286,9 @@ fn build_empty_content_error(payload: &Value) -> String {
         .and_then(extract_message_text);
 
     match refusal {
-        Some(refusal_text) => format!(
-            "AI 响应缺少内容，finish_reason={finish_reason}，refusal={refusal_text}"
-        ),
+        Some(refusal_text) => {
+            format!("AI 响应缺少内容，finish_reason={finish_reason}，refusal={refusal_text}")
+        }
         None => format!(
             "AI 响应缺少内容，finish_reason={finish_reason}，payload={}",
             truncate_for_error(payload, 500)
@@ -270,7 +303,7 @@ fn should_retry_metadata_error(error: &str) -> bool {
 }
 
 async fn request_image_metadata_once(
-    config: &AiConfig,
+    config: &AiEndpointConfig,
     file: &FileWithTags,
     existing_tags: &[Tag],
     image_data_url: &str,
@@ -303,7 +336,7 @@ async fn request_image_metadata_once(
     );
 
     let body = serde_json::json!({
-        "model": config.multimodal_model,
+        "model": config.model,
         "messages": [
             {
                 "role": "system",
@@ -345,7 +378,7 @@ fn extract_first_json_object(text: &str) -> Result<&str, String> {
 }
 
 pub async fn request_image_metadata(
-    config: &AiConfig,
+    config: &AiEndpointConfig,
     file: &FileWithTags,
     existing_tags: &[Tag],
     image_data_url: &str,
@@ -366,87 +399,28 @@ pub async fn request_image_metadata(
     Err(last_error.unwrap_or_else(|| "AI 请求失败".to_string()))
 }
 
-pub async fn create_embeddings(
-    config: &AiConfig,
-    request: EmbeddingRequest,
-) -> Result<Vec<Vec<f32>>, String> {
-    if request.input.is_empty() {
-        return Ok(Vec::new());
-    }
-
+pub async fn test_metadata_endpoint(config: &AiEndpointConfig) -> Result<String, String> {
     let body = serde_json::json!({
-        "model": embedding_model(config)?,
-        "input": request.input,
-        "encoding_format": "float"
+        "model": config.model.trim(),
+        "messages": [
+            {
+                "role": "system",
+                "content": "你是一个接口连通性测试助手。"
+            },
+            {
+                "role": "user",
+                "content": "只回复 ok"
+            }
+        ],
+        "enable_thinking": false,
+        "stream": false,
+        "temperature": 0,
+        "max_tokens": 16,
     });
 
-    let payload = post_json(config, build_api_url(&config.base_url, "embeddings"), body).await?;
-    let items = payload
-        .get("data")
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| "Embedding 响应缺少 data".to_string())?;
-
-    items
-        .iter()
-        .map(|item| {
-            let embedding = item
-                .get("embedding")
-                .and_then(|value| value.as_array())
-                .ok_or_else(|| "Embedding 响应缺少 embedding".to_string())?;
-            embedding
-                .iter()
-                .map(|value| {
-                    value
-                        .as_f64()
-                        .map(|number| number as f32)
-                        .ok_or_else(|| "Embedding 向量含有非数字值".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .collect()
-}
-
-pub async fn rerank_documents(
-    config: &AiConfig,
-    request: RerankRequest,
-) -> Result<Vec<RerankResult>, String> {
-    if request.documents.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let body = serde_json::json!({
-        "model": reranker_model(config)?,
-        "query": request.query,
-        "documents": request.documents,
-        "top_n": request.top_n.unwrap_or(5),
-        "return_documents": false
-    });
-
-    let payload = post_json(config, build_api_url(&config.base_url, "rerank"), body).await?;
-    let results = payload
-        .get("results")
-        .or_else(|| payload.get("data"))
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| "Rerank 响应缺少 results/data".to_string())?;
-
-    results
-        .iter()
-        .map(|item| {
-            let index = item
-                .get("index")
-                .or_else(|| item.get("document_index"))
-                .and_then(|value| value.as_u64())
-                .ok_or_else(|| "Rerank 响应缺少 index".to_string())?;
-            let relevance_score = item
-                .get("relevance_score")
-                .or_else(|| item.get("score"))
-                .and_then(|value| value.as_f64())
-                .ok_or_else(|| "Rerank 响应缺少 score".to_string())?;
-
-            Ok(RerankResult {
-                index: index as usize,
-                relevance_score: relevance_score as f32,
-            })
-        })
-        .collect()
+    let payload = post_json(config, build_chat_completions_url(&config.base_url), body).await?;
+    Ok(summarize_success_text(
+        "图片元数据分析接口可用",
+        extract_response_text(&payload),
+    ))
 }

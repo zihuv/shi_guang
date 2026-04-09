@@ -81,6 +81,32 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 path TEXT NOT NULL UNIQUE
             );
+
+            CREATE TABLE IF NOT EXISTS file_embeddings (
+                file_id INTEGER PRIMARY KEY,
+                model TEXT NOT NULL,
+                dimensions INTEGER NOT NULL,
+                embedding BLOB,
+                search_text TEXT NOT NULL DEFAULT '',
+                source_updated_at TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                last_error TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS file_visual_embeddings (
+                file_id INTEGER PRIMARY KEY,
+                model_id TEXT NOT NULL,
+                dimensions INTEGER NOT NULL,
+                embedding BLOB,
+                source_size INTEGER NOT NULL,
+                source_modified_at TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                last_error TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+            );
             ",
         )?;
 
@@ -432,6 +458,8 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_tags_parent_sort_order ON tags(parent_id, sort_order, name);
             CREATE INDEX IF NOT EXISTS idx_tags_sync_id ON tags(sync_id);
             CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id_file_id ON file_tags(tag_id, file_id);
+            CREATE INDEX IF NOT EXISTS idx_file_embeddings_model_status ON file_embeddings(model, status);
+            CREATE INDEX IF NOT EXISTS idx_file_visual_embeddings_model_status ON file_visual_embeddings(model_id, status);
             "
         )?;
 

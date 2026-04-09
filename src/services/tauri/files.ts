@@ -3,6 +3,7 @@ import type { FileItem, ImportTaskSnapshot, PaginatedFilesResponse } from "@/sto
 
 export interface FileFilterPayload {
   query: string | null
+  natural_language_query: string | null
   folder_id: number | null
   file_types: string[] | null
   date_start: string | null
@@ -16,6 +17,45 @@ export interface FileFilterPayload {
   sort_by: string | null
   sort_direction: string | null
 }
+
+export interface VisualIndexRebuildResult {
+  total: number
+  indexed: number
+  failed: number
+  skipped: number
+}
+
+export interface VisualIndexStatus {
+  modelValid: boolean
+  message: string
+  modelId: string | null
+  version: string | null
+  indexedCount: number
+  failedCount: number
+  pendingCount: number
+  outdatedCount: number
+  totalImageCount: number
+}
+
+export interface VisualModelValidationResult {
+  valid: boolean
+  message: string
+  normalizedModelPath: string
+  modelId: string | null
+  version: string | null
+  embeddingDim: number | null
+  contextLength: number | null
+  missingFiles: string[]
+}
+
+export interface VisualIndexRetryCandidate {
+  fileId: number
+  path: string
+  ext: string
+  lastError: string
+}
+
+export type AiEndpointTarget = "metadata"
 
 export function getAllFiles(args: {
   page: number
@@ -92,6 +132,39 @@ export function analyzeFileMetadata(fileId: number, imageDataUrl?: string) {
     fileId,
     imageDataUrl,
   })
+}
+
+export function rebuildVisualIndex() {
+  return invokeTauri<VisualIndexRebuildResult>("rebuild_visual_index")
+}
+
+export function reindexFileVisualEmbedding(fileId: number, imageDataUrl?: string) {
+  return invokeTauri<void>("reindex_file_visual_embedding", {
+    fileId,
+    imageDataUrl,
+  })
+}
+
+export function getVisualIndexStatus() {
+  return invokeTauri<VisualIndexStatus>("get_visual_index_status")
+}
+
+export function getVisualIndexRetryCandidates() {
+  return invokeTauri<VisualIndexRetryCandidate[]>("get_visual_index_retry_candidates")
+}
+
+export function validateVisualModelPath(modelPath: string) {
+  return invokeTauri<VisualModelValidationResult>("validate_visual_model_path", {
+    modelPath,
+  })
+}
+
+export function getRecommendedVisualModelPath() {
+  return invokeTauri<string | null>("get_recommended_visual_model_path")
+}
+
+export function testAiEndpoint(target: AiEndpointTarget) {
+  return invokeTauri<string>("test_ai_endpoint", { target })
 }
 
 export function importFile(args: {

@@ -16,9 +16,9 @@ pub struct ColorInfo {
 }
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "tif", "psd", "ai", "eps",
-    "raw", "cr2", "nef", "arw", "dng", "heic", "heif", "pdf", "mp4", "avi", "mov", "mkv", "wmv",
-    "flv", "webm", "m4v", "3gp",
+    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "tif", "avif", "psd", "ai",
+    "eps", "raw", "cr2", "nef", "arw", "dng", "heic", "heif", "pdf", "mp4", "avi", "mov", "mkv",
+    "wmv", "flv", "webm", "m4v", "3gp",
 ];
 
 pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
@@ -275,6 +275,7 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
 /// 检查是否为不支持颜色提取的图像格式
 fn is_color_extraction_unsupported_format(ext: &str) -> bool {
     ext.eq_ignore_ascii_case("svg")
+        || ext.eq_ignore_ascii_case("avif")
         || ext.eq_ignore_ascii_case("pdf")
         || ext.eq_ignore_ascii_case("mp4")
         || ext.eq_ignore_ascii_case("avi")

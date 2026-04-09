@@ -2,6 +2,8 @@ mod commands;
 mod db;
 mod http_server;
 mod indexer;
+mod media;
+mod ml;
 mod openai;
 mod path_utils;
 mod storage;
@@ -53,6 +55,7 @@ impl RecentImports {
 
 pub struct AppState {
     pub db: Mutex<db::Database>,
+    pub visual_model_runtime: Mutex<ml::VisualModelRuntime>,
     pub app_data_dir: std::path::PathBuf,
     pub recent_imports: Mutex<RecentImports>,
     pub db_path: std::path::PathBuf, // Add db_path for HTTP server to create its own connection
@@ -125,6 +128,7 @@ pub fn run() {
 
             app.manage(AppState {
                 db: Mutex::new(database),
+                visual_model_runtime: Mutex::new(ml::VisualModelRuntime::default()),
                 app_data_dir: app_data_dir.clone(),
                 recent_imports: Mutex::new(RecentImports::new()),
                 db_path: db_path.clone(),
@@ -146,6 +150,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::ai::analyze_file_metadata,
+            commands::ai::rebuild_visual_index,
+            commands::ai::reindex_file_visual_embedding,
+            commands::ai::get_visual_index_status,
+            commands::ai::get_visual_index_retry_candidates,
+            commands::ai::get_recommended_visual_model_path,
+            commands::ai::validate_visual_model_path,
+            commands::ai::test_ai_endpoint,
             commands::files::get_all_files,
             commands::files::search_files,
             commands::tags::get_all_tags,

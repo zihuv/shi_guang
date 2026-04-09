@@ -17,6 +17,9 @@ For Rust-only validation, run `cargo test` or `cargo check` from `src-tauri/`.
 ## Coding Style & Naming Conventions
 Follow the existing code style in each layer: TypeScript files generally use 2-space indentation and double quotes in newer files; Rust uses `rustfmt` defaults with 4 spaces. Keep React components and Zustand stores in PascalCase file names such as `FileGrid.tsx` and `fileStore.ts`. Prefer descriptive function names and keep Tauri command logic in `src-tauri/src/commands.rs` or adjacent backend modules. Use Tailwind utility classes in JSX and keep shared class composition in helpers like `src/lib/utils.ts`. If a file grows too large, refactor it into smaller modules where appropriate.
 
+## Engineering Principles
+Prefer systematic thinking. Focus on the root cause of a problem rather than only addressing surface symptoms.
+
 ## Testing Guidelines
 There is no dedicated frontend test runner configured yet. Before opening a PR, at minimum run `pnpm build` and validate the affected flow manually in `pnpm tauri dev`. For backend changes, add Rust unit tests where practical and run `cargo test` in `src-tauri/`. Name new Rust tests after the behavior they verify, for example `imports_images_from_drop_event`.
 
