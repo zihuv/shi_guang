@@ -31,6 +31,70 @@ function getErrorMessage(error) {
   return message;
 }
 
+async function importImageToShiguang(imageUrl, referer) {
+  const response = await fetch(`${SHIGUANG_SERVER_URL}/api/import-from-url`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      image_url: imageUrl,
+      referer
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Server error: ${errorText || `HTTP ${response.status}`}`);
+  }
+
+  const result = await response.json();
+  if (!result.success) {
+    throw new Error(result.error || 'Unknown error');
+  }
+
+  return result;
+}
+
+async function collectImage({
+  tabId,
+  imageUrl,
+  referer,
+  missingImageMessage = '未找到图片，请右键点击图片后重试',
+  notifyOnError = true
+}) {
+  if (!imageUrl) {
+    if (notifyOnError) {
+      await notifyResult(tabId, missingImageMessage, 'error');
+    }
+
+    return {
+      success: false,
+      error: missingImageMessage
+    };
+  }
+
+  try {
+    const result = await importImageToShiguang(imageUrl, referer);
+    return {
+      success: true,
+      result
+    };
+  } catch (error) {
+    console.error('Failed to import image:', error);
+    const errorMessage = getErrorMessage(error);
+
+    if (notifyOnError) {
+      await notifyResult(tabId, `发送失败: ${errorMessage}`, 'error', 3600);
+    }
+
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
 async function notifyResult(tabId, message, type = 'info', duration = 3000) {
   const shownInPage = await showPageToast(tabId, message, type, duration);
   if (shownInPage) {
@@ -78,39 +142,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 
-  if (imageUrl) {
-    try {
-      // Send image URL and page URL (referer) to backend for downloading
-      const importResponse = await fetch(`${SHIGUANG_SERVER_URL}/api/import-from-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          image_url: imageUrl,
-          referer
-        })
-      });
-
-      if (!importResponse.ok) {
-        const errorText = await importResponse.text();
-        throw new Error(`Server error: ${errorText}`);
-      }
-
-      const result = await importResponse.json();
-
-      if (result.success) {
-        return;
-      } else {
-        throw new Error(result.error || 'Unknown error');
-      }
-    } catch (error) {
-      console.error('Failed to import image:', error);
-      await notifyResult(tabId, `发送失败: ${getErrorMessage(error)}`, 'error', 3600);
-    }
-  } else {
-    await notifyResult(tabId, '未找到图片，请右键点击图片后重试', 'error');
-  }
+  await collectImage({
+    tabId,
+    imageUrl,
+    referer,
+    missingImageMessage: '未找到图片，请右键点击图片后重试'
+  });
 });
 
 // Check server connection
@@ -125,6 +162,18 @@ async function checkServerConnection() {
 
 // Export for popup
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action === 'collectImage') {
+    const payload = message.payload || {};
+    collectImage({
+      tabId: _sender.tab?.id,
+      imageUrl: payload.imageUrl,
+      referer: payload.referer || _sender.tab?.url,
+      missingImageMessage: payload.missingImageMessage || '未找到可采集的图片',
+      notifyOnError: false
+    }).then(sendResponse);
+    return true;
+  }
+
   if (message.action === 'checkConnection') {
     checkServerConnection().then(connected => {
       sendResponse({ connected });

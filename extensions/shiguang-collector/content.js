@@ -1,7 +1,6 @@
 // Content Script - 在页面中执行
 // 处理小红书自定义右键菜单，注入"发送到拾光"选项
 
-const SHIGUANG_SERVER_URL = 'http://127.0.0.1:7845';
 const TOAST_CONTAINER_ID = 'shiguang-toast-container';
 const TOAST_REMOVE_DELAY = 240;
 
@@ -133,23 +132,41 @@ function getErrorMessage(error) {
   return message;
 }
 
+async function requestCollectImage(imageUrl, options = {}) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'collectImage',
+    payload: {
+      imageUrl,
+      referer: options.referer || window.location.href,
+      missingImageMessage: options.missingImageMessage
+    }
+  });
+
+  if (!response) {
+    throw new Error('拾光采集器后台未响应');
+  }
+
+  return response;
+}
+
 // 尝试从元素中获取图片 URL
 function getImageUrlFromElement(target) {
-  if (!target) return null;
+  const element = target?.nodeType === Node.TEXT_NODE ? target.parentElement : target;
+  if (!(element instanceof Element)) return null;
 
   // 1. 检查是否是图片元素
-  if (target.tagName === 'IMG') {
+  if (element.tagName === 'IMG') {
     // 优先使用 data-src 或 data-original 等懒加载属性
-    return target.dataset.src || target.dataset.original || target.dataset.lazy || target.src;
+    return element.dataset.src || element.dataset.original || element.dataset.lazy || element.src;
   }
 
   // 2. 检查 data-src 属性
-  if (target.dataset.src || target.dataset.original) {
-    return target.dataset.src || target.dataset.original;
+  if (element.dataset.src || element.dataset.original) {
+    return element.dataset.src || element.dataset.original;
   }
 
   // 3. 检查是否是背景图片
-  const style = window.getComputedStyle(target);
+  const style = window.getComputedStyle(element);
   const bgImage = style.backgroundImage;
 
   if (bgImage && bgImage !== 'none' && bgImage.startsWith('url(')) {
@@ -160,13 +177,13 @@ function getImageUrlFromElement(target) {
   }
 
   // 4. 检查子元素是否有图片
-  const img = target.querySelector('img');
+  const img = element.querySelector('img');
   if (img) {
     return img.dataset.src || img.dataset.original || img.dataset.lazy || img.src;
   }
 
   // 5. 查找父元素中的图片
-  let parent = target.parentElement;
+  let parent = element.parentElement;
   while (parent && parent !== document.body) {
     const img = parent.querySelector('img');
     if (img) {
@@ -183,8 +200,43 @@ document.addEventListener('contextmenu', (event) => {
   const target = event.target;
   lastRightClickTarget = target;
   lastImageUrl = getImageUrlFromElement(target);
-  console.log('右键点击:', target.tagName, '图片URL:', lastImageUrl);
+  console.log('右键点击:', target?.tagName || target?.nodeName, '图片URL:', lastImageUrl);
 });
+
+document.addEventListener('click', async (event) => {
+  if (event.button !== 0 || !event.altKey) {
+    return;
+  }
+
+  const target = event.target;
+  const imageUrl = getImageUrlFromElement(target);
+
+  if (!imageUrl) {
+    return;
+  }
+
+  lastRightClickTarget = target;
+  lastImageUrl = imageUrl;
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  try {
+    const result = await requestCollectImage(imageUrl, {
+      missingImageMessage: '未找到可采集的图片'
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || '未知错误');
+    }
+
+    showToast('已发送到拾光', 'success', 2200);
+  } catch (error) {
+    console.error('Alt+左键发送到拾光失败:', error);
+    showToast('发送失败: ' + getErrorMessage(error), 'error', 3600);
+  }
+}, true);
 
 // 小红书自定义菜单处理
 function handleXiaohongshuMenu() {
@@ -290,28 +342,15 @@ function injectMenuItem(menuContainer) {
     menuItem.textContent = '正在发送...';
 
     try {
-      console.log('发送到拾光:', SHIGUANG_SERVER_URL + '/api/import-from-url');
-
-      const response = await fetch(`${SHIGUANG_SERVER_URL}/api/import-from-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          image_url: imageUrl,
-          referer: window.location.href
-        })
+      const result = await requestCollectImage(imageUrl, {
+        missingImageMessage: '未找到图片，请右键点击图片后重试'
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP ${response.status}`);
-      }
-
-      const result = await response.json();
-
       if (result.success) {
-        menuItem.textContent = '发送到拾光';
+        menuItem.textContent = '发送成功';
+        setTimeout(() => {
+          menuItem.textContent = '发送到拾光';
+        }, 1200);
       } else {
         const errorMsg = result.error || '未知错误';
         menuItem.textContent = '发送失败: ' + errorMsg;
