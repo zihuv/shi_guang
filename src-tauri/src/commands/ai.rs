@@ -26,6 +26,18 @@ pub struct VisualIndexRebuildResult {
     pub skipped: usize,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualIndexProgressPayload {
+    pub processed: usize,
+    pub total: usize,
+    pub indexed: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    pub current_file_id: i64,
+    pub current_file_name: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualIndexRetryCandidatePayload {
@@ -639,9 +651,9 @@ pub fn get_visual_index_retry_candidates(
         .collect())
 }
 
-#[tauri::command]
-pub fn rebuild_visual_index(
-    state: State<'_, AppState>,
+fn rebuild_visual_index_impl(
+    state: &AppState,
+    app_handle: Option<&tauri::AppHandle>,
 ) -> Result<VisualIndexRebuildResult, String> {
     let (resolved_model, candidates) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -660,7 +672,22 @@ pub fn rebuild_visual_index(
         skipped: 0,
     };
 
-    for candidate in candidates {
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        if let Some(app_handle) = app_handle {
+            let _ = app_handle.emit(
+                "visual-index-progress",
+                VisualIndexProgressPayload {
+                    processed: index + 1,
+                    total: result.total,
+                    indexed: result.indexed,
+                    failed: result.failed,
+                    skipped: result.skipped,
+                    current_file_id: candidate.file.id,
+                    current_file_name: candidate.file.name.clone(),
+                },
+            );
+        }
+
         match reindex_visual_candidate(&state, &resolved_model, &candidate, None) {
             Ok(()) => {
                 result.indexed += 1;
@@ -681,6 +708,18 @@ pub fn rebuild_visual_index(
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn rebuild_visual_index(
+    app_handle: tauri::AppHandle,
+) -> Result<VisualIndexRebuildResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AppState>();
+        rebuild_visual_index_impl(&state, Some(&app_handle))
+    })
+    .await
+    .map_err(|e| format!("视觉索引后台任务失败: {}", e))?
 }
 
 #[tauri::command]

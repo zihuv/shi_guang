@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import {
   testAiEndpoint,
@@ -44,6 +45,11 @@ interface SettingsModalProps {
 }
 
 type SettingsSection = "general" | "ai" | "shortcuts";
+
+interface VisualIndexProgressPayload {
+  processed: number;
+  total: number;
+}
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const indexPaths = useSettingsStore((state) => state.indexPaths);
@@ -216,6 +222,42 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       await refreshVisualSearchStatus();
     } finally {
       setIsValidatingModelDir(false);
+    }
+  };
+
+  const handleRebuildVisualIndex = async () => {
+    setIsRebuildingVisual(true);
+    const loadingToast = toast.loading("正在重建视觉索引...");
+    let unlistenProgress: UnlistenFn | null = null;
+
+    try {
+      unlistenProgress = await listen<VisualIndexProgressPayload>(
+        "visual-index-progress",
+        (event) => {
+          const { processed, total } = event.payload;
+          if (total <= 0) {
+            toast.loading("正在重建视觉索引...", { id: loadingToast });
+            return;
+          }
+
+          toast.loading(`正在重建视觉索引... ${processed}/${total}`, {
+            id: loadingToast,
+          });
+        },
+      );
+
+      const result = await rebuildVisualIndex();
+      toast.success(
+        `视觉索引完成：成功 ${result.indexed}，失败 ${result.failed}，跳过 ${result.skipped}`,
+        { id: loadingToast },
+      );
+    } catch (error) {
+      toast.error(`重建视觉索引失败: ${String(error)}`, {
+        id: loadingToast,
+      });
+    } finally {
+      unlistenProgress?.();
+      setIsRebuildingVisual(false);
     }
   };
 
@@ -747,23 +789,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                           <Button
                             variant="outline"
                             disabled={isRebuildingVisual}
-                            onClick={async () => {
-                              setIsRebuildingVisual(true)
-                              const loadingToast = toast.loading("正在重建视觉索引...")
-                              try {
-                                const result = await rebuildVisualIndex()
-                                toast.success(
-                                  `视觉索引完成：成功 ${result.indexed}，失败 ${result.failed}，跳过 ${result.skipped}`,
-                                  { id: loadingToast },
-                                )
-                              } catch (error) {
-                                toast.error(`重建视觉索引失败: ${String(error)}`, {
-                                  id: loadingToast,
-                                })
-                              } finally {
-                                setIsRebuildingVisual(false)
-                              }
-                            }}
+                            onClick={() => void handleRebuildVisualIndex()}
                           >
                             {isRebuildingVisual ? "重建中..." : "重建视觉索引"}
                           </Button>
