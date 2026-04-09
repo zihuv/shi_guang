@@ -23,7 +23,13 @@ import {
 } from "@/services/tauri/tags"
 import { buildFileFilterPayload, hasStructuredFilters } from "@/features/filters/schema"
 import { getErrorMessage } from "@/services/tauri/core"
-import { parseFile, parseFileList, type FileItem, type PaginatedFilesResponse } from "@/stores/fileTypes"
+import {
+  parseFile,
+  parseFileList,
+  type FileItem,
+  type PaginatedFilesResponse,
+  type VisualSearchDebugScore,
+} from "@/stores/fileTypes"
 
 interface LibraryPagination {
   page: number
@@ -104,19 +110,69 @@ function applyPaginatedFilesResult(
   return true
 }
 
+function roundDebugScore(score: number) {
+  return Number(score.toFixed(6))
+}
+
+function getAscendingPercentile(scores: number[], percentile: number) {
+  const index = Math.max(0, Math.ceil(scores.length * percentile) - 1)
+  return scores[Math.min(index, scores.length - 1)] ?? 0
+}
+
+function buildPageScoreSummary(debugScores: VisualSearchDebugScore[]) {
+  const scores = debugScores
+    .map((entry) => entry.score)
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right)
+
+  if (!scores.length) {
+    return null
+  }
+
+  return {
+    count: scores.length,
+    top: scores[scores.length - 1],
+    p90: getAscendingPercentile(scores, 0.90),
+    p50: getAscendingPercentile(scores, 0.50),
+    min: scores[0],
+  }
+}
+
 function logVisualSearchDebugScores(
   result: PaginatedFilesResponse,
   naturalLanguageQuery?: string,
 ) {
-  if (!import.meta.env.DEV) {
+  const query = naturalLanguageQuery?.trim()
+  if (!query) {
     return
   }
 
-  const query = naturalLanguageQuery?.trim()
-  const debugScores = result.debugScores
-  if (!query || !debugScores?.length) {
+  const debugScores = result.debugScores ?? []
+  if (!debugScores.length) {
+    console.info("[visual-search] no debug scores received", {
+      query,
+      page: result.page,
+      total: result.total,
+    })
     return
   }
+
+  const pageScoreSummary = debugScores?.length
+    ? buildPageScoreSummary(debugScores)
+    : null
+  if (!pageScoreSummary) {
+    return
+  }
+
+  console.info("[visual-search] score distribution", {
+    query,
+    scope: "currentPage",
+    count: pageScoreSummary.count,
+    top: roundDebugScore(pageScoreSummary.top),
+    p90: roundDebugScore(pageScoreSummary.p90),
+    p50: roundDebugScore(pageScoreSummary.p50),
+    min: roundDebugScore(pageScoreSummary.min),
+  })
 
   console.debug("[visual-search] similarity scores", {
     query,
@@ -126,7 +182,7 @@ function logVisualSearchDebugScores(
       rank: index + 1 + (result.page - 1) * result.page_size,
       fileId: entry.fileId,
       name: entry.name,
-      score: Number(entry.score.toFixed(6)),
+      score: roundDebugScore(entry.score),
     })),
   })
   console.table(
@@ -134,7 +190,7 @@ function logVisualSearchDebugScores(
       rank: index + 1 + (result.page - 1) * result.page_size,
       fileId: entry.fileId,
       name: entry.name,
-      score: Number(entry.score.toFixed(6)),
+      score: roundDebugScore(entry.score),
     })),
   )
 }
