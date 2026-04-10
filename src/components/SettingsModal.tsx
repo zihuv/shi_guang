@@ -794,7 +794,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       </h3>
                       <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
                         使用特调 fgclip2
-                        模型，实现自然语言搜索，将额外占用~600MB内存。
+                        模型，实现自然语言搜索，将额外占用~800MB内存。
                       </p>
                     </div>
                     <StatusBadge
