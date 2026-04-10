@@ -483,7 +483,7 @@ impl Database {
                     // Clean up old directory
                     if let Err(del_err) = std::fs::remove_dir_all(old_path) {
                         // Log but don't fail - the move succeeded
-                        eprintln!(
+                        log::warn!(
                             "Warning: failed to remove old folder after copy: {}",
                             del_err
                         );

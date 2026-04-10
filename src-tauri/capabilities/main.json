@@ -9,6 +9,7 @@
     "dialog:default",
     "fs:default",
     "fs:allow-read",
+    "log:default",
     "mcp-bridge:default",
     {
       "identifier": "fs:scope",

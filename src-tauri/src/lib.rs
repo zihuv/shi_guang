@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod http_server;
 mod indexer;
+mod logging;
 mod media;
 mod ml;
 mod openai;
@@ -73,30 +74,39 @@ pub struct ImportTaskEntry {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize DevTools plugin first (only in dev builds)
-    #[cfg(debug_assertions)]
-    let devtools_plugin = tauri_plugin_devtools::init();
-
-    // Initialize env_logger
-    let _ = env_logger::try_init();
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init());
 
     #[cfg(debug_assertions)]
-    let builder = builder
-        .plugin(devtools_plugin)
-        .plugin(tauri_plugin_mcp_bridge::init());
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(logging::init());
 
     builder
         .setup(|app| {
+            #[cfg(debug_assertions)]
+            {
+                let (log_plugin, _max_level, logger) = logging::split(&app.handle())
+                    .map_err(|error| -> Box<dyn std::error::Error> { Box::new(error) })?;
+                let mut devtools_builder = tauri_plugin_devtools::Builder::default();
+                devtools_builder.attach_logger(logger);
+                let devtools_plugin = devtools_builder
+                    .try_init()
+                    .map_err(|error| -> Box<dyn std::error::Error> { Box::new(error) })?;
+                app.handle().plugin(devtools_plugin)?;
+                app.handle().plugin(log_plugin)?;
+            }
+
             let app_data_dir = app
                 .path()
                 .app_data_dir()
                 .expect("Failed to get app data dir");
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
+            logging::cleanup_expired_logs(app);
+            logging::start_retention_task(app);
 
             // Migrate database from old location to new location if needed
             let (db_path, index_path) = storage::migrate_or_get_db_path(&app_data_dir)

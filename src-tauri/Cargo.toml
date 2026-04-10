@@ -24,7 +24,6 @@ walkdir = "2"
 image = "0.25"
 chrono = "0.4"
 log = "0.4"
-env_logger = "0.11"
 base64 = "0.22"
 tauri-plugin-devtools = "2.1.0"
 tauri-plugin-dialog = "2.7"
@@ -45,6 +44,7 @@ ndarray = "0.17"
 rayon = "1.11"
 sha2 = "0.10"
 tokenizers = { version = "0.22", default-features = false, features = ["onig"] }
+tauri-plugin-log = "2"
 
 [profile.release]
 panic = "abort"

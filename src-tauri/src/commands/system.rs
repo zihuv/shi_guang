@@ -389,7 +389,7 @@ pub fn start_drag_files(
                     |_result, _cursor_position| {},
                     drag::Options::default(),
                 ) {
-                    eprintln!("Failed to start external file drag: {error}");
+                    log::error!("Failed to start external file drag: {error}");
                 }
             })
             .map_err(|e| e.to_string())
