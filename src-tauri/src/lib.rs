@@ -2,6 +2,8 @@ mod commands;
 mod db;
 mod http_server;
 mod indexer;
+#[cfg(needs_glibc_isoc23_compat)]
+mod linux_glibc_compat;
 mod logging;
 mod media;
 mod ml;
