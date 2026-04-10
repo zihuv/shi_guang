@@ -239,7 +239,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
     match resolve_model_paths(model_path) {
         Ok(resolved) => VisualModelValidationResult {
             valid: true,
-            message: "fgclip2 split-text 模型目录可用".to_string(),
+            message: "fgclip2 模型目录可用".to_string(),
             normalized_model_path: resolved.root.to_string_lossy().to_string(),
             model_id: Some(resolved.manifest.model_id.clone()),
             version: Some(resolved.manifest.version.clone()),

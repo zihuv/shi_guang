@@ -30,14 +30,9 @@ import {
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import {
-  Sun,
-  Moon,
-  Plus,
-  Trash,
-  AlertTriangle,
-  RotateCcw,
-} from "lucide-react";
+import { Switch } from "@/components/ui/Switch";
+import { cn } from "@/lib/utils";
+import { Sun, Moon, Plus, Trash, AlertTriangle, RotateCcw } from "lucide-react";
 
 interface SettingsModalProps {
   open: boolean;
@@ -49,6 +44,31 @@ type SettingsSection = "general" | "ai" | "shortcuts";
 interface VisualIndexProgressPayload {
   processed: number;
   total: number;
+}
+
+type StatusTone = "neutral" | "success" | "warning";
+
+function StatusBadge({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: StatusTone;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium",
+        tone === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : tone === "warning"
+            ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            : "border-gray-200 bg-white/90 text-gray-600 dark:border-dark-border dark:bg-dark-bg/60 dark:text-gray-300",
+      )}
+    >
+      {label}
+    </span>
+  );
 }
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -63,14 +83,30 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const aiConfig = useSettingsStore((state) => state.aiConfig);
   const setAiConfigField = useSettingsStore((state) => state.setAiConfigField);
   const visualSearch = useSettingsStore((state) => state.visualSearch);
-  const setVisualSearchField = useSettingsStore((state) => state.setVisualSearchField);
-  const autoAnalyzeOnImport = useSettingsStore((state) => state.autoAnalyzeOnImport);
-  const setAutoAnalyzeOnImport = useSettingsStore((state) => state.setAutoAnalyzeOnImport);
-  const rebuildVisualIndex = useSettingsStore((state) => state.rebuildVisualIndex);
-  const refreshVisualSearchStatus = useSettingsStore((state) => state.refreshVisualSearchStatus);
-  const visualIndexStatus = useSettingsStore((state) => state.visualIndexStatus);
-  const visualModelValidation = useSettingsStore((state) => state.visualModelValidation);
-  const validateVisualModelPath = useSettingsStore((state) => state.validateVisualModelPath);
+  const setVisualSearchField = useSettingsStore(
+    (state) => state.setVisualSearchField,
+  );
+  const autoAnalyzeOnImport = useSettingsStore(
+    (state) => state.autoAnalyzeOnImport,
+  );
+  const setAutoAnalyzeOnImport = useSettingsStore(
+    (state) => state.setAutoAnalyzeOnImport,
+  );
+  const rebuildVisualIndex = useSettingsStore(
+    (state) => state.rebuildVisualIndex,
+  );
+  const refreshVisualSearchStatus = useSettingsStore(
+    (state) => state.refreshVisualSearchStatus,
+  );
+  const visualIndexStatus = useSettingsStore(
+    (state) => state.visualIndexStatus,
+  );
+  const visualModelValidation = useSettingsStore(
+    (state) => state.visualModelValidation,
+  );
+  const validateVisualModelPath = useSettingsStore(
+    (state) => state.validateVisualModelPath,
+  );
   const shortcuts = useSettingsStore((state) => state.shortcuts);
   const setShortcut = useSettingsStore((state) => state.setShortcut);
   const resetShortcut = useSettingsStore((state) => state.resetShortcut);
@@ -85,11 +121,51 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [isRebuildingVisual, setIsRebuildingVisual] = useState(false);
   const [isValidatingModelDir, setIsValidatingModelDir] = useState(false);
-  const [testingTargets, setTestingTargets] = useState<Record<AiConfigTarget, boolean>>({
+  const [testingTargets, setTestingTargets] = useState<
+    Record<AiConfigTarget, boolean>
+  >({
     metadata: false,
   });
   const [activeSection, setActiveSection] =
     useState<SettingsSection>("general");
+
+  const metadataConfig = aiConfig.metadata;
+  const metadataDraftExists =
+    Boolean(metadataConfig.baseUrl.trim()) ||
+    Boolean(metadataConfig.apiKey.trim()) ||
+    Boolean(metadataConfig.model.trim());
+  const metadataConfigured =
+    Boolean(metadataConfig.baseUrl.trim()) &&
+    Boolean(metadataConfig.apiKey.trim()) &&
+    Boolean(metadataConfig.model.trim());
+  const metadataStatusTone: StatusTone = metadataConfigured
+    ? "success"
+    : metadataDraftExists
+      ? "warning"
+      : "neutral";
+  const metadataStatusLabel = metadataConfigured
+    ? "已配置"
+    : metadataDraftExists
+      ? "待补全"
+      : "未配置";
+
+  const visualModelReady = Boolean(visualModelValidation?.valid);
+  const visualSearchStatusTone: StatusTone = !visualSearch.enabled
+    ? "neutral"
+    : visualModelReady
+      ? "success"
+      : "warning";
+  const visualSearchStatusLabel = !visualSearch.enabled
+    ? "未启用"
+    : visualModelReady
+      ? "模型就绪"
+      : visualSearch.modelPath.trim()
+        ? "待校验"
+        : "待配置";
+  const indexedCount = visualIndexStatus?.indexedCount ?? 0;
+  const totalImageCount = visualIndexStatus?.totalImageCount ?? 0;
+  const pendingCount = visualIndexStatus?.pendingCount ?? 0;
+  const failedCount = visualIndexStatus?.failedCount ?? 0;
 
   useEffect(() => {
     if (!open) {
@@ -278,24 +354,34 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       modelPlaceholder,
     } = args;
     const config = aiConfig[target];
+    const baseUrlInputId = `ai-${target}-base-url`;
+    const apiKeyInputId = `ai-${target}-api-key`;
+    const modelInputId = `ai-${target}-model`;
 
     return (
-      <section className="space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+      <div className="space-y-4">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
+            模型配置
+          </p>
+          <h4 className="mt-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
             {title}
-          </h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          </h4>
+          <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
             {description}
           </p>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-border dark:bg-dark-bg/40">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label
+              htmlFor={baseUrlInputId}
+              className="text-sm font-medium text-gray-700 dark:text-gray-200"
+            >
               Base URL
             </label>
             <Input
+              id={baseUrlInputId}
               value={config.baseUrl}
               onChange={(event) =>
                 setAiConfigField(target, "baseUrl", event.target.value)
@@ -305,10 +391,14 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label
+              htmlFor={apiKeyInputId}
+              className="text-sm font-medium text-gray-700 dark:text-gray-200"
+            >
               API Key
             </label>
             <Input
+              id={apiKeyInputId}
               type="password"
               value={config.apiKey}
               onChange={(event) =>
@@ -318,11 +408,15 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+          <div className="space-y-2 md:col-span-2">
+            <label
+              htmlFor={modelInputId}
+              className="text-sm font-medium text-gray-700 dark:text-gray-200"
+            >
               {modelLabel}
             </label>
             <Input
+              id={modelInputId}
               value={config.model}
               onChange={(event) =>
                 setAiConfigField(target, "model", event.target.value)
@@ -330,21 +424,68 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               placeholder={modelPlaceholder}
             />
           </div>
+        </div>
 
-          <div className="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-border">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              会发送一次最小真实请求，用于验证 Base URL、API Key 和模型是否可用。
+        <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 md:flex-row md:items-center md:justify-between dark:border-dark-border">
+          <p className="text-xs leading-6 text-gray-500 dark:text-gray-400">
+            会发送一次最小真实请求，用于验证 Base URL、API Key 和模型是否可用。
+          </p>
+          <Button
+            variant="outline"
+            disabled={testingTargets[target]}
+            onClick={() => void handleTestAiEndpoint(target, endpointTarget)}
+          >
+            {testingTargets[target] ? "测试中..." : "测试接口"}
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFeatureToggle = (args: {
+    title: string;
+    description: string;
+    enabled: boolean;
+    onChange: (enabled: boolean) => void;
+    hint?: string;
+  }) => {
+    const { title, description, enabled, onChange, hint } = args;
+
+    return (
+      <div className="py-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+              {title}
             </p>
-            <Button
-              variant="outline"
-              disabled={testingTargets[target]}
-              onClick={() => void handleTestAiEndpoint(target, endpointTarget)}
-            >
-              {testingTargets[target] ? "测试中..." : "测试接口"}
-            </Button>
+            <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
+              {description}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <Switch
+              checked={enabled}
+              onCheckedChange={onChange}
+              aria-label={title}
+            />
+            <span
+              className={cn(
+                "text-xs font-medium",
+                enabled
+                  ? "text-primary-700 dark:text-primary-300"
+                  : "text-gray-500 dark:text-gray-400",
+              )}
+            ></span>
           </div>
         </div>
-      </section>
+
+        {hint ? (
+          <div className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+            {hint}
+          </div>
+        ) : null}
+      </div>
     );
   };
 
@@ -355,7 +496,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
           <div className="border-b border-gray-200 px-6 py-5 dark:border-dark-border">
             <DialogTitle>设置</DialogTitle>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              调整素材目录、删除方式、外观和快捷键。
+              调整素材目录、删除方式、外观、AI 和快捷键。
             </p>
           </div>
         </DialogHeader>
@@ -419,7 +560,11 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         disabled={isAdding}
                       >
                         <Plus className="w-4 h-4" />
-                        {isAdding ? "选择中..." : currentIndexPath ? "更换目录" : "选择目录"}
+                        {isAdding
+                          ? "选择中..."
+                          : currentIndexPath
+                            ? "更换目录"
+                            : "选择目录"}
                       </Button>
                       <Button
                         variant="outline"
@@ -454,7 +599,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       </div>
                     )}
                   </div>
-
                 </section>
 
                 <section className="space-y-4 border-t border-gray-200 pt-8 dark:border-dark-border">
@@ -594,196 +738,227 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </section>
               </div>
             ) : activeSection === "ai" ? (
-              <div className="space-y-8">
-                {renderAiConfigCard({
-                  title: "图片元数据分析",
-                  description: "用于图片分析、自动生成文件名、标签和备注。",
-                  target: "metadata",
-                  endpointTarget: "metadata",
-                  modelLabel: "多模态模型",
-                  modelPlaceholder: "gpt-4.1-mini",
-                })}
-
-                <section className="space-y-4 border-t border-gray-200 pt-8 dark:border-dark-border">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                      本地自然语言搜图
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      使用本地 fgclip2 ONNX 模型为图片建立视觉向量索引，搜索不依赖远端 Embedding。
-                    </p>
+              <div className="space-y-6">
+                <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5 shadow-sm dark:border-dark-border dark:bg-dark-bg/30">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                        AI 元数据分析
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+                        使用多模态模型分析图片，自动生成文件名、标签和备注。
+                      </p>
+                    </div>
+                    <StatusBadge
+                      label={metadataStatusLabel}
+                      tone={metadataStatusTone}
+                    />
                   </div>
 
-                  <div className="space-y-5 rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-border dark:bg-dark-bg/40">
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white/80 px-3 py-3 text-sm dark:border-dark-border dark:bg-dark-surface/50">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={visualSearch.enabled}
-                          onChange={(event) =>
-                            setVisualSearchField("enabled", event.target.checked)
-                          }
-                        />
-                        <span>
-                          <span className="block font-medium text-gray-800 dark:text-gray-100">
-                            启用自然语言搜图
-                          </span>
-                          <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                            打开后，顶部搜索框会走本地视觉检索链路。
-                          </span>
-                        </span>
-                      </label>
-
-                      <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white/80 px-3 py-3 text-sm dark:border-dark-border dark:bg-dark-surface/50">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={visualSearch.autoVectorizeOnImport}
-                          onChange={(event) =>
-                            setVisualSearchField(
-                              "autoVectorizeOnImport",
-                              event.target.checked,
-                            )
-                          }
-                        />
-                        <span>
-                          <span className="block font-medium text-gray-800 dark:text-gray-100">
-                            导入后自动添加向量
-                          </span>
-                          <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                            新导入图片会在后台自动建立视觉索引。
-                          </span>
-                        </span>
-                      </label>
-
-                      <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white/80 px-3 py-3 text-sm dark:border-dark-border dark:bg-dark-surface/50">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={autoAnalyzeOnImport}
-                          onChange={(event) =>
-                            void setAutoAnalyzeOnImport(event.target.checked)
-                          }
-                        />
-                        <span>
-                          <span className="block font-medium text-gray-800 dark:text-gray-100">
-                            导入后自动 AI 分析
-                          </span>
-                          <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                            自动生成文件名、标签和备注，不会触发旧的文本向量刷新。
-                          </span>
-                        </span>
-                      </label>
+                  <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+                    <div>
+                      {renderAiConfigCard({
+                        title: "",
+                        description: "",
+                        target: "metadata",
+                        endpointTarget: "metadata",
+                        modelLabel: "多模态模型",
+                        modelPlaceholder: "gpt-4.1-mini",
+                      })}
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                        模型目录
-                      </label>
-                      <div className="flex flex-col gap-2 md:flex-row">
-                        <Input
-                          value={visualSearch.modelPath}
-                          onChange={(event) =>
-                            setVisualSearchField("modelPath", event.target.value)
-                          }
-                          onBlur={() => void handleValidateModelDir()}
-                          placeholder="选择包含 split/fgclip2_text_short_b1_s64_token_embeds.onnx 的目录"
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            onClick={() => void handleSelectModelDir()}
-                            disabled={isSelectingModelDir}
-                          >
-                            {isSelectingModelDir ? "选择中..." : "选择目录"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => void handleValidateModelDir()}
-                            disabled={isValidatingModelDir}
-                          >
-                            {isValidatingModelDir ? "校验中..." : "校验目录"}
-                          </Button>
+                    <div className="border-t border-gray-200 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0 dark:border-dark-border">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
+                        功能
+                      </p>
+                      <div className="mt-2 divide-y divide-gray-200 dark:divide-dark-border">
+                        {renderFeatureToggle({
+                          title: "导入后自动 AI 分析",
+                          description:
+                            "新导入图片后自动生成文件名、标签和备注。",
+                          enabled: autoAnalyzeOnImport,
+                          onChange: (enabled) => {
+                            void setAutoAnalyzeOnImport(enabled);
+                          },
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5 shadow-sm dark:border-dark-border dark:bg-dark-bg/30">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                        本地自然语言搜索
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+                        使用特调 fgclip2
+                        模型，实现自然语言搜索，将额外占用~600MB内存。
+                      </p>
+                    </div>
+                    <StatusBadge
+                      label={visualSearchStatusLabel}
+                      tone={visualSearchStatusTone}
+                    />
+                  </div>
+
+                  <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
+                    <div className="space-y-5">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
+                          功能
+                        </p>
+                        <div className="mt-2 divide-y divide-gray-200 dark:divide-dark-border">
+                          {renderFeatureToggle({
+                            title: "启用自然语言搜索",
+                            description: "打开后，顶部搜索框支持自然语言搜索。",
+                            enabled: visualSearch.enabled,
+                            onChange: (enabled) =>
+                              setVisualSearchField("enabled", enabled),
+                          })}
+                          {renderFeatureToggle({
+                            title: "导入后自动建立视觉索引",
+                            description:
+                              "新导入图片会在后台自动建立视觉索引，便于后续直接搜索。",
+                            enabled: visualSearch.autoVectorizeOnImport,
+                            onChange: (enabled) =>
+                              setVisualSearchField(
+                                "autoVectorizeOnImport",
+                                enabled,
+                              ),
+                          })}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-dashed border-gray-200 bg-white/70 px-3 py-3 text-xs leading-6 dark:border-dark-border dark:bg-dark-surface/40">
-                        <p className="text-gray-500 dark:text-gray-400">
-                          当前仅支持 fgclip2 split-text 目录。目录内需要包含
-                          `split/fgclip2_text_short_b1_s64_token_embeds.onnx`、
-                          `assets/text_token_embedding_256000x768_f16.bin`、
-                          `fgclip2_image_core_posin_dynamic.onnx` 和
-                          `assets/vision_pos_embedding_16x16x768_f32.bin`。`tokenizer.json`
-                          可放在模型目录，也可放在相邻的 `models/fg-clip2-base/` 下。
-                          项目根目录下的 `.debug-models/fgclip/cpu`、`.debug-models/fgclip2`
-                          或 `.onnx-wrapper-test` 会在首次加载时自动回填；也可通过
-                          `SHIGUANG_VISUAL_MODEL_DIR`、`FGCLIP2_TEXT_ONNX`、
-                          `FGCLIP2_TEXT_TOKEN_EMBEDDING`、`FGCLIP2_IMAGE_ONNX`
-                          等环境变量覆盖。对于浏览器能解码、但后端当前无法直接读取的图片，重建索引时会自动尝试前端解码回退。
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-3">
-                          <a
-                            href="https://github.com/360CVGroup/FG-CLIP"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-600 hover:underline dark:text-blue-400"
-                          >
-                            官方项目
-                          </a>
-                          <a
-                            href="https://huggingface.co/qihoo360/fg-clip2-base"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-600 hover:underline dark:text-blue-400"
-                          >
-                            Hugging Face 模型
-                          </a>
-                          <a
-                            href="https://360cvgroup.github.io/FG-CLIP"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-600 hover:underline dark:text-blue-400"
-                          >
-                            项目主页
-                          </a>
+
+                      <div className="border-t border-gray-200 pt-4 dark:border-dark-border">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
+                              模型目录
+                            </p>
+                          </div>
+                          <StatusBadge
+                            label={
+                              visualSearch.modelPath.trim()
+                                ? "已填写路径"
+                                : "未填写路径"
+                            }
+                            tone={
+                              visualSearch.modelPath.trim()
+                                ? "neutral"
+                                : "warning"
+                            }
+                          />
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-col gap-2 xl:flex-row">
+                            <Input
+                              id="visual-search-model-path"
+                              value={visualSearch.modelPath}
+                              onChange={(event) =>
+                                setVisualSearchField(
+                                  "modelPath",
+                                  event.target.value,
+                                )
+                              }
+                              onBlur={() => void handleValidateModelDir()}
+                              placeholder=""
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                onClick={() => void handleSelectModelDir()}
+                                disabled={isSelectingModelDir}
+                              >
+                                {isSelectingModelDir ? "选择中..." : "选择目录"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => void handleValidateModelDir()}
+                                disabled={isValidatingModelDir}
+                              >
+                                {isValidatingModelDir
+                                  ? "校验中..."
+                                  : "校验目录"}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 text-xs leading-6 text-gray-500 dark:text-gray-400">
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <a
+                              href="https://github.com/zihuv/vl-embedding-test/releases"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-blue-600 transition-colors hover:border-blue-200 hover:bg-blue-50 dark:border-dark-border dark:bg-dark-surface/50 dark:text-blue-400 dark:hover:border-blue-500/30 dark:hover:bg-blue-500/10"
+                            >
+                              模型下载地址
+                            </a>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-dark-border dark:bg-dark-surface/50">
-                        <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                          模型状态
-                        </p>
+                    <div className="space-y-5 border-t border-gray-200 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0 dark:border-dark-border">
+                      <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
+                            模型状态
+                          </p>
+                          <StatusBadge
+                            label={
+                              visualModelValidation?.valid
+                                ? "模型可用"
+                                : visualSearch.modelPath.trim()
+                                  ? "待校验"
+                                  : "未配置"
+                            }
+                            tone={
+                              visualModelValidation?.valid
+                                ? "success"
+                                : visualSearch.modelPath.trim()
+                                  ? "warning"
+                                  : "neutral"
+                            }
+                          />
+                        </div>
                         <p
-                          className={`mt-2 text-sm ${
+                          className={cn(
+                            "mt-2 text-sm leading-6",
                             visualModelValidation?.valid
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-gray-600 dark:text-gray-300"
-                          }`}
+                              ? "text-emerald-700 dark:text-emerald-300"
+                              : "text-gray-600 dark:text-gray-300",
+                          )}
                         >
                           {visualModelValidation?.message ?? "尚未校验模型目录"}
                         </p>
-                        {visualModelValidation?.valid && (
-                          <div className="mt-3 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                        {visualModelValidation?.valid ? (
+                          <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
                             <p>模型：{visualModelValidation.modelId}</p>
                             <p>版本：{visualModelValidation.version}</p>
-                            <p>向量维度：{visualModelValidation.embeddingDim}</p>
-                            <p>上下文长度：{visualModelValidation.contextLength}</p>
-                          </div>
-                        )}
-                        {!visualModelValidation?.valid &&
-                          visualModelValidation?.missingFiles.length ? (
-                            <p className="mt-3 text-xs text-red-500 dark:text-red-300">
-                              缺少文件：{visualModelValidation.missingFiles.join("、")}
+                            <p>
+                              向量维度：{visualModelValidation.embeddingDim}
+                              {" · "}上下文长度：
+                              {visualModelValidation.contextLength}
                             </p>
-                          ) : null}
+                          </div>
+                        ) : null}
+                        {!visualModelValidation?.valid &&
+                        visualModelValidation?.missingFiles.length ? (
+                          <p className="mt-2 text-xs leading-6 text-amber-700 dark:text-amber-300">
+                            缺少文件：
+                            {visualModelValidation.missingFiles.join("、")}
+                          </p>
+                        ) : null}
                       </div>
 
-                      <div className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-dark-border dark:bg-dark-surface/50">
-                        <div className="flex items-center justify-between gap-3">
+                      <div className="border-t border-gray-200 pt-4 dark:border-dark-border">
+                        <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                            <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
                               索引状态
                             </p>
                             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -798,25 +973,17 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                             {isRebuildingVisual ? "重建中..." : "重建视觉索引"}
                           </Button>
                         </div>
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                          <div className="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-bg/60">
-                            总图片数：{visualIndexStatus?.totalImageCount ?? 0}
-                          </div>
-                          <div className="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-bg/60">
-                            已索引：{visualIndexStatus?.indexedCount ?? 0}
-                          </div>
-                          <div className="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-bg/60">
-                            失败：{visualIndexStatus?.failedCount ?? 0}
-                          </div>
-                          <div className="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-bg/60">
-                            待处理：{visualIndexStatus?.pendingCount ?? 0}
-                          </div>
-                          <div className="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-bg/60">
-                            已过期：{visualIndexStatus?.outdatedCount ?? 0}
-                          </div>
-                          <div className="rounded-md bg-gray-50 px-3 py-2 dark:bg-dark-bg/60">
-                            状态：{visualIndexStatus?.message ?? "未读取"}
-                          </div>
+                        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                          {visualIndexStatus?.message ?? "未读取索引状态"}
+                        </p>
+                        <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
+                          <p>
+                            总图片数 {totalImageCount} · 已索引 {indexedCount}
+                          </p>
+                          <p>
+                            待处理 {pendingCount} · 失败 {failedCount} · 已过期{" "}
+                            {visualIndexStatus?.outdatedCount ?? 0}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -829,10 +996,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
                     快捷键
                   </h3>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Windows / Linux 使用 `Ctrl`，macOS 使用 `Cmd`。录制时按
-                    `Esc` 取消。
-                  </p>
                 </div>
 
                 <div className="rounded-xl border border-gray-200 dark:border-dark-border">
