@@ -1,22 +1,27 @@
 use super::image_preprocess::{preprocess_image_bytes, preprocess_image_path, FgClip2ImageInputs};
-use super::model_manager::ResolvedModelPaths;
+use super::model_manager::{ResolvedModelPaths, TextTokenEmbeddingDtype};
 use ndarray::{Array, Array2, ArrayD, ArrayViewD, IxDyn};
 use ort::{
     inputs,
     session::{builder::GraphOptimizationLevel, Session},
     value::TensorRef,
 };
-use std::fs;
-use std::path::Path;
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
 
 const VISION_POS_SOURCE_HEIGHT: usize = 16;
 const VISION_POS_SOURCE_WIDTH: usize = 16;
-const VISION_POS_CHANNELS: usize = 768;
+const EMBEDDING_DIM: usize = 768;
 
 pub struct FgClip2Model {
-    text_session: Session,
-    image_session: Session,
+    text_model_path: PathBuf,
+    text_token_embedding_path: PathBuf,
+    text_token_embedding_dtype: TextTokenEmbeddingDtype,
+    image_model_path: PathBuf,
+    text_session: Option<Session>,
+    image_session: Option<Session>,
     tokenizer: Tokenizer,
     vision_pos_embedding: Vec<f32>,
     context_length: usize,
@@ -46,11 +51,8 @@ impl FgClip2Model {
             ..Default::default()
         }));
 
-        let text_session = load_session(&resolved_model.text_model_path, "文本 ONNX 模型")?;
-        let image_session = load_session(&resolved_model.image_model_path, "图像 ONNX 模型")?;
         let vision_pos_embedding = read_f32_file(&resolved_model.vision_pos_embedding_path)?;
-        let expected_pos_len =
-            VISION_POS_SOURCE_HEIGHT * VISION_POS_SOURCE_WIDTH * VISION_POS_CHANNELS;
+        let expected_pos_len = VISION_POS_SOURCE_HEIGHT * VISION_POS_SOURCE_WIDTH * EMBEDDING_DIM;
         if vision_pos_embedding.len() != expected_pos_len {
             return Err(format!(
                 "vision_pos_embedding 长度异常: got {}, expected {}",
@@ -60,8 +62,12 @@ impl FgClip2Model {
         }
 
         Ok(Self {
-            text_session,
-            image_session,
+            text_model_path: resolved_model.text_model_path.clone(),
+            text_token_embedding_path: resolved_model.text_token_embedding_path.clone(),
+            text_token_embedding_dtype: resolved_model.text_token_embedding_dtype,
+            image_model_path: resolved_model.image_model_path.clone(),
+            text_session: None,
+            image_session: None,
             tokenizer,
             vision_pos_embedding,
             context_length: resolved_model.manifest.context_length,
@@ -70,11 +76,16 @@ impl FgClip2Model {
 
     pub fn encode_text(&mut self, text: &str) -> Result<Vec<f32>, String> {
         let input_ids = self.tokenize_query(text)?;
-        let input_ids_tensor = TensorRef::from_array_view(input_ids.view())
-            .map_err(|e| format!("创建文本输入张量失败: {}", e))?;
+        let token_embeds = gather_text_token_embeddings(
+            &self.text_token_embedding_path,
+            self.text_token_embedding_dtype,
+            &input_ids,
+        )?;
+        let token_embeds_tensor = TensorRef::from_array_view(token_embeds.view())
+            .map_err(|e| format!("创建文本 token_embeds 张量失败: {}", e))?;
         let outputs = self
-            .text_session
-            .run(inputs!["input_ids" => input_ids_tensor])
+            .ensure_text_session()?
+            .run(inputs!["token_embeds" => token_embeds_tensor])
             .map_err(|e| format!("文本向量推理失败: {}", e))?;
 
         extract_named_output_vector(&outputs, "text_features", "文本向量")
@@ -128,7 +139,7 @@ impl FgClip2Model {
             .map_err(|e| format!("创建图像 pos_embed 张量失败: {}", e))?;
 
         let outputs = self
-            .image_session
+            .ensure_image_session()?
             .run(inputs![
                 "pixel_values" => pixel_values_tensor,
                 "pixel_attention_mask" => pixel_attention_mask_tensor,
@@ -137,6 +148,28 @@ impl FgClip2Model {
             .map_err(|e| format!("图像向量推理失败: {}", e))?;
 
         extract_named_output_vector(&outputs, "image_features", "图像向量")
+    }
+
+    fn ensure_text_session(&mut self) -> Result<&mut Session, String> {
+        if self.text_session.is_none() {
+            self.image_session = None;
+            self.text_session = Some(load_session(&self.text_model_path, "文本 ONNX 模型")?);
+        }
+
+        self.text_session
+            .as_mut()
+            .ok_or_else(|| "无法初始化文本 ONNX 模型".to_string())
+    }
+
+    fn ensure_image_session(&mut self) -> Result<&mut Session, String> {
+        if self.image_session.is_none() {
+            self.text_session = None;
+            self.image_session = Some(load_session(&self.image_model_path, "图像 ONNX 模型")?);
+        }
+
+        self.image_session
+            .as_mut()
+            .ok_or_else(|| "无法初始化图像 ONNX 模型".to_string())
     }
 }
 
@@ -163,13 +196,97 @@ fn read_f32_file(path: &Path) -> Result<Vec<f32>, String> {
         .collect())
 }
 
+fn gather_text_token_embeddings(
+    embedding_path: &Path,
+    dtype: TextTokenEmbeddingDtype,
+    input_ids: &Array2<i64>,
+) -> Result<ArrayD<f32>, String> {
+    let input_ids = input_ids
+        .as_slice()
+        .ok_or_else(|| "文本 input_ids 内存布局异常".to_string())?;
+    let row_bytes = dtype.bytes_per_value() * EMBEDDING_DIM;
+    let token_count = fs::metadata(embedding_path)
+        .map_err(|e| {
+            format!(
+                "无法读取文本 token embedding 元信息 '{}': {}",
+                embedding_path.display(),
+                e
+            )
+        })?
+        .len()
+        / row_bytes as u64;
+    let mut file = File::open(embedding_path).map_err(|e| {
+        format!(
+            "无法打开文本 token embedding '{}': {}",
+            embedding_path.display(),
+            e
+        )
+    })?;
+    let mut row_bytes_buffer = vec![0u8; row_bytes];
+    let mut values = vec![0.0f32; input_ids.len() * EMBEDDING_DIM];
+
+    for (token_index, token_id) in input_ids.iter().enumerate() {
+        if *token_id < 0 || *token_id as u64 >= token_count {
+            return Err(format!(
+                "token id {} 超出文本 token embedding 行数 {}",
+                token_id, token_count
+            ));
+        }
+
+        file.seek(SeekFrom::Start(*token_id as u64 * row_bytes as u64))
+            .map_err(|e| format!("读取文本 token embedding 偏移失败: {}", e))?;
+        file.read_exact(&mut row_bytes_buffer)
+            .map_err(|e| format!("读取文本 token embedding 失败: {}", e))?;
+
+        let output = &mut values[token_index * EMBEDDING_DIM..(token_index + 1) * EMBEDDING_DIM];
+        match dtype {
+            TextTokenEmbeddingDtype::F16 => {
+                for (value, bytes) in output.iter_mut().zip(row_bytes_buffer.chunks_exact(2)) {
+                    *value = f16_to_f32(u16::from_le_bytes([bytes[0], bytes[1]]));
+                }
+            }
+            TextTokenEmbeddingDtype::F32 => {
+                for (value, bytes) in output.iter_mut().zip(row_bytes_buffer.chunks_exact(4)) {
+                    *value = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                }
+            }
+        }
+    }
+
+    Array::from_shape_vec(IxDyn(&[1, input_ids.len(), EMBEDDING_DIM]), values)
+        .map_err(|e| format!("构建 token_embeds 张量失败: {}", e))
+}
+
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = ((bits & 0x8000) as u32) << 16;
+    let exponent = (bits >> 10) & 0x1f;
+    let fraction = bits & 0x03ff;
+
+    let f32_bits = match exponent {
+        0 if fraction == 0 => sign,
+        0 => {
+            let mut fraction = fraction as u32;
+            let mut exponent = -14i32;
+            while fraction & 0x0400 == 0 {
+                fraction <<= 1;
+                exponent -= 1;
+            }
+            fraction &= 0x03ff;
+            sign | (((exponent + 127) as u32) << 23) | (fraction << 13)
+        }
+        0x1f => sign | 0x7f80_0000 | ((fraction as u32) << 13),
+        _ => sign | (((exponent as u32) + 112) << 23) | ((fraction as u32) << 13),
+    };
+    f32::from_bits(f32_bits)
+}
+
 fn make_pos_embed_no_antialias(
     base_pos: &[f32],
     target_height: usize,
     target_width: usize,
     max_patches: usize,
 ) -> Result<ArrayD<f32>, String> {
-    let expected_len = VISION_POS_SOURCE_HEIGHT * VISION_POS_SOURCE_WIDTH * VISION_POS_CHANNELS;
+    let expected_len = VISION_POS_SOURCE_HEIGHT * VISION_POS_SOURCE_WIDTH * EMBEDDING_DIM;
     if base_pos.len() != expected_len {
         return Err(format!(
             "vision position embedding 长度异常: got {}, expected {}",
@@ -178,7 +295,7 @@ fn make_pos_embed_no_antialias(
         ));
     }
 
-    let mut output = vec![0.0f32; max_patches * VISION_POS_CHANNELS];
+    let mut output = vec![0.0f32; max_patches * EMBEDDING_DIM];
     for out_y in 0..target_height {
         let in_y = linear_source_coordinate(out_y, target_height, VISION_POS_SOURCE_HEIGHT);
         let y0 = in_y
@@ -196,32 +313,32 @@ fn make_pos_embed_no_antialias(
             let wx = in_x - x0 as f32;
             let token = out_y * target_width + out_x;
 
-            for channel in 0..VISION_POS_CHANNELS {
+            for channel in 0..EMBEDDING_DIM {
                 let top = lerp(
-                    base_pos[((y0 * VISION_POS_SOURCE_WIDTH + x0) * VISION_POS_CHANNELS) + channel],
-                    base_pos[((y0 * VISION_POS_SOURCE_WIDTH + x1) * VISION_POS_CHANNELS) + channel],
+                    base_pos[((y0 * VISION_POS_SOURCE_WIDTH + x0) * EMBEDDING_DIM) + channel],
+                    base_pos[((y0 * VISION_POS_SOURCE_WIDTH + x1) * EMBEDDING_DIM) + channel],
                     wx,
                 );
                 let bottom = lerp(
-                    base_pos[((y1 * VISION_POS_SOURCE_WIDTH + x0) * VISION_POS_CHANNELS) + channel],
-                    base_pos[((y1 * VISION_POS_SOURCE_WIDTH + x1) * VISION_POS_CHANNELS) + channel],
+                    base_pos[((y1 * VISION_POS_SOURCE_WIDTH + x0) * EMBEDDING_DIM) + channel],
+                    base_pos[((y1 * VISION_POS_SOURCE_WIDTH + x1) * EMBEDDING_DIM) + channel],
                     wx,
                 );
-                output[token * VISION_POS_CHANNELS + channel] = lerp(top, bottom, wy);
+                output[token * EMBEDDING_DIM + channel] = lerp(top, bottom, wy);
             }
         }
     }
 
     let valid = target_height * target_width;
     if valid > 0 && valid < max_patches {
-        let first_token = output[..VISION_POS_CHANNELS].to_vec();
+        let first_token = output[..EMBEDDING_DIM].to_vec();
         for token in valid..max_patches {
-            let start = token * VISION_POS_CHANNELS;
-            output[start..start + VISION_POS_CHANNELS].copy_from_slice(&first_token);
+            let start = token * EMBEDDING_DIM;
+            output[start..start + EMBEDDING_DIM].copy_from_slice(&first_token);
         }
     }
 
-    Array::from_shape_vec(IxDyn(&[1, max_patches, VISION_POS_CHANNELS]), output)
+    Array::from_shape_vec(IxDyn(&[1, max_patches, EMBEDDING_DIM]), output)
         .map_err(|e| format!("构建 pos_embed 张量失败: {}", e))
 }
 

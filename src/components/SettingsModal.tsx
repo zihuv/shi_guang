@@ -688,7 +688,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                             setVisualSearchField("modelPath", event.target.value)
                           }
                           onBlur={() => void handleValidateModelDir()}
-                          placeholder="选择包含 fgclip2_text / fgclip2_image ONNX 的目录"
+                          placeholder="选择包含 split/fgclip2_text_short_b1_s64_token_embeds.onnx 的目录"
                         />
                         <div className="flex gap-2">
                           <Button
@@ -709,13 +709,17 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       </div>
                       <div className="rounded-lg border border-dashed border-gray-200 bg-white/70 px-3 py-3 text-xs leading-6 dark:border-dark-border dark:bg-dark-surface/40">
                         <p className="text-gray-500 dark:text-gray-400">
-                          支持 manifest 目录，或 fgclip2 ONNX 导出目录。目录内至少包含
-                          `fgclip2_text_short_b1_s64.onnx`、`fgclip2_image_core_posin_dynamic.onnx`
-                          和 `assets/vision_pos_embedding_16x16x768_f32.bin`。`tokenizer.json`
+                          当前仅支持 fgclip2 split-text 目录。目录内需要包含
+                          `split/fgclip2_text_short_b1_s64_token_embeds.onnx`、
+                          `assets/text_token_embedding_256000x768_f16.bin`、
+                          `fgclip2_image_core_posin_dynamic.onnx` 和
+                          `assets/vision_pos_embedding_16x16x768_f32.bin`。`tokenizer.json`
                           可放在模型目录，也可放在相邻的 `models/fg-clip2-base/` 下。
-                          项目根目录下的 `.debug-models/fgclip2` 或 `.onnx-wrapper-test`
-                          会在首次加载时自动回填；也可通过 `SHIGUANG_VISUAL_MODEL_DIR` 指定。
-                          对于浏览器能解码、但后端当前无法直接读取的图片，重建索引时会自动尝试前端解码回退。
+                          项目根目录下的 `.debug-models/fgclip/cpu`、`.debug-models/fgclip2`
+                          或 `.onnx-wrapper-test` 会在首次加载时自动回填；也可通过
+                          `SHIGUANG_VISUAL_MODEL_DIR`、`FGCLIP2_TEXT_ONNX`、
+                          `FGCLIP2_TEXT_TOKEN_EMBEDDING`、`FGCLIP2_IMAGE_ONNX`
+                          等环境变量覆盖。对于浏览器能解码、但后端当前无法直接读取的图片，重建索引时会自动尝试前端解码回退。
                         </p>
                         <div className="mt-2 flex flex-wrap gap-3">
                           <a

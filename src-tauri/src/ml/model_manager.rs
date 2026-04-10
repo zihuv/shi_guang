@@ -9,8 +9,9 @@ use std::time::UNIX_EPOCH;
 pub const VISUAL_SEARCH_SETTING_KEY: &str = "visualSearch";
 pub const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY: &str = "aiAutoAnalyzeOnImport";
 
-const DEFAULT_TEXT_MODEL_FILE: &str = "fgclip2_text_short_b1_s64.onnx";
+const DEFAULT_SPLIT_TEXT_MODEL_FILE: &str = "split/fgclip2_text_short_b1_s64_token_embeds.onnx";
 const DEFAULT_IMAGE_MODEL_FILE: &str = "fgclip2_image_core_posin_dynamic.onnx";
+const DEFAULT_TEXT_TOKEN_EMBEDDING_FILE: &str = "assets/text_token_embedding_256000x768_f16.bin";
 const DEFAULT_TOKENIZER_JSON_FILE: &str = "tokenizer.json";
 const DEFAULT_MANIFEST_FILE: &str = "manifest.json";
 const DEFAULT_ASSETS_DIR: &str = "assets";
@@ -18,8 +19,31 @@ const DEFAULT_VISION_POS_EMBEDDING_FILE: &str = "assets/vision_pos_embedding_16x
 const DEFAULT_LOGIT_PARAMS_FILE: &str = "assets/logit_params.json";
 const DEFAULT_CONTEXT_LENGTH: usize = 64;
 const DEFAULT_EMBEDDING_DIM: usize = 768;
-const DEBUG_VISUAL_MODEL_RELATIVE_DIRS: [&str; 2] = [".debug-models/fgclip2", ".onnx-wrapper-test"];
+const DEBUG_VISUAL_MODEL_RELATIVE_DIRS: [&str; 3] = [
+    ".debug-models/fgclip/cpu",
+    ".debug-models/fgclip2",
+    ".onnx-wrapper-test",
+];
 const VISUAL_MODEL_DIR_ENV: &str = "SHIGUANG_VISUAL_MODEL_DIR";
+const TEXT_ONNX_ENV: &str = "FGCLIP2_TEXT_ONNX";
+const IMAGE_ONNX_ENV: &str = "FGCLIP2_IMAGE_ONNX";
+const TEXT_TOKEN_EMBEDDING_ENV: &str = "FGCLIP2_TEXT_TOKEN_EMBEDDING";
+const TEXT_TOKEN_EMBEDDING_DTYPE_ENV: &str = "FGCLIP2_TEXT_TOKEN_EMBEDDING_DTYPE";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextTokenEmbeddingDtype {
+    F16,
+    F32,
+}
+
+impl TextTokenEmbeddingDtype {
+    pub fn bytes_per_value(self) -> usize {
+        match self {
+            Self::F16 => 2,
+            Self::F32 => 4,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +99,18 @@ pub struct ModelManifest {
     pub text_model_file: Option<String>,
     #[serde(
         default,
+        alias = "textTokenEmbeddingFile",
+        alias = "text_token_embedding_file"
+    )]
+    pub text_token_embedding_file: Option<String>,
+    #[serde(
+        default,
+        alias = "textTokenEmbeddingDtype",
+        alias = "text_token_embedding_dtype"
+    )]
+    pub text_token_embedding_dtype: Option<String>,
+    #[serde(
+        default,
         alias = "tokenizerFile",
         alias = "tokenizer_file",
         alias = "tokenizerJsonFile",
@@ -103,6 +139,8 @@ pub struct ResolvedModelPaths {
     pub root: PathBuf,
     pub manifest_path: Option<PathBuf>,
     pub text_model_path: PathBuf,
+    pub text_token_embedding_path: PathBuf,
+    pub text_token_embedding_dtype: TextTokenEmbeddingDtype,
     pub image_model_path: PathBuf,
     pub tokenizer_json_path: PathBuf,
     pub vision_pos_embedding_path: PathBuf,
@@ -201,7 +239,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
     match resolve_model_paths(model_path) {
         Ok(resolved) => VisualModelValidationResult {
             valid: true,
-            message: "fgclip2 模型目录可用".to_string(),
+            message: "fgclip2 split-text 模型目录可用".to_string(),
             normalized_model_path: resolved.root.to_string_lossy().to_string(),
             model_id: Some(resolved.manifest.model_id.clone()),
             version: Some(resolved.manifest.version.clone()),
@@ -248,10 +286,7 @@ pub fn resolve_model_paths(model_path: &str) -> Result<ResolvedModelPaths, Strin
         }
     }
 
-    Err(
-        "模型目录缺少 fgclip2 ONNX 文件；请选择包含 ONNX、assets 和 tokenizer.json 的目录"
-            .to_string(),
-    )
+    Err("模型目录缺少 fgclip2 split-text 运行文件；请选择包含 split/fgclip2_text_short_b1_s64_token_embeds.onnx、assets/text_token_embedding_256000x768_f16.bin、fgclip2_image_core_posin_dynamic.onnx、assets/vision_pos_embedding_16x16x768_f32.bin 和 tokenizer.json 的目录".to_string())
 }
 
 fn candidate_roots(root: &Path) -> Vec<PathBuf> {
@@ -283,36 +318,45 @@ fn try_resolve_manifest_layout(root: &Path) -> Result<Option<ResolvedModelPaths>
 
     let manifest_content =
         fs::read_to_string(&manifest_path).map_err(|e| format!("无法读取 manifest.json: {}", e))?;
-    let manifest: ModelManifest = serde_json::from_str(&manifest_content)
+    let manifest_value: serde_json::Value = serde_json::from_str(&manifest_content)
+        .map_err(|e| format!("manifest.json 格式无效: {}", e))?;
+
+    if manifest_value.get("model_id").is_none()
+        && manifest_value.get("version").is_none()
+        && manifest_value.get("onnx").is_some()
+        && manifest_value.get("tensors").is_some()
+    {
+        return Ok(None);
+    }
+
+    let manifest: ModelManifest = serde_json::from_value(manifest_value)
         .map_err(|e| format!("manifest.json 格式无效: {}", e))?;
     validate_manifest(&manifest)?;
 
-    let text_model_path = require_file(
-        &root.join(
-            manifest
-                .text_model_file
-                .as_deref()
-                .unwrap_or(DEFAULT_TEXT_MODEL_FILE),
-        ),
-        "文本 ONNX 模型",
+    let text_model_path =
+        require_split_text_model_file(&resolve_text_model_path(root, Some(&manifest)))?;
+    let text_token_embedding_path = require_file(
+        &resolve_text_token_embedding_path(root, Some(&manifest)),
+        "文本 token embedding",
     )?;
+    let text_token_embedding_dtype =
+        resolve_text_token_embedding_dtype(Some(&manifest), &text_token_embedding_path)?;
     let image_model_path = require_file(
-        &root.join(
-            manifest
-                .image_model_file
-                .as_deref()
-                .unwrap_or(DEFAULT_IMAGE_MODEL_FILE),
-        ),
+        &resolve_image_model_path(root, Some(&manifest)),
         "图像 ONNX 模型",
     )?;
     let tokenizer_json_path =
         if let Some(tokenizer_json_file) = manifest.tokenizer_json_file.as_ref() {
-            require_file(&root.join(tokenizer_json_file), "tokenizer.json")?
+            require_file(
+                &resolve_relative_or_absolute(root, tokenizer_json_file),
+                "tokenizer.json",
+            )?
         } else {
             resolve_tokenizer_json_path(root)?
         };
     let vision_pos_embedding_path = require_file(
-        &root.join(
+        &resolve_relative_or_absolute(
+            root,
             manifest
                 .vision_pos_embedding_file
                 .as_deref()
@@ -332,6 +376,8 @@ fn try_resolve_manifest_layout(root: &Path) -> Result<Option<ResolvedModelPaths>
         root: canonical_path(root),
         manifest_path: Some(manifest_path),
         text_model_path,
+        text_token_embedding_path,
+        text_token_embedding_dtype,
         image_model_path,
         tokenizer_json_path,
         vision_pos_embedding_path,
@@ -344,23 +390,35 @@ fn try_resolve_manifest_layout(root: &Path) -> Result<Option<ResolvedModelPaths>
 }
 
 fn try_resolve_fgclip2_layout(root: &Path) -> Result<Option<ResolvedModelPaths>, String> {
-    let text_model_path = root.join(DEFAULT_TEXT_MODEL_FILE);
-    let image_model_path = root.join(DEFAULT_IMAGE_MODEL_FILE);
-    let vision_pos_embedding_path = root.join(DEFAULT_VISION_POS_EMBEDDING_FILE);
+    let text_model_path = resolve_text_model_path(root, None);
+    let text_token_embedding_path = resolve_text_token_embedding_path(root, None);
+    let image_model_path = resolve_image_model_path(root, None);
+    let vision_pos_embedding_path =
+        resolve_relative_or_absolute(root, DEFAULT_VISION_POS_EMBEDDING_FILE);
 
-    let has_any_fgclip2_file =
-        text_model_path.exists() || image_model_path.exists() || vision_pos_embedding_path.exists();
+    let has_any_fgclip2_file = text_model_path.exists()
+        || text_token_embedding_path.exists()
+        || image_model_path.exists()
+        || vision_pos_embedding_path.exists();
     if !has_any_fgclip2_file {
         return Ok(None);
     }
 
-    let text_model_path = require_file(&text_model_path, "文本 ONNX 模型")?;
+    let text_model_path = require_split_text_model_file(&text_model_path)?;
+    let text_token_embedding_path =
+        require_file(&text_token_embedding_path, "文本 token embedding")?;
+    let text_token_embedding_dtype =
+        resolve_text_token_embedding_dtype(None, &text_token_embedding_path)?;
     let image_model_path = require_file(&image_model_path, "图像 ONNX 模型")?;
     let tokenizer_json_path = resolve_tokenizer_json_path(root)?;
     let vision_pos_embedding_path =
         require_file(&vision_pos_embedding_path, "vision position embedding")?;
     let logit_params_path = resolve_optional_file(root, DEFAULT_LOGIT_PARAMS_FILE);
-    let fingerprint = model_metadata_fingerprint(&[&text_model_path, &image_model_path]);
+    let fingerprint = model_metadata_fingerprint(&[
+        text_model_path.as_path(),
+        text_token_embedding_path.as_path(),
+        image_model_path.as_path(),
+    ]);
     let manifest = ModelManifest {
         model_id: format!("fgclip2-base@{fingerprint}"),
         version: format!("onnx-wrapper:{fingerprint}"),
@@ -369,29 +427,89 @@ fn try_resolve_fgclip2_layout(root: &Path) -> Result<Option<ResolvedModelPaths>,
         context_length: DEFAULT_CONTEXT_LENGTH,
         source_url: String::new(),
         sha256: None,
-        image_model_file: Some(DEFAULT_IMAGE_MODEL_FILE.to_string()),
-        text_model_file: Some(DEFAULT_TEXT_MODEL_FILE.to_string()),
-        tokenizer_json_file: tokenizer_json_path
-            .strip_prefix(root)
-            .ok()
-            .map(path_to_manifest_string),
-        vision_pos_embedding_file: Some(DEFAULT_VISION_POS_EMBEDDING_FILE.to_string()),
+        image_model_file: Some(path_for_manifest(root, &image_model_path)),
+        text_model_file: Some(path_for_manifest(root, &text_model_path)),
+        text_token_embedding_file: Some(path_for_manifest(root, &text_token_embedding_path)),
+        text_token_embedding_dtype: Some(
+            text_token_embedding_dtype_name(text_token_embedding_dtype).to_string(),
+        ),
+        tokenizer_json_file: Some(path_for_manifest(root, &tokenizer_json_path)),
+        vision_pos_embedding_file: Some(path_for_manifest(root, &vision_pos_embedding_path)),
         logit_params_file: logit_params_path
             .as_ref()
-            .and_then(|path| path.strip_prefix(root).ok())
-            .map(path_to_manifest_string),
+            .map(|path| path_for_manifest(root, path)),
     };
 
     Ok(Some(ResolvedModelPaths {
         root: canonical_path(root),
         manifest_path: None,
         text_model_path,
+        text_token_embedding_path,
+        text_token_embedding_dtype,
         image_model_path,
         tokenizer_json_path,
         vision_pos_embedding_path,
         logit_params_path,
         manifest,
     }))
+}
+
+fn resolve_text_model_path(root: &Path, manifest: Option<&ModelManifest>) -> PathBuf {
+    if let Some(path) = resolve_env_override_path(root, TEXT_ONNX_ENV) {
+        return path;
+    }
+
+    if let Some(path) = manifest
+        .and_then(|item| item.text_model_file.as_deref())
+        .map(|value| resolve_relative_or_absolute(root, value))
+    {
+        return path;
+    }
+
+    resolve_relative_or_absolute(root, DEFAULT_SPLIT_TEXT_MODEL_FILE)
+}
+
+fn resolve_text_token_embedding_path(root: &Path, manifest: Option<&ModelManifest>) -> PathBuf {
+    if let Some(path) = resolve_env_override_path(root, TEXT_TOKEN_EMBEDDING_ENV) {
+        return path;
+    }
+
+    if let Some(path) = manifest
+        .and_then(|item| item.text_token_embedding_file.as_deref())
+        .map(|value| resolve_relative_or_absolute(root, value))
+    {
+        return path;
+    }
+
+    resolve_relative_or_absolute(root, DEFAULT_TEXT_TOKEN_EMBEDDING_FILE)
+}
+
+fn resolve_image_model_path(root: &Path, manifest: Option<&ModelManifest>) -> PathBuf {
+    if let Some(path) = resolve_env_override_path(root, IMAGE_ONNX_ENV) {
+        return path;
+    }
+
+    if let Some(path) = manifest
+        .and_then(|item| item.image_model_file.as_deref())
+        .map(|value| resolve_relative_or_absolute(root, value))
+    {
+        return path;
+    }
+
+    resolve_relative_or_absolute(root, DEFAULT_IMAGE_MODEL_FILE)
+}
+
+fn require_split_text_model_file(path: &Path) -> Result<PathBuf, String> {
+    let path = require_file(path, "split-text 文本 ONNX 模型")?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if file_name.contains("token_embeds") {
+        Ok(path)
+    } else {
+        Err("当前仅支持 split-text 文本模型，请选择 split/fgclip2_text_short_b1_s64_token_embeds.onnx".to_string())
+    }
 }
 
 fn validate_manifest(manifest: &ModelManifest) -> Result<(), String> {
@@ -447,8 +565,81 @@ fn resolve_tokenizer_json_path(root: &Path) -> Result<PathBuf, String> {
     )
 }
 
-fn resolve_optional_file(root: &Path, relative_name: &str) -> Option<PathBuf> {
-    let path = root.join(relative_name);
+fn resolve_relative_or_absolute(root: &Path, path_value: &str) -> PathBuf {
+    let path = PathBuf::from(path_value);
+    if path.is_absolute() {
+        return path;
+    }
+
+    let candidate = root.join(&path);
+    if candidate.exists() {
+        return candidate;
+    }
+
+    let root_name = root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    if root_name == ".onnx-wrapper-test" {
+        if let Some(parent) = root.parent() {
+            let parent_candidate = parent.join(&path);
+            if parent_candidate.exists() {
+                return parent_candidate;
+            }
+        }
+    }
+
+    candidate
+}
+
+fn resolve_env_override_path(root: &Path, env_key: &str) -> Option<PathBuf> {
+    let value = std::env::var(env_key).ok()?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(resolve_relative_or_absolute(root, trimmed))
+}
+
+fn resolve_text_token_embedding_dtype(
+    manifest: Option<&ModelManifest>,
+    embedding_path: &Path,
+) -> Result<TextTokenEmbeddingDtype, String> {
+    if let Some(value) = manifest.and_then(|item| item.text_token_embedding_dtype.as_deref()) {
+        return parse_text_token_embedding_dtype(value);
+    }
+
+    if let Ok(value) = std::env::var(TEXT_TOKEN_EMBEDDING_DTYPE_ENV) {
+        return parse_text_token_embedding_dtype(&value);
+    }
+
+    if embedding_path.to_string_lossy().contains("_f32") {
+        Ok(TextTokenEmbeddingDtype::F32)
+    } else {
+        Ok(TextTokenEmbeddingDtype::F16)
+    }
+}
+
+fn parse_text_token_embedding_dtype(value: &str) -> Result<TextTokenEmbeddingDtype, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "f16" | "float16" => Ok(TextTokenEmbeddingDtype::F16),
+        "f32" | "float32" => Ok(TextTokenEmbeddingDtype::F32),
+        other => Err(format!(
+            "不支持的文本 token embedding dtype: {other}，仅支持 f16 或 f32"
+        )),
+    }
+}
+
+fn text_token_embedding_dtype_name(dtype: TextTokenEmbeddingDtype) -> &'static str {
+    match dtype {
+        TextTokenEmbeddingDtype::F16 => "f16",
+        TextTokenEmbeddingDtype::F32 => "f32",
+    }
+}
+
+fn resolve_optional_file(root: &Path, path_value: &str) -> Option<PathBuf> {
+    let path = resolve_relative_or_absolute(root, path_value);
     path.is_file().then_some(path)
 }
 
@@ -467,15 +658,17 @@ fn collect_missing_files(root: &Path) -> Vec<String> {
         root.to_path_buf()
     };
 
-    let mut missing_files = [
-        DEFAULT_TEXT_MODEL_FILE,
-        DEFAULT_IMAGE_MODEL_FILE,
-        DEFAULT_VISION_POS_EMBEDDING_FILE,
-    ]
-    .into_iter()
-    .filter(|name| !root.join(name).is_file())
-    .map(str::to_string)
-    .collect::<Vec<_>>();
+    let mut missing_files = Vec::new();
+    for path in [
+        root.join(DEFAULT_SPLIT_TEXT_MODEL_FILE),
+        root.join(DEFAULT_TEXT_TOKEN_EMBEDDING_FILE),
+        root.join(DEFAULT_IMAGE_MODEL_FILE),
+        root.join(DEFAULT_VISION_POS_EMBEDDING_FILE),
+    ] {
+        if !path.is_file() {
+            missing_files.push(path_for_manifest(&root, &path));
+        }
+    }
 
     if resolve_tokenizer_json_path(&root).is_err() {
         missing_files.push(DEFAULT_TOKENIZER_JSON_FILE.to_string());
@@ -539,6 +732,14 @@ fn model_metadata_fingerprint(paths: &[&Path]) -> String {
         .collect()
 }
 
+fn path_for_manifest(root: &Path, path: &Path) -> String {
+    if let Ok(relative) = path.strip_prefix(root) {
+        path_to_manifest_string(relative)
+    } else {
+        path.to_string_lossy().replace('\\', "/")
+    }
+}
+
 fn path_to_manifest_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
@@ -566,9 +767,18 @@ mod tests {
         ))
     }
 
-    fn write_minimal_fgclip2_wrapper(root: &Path) {
+    fn write_minimal_split_fgclip2_wrapper(root: &Path) {
         std::fs::create_dir_all(root.join("assets")).unwrap();
-        std::fs::write(root.join(DEFAULT_TEXT_MODEL_FILE), b"text").unwrap();
+        std::fs::create_dir_all(root.join("split")).unwrap();
+        std::fs::write(root.join(DEFAULT_SPLIT_TEXT_MODEL_FILE), b"text").unwrap();
+        std::fs::write(root.join(DEFAULT_IMAGE_MODEL_FILE), b"image").unwrap();
+        std::fs::write(root.join(DEFAULT_VISION_POS_EMBEDDING_FILE), b"pos").unwrap();
+        std::fs::write(root.join(DEFAULT_TEXT_TOKEN_EMBEDDING_FILE), b"embed").unwrap();
+    }
+
+    fn write_minimal_full_text_fgclip2_wrapper(root: &Path) {
+        std::fs::create_dir_all(root.join("assets")).unwrap();
+        std::fs::write(root.join("fgclip2_text_short_b1_s64.onnx"), b"text").unwrap();
         std::fs::write(root.join(DEFAULT_IMAGE_MODEL_FILE), b"image").unwrap();
         std::fs::write(root.join(DEFAULT_VISION_POS_EMBEDDING_FILE), b"pos").unwrap();
     }
@@ -579,13 +789,18 @@ mod tests {
         let wrapper = parent.join(".onnx-wrapper-test");
         let hf_model = parent.join("models").join("fg-clip2-base");
         std::fs::create_dir_all(&hf_model).unwrap();
-        write_minimal_fgclip2_wrapper(&wrapper);
+        write_minimal_split_fgclip2_wrapper(&wrapper);
         std::fs::write(hf_model.join("tokenizer.json"), b"{}").unwrap();
 
         let resolved = resolve_model_paths(wrapper.to_string_lossy().as_ref()).unwrap();
         assert_eq!(resolved.manifest.embedding_dim, 768);
         assert_eq!(resolved.manifest.context_length, 64);
-        assert!(resolved.text_model_path.ends_with(DEFAULT_TEXT_MODEL_FILE));
+        assert!(resolved
+            .text_model_path
+            .ends_with(Path::new(DEFAULT_SPLIT_TEXT_MODEL_FILE)));
+        assert!(resolved
+            .text_token_embedding_path
+            .ends_with(Path::new(DEFAULT_TEXT_TOKEN_EMBEDDING_FILE)));
         assert!(resolved
             .tokenizer_json_path
             .ends_with("fg-clip2-base/tokenizer.json"));
@@ -598,12 +813,28 @@ mod tests {
         let parent = unique_temp_dir("fgclip2-parent-child");
         let wrapper = parent.join(".onnx-wrapper-test");
         std::fs::create_dir_all(&parent).unwrap();
-        write_minimal_fgclip2_wrapper(&wrapper);
+        write_minimal_split_fgclip2_wrapper(&wrapper);
         std::fs::write(wrapper.join(DEFAULT_TOKENIZER_JSON_FILE), b"{}").unwrap();
 
         let resolved = resolve_model_paths(parent.to_string_lossy().as_ref()).unwrap();
         assert_eq!(resolved.root, canonical_path(&wrapper));
+        assert!(resolved
+            .text_model_path
+            .ends_with(Path::new(DEFAULT_SPLIT_TEXT_MODEL_FILE)));
 
         let _ = std::fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn rejects_full_text_wrapper_when_split_text_is_required() {
+        let root = unique_temp_dir("fgclip2-full-text");
+        std::fs::create_dir_all(&root).unwrap();
+        write_minimal_full_text_fgclip2_wrapper(&root);
+        std::fs::write(root.join(DEFAULT_TOKENIZER_JSON_FILE), b"{}").unwrap();
+
+        let error = resolve_model_paths(root.to_string_lossy().as_ref()).unwrap_err();
+        assert!(error.contains("split-text"));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }
