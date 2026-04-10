@@ -1,6 +1,5 @@
 use image::{imageops::FilterType, DynamicImage, GenericImageView, RgbImage};
 use ndarray::{Array, ArrayD, IxDyn};
-use std::fs;
 use std::path::Path;
 
 const PATCH_SIZE: usize = 16;
@@ -14,24 +13,14 @@ pub struct FgClip2ImageInputs {
     pub max_patches: usize,
 }
 
-fn load_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
-    if let Ok(format) = image::guess_format(bytes) {
-        if let Ok(image) = image::load_from_memory_with_format(bytes, format) {
-            return Ok(image);
-        }
-    }
-
-    image::load_from_memory(bytes).map_err(|e| format!("无法读取图片内容: {}", e))
-}
-
 pub fn preprocess_image_bytes(bytes: &[u8]) -> Result<FgClip2ImageInputs, String> {
-    let image = load_image_from_bytes(bytes).map_err(|e| format!("无法读取图片: {}", e))?;
+    let image = crate::media::load_dynamic_image_from_bytes(bytes)?;
     preprocess_dynamic_image(image)
 }
 
 pub fn preprocess_image_path(path: &Path) -> Result<FgClip2ImageInputs, String> {
-    let bytes = fs::read(path).map_err(|e| format!("无法读取图片 '{}': {}", path.display(), e))?;
-    preprocess_image_bytes(&bytes).map_err(|e| format!("无法读取图片 '{}': {}", path.display(), e))
+    let image = crate::media::load_dynamic_image_from_path(path)?;
+    preprocess_dynamic_image(image)
 }
 
 fn preprocess_dynamic_image(image: DynamicImage) -> Result<FgClip2ImageInputs, String> {

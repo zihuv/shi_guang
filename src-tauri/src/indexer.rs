@@ -266,7 +266,7 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
         return Ok((0, 0));
     }
 
-    match image::open(path) {
+    match crate::media::load_dynamic_image_from_path(path) {
         Ok(img) => Ok(img.dimensions()),
         Err(_) => Ok((0, 0)),
     }
@@ -275,7 +275,6 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
 /// 检查是否为不支持颜色提取的图像格式
 fn is_color_extraction_unsupported_format(ext: &str) -> bool {
     ext.eq_ignore_ascii_case("svg")
-        || ext.eq_ignore_ascii_case("avif")
         || ext.eq_ignore_ascii_case("pdf")
         || ext.eq_ignore_ascii_case("mp4")
         || ext.eq_ignore_ascii_case("avi")
@@ -306,7 +305,7 @@ pub fn extract_dominant_color(path: &Path) -> Result<String, String> {
         return Ok(String::new());
     }
 
-    match image::open(path) {
+    match crate::media::load_dynamic_image_from_path(path) {
         Ok(img) => {
             // Resize image to small size for faster processing
             let img = img.resize(50, 50, image::imageops::FilterType::Nearest);
@@ -347,7 +346,7 @@ pub fn extract_color_distribution(path: &Path) -> Result<Vec<ColorInfo>, String>
         return Ok(Vec::new());
     }
 
-    match image::open(path) {
+    match crate::media::load_dynamic_image_from_path(path) {
         Ok(img) => {
             // Resize image to small size for faster processing
             let img = img.resize(50, 50, image::imageops::FilterType::Nearest);

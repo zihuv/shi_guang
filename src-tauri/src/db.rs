@@ -48,7 +48,7 @@ pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
         return Ok((0, 0));
     }
 
-    match image::open(path) {
+    match crate::media::load_dynamic_image_from_path(path) {
         Ok(img) => Ok(img.dimensions()),
         Err(_) => Ok((0, 0)),
     }

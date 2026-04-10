@@ -1,3 +1,8 @@
+use image::{DynamicImage, ImageReader};
+use std::fs;
+use std::io::{BufReader, Cursor};
+use std::path::Path;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MediaTypeMapping {
     pub mime_type: &'static str,
@@ -88,6 +93,9 @@ const TIFF_MEDIA_TYPE_MAPPINGS: [MediaTypeMapping; 2] = [
 
 pub(crate) const VISUAL_SEARCH_SUPPORTED_EXTENSIONS: [&str; 12] = [
     "jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff", "ico", "avif", "heic", "heif",
+];
+pub(crate) const BACKEND_DECODABLE_IMAGE_EXTENSIONS: [&str; 10] = [
+    "jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff", "ico", "avif",
 ];
 
 fn normalize_content_type(content_type: &str) -> String {
@@ -189,9 +197,53 @@ pub(crate) fn detect_extension_from_content(
     extension_from_content_type(content_type).or_else(|| extension_from_magic_bytes(data))
 }
 
+pub(crate) fn is_backend_decodable_image_extension(ext: &str) -> bool {
+    BACKEND_DECODABLE_IMAGE_EXTENSIONS
+        .iter()
+        .any(|item| item.eq_ignore_ascii_case(ext))
+}
+
+pub(crate) fn load_dynamic_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
+    let detected_format = image::guess_format(bytes).ok();
+    let header = bytes
+        .iter()
+        .take(12)
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let decode_with_reader = || -> Result<DynamicImage, String> {
+        let reader = ImageReader::new(BufReader::new(Cursor::new(bytes)))
+            .with_guessed_format()
+            .map_err(|e| format!("无法识别图片格式: {}", e))?;
+        reader
+            .decode()
+            .map_err(|e| format!("reader decode failed: {}", e))
+    };
+
+    decode_with_reader().or_else(|reader_error| {
+        image::load_from_memory(bytes).map_err(|memory_error| match detected_format {
+            Some(format) => format!(
+                "无法读取图片: 内容格式={format:?}，文件头={header}，reader={reader_error}，memory={memory_error}"
+            ),
+            None => format!(
+                "无法识别图片格式，文件可能已损坏或并非图片。文件头={header}，reader={reader_error}，memory={memory_error}"
+            ),
+        })
+    })
+}
+
+pub(crate) fn load_dynamic_image_from_path(path: &Path) -> Result<DynamicImage, String> {
+    let bytes =
+        fs::read(path).map_err(|e| format!("无法读取图片文件 '{}': {}", path.display(), e))?;
+    load_dynamic_image_from_bytes(&bytes)
+        .map_err(|e| format!("无法读取图片文件 '{}': {}", path.display(), e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb};
 
     #[test]
     fn content_type_detection_supports_avif() {
@@ -226,5 +278,31 @@ mod tests {
             detect_extension_from_content(Some("application/octet-stream"), &bytes),
             Some("heic")
         );
+    }
+
+    #[test]
+    fn backend_decodable_extension_supports_avif() {
+        assert!(is_backend_decodable_image_extension("avif"));
+        assert!(is_backend_decodable_image_extension("AVIF"));
+    }
+
+    #[test]
+    fn load_dynamic_image_from_path_reads_mismatched_extension_from_content() {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-media-test-{}-{}.png",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(2, 3, Rgb([12, 34, 56])));
+        image.save_with_format(&path, ImageFormat::Jpeg).unwrap();
+
+        let decoded = load_dynamic_image_from_path(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(decoded.dimensions(), (2, 3));
     }
 }

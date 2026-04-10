@@ -1,4 +1,5 @@
 use super::*;
+use crate::media;
 use crate::ml::model_manager::{
     find_recommended_visual_model_path as find_recommended_visual_model_path_impl,
     load_visual_search_config, resolve_model_paths,
@@ -9,9 +10,8 @@ use crate::openai::{
 };
 use base64::Engine;
 use image::codecs::jpeg::JpegEncoder;
-use image::{imageops::FilterType, ColorType, GenericImageView, ImageFormat, ImageReader};
+use image::{imageops::FilterType, ColorType, GenericImageView};
 use serde::Serialize;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
 
@@ -68,10 +68,7 @@ pub enum AiEndpointTarget {
 }
 
 pub(crate) fn is_backend_decodable_image(file: &FileWithTags) -> bool {
-    matches!(
-        file.ext.to_ascii_lowercase().as_str(),
-        "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif" | "tif" | "tiff" | "ico"
-    )
+    media::is_backend_decodable_image_extension(&file.ext)
 }
 
 fn is_supported_image_for_ai(file: &FileWithTags, has_image_data_url: bool) -> bool {
@@ -96,42 +93,8 @@ fn is_supported_image_for_ai(file: &FileWithTags, has_image_data_url: bool) -> b
     }
 }
 
-fn load_image_from_bytes(
-    bytes: &[u8],
-    detected_format: Option<ImageFormat>,
-) -> Result<image::DynamicImage, String> {
-    let header = bytes
-        .iter()
-        .take(12)
-        .map(|byte| format!("{byte:02X}"))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let decode_with_reader = || -> Result<image::DynamicImage, String> {
-        let reader = ImageReader::new(BufReader::new(std::io::Cursor::new(bytes)))
-            .with_guessed_format()
-            .map_err(|e| format!("无法识别图片格式: {}", e))?;
-        reader
-            .decode()
-            .map_err(|e| format!("reader decode failed: {}", e))
-    };
-
-    decode_with_reader().or_else(|reader_error| {
-        image::load_from_memory(bytes).map_err(|memory_error| match detected_format {
-            Some(format) => format!(
-                "无法读取图片: 内容格式={format:?}，文件头={header}，reader={reader_error}，memory={memory_error}"
-            ),
-            None => format!(
-                "无法识别图片格式，文件可能已损坏或并非图片。文件头={header}，reader={reader_error}，memory={memory_error}"
-            ),
-        })
-    })
-}
-
 fn prepare_image_data_url(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| format!("无法读取图片文件: {}", e))?;
-    let detected_format = image::guess_format(&bytes).ok();
-    let image = load_image_from_bytes(&bytes, detected_format)?;
+    let image = media::load_dynamic_image_from_path(path)?;
     let (width, height) = image.dimensions();
     let resized = if width.max(height) > 1280 {
         image.resize(1280, 1280, FilterType::Lanczos3)

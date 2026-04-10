@@ -61,7 +61,9 @@ async function collectImage({
   imageUrl,
   referer,
   missingImageMessage = '未找到图片，请右键点击图片后重试',
-  notifyOnError = true
+  notifyOnError = true,
+  notifyOnSuccess = false,
+  successMessage = '已发送到拾光'
 }) {
   if (!imageUrl) {
     if (notifyOnError) {
@@ -76,6 +78,9 @@ async function collectImage({
 
   try {
     const result = await importImageToShiguang(imageUrl, referer);
+    if (notifyOnSuccess) {
+      await notifyResult(tabId, successMessage, 'success', 2200);
+    }
     return {
       success: true,
       result
@@ -124,12 +129,10 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const tabId = tab?.id;
   const referer = tab?.url || info.pageUrl;
+  let imageUrl = null;
 
-  // 优先使用 srcUrl
-  let imageUrl = info.srcUrl;
-
-  // 如果没有 srcUrl，从 content script 获取最后一次右键点击的图片
-  if (!imageUrl && tabId) {
+  // 优先复用 content script 的取图结果，和 Alt+左键保持一致
+  if (tabId) {
     try {
       const response = await chrome.tabs.sendMessage(tabId, {
         action: 'getLastImageUrl'
@@ -142,11 +145,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 
+  // content script 未取到时，再回退到浏览器提供的 srcUrl
+  if (!imageUrl) {
+    imageUrl = info.srcUrl || null;
+  }
+
   await collectImage({
     tabId,
     imageUrl,
     referer,
-    missingImageMessage: '未找到图片，请右键点击图片后重试'
+    missingImageMessage: '未找到图片，请右键点击图片后重试',
+    notifyOnSuccess: true
   });
 });
 
@@ -169,7 +178,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       imageUrl: payload.imageUrl,
       referer: payload.referer || _sender.tab?.url,
       missingImageMessage: payload.missingImageMessage || '未找到可采集的图片',
-      notifyOnError: false
+      notifyOnError: false,
+      notifyOnSuccess: payload.notifyOnSuccess === true,
+      successMessage: payload.successMessage || '已发送到拾光'
     }).then(sendResponse);
     return true;
   }

@@ -138,7 +138,9 @@ async function requestCollectImage(imageUrl, options = {}) {
     payload: {
       imageUrl,
       referer: options.referer || window.location.href,
-      missingImageMessage: options.missingImageMessage
+      missingImageMessage: options.missingImageMessage,
+      notifyOnSuccess: options.notifyOnSuccess,
+      successMessage: options.successMessage
     }
   });
 
@@ -224,14 +226,14 @@ document.addEventListener('click', async (event) => {
 
   try {
     const result = await requestCollectImage(imageUrl, {
-      missingImageMessage: '未找到可采集的图片'
+      missingImageMessage: '未找到可采集的图片',
+      notifyOnSuccess: true,
+      successMessage: '已发送到拾光'
     });
 
     if (!result.success) {
       throw new Error(result.error || '未知错误');
     }
-
-    showToast('已发送到拾光', 'success', 2200);
   } catch (error) {
     console.error('Alt+左键发送到拾光失败:', error);
     showToast('发送失败: ' + getErrorMessage(error), 'error', 3600);

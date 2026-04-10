@@ -191,7 +191,7 @@ pub fn get_or_create_thumbnail(
         return Ok(Some(output_path));
     }
 
-    let image = match image::open(file_path) {
+    let image = match crate::media::load_dynamic_image_from_path(file_path) {
         Ok(img) => img,
         Err(_) => return Ok(None),
     };

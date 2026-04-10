@@ -310,7 +310,7 @@ pub fn copy_files_to_clipboard(state: State<AppState>, file_ids: Vec<i64>) -> Re
 }
 
 fn load_clipboard_image_data(path: &Path) -> Option<ImageData<'static>> {
-    let decoded = image::open(path).ok()?;
+    let decoded = crate::media::load_dynamic_image_from_path(path).ok()?;
     let rgba = decoded.into_rgba8();
     let (width, height) = rgba.dimensions();
 
