@@ -60,12 +60,13 @@ impl Database {
         embedding: &[u8],
         source_size: i64,
         source_modified_at: &str,
+        source_content_hash: &str,
     ) -> Result<()> {
         self.conn.execute(
             "INSERT INTO file_visual_embeddings (
-                file_id, model_id, dimensions, embedding, source_size, source_modified_at, indexed_at, status, last_error
+                file_id, model_id, dimensions, embedding, source_size, source_modified_at, source_content_hash, indexed_at, status, last_error
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'ready', ''
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'ready', ''
             )
             ON CONFLICT(file_id) DO UPDATE SET
                 model_id = excluded.model_id,
@@ -73,6 +74,7 @@ impl Database {
                 embedding = excluded.embedding,
                 source_size = excluded.source_size,
                 source_modified_at = excluded.source_modified_at,
+                source_content_hash = excluded.source_content_hash,
                 indexed_at = excluded.indexed_at,
                 status = 'ready',
                 last_error = ''",
@@ -83,6 +85,7 @@ impl Database {
                 embedding,
                 source_size,
                 source_modified_at,
+                source_content_hash,
                 current_timestamp(),
             ],
         )?;
@@ -95,13 +98,14 @@ impl Database {
         model_id: &str,
         source_size: i64,
         source_modified_at: &str,
+        source_content_hash: Option<&str>,
         error: &str,
     ) -> Result<()> {
         self.conn.execute(
             "INSERT INTO file_visual_embeddings (
-                file_id, model_id, dimensions, embedding, source_size, source_modified_at, indexed_at, status, last_error
+                file_id, model_id, dimensions, embedding, source_size, source_modified_at, source_content_hash, indexed_at, status, last_error
             ) VALUES (
-                ?1, ?2, 0, NULL, ?3, ?4, ?5, 'error', ?6
+                ?1, ?2, 0, NULL, ?3, ?4, ?5, ?6, 'error', ?7
             )
             ON CONFLICT(file_id) DO UPDATE SET
                 model_id = excluded.model_id,
@@ -109,6 +113,7 @@ impl Database {
                 embedding = NULL,
                 source_size = excluded.source_size,
                 source_modified_at = excluded.source_modified_at,
+                source_content_hash = excluded.source_content_hash,
                 indexed_at = excluded.indexed_at,
                 status = 'error',
                 last_error = excluded.last_error",
@@ -117,6 +122,7 @@ impl Database {
                 model_id,
                 source_size,
                 source_modified_at,
+                source_content_hash,
                 current_timestamp(),
                 error,
             ],
@@ -245,8 +251,8 @@ impl Database {
                    AND fve.embedding IS NOT NULL
                    AND f.deleted_at IS NULL
                    AND LOWER(f.ext) IN ({ext_list})
-                   AND fve.source_size = f.size
-                   AND fve.source_modified_at = f.fs_modified_at"
+                   AND {}",
+                current_visual_source_match_sql()
             ),
             [model_id],
             |row| row.get(0),
@@ -261,8 +267,8 @@ impl Database {
                    AND fve.status = 'error'
                    AND f.deleted_at IS NULL
                    AND LOWER(f.ext) IN ({ext_list})
-                   AND fve.source_size = f.size
-                   AND fve.source_modified_at = f.fs_modified_at"
+                   AND {}",
+                current_visual_source_match_sql()
             ),
             [model_id],
             |row| row.get(0),
@@ -276,7 +282,8 @@ impl Database {
                  WHERE fve.model_id = ?1
                    AND f.deleted_at IS NULL
                    AND LOWER(f.ext) IN ({ext_list})
-                   AND (fve.source_size != f.size OR fve.source_modified_at != f.fs_modified_at)"
+                   AND {}",
+                outdated_visual_source_match_sql()
             ),
             [model_id],
             |row| row.get(0),
@@ -306,7 +313,9 @@ impl Database {
                AND fve.status = 'error'
                AND f.deleted_at IS NULL
                AND LOWER(f.ext) IN ({ext_list})
-             ORDER BY f.id ASC"
+               AND {}
+              ORDER BY f.id ASC",
+            current_visual_source_match_sql()
         ))?;
 
         let rows = stmt.query_map([model_id], |row| {
@@ -426,9 +435,9 @@ impl Database {
                    AND fve.status = 'ready'
                    AND fve.embedding IS NOT NULL
                    AND f.deleted_at IS NULL
-                   AND fve.source_size = f.size
-                   AND fve.source_modified_at = f.fs_modified_at
-                   AND fve.file_id IN ({placeholders})"
+                   AND {}
+                   AND fve.file_id IN ({placeholders})",
+                current_visual_source_match_sql()
             );
 
             let mut stmt = self.conn.prepare(&sql)?;
@@ -469,6 +478,44 @@ fn is_supported_image_ext(ext: &str) -> bool {
     VISUAL_SEARCH_SUPPORTED_EXTENSIONS
         .iter()
         .any(|supported| supported.eq_ignore_ascii_case(ext))
+}
+
+fn current_visual_source_match_sql() -> &'static str {
+    "(
+        (
+            NULLIF(fve.source_content_hash, '') IS NOT NULL
+            AND NULLIF(f.content_hash, '') IS NOT NULL
+            AND fve.source_content_hash = f.content_hash
+        )
+        OR (
+            (
+                NULLIF(fve.source_content_hash, '') IS NULL
+                OR NULLIF(f.content_hash, '') IS NULL
+            )
+            AND fve.source_size = f.size
+            AND fve.source_modified_at = f.fs_modified_at
+        )
+    )"
+}
+
+fn outdated_visual_source_match_sql() -> &'static str {
+    "(
+        (
+            NULLIF(fve.source_content_hash, '') IS NOT NULL
+            AND NULLIF(f.content_hash, '') IS NOT NULL
+            AND fve.source_content_hash != f.content_hash
+        )
+        OR (
+            (
+                NULLIF(fve.source_content_hash, '') IS NULL
+                OR NULLIF(f.content_hash, '') IS NULL
+            )
+            AND (
+                fve.source_size != f.size
+                OR fve.source_modified_at != f.fs_modified_at
+            )
+        )
+    )"
 }
 
 fn cosine_similarity_from_blob(
@@ -542,6 +589,11 @@ mod tests {
         }
     }
 
+    fn set_file_content_hash(db: &Database, file_id: i64, content_hash: &str) {
+        db.update_file_content_hash(file_id, Some(content_hash))
+            .unwrap();
+    }
+
     #[test]
     fn visual_search_orders_by_similarity() {
         let path = std::env::temp_dir().join(format!(
@@ -591,8 +643,10 @@ mod tests {
             &embedding_blob(&[1.0, 0.0]),
             1,
             &red_source_modified_at,
+            "hash-red",
         )
         .unwrap();
+        set_file_content_hash(&db, red_id, "hash-red");
         db.upsert_file_visual_embedding(
             blue_id,
             "fgclip2-test",
@@ -600,8 +654,10 @@ mod tests {
             &embedding_blob(&[0.0, 1.0]),
             1,
             &blue_source_modified_at,
+            "hash-blue",
         )
         .unwrap();
+        set_file_content_hash(&db, blue_id, "hash-blue");
 
         let result = db
             .search_files_by_visual_embedding(
@@ -651,8 +707,57 @@ mod tests {
             &embedding_blob(&[1.0, 0.0]),
             1,
             &source_modified_at,
+            "hash-v1",
         )
         .unwrap();
+        set_file_content_hash(&db, file_id, "hash-v2");
+
+        let counts = db.get_visual_index_counts("fgclip2-test").unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(counts.total_images, 1);
+        assert_eq!(counts.ready, 0);
+        assert_eq!(counts.outdated, 1);
+    }
+
+    #[test]
+    fn visual_index_counts_ignore_mtime_only_changes_when_hash_matches() {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-visual-counts-stable-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let db = Database::new(&path).unwrap();
+        let file_id = db
+            .insert_file(&make_file_record(
+                "D:\\visual\\same-content.png",
+                "same-content.png",
+            ))
+            .unwrap();
+        let source_modified_at = db
+            .conn
+            .query_row(
+                "SELECT fs_modified_at FROM files WHERE id = ?1",
+                [file_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+
+        db.upsert_file_visual_embedding(
+            file_id,
+            "fgclip2-test",
+            2,
+            &embedding_blob(&[1.0, 0.0]),
+            1,
+            &source_modified_at,
+            "hash-stable",
+        )
+        .unwrap();
+        set_file_content_hash(&db, file_id, "hash-stable");
         db.conn
             .execute(
                 "UPDATE files SET fs_modified_at = '2099-01-01 00:00:00' WHERE id = ?1",
@@ -664,7 +769,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(counts.total_images, 1);
-        assert_eq!(counts.ready, 0);
-        assert_eq!(counts.outdated, 1);
+        assert_eq!(counts.ready, 1);
+        assert_eq!(counts.outdated, 0);
     }
 }

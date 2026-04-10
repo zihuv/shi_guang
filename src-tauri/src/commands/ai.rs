@@ -281,6 +281,37 @@ fn decode_image_data_url(data_url: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("无法解析图片 data URL: {}", e))
 }
 
+fn sync_visual_content_hash(
+    state: &AppState,
+    candidate: &crate::db::VisualIndexCandidate,
+    image_data_url: Option<&str>,
+) -> Result<String, String> {
+    let content_hash_result = match image_data_url {
+        Some(image_data_url) => {
+            let image_bytes = decode_image_data_url(image_data_url)?;
+            crate::media::compute_visual_content_hash_from_bytes(&image_bytes)?
+        }
+        None => {
+            crate::media::compute_visual_content_hash_from_path(Path::new(&candidate.file.path))?
+        }
+    };
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    match db.update_file_content_hash(candidate.file.id, Some(&content_hash_result)) {
+        Ok(()) => Ok(content_hash_result),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn clear_visual_content_hash(
+    state: &AppState,
+    candidate: &crate::db::VisualIndexCandidate,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.update_file_content_hash(candidate.file.id, None)
+        .map_err(|e| e.to_string())
+}
+
 pub(crate) async fn analyze_file_metadata_impl(
     state: &AppState,
     file_id: i64,
@@ -379,6 +410,7 @@ fn reindex_visual_candidate(
     resolved_model: &crate::ml::model_manager::ResolvedModelPaths,
     candidate: &crate::db::VisualIndexCandidate,
     image_data_url: Option<&str>,
+    source_content_hash: &str,
 ) -> Result<(), String> {
     let embedding = {
         let mut runtime = state
@@ -403,6 +435,7 @@ fn reindex_visual_candidate(
         &embedding_blob,
         candidate.source_size,
         &candidate.source_modified_at,
+        source_content_hash,
     )
     .map_err(|e| e.to_string())
 }
@@ -423,11 +456,31 @@ pub(crate) fn reindex_file_visual_embedding_impl(
         (resolved_model, candidate)
     };
 
+    let source_content_hash =
+        match sync_visual_content_hash(state, &candidate, image_data_url.as_deref()) {
+            Ok(content_hash) => content_hash,
+            Err(error) => {
+                clear_visual_content_hash(state, &candidate)?;
+                let db = state.db.lock().map_err(|e| e.to_string())?;
+                db.mark_file_visual_embedding_error(
+                    candidate.file.id,
+                    &resolved_model.manifest.model_id,
+                    candidate.source_size,
+                    &candidate.source_modified_at,
+                    None,
+                    &error,
+                )
+                .map_err(|e| e.to_string())?;
+                return Err(error);
+            }
+        };
+
     match reindex_visual_candidate(
         state,
         &resolved_model,
         &candidate,
         image_data_url.as_deref(),
+        &source_content_hash,
     ) {
         Ok(()) => Ok(()),
         Err(error) => {
@@ -437,6 +490,7 @@ pub(crate) fn reindex_file_visual_embedding_impl(
                 &resolved_model.manifest.model_id,
                 candidate.source_size,
                 &candidate.source_modified_at,
+                Some(&source_content_hash),
                 &error,
             )
             .map_err(|e| e.to_string())?;
@@ -568,7 +622,32 @@ fn rebuild_visual_index_impl(
             );
         }
 
-        match reindex_visual_candidate(&state, &resolved_model, &candidate, None) {
+        let source_content_hash = match sync_visual_content_hash(state, &candidate, None) {
+            Ok(content_hash) => content_hash,
+            Err(error) => {
+                clear_visual_content_hash(state, &candidate)?;
+                let db = state.db.lock().map_err(|e| e.to_string())?;
+                db.mark_file_visual_embedding_error(
+                    candidate.file.id,
+                    &resolved_model.manifest.model_id,
+                    candidate.source_size,
+                    &candidate.source_modified_at,
+                    None,
+                    &error,
+                )
+                .map_err(|e| e.to_string())?;
+                result.failed += 1;
+                continue;
+            }
+        };
+
+        match reindex_visual_candidate(
+            &state,
+            &resolved_model,
+            &candidate,
+            None,
+            &source_content_hash,
+        ) {
             Ok(()) => {
                 result.indexed += 1;
             }
@@ -579,6 +658,7 @@ fn rebuild_visual_index_impl(
                     &resolved_model.manifest.model_id,
                     candidate.source_size,
                     &candidate.source_modified_at,
+                    Some(&source_content_hash),
                     &error,
                 )
                 .map_err(|e| e.to_string())?;

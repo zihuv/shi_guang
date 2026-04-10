@@ -829,6 +829,14 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_file_content_hash(&self, file_id: i64, content_hash: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET content_hash = ?1 WHERE id = ?2",
+            params![content_hash, file_id],
+        )?;
+        Ok(())
+    }
+
     pub fn update_file_path_and_folder(
         &self,
         file_id: i64,

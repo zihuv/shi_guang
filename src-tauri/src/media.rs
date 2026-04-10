@@ -1,4 +1,5 @@
 use image::{DynamicImage, ImageReader};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{BufReader, Cursor};
 use std::path::Path;
@@ -203,6 +204,12 @@ pub(crate) fn is_backend_decodable_image_extension(ext: &str) -> bool {
         .any(|item| item.eq_ignore_ascii_case(ext))
 }
 
+pub(crate) fn is_visual_search_supported_extension(ext: &str) -> bool {
+    VISUAL_SEARCH_SUPPORTED_EXTENSIONS
+        .iter()
+        .any(|item| item.eq_ignore_ascii_case(ext))
+}
+
 pub(crate) fn load_dynamic_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
     let detected_format = image::guess_format(bytes).ok();
     let header = bytes
@@ -238,6 +245,26 @@ pub(crate) fn load_dynamic_image_from_path(path: &Path) -> Result<DynamicImage, 
         fs::read(path).map_err(|e| format!("无法读取图片文件 '{}': {}", path.display(), e))?;
     load_dynamic_image_from_bytes(&bytes)
         .map_err(|e| format!("无法读取图片文件 '{}': {}", path.display(), e))
+}
+
+pub(crate) fn compute_visual_content_hash_from_bytes(bytes: &[u8]) -> Result<String, String> {
+    let image = load_dynamic_image_from_bytes(bytes)?;
+    Ok(compute_visual_content_hash(image))
+}
+
+pub(crate) fn compute_visual_content_hash_from_path(path: &Path) -> Result<String, String> {
+    let image = load_dynamic_image_from_path(path)?;
+    Ok(compute_visual_content_hash(image))
+}
+
+fn compute_visual_content_hash(image: DynamicImage) -> String {
+    let rgb = image.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    let mut hasher = Sha256::new();
+    hasher.update(width.to_le_bytes());
+    hasher.update(height.to_le_bytes());
+    hasher.update(rgb.as_raw());
+    format!("{:x}", hasher.finalize())
 }
 
 #[cfg(test)]

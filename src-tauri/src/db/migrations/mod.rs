@@ -8,6 +8,7 @@ mod v5;
 mod v6;
 mod v7;
 mod v8;
+mod v9;
 
 pub(super) fn run_migrations(db: &Database) -> Result<()> {
     let current_version: i32 = db
@@ -44,6 +45,10 @@ pub(super) fn run_migrations(db: &Database) -> Result<()> {
 
     if current_version < 8 {
         v8::apply(db)?;
+    }
+
+    if current_version < 9 {
+        v9::apply(db)?;
     }
 
     db.conn

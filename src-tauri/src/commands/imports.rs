@@ -69,6 +69,14 @@ fn format_file_timestamp(system_time: Option<std::time::SystemTime>) -> String {
         .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
 }
 
+fn compute_visual_content_hash_for_import(bytes: &[u8], ext: &str) -> Option<String> {
+    if !crate::media::is_visual_search_supported_extension(ext) {
+        return None;
+    }
+
+    crate::media::compute_visual_content_hash_from_bytes(bytes).ok()
+}
+
 pub(crate) fn read_source_file_timestamps(metadata: &fs::Metadata) -> (String, String) {
     (
         format_file_timestamp(metadata.created().ok()),
@@ -147,6 +155,14 @@ pub(crate) fn import_bytes_with_database(
             return Err(error.to_string());
         }
     };
+    let visual_content_hash = compute_visual_content_hash_for_import(&request.bytes, &ext);
+    if let Err(error) = db.update_file_content_hash(file_id, visual_content_hash.as_deref()) {
+        log::warn!(
+            "Failed to persist visual content hash for imported file {}: {}",
+            dest_path.display(),
+            error
+        );
+    }
     db.get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Failed to retrieve imported file".to_string())

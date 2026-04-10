@@ -93,6 +93,8 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
                         // File is unchanged, skip processing
                         continue;
                     }
+                    let visual_content_hash =
+                        compute_visual_content_hash_for_scan(file_path, &file_record.ext);
                     // File is modified, update basic info only
                     if let Err(e) = db.update_file_basic_info(
                         &file_path_str,
@@ -104,6 +106,7 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
                         file_record.folder_id,
                         &file_record.created_at,
                         &file_record.modified_at,
+                        visual_content_hash.as_deref(),
                     ) {
                         log::warn!("Failed to update file {}: {}", file_path.display(), e);
                     }
@@ -116,10 +119,24 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             // New file, insert it
             match process_file(file_path, &ext, folder_id) {
                 Ok(file_record) => {
-                    if let Err(e) = db.insert_file(&file_record) {
-                        log::warn!("Failed to insert file {}: {}", file_path.display(), e);
-                    } else {
-                        count += 1;
+                    let visual_content_hash =
+                        compute_visual_content_hash_for_scan(file_path, &file_record.ext);
+                    match db.insert_file(&file_record) {
+                        Ok(file_id) => {
+                            if let Err(e) =
+                                db.update_file_content_hash(file_id, visual_content_hash.as_deref())
+                            {
+                                log::warn!(
+                                    "Failed to persist visual content hash for {}: {}",
+                                    file_path.display(),
+                                    e
+                                );
+                            }
+                            count += 1;
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to insert file {}: {}", file_path.display(), e);
+                        }
                     }
                 }
                 Err(e) => {
@@ -235,6 +252,14 @@ fn process_file(path: &Path, ext: &str, folder_id: Option<i64>) -> Result<FileRe
         dominant_color,
         color_distribution: color_distribution_json,
     })
+}
+
+fn compute_visual_content_hash_for_scan(path: &Path, ext: &str) -> Option<String> {
+    if !crate::media::is_visual_search_supported_extension(ext) {
+        return None;
+    }
+
+    crate::media::compute_visual_content_hash_from_path(path).ok()
 }
 
 fn should_skip_entry(entry: &DirEntry) -> bool {

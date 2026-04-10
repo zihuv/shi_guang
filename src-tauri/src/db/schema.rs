@@ -102,6 +102,7 @@ impl Database {
                 embedding BLOB,
                 source_size INTEGER NOT NULL,
                 source_modified_at TEXT NOT NULL,
+                source_content_hash TEXT,
                 indexed_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 last_error TEXT NOT NULL DEFAULT '',

@@ -387,10 +387,22 @@ impl Database {
         folder_id: Option<i64>,
         created_at: &str,
         modified_at: &str,
+        content_hash: Option<&str>,
     ) -> Result<()> {
         self.conn.execute(
-            "UPDATE files SET name = ?1, ext = ?2, size = ?3, width = ?4, height = ?5, folder_id = ?6, created_at = ?7, modified_at = ?8, fs_modified_at = ?8 WHERE path = ?9",
-            params![name, ext, size, width, height, folder_id, created_at, modified_at, path],
+            "UPDATE files SET name = ?1, ext = ?2, size = ?3, width = ?4, height = ?5, folder_id = ?6, created_at = ?7, modified_at = ?8, fs_modified_at = ?8, content_hash = ?9 WHERE path = ?10",
+            params![
+                name,
+                ext,
+                size,
+                width,
+                height,
+                folder_id,
+                created_at,
+                modified_at,
+                content_hash,
+                path
+            ],
         )?;
         Ok(())
     }
