@@ -60,7 +60,107 @@ fn resolve_import_extension(fallback_ext: Option<&str>, file_data: &[u8]) -> Str
         .unwrap_or_else(|| "png".to_string())
 }
 
-fn import_file_with_database(
+fn format_file_timestamp(system_time: Option<std::time::SystemTime>) -> String {
+    system_time
+        .map(|time| {
+            let dt: DateTime<Local> = time.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+pub(crate) fn read_source_file_timestamps(metadata: &fs::Metadata) -> (String, String) {
+    (
+        format_file_timestamp(metadata.created().ok()),
+        format_file_timestamp(metadata.modified().ok()),
+    )
+}
+
+fn build_generated_import_name(prefix: Option<&str>, ext: &str) -> String {
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    match prefix.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(prefix) => format!("{}_{}_{}.{}", prefix, timestamp, uuid_simple(), ext),
+        None => format!("{}_{}.{}", timestamp, uuid_simple(), ext),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ImportRequest {
+    pub bytes: Vec<u8>,
+    pub folder_id: Option<i64>,
+    pub fallback_ext: Option<String>,
+    pub target_path: Option<std::path::PathBuf>,
+    pub generated_name_prefix: Option<String>,
+    pub created_at: String,
+    pub modified_at: String,
+    pub rating: i32,
+    pub description: String,
+    pub source_url: String,
+}
+
+pub(crate) fn import_bytes_with_database(
+    db: &Database,
+    request: ImportRequest,
+) -> Result<FileWithTags, String> {
+    let ext = request
+        .target_path
+        .as_ref()
+        .and_then(|path| path.extension().and_then(|value| value.to_str()))
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            resolve_import_extension(request.fallback_ext.as_deref(), &request.bytes)
+        });
+
+    let dest_path = match request.target_path {
+        Some(path) => path,
+        None => {
+            let target_dir = get_target_dir(db, request.folder_id)?;
+            target_dir.join(build_generated_import_name(
+                request.generated_name_prefix.as_deref(),
+                &ext,
+            ))
+        }
+    };
+
+    if let Some(parent) = dest_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+
+    let mut file_record = crate::db::save_and_prepare_imported_file(
+        &request.bytes,
+        &dest_path,
+        request.folder_id,
+        request.created_at,
+        request.modified_at,
+    )?;
+    file_record.rating = request.rating;
+    file_record.description = request.description;
+    file_record.source_url = request.source_url;
+
+    let file_id = match db.insert_file(&file_record) {
+        Ok(file_id) => file_id,
+        Err(error) => {
+            let _ = fs::remove_file(&dest_path);
+            return Err(error.to_string());
+        }
+    };
+    db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+}
+
+fn finalize_import_success(
+    app_handle: &tauri::AppHandle,
+    imported_file: &FileWithTags,
+    options: super::post_import::ImportSuccessOptions,
+) {
+    super::post_import::handle_import_success(app_handle, imported_file, options);
+}
+
+pub(crate) fn import_file_with_database(
     db: &Database,
     source_path: &str,
     folder_id: Option<i64>,
@@ -70,73 +170,52 @@ fn import_file_with_database(
         return Err("Source file does not exist".to_string());
     }
 
-    let target_dir = get_target_dir(db, folder_id)?;
     let source_ext = source
         .extension()
         .and_then(|e| e.to_str())
         .map(|ext| ext.to_lowercase());
-    let image_data = fs::read(source).map_err(|e| e.to_string())?;
-    let ext = resolve_import_extension(source_ext.as_deref(), &image_data);
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let new_name = format!("{}_{}.{}", timestamp, uuid_simple(), ext);
-    let dest_path = target_dir.join(&new_name);
-
     let metadata = fs::metadata(source).map_err(|e| e.to_string())?;
-    let created_at = metadata
-        .created()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-    let modified_at = metadata
-        .modified()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-
-    let file_record = crate::db::save_and_import_image(
-        &image_data,
-        &dest_path,
-        folder_id,
-        created_at,
-        modified_at,
-    )?;
-
-    db.insert_file(&file_record).map_err(|e| e.to_string())?;
-
-    db.get_file_by_path(&dest_path.to_string_lossy())
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+    let (created_at, modified_at) = read_source_file_timestamps(&metadata);
+    import_bytes_with_database(
+        db,
+        ImportRequest {
+            bytes: fs::read(source).map_err(|e| e.to_string())?,
+            folder_id,
+            fallback_ext: source_ext,
+            target_path: None,
+            generated_name_prefix: None,
+            created_at,
+            modified_at,
+            rating: 0,
+            description: String::new(),
+            source_url: String::new(),
+        },
+    )
 }
 
-fn import_base64_with_database(
+pub(crate) fn import_base64_with_database(
     db: &Database,
     base64_data: &str,
     ext: &str,
     folder_id: Option<i64>,
 ) -> Result<FileWithTags, String> {
-    let target_dir = get_target_dir(db, folder_id)?;
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-
     let engine = base64::engine::general_purpose::STANDARD;
-    let image_data = engine.decode(base64_data).map_err(|e| e.to_string())?;
-    let final_ext = resolve_import_extension(Some(ext), &image_data);
-    let new_name = format!("paste_{}_{}.{}", timestamp, uuid_simple(), final_ext);
-    let dest_path = target_dir.join(&new_name);
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let file_record =
-        crate::db::save_and_import_image(&image_data, &dest_path, folder_id, now.clone(), now)?;
-
-    db.insert_file(&file_record).map_err(|e| e.to_string())?;
-
-    db.get_file_by_path(&dest_path.to_string_lossy())
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Failed to retrieve imported file".to_string())
+    import_bytes_with_database(
+        db,
+        ImportRequest {
+            bytes: engine.decode(base64_data).map_err(|e| e.to_string())?,
+            folder_id,
+            fallback_ext: Some(ext.to_string()),
+            target_path: None,
+            generated_name_prefix: Some("paste".to_string()),
+            created_at: now.clone(),
+            modified_at: now,
+            rating: 0,
+            description: String::new(),
+            source_url: String::new(),
+        },
+    )
 }
 
 fn import_batch_item(
@@ -159,27 +238,33 @@ fn batch_item_source(item: &BatchImportItem) -> String {
     }
 }
 
+fn mark_recent_file_path_import(state: &AppState, source_path: &str) -> Result<(), String> {
+    let mut recent = state.recent_imports.lock().map_err(|e| e.to_string())?;
+    if recent.is_recent(source_path, std::time::Duration::from_secs(3)) {
+        log::info!("Skipping duplicate import for: {}", source_path);
+        return Err("Duplicate import skipped".to_string());
+    }
+    recent.add(source_path.to_string());
+    Ok(())
+}
+
 #[tauri::command]
 pub fn import_file(
     state: State<AppState>,
     source_path: String,
     folder_id: Option<i64>,
 ) -> Result<FileWithTags, String> {
-    // Check if this source file was recently imported (within 3 seconds)
-    {
-        let mut recent = state.recent_imports.lock().map_err(|e| e.to_string())?;
-        if recent.is_recent(&source_path, std::time::Duration::from_secs(3)) {
-            log::info!("Skipping duplicate import for: {}", source_path);
-            return Err("Duplicate import skipped".to_string());
-        }
-        recent.add(source_path.clone());
-    }
+    mark_recent_file_path_import(&state, &source_path)?;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let imported_file = import_file_with_database(&db, &source_path, folder_id)?;
     drop(db);
 
-    super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file.id);
+    finalize_import_success(
+        &state.app_handle,
+        &imported_file,
+        super::post_import::ImportSuccessOptions::default(),
+    );
     Ok(imported_file)
 }
 
@@ -194,7 +279,11 @@ pub fn import_image_from_base64(
     let imported_file = import_base64_with_database(&db, &base64_data, &ext, folder_id)?;
     drop(db);
 
-    super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file.id);
+    finalize_import_success(
+        &state.app_handle,
+        &imported_file,
+        super::post_import::ImportSuccessOptions::default(),
+    );
     Ok(imported_file)
 }
 
@@ -310,7 +399,11 @@ fn spawn_import_task(
                     task.snapshot.processed += 1;
                     match result {
                         Ok(file) => {
-                            super::ai::run_post_import_pipeline(app_handle.clone(), file.id);
+                            finalize_import_success(
+                                &app_handle,
+                                &file,
+                                super::post_import::ImportSuccessOptions::default(),
+                            );
                             task.snapshot.success_count += 1;
                             task.snapshot.results.push(ImportTaskItemResult {
                                 index,

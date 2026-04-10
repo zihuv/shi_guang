@@ -64,6 +64,7 @@ pub(crate) mod files;
 pub(crate) mod folders;
 pub(crate) mod imports;
 pub(crate) mod indexing;
+pub(crate) mod post_import;
 pub(crate) mod system;
 pub(crate) mod tags;
 pub(crate) mod trash;

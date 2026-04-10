@@ -1,7 +1,7 @@
 use super::*;
 use crate::ml::model_manager::{
     find_recommended_visual_model_path as find_recommended_visual_model_path_impl,
-    load_auto_analyze_on_import, load_visual_search_config, resolve_model_paths,
+    load_visual_search_config, resolve_model_paths,
     validate_visual_model_path as validate_visual_model_path_impl, VisualModelValidationResult,
 };
 use crate::openai::{
@@ -67,7 +67,7 @@ pub enum AiEndpointTarget {
     Metadata,
 }
 
-fn is_backend_decodable_image(file: &FileWithTags) -> bool {
+pub(crate) fn is_backend_decodable_image(file: &FileWithTags) -> bool {
     matches!(
         file.ext.to_ascii_lowercase().as_str(),
         "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif" | "tif" | "tiff" | "ico"
@@ -480,89 +480,6 @@ pub(crate) fn reindex_file_visual_embedding_impl(
             Err(error)
         }
     }
-}
-
-async fn analyze_file_metadata_with_app_handle(
-    app_handle: tauri::AppHandle,
-    file_id: i64,
-    image_data_url: Option<String>,
-) -> Result<FileWithTags, String> {
-    let state = app_handle.state::<AppState>();
-    analyze_file_metadata_impl(&state, file_id, image_data_url).await
-}
-
-fn reindex_file_visual_embedding_with_app_handle(
-    app_handle: tauri::AppHandle,
-    file_id: i64,
-) -> Result<(), String> {
-    let state = app_handle.state::<AppState>();
-    reindex_file_visual_embedding_impl(&state, file_id, None)
-}
-
-pub(crate) fn run_post_import_pipeline(app_handle: tauri::AppHandle, file_id: i64) {
-    tauri::async_runtime::spawn(async move {
-        let (is_image, auto_analyze, auto_vectorize) = {
-            let state = app_handle.state::<AppState>();
-            let db = match state.db.lock() {
-                Ok(db) => db,
-                Err(error) => {
-                    log::warn!("Failed to lock db for post import pipeline: {}", error);
-                    return;
-                }
-            };
-
-            let file = match db.get_file_by_id(file_id) {
-                Ok(Some(file)) => file,
-                Ok(None) => return,
-                Err(error) => {
-                    log::warn!("Failed to load imported file {}: {}", file_id, error);
-                    return;
-                }
-            };
-            let visual_search_config = load_visual_search_config(&db).unwrap_or_default();
-            let auto_analyze = load_auto_analyze_on_import(&db).unwrap_or(false);
-
-            (
-                is_backend_decodable_image(&file),
-                auto_analyze,
-                visual_search_config.enabled && visual_search_config.auto_vectorize_on_import,
-            )
-        };
-
-        if !is_image {
-            return;
-        }
-
-        if auto_analyze {
-            match analyze_file_metadata_with_app_handle(app_handle.clone(), file_id, None).await {
-                Ok(updated_file) => {
-                    let _ = app_handle.emit(
-                        "file-updated",
-                        serde_json::json!({ "fileId": updated_file.id }),
-                    );
-                }
-                Err(error) => {
-                    log::warn!(
-                        "Auto analyze on import failed for file {}: {}",
-                        file_id,
-                        error
-                    );
-                }
-            }
-        }
-
-        if auto_vectorize {
-            if let Err(error) =
-                reindex_file_visual_embedding_with_app_handle(app_handle.clone(), file_id)
-            {
-                log::warn!(
-                    "Auto vectorize on import failed for file {}: {}",
-                    file_id,
-                    error
-                );
-            }
-        }
-    });
 }
 
 #[tauri::command]

@@ -54,11 +54,11 @@ pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
     }
 }
 
-/// 统一的图片导入辅助函数
-/// 处理文件保存、尺寸获取、色彩分布提取等公共逻辑
-/// 注意：created_at 和 modified_at 由调用者提供
-pub fn save_and_import_image(
-    image_data: &[u8],
+/// 统一的导入辅助函数。
+/// 负责把文件写入目标路径，并构建基础文件记录。
+/// 颜色提取等非必要逻辑会在导入后的异步管线中完成。
+pub fn save_and_prepare_imported_file(
+    file_data: &[u8],
     dest_path: &Path,
     folder_id: Option<i64>,
     created_at: String,
@@ -66,23 +66,10 @@ pub fn save_and_import_image(
 ) -> Result<FileRecord, String> {
     use std::fs;
 
-    // Save image file
-    fs::write(dest_path, image_data).map_err(|e| e.to_string())?;
+    fs::write(dest_path, file_data).map_err(|e| e.to_string())?;
 
-    // Get image dimensions
     let (width, height) = get_image_dimensions(dest_path).unwrap_or((0, 0));
 
-    // Extract color distribution
-    let color_distribution =
-        super::indexer::extract_color_distribution(dest_path).unwrap_or_default();
-    let color_distribution_json =
-        serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
-    let dominant_color = color_distribution
-        .first()
-        .map(|c| c.color.clone())
-        .unwrap_or_default();
-
-    // Get file metadata
     let metadata = fs::metadata(dest_path).map_err(|e| e.to_string())?;
     let now = current_timestamp();
 
@@ -109,8 +96,8 @@ pub fn save_and_import_image(
         rating: 0,
         description: String::new(),
         source_url: String::new(),
-        dominant_color,
-        color_distribution: color_distribution_json,
+        dominant_color: String::new(),
+        color_distribution: "[]".to_string(),
     })
 }
 

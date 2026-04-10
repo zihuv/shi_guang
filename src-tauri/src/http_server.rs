@@ -12,11 +12,8 @@ use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tauri::Emitter;
 
-use crate::db::{Database, FileRecord};
-use crate::indexer;
+use crate::db::Database;
 use crate::media;
-use chrono::Local;
-use image::GenericImageView;
 use reqwest::Client;
 
 #[derive(Clone)]
@@ -65,22 +62,6 @@ fn ensure_browser_collection_folder(
             error: Some(e.to_string()),
         })
     })
-}
-
-fn build_browser_file_name(ext: &str) -> String {
-    format!(
-        "browser_{}.{}",
-        Local::now().format("%Y%m%d_%H%M%S_%f"),
-        ext
-    )
-}
-
-fn get_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
-    // Try to open as image
-    match image::load_from_memory(data) {
-        Ok(img) => Some(img.dimensions()),
-        Err(_) => None,
-    }
 }
 
 fn with_cors<B>(response: Response<B>) -> Response<B> {
@@ -155,84 +136,40 @@ async fn import_image(
         Err(response) => return Ok(response),
     };
 
-    // Now import the file with the folder
-
-    // Generate unique filename
-    let new_name = build_browser_file_name(&final_ext);
-    let dest_path = std::path::Path::new(&folder.path).join(&new_name);
-
-    // Save file
-    if let Err(e) = std::fs::write(&dest_path, &data) {
-        let resp = ImportResponse {
-            success: false,
-            file_id: None,
-            error: Some(format!("Failed to write file: {}", e)),
-        };
-        let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(
-            Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        ));
-    }
-
-    // Get image dimensions
-    let (width, height) = get_image_dimensions(&data).unwrap_or((0, 0));
-    let metadata = std::fs::metadata(&dest_path).ok();
-
-    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let size = metadata
-        .map(|m| m.len() as i64)
-        .unwrap_or(data.len() as i64);
-
-    // Extract color distribution
-    let color_distribution = indexer::extract_color_distribution(&dest_path).unwrap_or_default();
-    let color_distribution_json =
-        serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
-
-    let file_record = FileRecord {
-        id: 0,
-        path: dest_path.to_string_lossy().to_string(),
-        name: new_name.clone(),
-        ext: final_ext.clone(),
-        size,
-        width: width as i32,
-        height: height as i32,
-        folder_id: Some(folder.id),
-        created_at: now.clone(),
-        modified_at: now.clone(),
-        imported_at: now,
-        rating: 0,
-        description: String::new(),
-        source_url: String::new(),
-        dominant_color: String::new(),
-        color_distribution: color_distribution_json,
-    };
-
-    // Insert file record into database
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let result = {
         let db = state.db.lock().unwrap();
-        db.insert_file(&file_record)
+        crate::commands::imports::import_bytes_with_database(
+            &db,
+            crate::commands::imports::ImportRequest {
+                bytes: data,
+                folder_id: Some(folder.id),
+                fallback_ext: Some(final_ext),
+                target_path: None,
+                generated_name_prefix: Some("browser".to_string()),
+                created_at: now.clone(),
+                modified_at: now,
+                rating: 0,
+                description: String::new(),
+                source_url: String::new(),
+            },
+        )
     };
 
     match result {
-        Ok(file_id) => {
-            log::info!("Imported browser image: {} (id: {})", new_name, file_id);
-            crate::commands::ai::run_post_import_pipeline(state.app_handle.clone(), file_id);
-
-            // Emit event to frontend to refresh file list
-            let _ = state.app_handle.emit(
-                "file-imported",
-                serde_json::json!({
-                    "file_id": file_id,
-                    "path": dest_path.to_string_lossy().to_string(),
-                }),
+        Ok(file) => {
+            log::info!("Imported browser image: {} (id: {})", file.name, file.id);
+            crate::commands::post_import::handle_import_success(
+                &state.app_handle,
+                &file,
+                crate::commands::post_import::ImportSuccessOptions {
+                    emit_file_imported_event: true,
+                },
             );
 
             let resp = ImportResponse {
                 success: true,
-                file_id: Some(file_id),
+                file_id: Some(file.id),
                 error: None,
             };
             let body = serde_json::to_string(&resp).unwrap();
@@ -244,8 +181,6 @@ async fn import_image(
             ))
         }
         Err(e) => {
-            // Clean up the file if database insert failed
-            let _ = std::fs::remove_file(&dest_path);
             log::error!("Failed to import browser image: {}", e);
             // Emit event to frontend to show error
             let _ = state.app_handle.emit(
@@ -372,86 +307,45 @@ async fn import_image_from_url(
         Err(response) => return Ok(response),
     };
 
-    // Generate unique filename
-    let new_name = build_browser_file_name(&final_ext);
-    let dest_path = std::path::Path::new(&folder.path).join(&new_name);
-
-    // Save file
-    if let Err(e) = std::fs::write(&dest_path, &data) {
-        let resp = ImportResponse {
-            success: false,
-            file_id: None,
-            error: Some(format!("Failed to write file: {}", e)),
-        };
-        let body = serde_json::to_string(&resp).unwrap();
-        return Ok(with_cors(
-            Response::builder()
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        ));
-    }
-
-    // Get image dimensions
-    let (width, height) = get_image_dimensions(&data).unwrap_or((0, 0));
-    let metadata = std::fs::metadata(&dest_path).ok();
-
-    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let size = metadata
-        .map(|m| m.len() as i64)
-        .unwrap_or(data.len() as i64);
-
-    // Extract color distribution
-    let color_distribution = indexer::extract_color_distribution(&dest_path).unwrap_or_default();
-    let color_distribution_json =
-        serde_json::to_string(&color_distribution).unwrap_or_else(|_| "[]".to_string());
-
-    let file_record = FileRecord {
-        id: 0,
-        path: dest_path.to_string_lossy().to_string(),
-        name: new_name.clone(),
-        ext: final_ext.clone(),
-        size,
-        width: width as i32,
-        height: height as i32,
-        folder_id: Some(folder.id),
-        created_at: now.clone(),
-        modified_at: now.clone(),
-        imported_at: now,
-        rating: 0,
-        description: String::new(),
-        source_url: query.referer.unwrap_or_default(),
-        dominant_color: String::new(),
-        color_distribution: color_distribution_json,
-    };
-
-    // Insert file record into database
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let source_url = query.referer.unwrap_or_default();
     let result = {
         let db = state.db.lock().unwrap();
-        db.insert_file(&file_record)
+        crate::commands::imports::import_bytes_with_database(
+            &db,
+            crate::commands::imports::ImportRequest {
+                bytes: data,
+                folder_id: Some(folder.id),
+                fallback_ext: Some(final_ext),
+                target_path: None,
+                generated_name_prefix: Some("browser".to_string()),
+                created_at: now.clone(),
+                modified_at: now,
+                rating: 0,
+                description: String::new(),
+                source_url,
+            },
+        )
     };
 
     match result {
-        Ok(file_id) => {
+        Ok(file) => {
             log::info!(
                 "Imported browser image from URL: {} (id: {})",
-                new_name,
-                file_id
+                file.name,
+                file.id
             );
-            crate::commands::ai::run_post_import_pipeline(state.app_handle.clone(), file_id);
-
-            // Emit event to frontend to refresh file list
-            let _ = state.app_handle.emit(
-                "file-imported",
-                serde_json::json!({
-                    "file_id": file_id,
-                    "path": dest_path.to_string_lossy().to_string(),
-                }),
+            crate::commands::post_import::handle_import_success(
+                &state.app_handle,
+                &file,
+                crate::commands::post_import::ImportSuccessOptions {
+                    emit_file_imported_event: true,
+                },
             );
 
             let resp = ImportResponse {
                 success: true,
-                file_id: Some(file_id),
+                file_id: Some(file.id),
                 error: None,
             };
             let body = serde_json::to_string(&resp).unwrap();
@@ -463,8 +357,6 @@ async fn import_image_from_url(
             ))
         }
         Err(e) => {
-            // Clean up the file if database insert failed
-            let _ = std::fs::remove_file(&dest_path);
             let resp = ImportResponse {
                 success: false,
                 file_id: None,

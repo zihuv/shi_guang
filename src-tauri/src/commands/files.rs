@@ -1,6 +1,38 @@
 use super::*;
 use crate::ml::model_manager::{load_visual_search_config, resolve_model_paths};
 
+pub(crate) fn refresh_file_color_data_impl(
+    state: &AppState,
+    file_id: i64,
+) -> Result<Option<FileWithTags>, String> {
+    let file = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.get_file_by_id(file_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "File not found".to_string())?
+    };
+
+    let color_distribution = indexer::extract_color_distribution(Path::new(&file.path))?;
+    let dominant_color = color_distribution
+        .first()
+        .map(|item| item.color.clone())
+        .unwrap_or_default();
+    let color_distribution_json =
+        serde_json::to_string(&color_distribution).map_err(|e| e.to_string())?;
+
+    if file.dominant_color == dominant_color && file.color_distribution == color_distribution_json {
+        return Ok(None);
+    }
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.update_file_color_data(file_id, &dominant_color, &color_distribution_json)
+        .map_err(|e| e.to_string())?;
+
+    db.get_file_by_id(file_id)
+        .map_err(|e| e.to_string())
+        .map(|item| item.or(Some(file)))
+}
+
 #[tauri::command]
 pub fn get_all_files(
     state: State<AppState>,
@@ -144,24 +176,16 @@ pub fn update_file_dimensions(
 
 #[tauri::command]
 pub fn extract_color(state: State<AppState>, file_id: i64) -> Result<String, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
+    if let Some(file) = refresh_file_color_data_impl(&state, file_id)? {
+        return Ok(file.dominant_color);
+    }
 
-    // Get file info
+    let db = state.db.lock().map_err(|e| e.to_string())?;
     let file = db
         .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found".to_string())?;
-
-    let path = Path::new(&file.path);
-
-    // Extract color using the indexer function
-    let color = indexer::extract_dominant_color(path)?;
-
-    // Update the file with the extracted color
-    db.update_file_dominant_color(file_id, &color)
-        .map_err(|e| e.to_string())?;
-
-    Ok(color)
+    Ok(file.dominant_color)
 }
 
 #[tauri::command]

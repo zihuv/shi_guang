@@ -790,6 +790,37 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_file_color_data(
+        &self,
+        file_id: i64,
+        dominant_color: &str,
+        color_distribution: &str,
+    ) -> Result<()> {
+        let (dominant_r, dominant_g, dominant_b) = match parse_hex_color(dominant_color) {
+            Some((r, g, b)) => (Some(r as i64), Some(g as i64), Some(b as i64)),
+            None => (None, None, None),
+        };
+
+        self.conn.execute(
+            "UPDATE files
+             SET dominant_color = ?1,
+                 dominant_r = ?2,
+                 dominant_g = ?3,
+                 dominant_b = ?4,
+                 color_distribution = ?5
+             WHERE id = ?6",
+            params![
+                dominant_color,
+                dominant_r,
+                dominant_g,
+                dominant_b,
+                color_distribution,
+                file_id
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn update_file_name(&self, file_id: i64, name: &str, path: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE files SET name = ?1, path = ?2 WHERE id = ?3",

@@ -105,6 +105,7 @@ fn resolve_available_target_path(
     target_folder_path: &str,
     current_file_id: Option<i64>,
     conflict_suffix: &str,
+    allow_same_path: bool,
 ) -> Result<std::path::PathBuf, String> {
     let file_name = source_path
         .file_name()
@@ -122,7 +123,7 @@ fn resolve_available_target_path(
             .unwrap_or(false))
     };
 
-    if source_path == desired_path {
+    if allow_same_path && source_path == desired_path {
         return Ok(desired_path);
     }
 
@@ -167,7 +168,7 @@ fn move_single_file(
     ensure_target_folder_exists(&target_path)?;
     let old_path = Path::new(&file.path);
     let new_path_obj =
-        resolve_available_target_path(db, old_path, &target_path, Some(file_id), "moved")?;
+        resolve_available_target_path(db, old_path, &target_path, Some(file_id), "moved", true)?;
     let new_path = new_path_obj.to_string_lossy().to_string();
     log::info!(
         "move_single_file file_id={} from='{}' target_folder_id={:?} to='{}'",
@@ -192,7 +193,7 @@ fn copy_single_file(
     db: &Database,
     file_id: i64,
     target_folder_id: Option<i64>,
-) -> Result<i64, String> {
+) -> Result<FileWithTags, String> {
     let file = db
         .get_file_by_id(file_id)
         .map_err(|e| e.to_string())?
@@ -200,55 +201,31 @@ fn copy_single_file(
     let target_path = resolve_target_folder_path(db, target_folder_id)?;
     ensure_target_folder_exists(&target_path)?;
     let source_path = Path::new(&file.path);
-    let new_path_obj = resolve_available_target_path(db, source_path, &target_path, None, "copy")?;
-    let new_path = new_path_obj.to_string_lossy().to_string();
-
-    if source_path.exists() && source_path != new_path_obj {
-        fs::copy(source_path, &new_path_obj).map_err(|e| e.to_string())?;
-    }
+    let new_path_obj =
+        resolve_available_target_path(db, source_path, &target_path, None, "copy", false)?;
 
     let metadata = fs::metadata(source_path).map_err(|e| e.to_string())?;
-    let created_at = metadata
-        .created()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-    let modified_at = metadata
-        .modified()
-        .ok()
-        .map(|t| {
-            let dt: DateTime<Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        })
-        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
-
-    let image_data = fs::read(source_path).map_err(|e| e.to_string())?;
-    let file_record = crate::db::save_and_import_image(
-        &image_data,
-        &new_path_obj,
-        target_folder_id,
-        created_at,
-        modified_at,
+    let (created_at, modified_at) = super::imports::read_source_file_timestamps(&metadata);
+    let imported_file = super::imports::import_bytes_with_database(
+        db,
+        super::imports::ImportRequest {
+            bytes: fs::read(source_path).map_err(|e| e.to_string())?,
+            folder_id: target_folder_id,
+            fallback_ext: source_path
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(|value| value.to_ascii_lowercase()),
+            target_path: Some(new_path_obj),
+            generated_name_prefix: None,
+            created_at,
+            modified_at,
+            rating: file.rating,
+            description: file.description.clone(),
+            source_url: file.source_url.clone(),
+        },
     )?;
-    db.insert_file(&file_record).map_err(|e| e.to_string())?;
 
-    let imported_file = db
-        .get_file_by_path(&new_path)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Failed to retrieve copied file".to_string())?;
-
-    db.update_file_metadata(
-        imported_file.id,
-        file.rating,
-        &file.description,
-        &file.source_url,
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(imported_file.id)
+    Ok(imported_file)
 }
 
 fn remove_thumbnail_for_path(db: &Database, file_path: &str) -> Result<(), String> {
@@ -263,10 +240,14 @@ pub fn copy_file(
     target_folder_id: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let imported_file_id = copy_single_file(&db, file_id, target_folder_id)?;
+    let imported_file = copy_single_file(&db, file_id, target_folder_id)?;
     drop(db);
 
-    super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file_id);
+    super::post_import::handle_import_success(
+        &state.app_handle,
+        &imported_file,
+        super::post_import::ImportSuccessOptions::default(),
+    );
     Ok(())
 }
 
@@ -277,14 +258,18 @@ pub fn copy_files(
     target_folder_id: Option<i64>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let mut imported_file_ids = Vec::new();
+    let mut imported_files = Vec::new();
     for file_id in file_ids {
-        imported_file_ids.push(copy_single_file(&db, file_id, target_folder_id)?);
+        imported_files.push(copy_single_file(&db, file_id, target_folder_id)?);
     }
     drop(db);
 
-    for imported_file_id in imported_file_ids {
-        super::ai::run_post_import_pipeline(state.app_handle.clone(), imported_file_id);
+    for imported_file in imported_files {
+        super::post_import::handle_import_success(
+            &state.app_handle,
+            &imported_file,
+            super::post_import::ImportSuccessOptions::default(),
+        );
     }
 
     Ok(())
