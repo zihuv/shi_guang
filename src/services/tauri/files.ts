@@ -1,5 +1,10 @@
 import { invokeTauri } from "@/services/tauri/core"
-import type { FileItem, ImportTaskSnapshot, PaginatedFilesResponse } from "@/stores/fileTypes"
+import type {
+  AiMetadataTaskSnapshot,
+  FileItem,
+  ImportTaskSnapshot,
+  PaginatedFilesResponse,
+} from "@/stores/fileTypes"
 
 export interface FileFilterPayload {
   query: string | null
@@ -132,6 +137,20 @@ export function analyzeFileMetadata(fileId: number, imageDataUrl?: string) {
     fileId,
     imageDataUrl,
   })
+}
+
+export function startAiMetadataTask(fileIds: number[]) {
+  return invokeTauri<AiMetadataTaskSnapshot>("start_ai_metadata_task", {
+    fileIds,
+  })
+}
+
+export function getAiMetadataTask(taskId: string) {
+  return invokeTauri<AiMetadataTaskSnapshot>("get_ai_metadata_task", { taskId })
+}
+
+export function cancelAiMetadataTask(taskId: string) {
+  return invokeTauri<void>("cancel_ai_metadata_task", { taskId })
 }
 
 export function rebuildVisualIndex() {

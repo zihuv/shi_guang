@@ -1,6 +1,7 @@
 use super::*;
 
 mod v1;
+mod v10;
 mod v2;
 mod v3;
 mod v4;
@@ -9,7 +10,6 @@ mod v6;
 mod v7;
 mod v8;
 mod v9;
-mod v10;
 
 pub(super) fn run_migrations(db: &Database) -> Result<()> {
     let current_version: i32 = db

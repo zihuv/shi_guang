@@ -13,10 +13,21 @@ use image::codecs::jpeg::JpegEncoder;
 use image::{imageops::FilterType, ColorType, GenericImageView};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
+use tokio::task::JoinSet;
+use tokio::time::{sleep, Duration};
 
 const MAX_AI_TAGS: usize = 5;
 const MAX_AI_DESCRIPTION_CHARS: usize = 200;
+const AI_METADATA_TASK_EVENT: &str = "ai-metadata-task-updated";
+const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY: &str = "aiBatchAnalyzeConcurrency";
+const AI_METADATA_TASK_DEFAULT_CONCURRENCY: usize = 5;
+const AI_METADATA_TASK_MIN_CONCURRENCY: usize = 1;
+const AI_METADATA_TASK_MAX_CONCURRENCY: usize = 5;
+const AI_METADATA_TASK_MAX_ATTEMPTS: usize = 3;
+const AI_METADATA_TASK_RETRY_DELAY_MS: u64 = 400;
 
 #[derive(Debug, Serialize)]
 pub struct VisualIndexRebuildResult {
@@ -65,6 +76,12 @@ pub struct VisualIndexStatus {
 #[serde(rename_all = "snake_case")]
 pub enum AiEndpointTarget {
     Metadata,
+}
+
+enum AiMetadataTaskItemOutcome {
+    Completed { attempts: usize, file: FileWithTags },
+    Failed { attempts: usize, error: String },
+    Cancelled,
 }
 
 pub(crate) fn is_backend_decodable_image(file: &FileWithTags) -> bool {
@@ -405,6 +422,244 @@ pub(crate) async fn analyze_file_metadata_impl(
         .ok_or_else(|| "更新后无法读取文件".to_string())
 }
 
+fn update_ai_metadata_task_snapshot<F>(
+    tasks: &Arc<Mutex<std::collections::HashMap<String, crate::AiMetadataTaskEntry>>>,
+    task_id: &str,
+    update: F,
+) where
+    F: FnOnce(&mut AiMetadataTaskSnapshot),
+{
+    if let Ok(mut task_map) = tasks.lock() {
+        if let Some(task) = task_map.get_mut(task_id) {
+            update(&mut task.snapshot);
+        }
+    }
+}
+
+fn emit_ai_metadata_task_update(app_handle: &tauri::AppHandle, task_id: &str) {
+    let _ = app_handle.emit(AI_METADATA_TASK_EVENT, task_id);
+}
+
+fn clamp_ai_metadata_task_concurrency(value: usize) -> usize {
+    value.clamp(
+        AI_METADATA_TASK_MIN_CONCURRENCY,
+        AI_METADATA_TASK_MAX_CONCURRENCY,
+    )
+}
+
+fn parse_ai_metadata_task_concurrency(value: Option<&str>) -> usize {
+    value
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .map(clamp_ai_metadata_task_concurrency)
+        .unwrap_or(AI_METADATA_TASK_DEFAULT_CONCURRENCY)
+}
+
+fn load_ai_metadata_task_concurrency(db: &Database) -> Result<usize, String> {
+    let raw_value = db
+        .get_setting(AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY)
+        .map_err(|e| e.to_string())?;
+
+    Ok(parse_ai_metadata_task_concurrency(raw_value.as_deref()))
+}
+
+async fn analyze_file_metadata_task_item(
+    app_handle: &tauri::AppHandle,
+    file_id: i64,
+    cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
+) -> AiMetadataTaskItemOutcome {
+    let mut last_error = None;
+
+    for attempt in 1..=AI_METADATA_TASK_MAX_ATTEMPTS {
+        if cancel_flag.load(Ordering::Relaxed) {
+            return AiMetadataTaskItemOutcome::Cancelled;
+        }
+
+        let state = app_handle.state::<AppState>();
+        match analyze_file_metadata_impl(&state, file_id, None).await {
+            Ok(file) => {
+                return AiMetadataTaskItemOutcome::Completed {
+                    attempts: attempt,
+                    file,
+                };
+            }
+            Err(error) if attempt < AI_METADATA_TASK_MAX_ATTEMPTS => {
+                last_error = Some(error);
+                sleep(Duration::from_millis(AI_METADATA_TASK_RETRY_DELAY_MS)).await;
+            }
+            Err(error) => {
+                return AiMetadataTaskItemOutcome::Failed {
+                    attempts: attempt,
+                    error,
+                };
+            }
+        }
+    }
+
+    AiMetadataTaskItemOutcome::Failed {
+        attempts: AI_METADATA_TASK_MAX_ATTEMPTS,
+        error: last_error.unwrap_or_else(|| "AI 分析失败".to_string()),
+    }
+}
+
+fn spawn_ai_metadata_task(
+    state: &AppState,
+    file_ids: Vec<i64>,
+) -> Result<AiMetadataTaskSnapshot, String> {
+    let mut unique_file_ids = Vec::with_capacity(file_ids.len());
+    let mut seen = std::collections::HashSet::new();
+    for file_id in file_ids {
+        if seen.insert(file_id) {
+            unique_file_ids.push(file_id);
+        }
+    }
+
+    if unique_file_ids.is_empty() {
+        return Err("No files selected".to_string());
+    }
+
+    let configured_concurrency = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        load_ai_metadata_task_concurrency(&db)?
+    };
+
+    let task_id = format!(
+        "ai-metadata-{}",
+        crate::commands::imports::uuid_simple_shared()
+    );
+    let snapshot = AiMetadataTaskSnapshot {
+        id: task_id.clone(),
+        status: "queued".to_string(),
+        total: unique_file_ids.len(),
+        processed: 0,
+        success_count: 0,
+        failure_count: 0,
+        results: Vec::new(),
+    };
+    let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    {
+        let mut tasks = state.ai_metadata_tasks.lock().map_err(|e| e.to_string())?;
+        tasks.insert(
+            task_id.clone(),
+            crate::AiMetadataTaskEntry {
+                snapshot: snapshot.clone(),
+                cancel_flag: cancel_flag.clone(),
+            },
+        );
+    }
+
+    let tasks = state.ai_metadata_tasks.clone();
+    let app_handle = state.app_handle.clone();
+
+    tauri::async_runtime::spawn(async move {
+        update_ai_metadata_task_snapshot(&tasks, &task_id, |snapshot| {
+            snapshot.status = "running".to_string();
+        });
+        emit_ai_metadata_task_update(&app_handle, &task_id);
+
+        let next_index = Arc::new(AtomicUsize::new(0));
+        let worker_count = unique_file_ids.len().min(configured_concurrency);
+        let mut workers = JoinSet::new();
+
+        for _ in 0..worker_count {
+            let task_id = task_id.clone();
+            let tasks = tasks.clone();
+            let app_handle = app_handle.clone();
+            let cancel_flag = cancel_flag.clone();
+            let next_index = next_index.clone();
+            let file_ids = unique_file_ids.clone();
+
+            workers.spawn(async move {
+                loop {
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    let current_index = next_index.fetch_add(1, Ordering::Relaxed);
+                    if current_index >= file_ids.len() {
+                        break;
+                    }
+
+                    let file_id = file_ids[current_index];
+                    let outcome =
+                        analyze_file_metadata_task_item(&app_handle, file_id, &cancel_flag).await;
+
+                    match outcome {
+                        AiMetadataTaskItemOutcome::Completed { attempts, file } => {
+                            update_ai_metadata_task_snapshot(&tasks, &task_id, |snapshot| {
+                                snapshot.processed += 1;
+                                snapshot.success_count += 1;
+                                snapshot.results.push(AiMetadataTaskItemResult {
+                                    index: current_index,
+                                    file_id,
+                                    status: "completed".to_string(),
+                                    attempts,
+                                    error: None,
+                                    file: Some(file),
+                                });
+                            });
+                            emit_ai_metadata_task_update(&app_handle, &task_id);
+                        }
+                        AiMetadataTaskItemOutcome::Failed { attempts, error } => {
+                            update_ai_metadata_task_snapshot(&tasks, &task_id, |snapshot| {
+                                snapshot.processed += 1;
+                                snapshot.failure_count += 1;
+                                snapshot.results.push(AiMetadataTaskItemResult {
+                                    index: current_index,
+                                    file_id,
+                                    status: "failed".to_string(),
+                                    attempts,
+                                    error: Some(error),
+                                    file: None,
+                                });
+                            });
+                            emit_ai_metadata_task_update(&app_handle, &task_id);
+                        }
+                        AiMetadataTaskItemOutcome::Cancelled => break,
+                    }
+                }
+            });
+        }
+
+        let mut worker_failure = None;
+        while let Some(result) = workers.join_next().await {
+            if let Err(error) = result {
+                worker_failure = Some(error.to_string());
+            }
+        }
+
+        update_ai_metadata_task_snapshot(&tasks, &task_id, |snapshot| {
+            snapshot.status = if let Some(error) = worker_failure {
+                if !snapshot
+                    .results
+                    .iter()
+                    .any(|result| result.status == "failed")
+                {
+                    snapshot.failure_count += 1;
+                    snapshot.results.push(AiMetadataTaskItemResult {
+                        index: snapshot.results.len(),
+                        file_id: 0,
+                        status: "failed".to_string(),
+                        attempts: 0,
+                        error: Some(format!("AI 批量任务异常: {}", error)),
+                        file: None,
+                    });
+                }
+                "failed".to_string()
+            } else if cancel_flag.load(Ordering::Relaxed) {
+                "cancelled".to_string()
+            } else if snapshot.failure_count > 0 {
+                "completed_with_errors".to_string()
+            } else {
+                "completed".to_string()
+            };
+        });
+        emit_ai_metadata_task_update(&app_handle, &task_id);
+    });
+
+    Ok(snapshot)
+}
+
 fn reindex_visual_candidate(
     state: &AppState,
     resolved_model: &crate::ml::model_manager::ResolvedModelPaths,
@@ -709,6 +964,36 @@ pub async fn test_ai_endpoint(
 }
 
 #[tauri::command]
+pub fn start_ai_metadata_task(
+    state: State<'_, AppState>,
+    file_ids: Vec<i64>,
+) -> Result<AiMetadataTaskSnapshot, String> {
+    spawn_ai_metadata_task(&state, file_ids)
+}
+
+#[tauri::command]
+pub fn get_ai_metadata_task(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<AiMetadataTaskSnapshot, String> {
+    let tasks = state.ai_metadata_tasks.lock().map_err(|e| e.to_string())?;
+    tasks
+        .get(&task_id)
+        .map(|task| task.snapshot.clone())
+        .ok_or_else(|| "AI metadata task not found".to_string())
+}
+
+#[tauri::command]
+pub fn cancel_ai_metadata_task(state: State<'_, AppState>, task_id: String) -> Result<(), String> {
+    let tasks = state.ai_metadata_tasks.lock().map_err(|e| e.to_string())?;
+    let task = tasks
+        .get(&task_id)
+        .ok_or_else(|| "AI metadata task not found".to_string())?;
+    task.cancel_flag.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn analyze_file_metadata(
     state: State<'_, AppState>,
     file_id: i64,
@@ -721,6 +1006,32 @@ pub async fn analyze_file_metadata(
 mod tests {
     use super::*;
     use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
+
+    #[test]
+    fn parse_ai_metadata_task_concurrency_uses_default_for_invalid_values() {
+        assert_eq!(
+            parse_ai_metadata_task_concurrency(None),
+            AI_METADATA_TASK_DEFAULT_CONCURRENCY
+        );
+        assert_eq!(
+            parse_ai_metadata_task_concurrency(Some("")),
+            AI_METADATA_TASK_DEFAULT_CONCURRENCY
+        );
+        assert_eq!(
+            parse_ai_metadata_task_concurrency(Some("abc")),
+            AI_METADATA_TASK_DEFAULT_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn parse_ai_metadata_task_concurrency_clamps_to_supported_range() {
+        assert_eq!(parse_ai_metadata_task_concurrency(Some("0")), 1);
+        assert_eq!(parse_ai_metadata_task_concurrency(Some("3")), 3);
+        assert_eq!(
+            parse_ai_metadata_task_concurrency(Some("99")),
+            AI_METADATA_TASK_MAX_CONCURRENCY
+        );
+    }
 
     #[test]
     fn prepare_image_data_url_reads_mismatched_extension_from_content() {

@@ -63,6 +63,7 @@ pub struct AppState {
     pub recent_imports: Mutex<RecentImports>,
     pub db_path: std::path::PathBuf, // Add db_path for HTTP server to create its own connection
     pub import_tasks: Arc<Mutex<HashMap<String, ImportTaskEntry>>>,
+    pub ai_metadata_tasks: Arc<Mutex<HashMap<String, AiMetadataTaskEntry>>>,
     pub import_write_lock: Arc<Mutex<()>>,
     pub app_handle: tauri::AppHandle,
 }
@@ -72,6 +73,11 @@ pub struct ImportTaskEntry {
     pub items: Vec<commands::BatchImportItem>,
     pub cancel_flag: Arc<AtomicBool>,
     pub folder_id: Option<i64>,
+}
+
+pub struct AiMetadataTaskEntry {
+    pub snapshot: commands::AiMetadataTaskSnapshot,
+    pub cancel_flag: Arc<AtomicBool>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -145,6 +151,7 @@ pub fn run() {
                 recent_imports: Mutex::new(RecentImports::new()),
                 db_path: db_path.clone(),
                 import_tasks: Arc::new(Mutex::new(HashMap::new())),
+                ai_metadata_tasks: Arc::new(Mutex::new(HashMap::new())),
                 import_write_lock: Arc::new(Mutex::new(())),
                 app_handle: app.handle().clone(),
             });
@@ -169,6 +176,9 @@ pub fn run() {
             commands::ai::get_recommended_visual_model_path,
             commands::ai::validate_visual_model_path,
             commands::ai::test_ai_endpoint,
+            commands::ai::start_ai_metadata_task,
+            commands::ai::get_ai_metadata_task,
+            commands::ai::cancel_ai_metadata_task,
             commands::files::get_all_files,
             commands::files::search_files,
             commands::tags::get_all_tags,

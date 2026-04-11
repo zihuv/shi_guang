@@ -58,7 +58,33 @@ export interface ImportTaskSnapshot {
   results: ImportTaskItemResult[]
 }
 
+export interface AiMetadataTaskItemResult {
+  index: number
+  fileId: number
+  status: string
+  attempts: number
+  error?: string | null
+  file?: FileItem | null
+}
+
+export interface AiMetadataTaskSnapshot {
+  id: string
+  status: string
+  total: number
+  processed: number
+  successCount: number
+  failureCount: number
+  results: AiMetadataTaskItemResult[]
+}
+
 export const TERMINAL_IMPORT_TASK_STATUSES = new Set([
+  "completed",
+  "completed_with_errors",
+  "cancelled",
+  "failed",
+])
+
+export const TERMINAL_AI_METADATA_TASK_STATUSES = new Set([
   "completed",
   "completed_with_errors",
   "cancelled",

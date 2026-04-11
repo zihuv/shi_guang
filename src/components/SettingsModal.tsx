@@ -7,6 +7,8 @@ import {
 } from "@/services/tauri/files";
 import {
   DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED,
+  MAX_AI_BATCH_ANALYZE_CONCURRENCY,
+  MIN_AI_BATCH_ANALYZE_CONCURRENCY,
   PREVIEW_TRACKPAD_ZOOM_SPEED_MAX,
   PREVIEW_TRACKPAD_ZOOM_SPEED_MIN,
   PREVIEW_TRACKPAD_ZOOM_SPEED_STEP,
@@ -30,6 +32,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { cn } from "@/lib/utils";
 import { Sun, Moon, Plus, Trash, AlertTriangle, RotateCcw } from "lucide-react";
@@ -47,6 +50,14 @@ interface VisualIndexProgressPayload {
 }
 
 type StatusTone = "neutral" | "success" | "warning";
+
+const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
+  {
+    length:
+      MAX_AI_BATCH_ANALYZE_CONCURRENCY - MIN_AI_BATCH_ANALYZE_CONCURRENCY + 1,
+  },
+  (_, index) => MIN_AI_BATCH_ANALYZE_CONCURRENCY + index,
+);
 
 function StatusBadge({
   label,
@@ -82,6 +93,12 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const aiConfig = useSettingsStore((state) => state.aiConfig);
   const setAiConfigField = useSettingsStore((state) => state.setAiConfigField);
+  const aiBatchAnalyzeConcurrency = useSettingsStore(
+    (state) => state.aiBatchAnalyzeConcurrency,
+  );
+  const setAiBatchAnalyzeConcurrency = useSettingsStore(
+    (state) => state.setAiBatchAnalyzeConcurrency,
+  );
   const visualSearch = useSettingsStore((state) => state.visualSearch);
   const setVisualSearchField = useSettingsStore(
     (state) => state.setVisualSearchField,
@@ -781,6 +798,36 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                             void setAutoAnalyzeOnImport(enabled);
                           },
                         })}
+                        <div className="py-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                                批量分析同时处理数量
+                              </p>
+                              <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
+                                右键批量 AI 分析时，后台一次同时分析的图片数量。
+                              </p>
+                            </div>
+
+                            <Select
+                              value={String(aiBatchAnalyzeConcurrency)}
+                              displayValue={`${aiBatchAnalyzeConcurrency} 张`}
+                              onValueChange={(value) => {
+                                void setAiBatchAnalyzeConcurrency(Number(value));
+                              }}
+                              className="w-24 shrink-0"
+                              triggerClassName="h-9 rounded-lg border-gray-200 bg-white text-sm text-gray-700 dark:border-dark-border dark:bg-dark-bg dark:text-gray-200"
+                            >
+                              <SelectContent>
+                                {AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS.map((value) => (
+                                  <SelectItem key={value} value={String(value)}>
+                                    {value} 张
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -59,6 +59,30 @@ pub struct ImportTaskSnapshot {
     pub results: Vec<ImportTaskItemResult>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AiMetadataTaskItemResult {
+    pub index: usize,
+    #[serde(rename = "fileId")]
+    pub file_id: i64,
+    pub status: String,
+    pub attempts: usize,
+    pub error: Option<String>,
+    pub file: Option<FileWithTags>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AiMetadataTaskSnapshot {
+    pub id: String,
+    pub status: String,
+    pub total: usize,
+    pub processed: usize,
+    #[serde(rename = "successCount")]
+    pub success_count: usize,
+    #[serde(rename = "failureCount")]
+    pub failure_count: usize,
+    pub results: Vec<AiMetadataTaskItemResult>,
+}
+
 pub(crate) mod ai;
 pub(crate) mod files;
 pub(crate) mod folders;

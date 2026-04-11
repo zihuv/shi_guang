@@ -35,6 +35,7 @@ const PANEL_LAYOUT_SETTING_KEY = "panelLayout";
 const AI_CONFIG_SETTING_KEY = "aiConfig";
 const VISUAL_SEARCH_SETTING_KEY = "visualSearch";
 const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY = "aiAutoAnalyzeOnImport";
+const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY = "aiBatchAnalyzeConcurrency";
 
 export type LibraryViewMode = "grid" | "list" | "adaptive";
 export type LibraryVisibleField = "name" | "ext" | "size" | "dimensions" | "tags";
@@ -44,6 +45,9 @@ export const DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED = 1;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MIN = 0.2;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MAX = 3;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_STEP = 0.1;
+export const DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY = 5;
+export const MIN_AI_BATCH_ANALYZE_CONCURRENCY = 1;
+export const MAX_AI_BATCH_ANALYZE_CONCURRENCY = 5;
 export const DEFAULT_LIBRARY_VIEW_MODE: LibraryViewMode = "grid";
 export const DEFAULT_SIDEBAR_WIDTH = 240;
 export const DEFAULT_DETAIL_PANEL_WIDTH = 288;
@@ -143,6 +147,19 @@ export function clampPreviewTrackpadZoomSpeed(value: number) {
     (
       Math.round(clamped / PREVIEW_TRACKPAD_ZOOM_SPEED_STEP) * PREVIEW_TRACKPAD_ZOOM_SPEED_STEP
     ).toFixed(1),
+  );
+}
+
+export function clampAiBatchAnalyzeConcurrency(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
+  }
+
+  return Math.round(
+    Math.max(
+      MIN_AI_BATCH_ANALYZE_CONCURRENCY,
+      Math.min(MAX_AI_BATCH_ANALYZE_CONCURRENCY, value),
+    ),
   );
 }
 
@@ -422,6 +439,7 @@ interface Settings {
   indexPaths: string[];
   useTrash: boolean;
   aiConfig: AiConfig;
+  aiBatchAnalyzeConcurrency: number;
   visualSearch: VisualSearchConfig;
   autoAnalyzeOnImport: boolean;
   visualIndexStatus: VisualIndexStatus | null;
@@ -448,6 +466,7 @@ interface SettingsStore extends Settings {
     key: K,
     value: VisualSearchConfig[K],
   ) => void;
+  setAiBatchAnalyzeConcurrency: (value: number) => Promise<void>;
   setAutoAnalyzeOnImport: (enabled: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
@@ -472,6 +491,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   indexPaths: [],
   useTrash: true,
   aiConfig: cloneAiConfig(DEFAULT_AI_CONFIG),
+  aiBatchAnalyzeConcurrency: DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
   visualSearch: cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG),
   autoAnalyzeOnImport: false,
   visualIndexStatus: null,
@@ -521,6 +541,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         : {}),
     }));
     scheduleVisualSearchPersist(get);
+  },
+
+  setAiBatchAnalyzeConcurrency: async (value) => {
+    const nextConcurrency = clampAiBatchAnalyzeConcurrency(value);
+    await setSetting(
+      AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY,
+      String(nextConcurrency),
+    );
+    set({ aiBatchAnalyzeConcurrency: nextConcurrency });
   },
 
   setAutoAnalyzeOnImport: async (enabled) => {
@@ -610,6 +639,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let indexPaths: string[] = [];
     let useTrash: boolean = true;
     let aiConfig = cloneAiConfig(DEFAULT_AI_CONFIG);
+    let aiBatchAnalyzeConcurrency = DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
     let visualSearch = cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG);
     let autoAnalyzeOnImport = false;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
@@ -678,6 +708,20 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         }
       } catch (e) {
         console.error("Failed to detect recommended visual model path:", e);
+      }
+    }
+
+    try {
+      const concurrencyValue = await getSetting(
+        AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY,
+      );
+      aiBatchAnalyzeConcurrency = clampAiBatchAnalyzeConcurrency(
+        Number.parseInt(concurrencyValue, 10),
+      );
+    } catch (e) {
+      const errorMsg = String(e);
+      if (!errorMsg.includes("Setting not found")) {
+        console.error("Failed to load AI batch analyze concurrency:", e);
       }
     }
 
@@ -774,6 +818,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       indexPaths: indexPaths || [],
       useTrash,
       aiConfig,
+      aiBatchAnalyzeConcurrency,
       visualSearch,
       autoAnalyzeOnImport,
       shortcuts,

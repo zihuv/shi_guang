@@ -7,6 +7,7 @@ import {
   clampSidebarWidth,
   useSettingsStore,
 } from "@/stores/settingsStore";
+import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -201,6 +202,7 @@ function App() {
   useEffect(() => {
     Object.assign(window as Window & {
       __SHIGUANG_DEBUG__?: {
+        aiBatchAnalyzeStore: typeof useAiBatchAnalyzeStore;
         importStore: typeof useImportStore;
         libraryQueryStore: typeof useLibraryQueryStore;
         previewStore: typeof usePreviewStore;
@@ -209,6 +211,7 @@ function App() {
       };
     }, {
       __SHIGUANG_DEBUG__: {
+        aiBatchAnalyzeStore: useAiBatchAnalyzeStore,
         importStore: useImportStore,
         libraryQueryStore: useLibraryQueryStore,
         previewStore: usePreviewStore,
