@@ -33,6 +33,13 @@ const IMAGE_SRC_CACHE_LIMIT = 300
 const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"]
+const CARD_BOTTOM_HIGHLIGHT_CLASS =
+  "after:pointer-events-none after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-95 after:rounded-full after:bg-primary-400/70 after:opacity-0 after:content-[''] after:transition-[opacity,transform] after:duration-150 dark:after:bg-primary-500/80"
+const CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS =
+  "active:after:scale-x-100 active:after:opacity-70"
+const CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-90"
+const CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS =
+  "after:scale-x-100 after:opacity-100"
 
 type FileCardBaseProps = {
   file: FileItem
@@ -211,13 +218,24 @@ export function FileCard({
           {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          className={`file-card app-card-surface group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,transform,ring-color] ${
+          className={cn(
+            "file-card app-card-surface group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,ring-color]",
+            CARD_BOTTOM_HIGHLIGHT_CLASS,
             isMultiSelected
-              ? "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20"
+              ? cn(
+                  "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20",
+                  CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
+                )
               : isSelected
-                ? "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30"
-                : "hover:-translate-y-px hover:shadow-lg hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
-          }`}
+                ? cn(
+                    "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30",
+                    CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
+                  )
+                : cn(
+                    "hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600",
+                    CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS,
+                  ),
+          )}
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
@@ -336,13 +354,24 @@ export function AdaptiveFileCard({
           {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          className={`file-card app-card-surface group relative flex cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,transform,ring-color] ${
+          className={cn(
+            "file-card app-card-surface group relative flex cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,ring-color]",
+            CARD_BOTTOM_HIGHLIGHT_CLASS,
             isMultiSelected
-              ? "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20"
+              ? cn(
+                  "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20",
+                  CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
+                )
               : isSelected
-                ? "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30"
-                : "hover:-translate-y-px hover:shadow-lg hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
-          }`}
+                ? cn(
+                    "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30",
+                    CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
+                  )
+                : cn(
+                    "hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600",
+                    CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS,
+                  ),
+          )}
         >
           <div
             className="relative bg-gray-100 dark:bg-dark-bg"
@@ -458,13 +487,24 @@ export function FileRow({
           {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          className={`file-card flex cursor-pointer items-center gap-3 rounded-[14px] p-2.5 transition-colors ${
+          className={cn(
+            "file-card relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-[14px] p-2.5 transition-colors",
+            CARD_BOTTOM_HIGHLIGHT_CLASS,
             isMultiSelected
-              ? "bg-primary-50 dark:bg-primary-900/20"
-            : isSelected
-                ? "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700"
-                : "hover:bg-gray-100 dark:hover:bg-dark-border"
-          }`}
+              ? cn(
+                  "bg-primary-50 dark:bg-primary-900/20",
+                  CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
+                )
+              : isSelected
+                ? cn(
+                    "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700",
+                    CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
+                  )
+                : cn(
+                    "hover:bg-gray-100 dark:hover:bg-dark-border",
+                    CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS,
+                  ),
+          )}
         >
           <div
             className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gray-100 dark:bg-dark-bg"
