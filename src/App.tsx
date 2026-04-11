@@ -8,7 +8,6 @@ import {
   useSettingsStore,
 } from "@/stores/settingsStore";
 import { useFolderStore } from "@/stores/folderStore";
-import { useFilterStore } from "@/stores/filterStore";
 import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { usePreviewStore } from "@/stores/previewStore";
@@ -32,7 +31,6 @@ const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_LAYOUT_WIDTH * 2;
 const MIN_MAIN_PANEL_WIDTH = 240;
 const MIN_RENDERED_SIDEBAR_WIDTH = 72;
 const MIN_RENDERED_DETAIL_PANEL_WIDTH = 120;
-const FilterPanel = lazy(() => import("@/components/FilterPanel"));
 const ImagePreview = lazy(() => import("@/components/ImagePreview"));
 const SettingsModal = lazy(() => import("@/components/SettingsModal"));
 
@@ -142,7 +140,6 @@ function App() {
   const previewMode = usePreviewStore((state) => state.previewMode);
   const files = useLibraryQueryStore((state) => state.files);
   const { dragOverFolderId, setDragOverFolderId } = useFolderStore();
-  const { isFilterPanelOpen } = useFilterStore();
   const isDraggingInternal = useSelectionStore((state) => state.isDraggingInternal);
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -484,7 +481,6 @@ function App() {
 
         <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
           <Suspense fallback={null}>
-            {isFilterPanelOpen && <FilterPanel />}
             {previewMode ? <ImagePreview /> : <FileGrid />}
           </Suspense>
         </main>

@@ -79,6 +79,7 @@ export default function FileGrid() {
   const openPreview = usePreviewStore((state) => state.openPreview)
   const deleteFiles = useTrashStore((state) => state.deleteFiles)
   const isFilterPanelOpen = useFilterStore((state) => state.isFilterPanelOpen)
+  const setFilterPanelOpen = useFilterStore((state) => state.setFilterPanelOpen)
   const toggleFilterPanel = useFilterStore((state) => state.toggleFilterPanel)
   const activeFilterCount = useFilterStore((state) => getActiveFilterCount(state.criteria))
   const sortBy = useFilterStore((state) => state.criteria.sortBy)
@@ -100,6 +101,8 @@ export default function FileGrid() {
   const [viewportHeight, setViewportHeight] = useState(0)
 
   const scrollParentRef = useRef<HTMLDivElement>(null)
+  const filterMenuRef = useRef<HTMLDivElement>(null)
+  const filterMenuButtonRef = useRef<HTMLButtonElement>(null)
   const sortMenuRef = useRef<HTMLDivElement>(null)
   const sortMenuButtonRef = useRef<HTMLButtonElement>(null)
   const layoutMenuRef = useRef<HTMLDivElement>(null)
@@ -148,13 +151,17 @@ export default function FileGrid() {
   }, [resetPage, runCurrentQuery, sortBy, sortDirection])
 
   useEffect(() => {
-    if (!openToolbarMenu) {
+    if (!openToolbarMenu && !isFilterPanelOpen) {
       return
     }
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null
       if (!target) {
+        return
+      }
+
+      if (filterMenuRef.current?.contains(target) || filterMenuButtonRef.current?.contains(target)) {
         return
       }
 
@@ -175,23 +182,34 @@ export default function FileGrid() {
         return
       }
 
-      setOpenToolbarMenu(null)
+      if (openToolbarMenu) {
+        setOpenToolbarMenu(null)
+      }
+
+      if (isFilterPanelOpen) {
+        setFilterPanelOpen(false)
+      }
     }
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpenToolbarMenu(null)
+        if (openToolbarMenu) {
+          setOpenToolbarMenu(null)
+        }
+        if (isFilterPanelOpen) {
+          setFilterPanelOpen(false)
+        }
       }
     }
 
-    window.addEventListener("mousedown", handlePointerDown)
+    window.addEventListener("mousedown", handlePointerDown, true)
     window.addEventListener("keydown", handleEscape)
 
     return () => {
-      window.removeEventListener("mousedown", handlePointerDown)
+      window.removeEventListener("mousedown", handlePointerDown, true)
       window.removeEventListener("keydown", handleEscape)
     }
-  }, [openToolbarMenu])
+  }, [isFilterPanelOpen, openToolbarMenu, setFilterPanelOpen])
 
   useEffect(() => {
     const element = scrollParentRef.current
@@ -705,6 +723,8 @@ export default function FileGrid() {
         currentViewModeLabel={currentViewModeLabel}
         currentViewScale={currentViewScale}
         currentViewScaleRange={currentViewScaleRange}
+        filterMenuButtonRef={filterMenuButtonRef}
+        filterMenuRef={filterMenuRef}
         filteredFileCount={filteredFiles.length}
         handleViewModeChange={handleViewModeChange}
         infoMenuButtonRef={infoMenuButtonRef}
