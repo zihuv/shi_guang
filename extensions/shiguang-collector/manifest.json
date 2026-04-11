@@ -27,6 +27,9 @@
         "<all_urls>"
       ],
       "js": [
+        "content-shared.js",
+        "content-drag-dock.js",
+        "content-xiaohongshu.js",
         "content.js"
       ]
     }
