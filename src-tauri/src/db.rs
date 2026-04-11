@@ -182,7 +182,7 @@ pub struct Database {
 
 pub const BROWSER_COLLECTION_FOLDER_NAME: &str = "浏览器采集";
 pub const BROWSER_COLLECTION_FOLDER_SORT_ORDER: i32 = -1;
-const DB_SCHEMA_VERSION: i32 = 9;
+const DB_SCHEMA_VERSION: i32 = 10;
 
 mod files;
 mod folders;
