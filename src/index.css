@@ -2,32 +2,114 @@
 @config "../tailwind.config.js";
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family:
+    "Segoe UI Variable Text",
+    "Segoe UI",
+    "Microsoft YaHei UI",
+    "PingFang SC",
+    system-ui,
+    sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #213547;
-  background-color: #f5f5f5;
+  color: #1f2937;
+  background-color: #f3f3f3;
+  --app-canvas: #f3f3f3;
+  --app-surface: #fbfbfb;
+  --app-surface-strong: #ffffff;
+  --app-surface-muted: #f6f6f6;
+  --app-border: rgba(0, 0, 0, 0.08);
+  --app-border-strong: rgba(0, 0, 0, 0.12);
+  --app-header-height: 54px;
+  --app-panel-header-height: 44px;
+  --app-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
 }
 
 .dark {
   color: #e5e7eb;
-  background-color: #1a1a1a;
+  background-color: #1f1f1f;
+  --app-canvas: #1f1f1f;
+  --app-surface: #242424;
+  --app-surface-strong: #292929;
+  --app-surface-muted: #262626;
+  --app-border: rgba(255, 255, 255, 0.08);
+  --app-border-strong: rgba(255, 255, 255, 0.12);
+  --app-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+}
+
+html {
+  height: 100%;
+  min-height: 100vh;
+  background-color: var(--app-canvas);
 }
 
 body {
   margin: 0;
+  height: 100%;
   min-height: 100vh;
+  color: inherit;
+  background: var(--app-canvas);
+  font-family: inherit;
+  text-rendering: optimizeLegibility;
 }
 
-/* WebView2 clips "_" inside form controls with the app font stack. */
+/* WebView2 clips "_" inside form controls with some non-native font stacks. */
 .input-system-font {
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family:
+    "Segoe UI Variable Text",
+    "Segoe UI",
+    "Microsoft YaHei UI",
+    "PingFang SC",
+    system-ui,
+    sans-serif;
 }
 
 #root {
+  height: 100%;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.app-shell {
+  background: var(--app-canvas);
+  color: inherit;
+}
+
+.app-topbar {
+  height: var(--app-header-height);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+
+.app-panel {
+  background: var(--app-surface);
+}
+
+.app-panel-header {
+  height: var(--app-panel-header-height);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.app-panel-divider {
+  border-color: var(--app-border);
+}
+
+.app-card-surface {
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-border);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.dark .app-card-surface {
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+}
+
+.app-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* 自定义滚动条 */

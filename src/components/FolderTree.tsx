@@ -5,6 +5,12 @@ import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/ad
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
 import { type Instruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item'
 import { buildVisibleTreeItems, useTreeKeyboardNavigation } from '@/hooks/useTreeKeyboardNavigation'
+import {
+  appPanelHeaderClass,
+  appPanelMetaClass,
+  appPanelTitleClass,
+  appTreeRowClass,
+} from '@/lib/ui'
 import { requestFocusFirstFile } from '@/lib/libraryNavigation'
 import { deleteFolder } from '@/services/tauri/folders'
 import { showFolderInExplorer } from '@/services/tauri/system'
@@ -478,7 +484,7 @@ function FolderItem({
               registerKeyboardItem(folder.id, element)
             }}
             data-folder-id={folder.id}
-            className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${
+            className={`${appTreeRowClass} ${
               isBeingDragged
                 ? 'opacity-50'
                 : canDrag
@@ -527,10 +533,10 @@ function FolderItem({
               <FolderIcon className="w-4 h-4 text-yellow-500 flex-shrink-0" />
             )}
 
-            <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{folder.name}</span>
+            <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{folder.name}</span>
 
             {folder.fileCount > 0 && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">{folder.fileCount}</span>
+              <span className={`${appPanelMetaClass} tabular-nums`}>{folder.fileCount}</span>
             )}
           </div>
         </ContextMenuTrigger>
@@ -585,7 +591,7 @@ function FolderItem({
       </ContextMenu>
 
       {hasChildren && isExpanded && (
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           {folder.children.map((child) => (
             <FolderItem
               key={child.id}
@@ -1091,26 +1097,25 @@ export default function FolderTree() {
 
   return (
     <div className="flex flex-col">
-      <div className="p-3 border-b border-gray-200 dark:border-dark-border">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">文件夹</h2>
-          <div className="flex items-center gap-1">
-            <TrashPanel variant="header" />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="w-4 h-4" />
-            </Button>
-          </div>
+      <div className={appPanelHeaderClass}>
+        <h2 className={appPanelTitleClass}>文件夹</h2>
+        <div className="flex items-center gap-1">
+          <TrashPanel variant="header" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-lg"
+            onClick={() => setIsAdding(true)}
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
       <div
         id="folder-tree-container"
         ref={treeContainerRef}
-        className="relative flex-1 overflow-auto p-2 focus:outline-none"
+        className="relative flex-1 overflow-auto p-2.5 focus:outline-none"
         tabIndex={0}
         onKeyDown={handleTreeKeyDown}
       >
@@ -1122,11 +1127,11 @@ export default function FolderTree() {
             </svg>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             {/* Virtual "全部文件" (All Files) item - cannot be deleted */}
             <div
               ref={(element) => registerKeyboardItem(null, element)}
-              className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+              className={`${appTreeRowClass} cursor-pointer ${
                 selectedFolderId === null
                   ? 'bg-primary-100 dark:bg-primary-900/30'
                   : 'hover:bg-gray-100 dark:hover:bg-dark-border'
@@ -1158,7 +1163,7 @@ export default function FolderTree() {
             ))}
 
             {folders.length === 0 && (
-              <div className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+              <div className="py-4 text-center text-[12px] text-gray-400 dark:text-gray-500">
                 暂无文件夹
               </div>
             )}

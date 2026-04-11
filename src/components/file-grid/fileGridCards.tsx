@@ -211,12 +211,12 @@ export function FileCard({
           {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          className={`file-card group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg transition-all ${
+          className={`file-card app-card-surface group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,transform,ring-color] ${
             isMultiSelected
-              ? "ring-2 ring-primary-500 shadow-lg"
+              ? "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20"
               : isSelected
-                ? "ring-2 ring-primary-300 shadow-md shadow-primary-200/50 dark:ring-primary-700 dark:shadow-primary-950/40"
-                : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
+                ? "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30"
+                : "hover:-translate-y-px hover:shadow-lg hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
           }`}
         >
           <div
@@ -257,18 +257,18 @@ export function FileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col bg-white px-2 py-1.5 dark:bg-dark-surface"
+            className="flex min-h-0 flex-1 flex-col bg-white px-2.5 py-2 dark:bg-dark-surface"
             style={{ minHeight: `${footerHeight}px` }}
           >
             {showName && (
-              <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">
+              <p className="truncate text-[12px] font-medium leading-4 text-gray-700 dark:text-gray-200">
                 {getNameWithoutExt(file.name)}
               </p>
             )}
             {metaTokens.length > 0 && (
               <p
                 className={cn(
-                  "truncate text-xs leading-4 text-gray-400",
+                  "truncate text-[11px] leading-4 text-gray-400",
                   showName && "mt-0.5",
                 )}
               >
@@ -280,7 +280,7 @@ export function FileCard({
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
-                    className="min-w-0 max-w-[88px] truncate rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                    className="min-w-0 max-w-[88px] truncate rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
                     style={{ backgroundColor: tag.color }}
                   >
                     {tag.name}
@@ -336,12 +336,12 @@ export function AdaptiveFileCard({
           {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          className={`file-card group relative flex cursor-pointer flex-col overflow-hidden rounded-lg transition-all ${
+          className={`file-card app-card-surface group relative flex cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,transform,ring-color] ${
             isMultiSelected
-              ? "ring-2 ring-primary-500 shadow-lg"
+              ? "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20"
               : isSelected
-                ? "ring-2 ring-primary-300 shadow-md shadow-primary-200/50 dark:ring-primary-700 dark:shadow-primary-950/40"
-                : "hover:shadow-md hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
+                ? "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30"
+                : "hover:-translate-y-px hover:shadow-lg hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600"
           }`}
         >
           <div
@@ -382,18 +382,18 @@ export function AdaptiveFileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col bg-white px-2 py-1.5 dark:bg-dark-surface"
+            className="flex min-h-0 flex-1 flex-col bg-white px-2.5 py-2 dark:bg-dark-surface"
             style={{ minHeight: `${footerHeight}px` }}
           >
             {showName && (
-              <p className="truncate text-xs leading-4 text-gray-700 dark:text-gray-200">
+              <p className="truncate text-[12px] font-medium leading-4 text-gray-700 dark:text-gray-200">
                 {getNameWithoutExt(file.name)}
               </p>
             )}
             {metaTokens.length > 0 && (
               <p
                 className={cn(
-                  "truncate text-xs leading-4 text-gray-400",
+                  "truncate text-[11px] leading-4 text-gray-400",
                   showName && "mt-0.5",
                 )}
               >
@@ -405,7 +405,7 @@ export function AdaptiveFileCard({
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
-                    className="min-w-0 max-w-[88px] truncate rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                    className="min-w-0 max-w-[88px] truncate rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
                     style={{ backgroundColor: tag.color }}
                   >
                     {tag.name}
@@ -458,16 +458,16 @@ export function FileRow({
           {...externalDragProps}
           onClick={onClick}
           onDoubleClick={onDoubleClick}
-          className={`file-card flex cursor-pointer items-center gap-3 rounded-lg p-2 transition-colors ${
+          className={`file-card flex cursor-pointer items-center gap-3 rounded-[14px] p-2.5 transition-colors ${
             isMultiSelected
               ? "bg-primary-50 dark:bg-primary-900/20"
-              : isSelected
+            : isSelected
                 ? "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700"
                 : "hover:bg-gray-100 dark:hover:bg-dark-border"
           }`}
         >
           <div
-            className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100 dark:bg-dark-bg"
+            className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gray-100 dark:bg-dark-bg"
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
           >
             {!isVisible || imageSrc === null ? (
@@ -507,13 +507,13 @@ export function FileRow({
           </div>
           <div className="min-w-0 flex-1">
             {showName && (
-              <p className="truncate text-sm text-gray-700 dark:text-gray-200">
+              <p className="truncate text-[13px] font-medium text-gray-700 dark:text-gray-200">
                 {getNameWithoutExt(file.name)}
               </p>
             )}
             <div
               className={cn(
-                "flex items-center gap-1 overflow-hidden text-xs text-gray-400",
+                "flex items-center gap-1 overflow-hidden text-[11px] text-gray-400",
                 showName && "mt-0.5",
               )}
             >
@@ -726,7 +726,7 @@ function FilePreviewFallback({
     <div
       className={cn(
         "flex flex-col items-center justify-center gap-1 bg-gray-100 text-gray-400 dark:bg-dark-bg dark:text-gray-500",
-        compact ? "text-[9px]" : "text-xs",
+        compact ? "text-[10px]" : "text-[11px]",
         className,
       )}
     >

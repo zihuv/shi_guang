@@ -40,7 +40,7 @@ const INFO_FIELD_OPTIONS: Array<{ value: LibraryVisibleField; label: string }> =
 ]
 
 const TOOLBAR_BUTTON_CLASS_NAME =
-  "relative inline-flex h-8 w-8 items-center justify-center rounded-full border text-gray-500 transition-colors"
+  "relative inline-flex size-8 items-center justify-center rounded-[10px] border text-gray-500 transition-colors"
 
 function getToolbarButtonClassName(isActive: boolean) {
   return cn(
@@ -123,16 +123,16 @@ export function FileGridToolbar({
   }
 
   return (
-    <div className="relative z-20 border-b border-gray-200 bg-white/90 backdrop-blur-sm dark:border-dark-border dark:bg-dark-surface/85">
-      <div className="flex items-center justify-between gap-3 px-4 py-2">
+    <div className="relative z-20 border-b border-gray-200/80 bg-white/78 backdrop-blur-xl dark:border-dark-border dark:bg-dark-surface/78">
+      <div className="flex h-11 items-center justify-between gap-3 px-4">
         <div className="min-w-0">
-          <span className="truncate text-sm text-gray-500 dark:text-gray-400">
+          <span className="truncate text-[13px] text-gray-500 dark:text-gray-400">
             {filteredFileCount} 个文件
             {paginationLabel ? ` ${paginationLabel}` : ""}
             {activeFilterCount > 0 ? ` · 已筛选 ${activeFilterCount} 项` : ""}
           </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <button
             ref={filterMenuButtonRef}
             type="button"
@@ -148,7 +148,7 @@ export function FileGridToolbar({
           >
             <Filter className="h-3.5 w-3.5" />
             {activeFilterCount > 0 && (
-              <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[10px] font-semibold leading-none text-gray-700 dark:bg-black/20 dark:text-gray-100">
+              <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[10px] font-semibold leading-none text-gray-700 shadow-sm dark:bg-black/20 dark:text-gray-100">
                 {activeFilterCount}
               </span>
             )}
@@ -169,9 +169,9 @@ export function FileGridToolbar({
             {openToolbarMenu === "sort" && (
               <div
                 ref={sortMenuRef}
-                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+                className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
               >
-                <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">
                   排序方式
                 </div>
                 {SORT_DIRECTION_OPTIONS.map((option) => {
@@ -185,7 +185,7 @@ export function FileGridToolbar({
                         setOpenToolbarMenu(null)
                       }}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
                         isActive
                           ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
                           : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
@@ -204,7 +204,7 @@ export function FileGridToolbar({
 
                 <div className="my-1.5 h-px bg-gray-100 dark:bg-dark-border" />
 
-                <div className="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                <div className="app-kicker px-3 pb-1 pt-1 text-gray-400">
                   排序依据
                 </div>
                 {SORT_FIELD_OPTIONS.map((option) => {
@@ -218,7 +218,7 @@ export function FileGridToolbar({
                         setOpenToolbarMenu(null)
                       }}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
                         isActive
                           ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
                           : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
@@ -253,9 +253,9 @@ export function FileGridToolbar({
             {openToolbarMenu === "info" && (
               <div
                 ref={infoMenuRef}
-                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+                className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
               >
-                <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">
                   信息显示
                 </div>
                 {INFO_FIELD_OPTIONS.map((option) => {
@@ -266,7 +266,7 @@ export function FileGridToolbar({
                       type="button"
                       onClick={() => toggleLibraryVisibleField(option.value)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
                         isActive
                           ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
                           : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
@@ -306,9 +306,9 @@ export function FileGridToolbar({
             {openToolbarMenu === "layout" && (
               <div
                 ref={layoutMenuRef}
-                className="absolute right-0 top-10 z-30 w-44 rounded-xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+                className="absolute right-0 top-10 z-30 w-44 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
               >
-                <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">
                   布局
                 </div>
                 {VIEW_MODE_OPTIONS.map((option) => {
@@ -319,7 +319,7 @@ export function FileGridToolbar({
                       type="button"
                       onClick={() => handleViewModeChange(option.value)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
                         isActive
                           ? "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
                           : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-border",
@@ -347,7 +347,7 @@ export function FileGridToolbar({
               step={0.02}
               value={currentViewScale}
               onChange={(event) => applyCurrentViewScale(Number(event.target.value))}
-              className="h-1 w-16 cursor-pointer accent-gray-400 opacity-70 transition-opacity hover:opacity-100 dark:accent-gray-500"
+              className="h-1 w-14 cursor-pointer accent-gray-400 opacity-70 transition-opacity hover:opacity-100 dark:accent-gray-500"
               aria-label="当前视图缩放"
             />
           </div>
@@ -390,38 +390,38 @@ export function FileGridPagination({
       <button
         onClick={() => setPage(1)}
         disabled={page <= 1}
-        className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+        className="rounded-lg px-2.5 py-1 text-[13px] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
       >
         首页
       </button>
       <button
         onClick={() => setPage(page - 1)}
         disabled={page <= 1}
-        className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+        className="rounded-lg px-2.5 py-1 text-[13px] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
       >
         上一页
       </button>
-      <span className="text-sm text-gray-600 dark:text-gray-400">
+      <span className="text-[13px] text-gray-600 dark:text-gray-400">
         第 {page} / {totalPages} 页
       </span>
       <button
         onClick={() => setPage(page + 1)}
         disabled={page >= totalPages}
-        className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+        className="rounded-lg px-2.5 py-1 text-[13px] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
       >
         下一页
       </button>
       <button
         onClick={() => setPage(totalPages)}
         disabled={page >= totalPages}
-        className="rounded px-2 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
+        className="rounded-lg px-2.5 py-1 text-[13px] hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-border"
       >
         末页
       </button>
       <select
         value={pageSize}
         onChange={(e) => setPageSize(Number(e.target.value))}
-        className="ml-2 rounded border px-2 py-1 text-sm hover:bg-gray-50 dark:hover:bg-dark-border"
+        className="ml-2 rounded-lg border px-2 py-1 text-[13px] hover:bg-gray-50 dark:hover:bg-dark-border"
       >
         <option value={50}>50/页</option>
         <option value={100}>100/页</option>
@@ -452,14 +452,14 @@ export function FileGridSelectionBar({
   }
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 transform flex-wrap items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-lg dark:border-dark-border dark:bg-dark-surface">
-      <span className="whitespace-nowrap text-sm text-gray-700 dark:text-gray-200">
+    <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 transform flex-wrap items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white/96 px-4 py-2 shadow-xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/96">
+      <span className="whitespace-nowrap text-[13px] font-medium text-gray-700 dark:text-gray-200">
         已选择 {selectedCount} 个文件
       </span>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           onClick={clearSelection}
-          className="whitespace-nowrap rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+          className="whitespace-nowrap rounded-xl bg-gray-100 px-3 py-1 text-[13px] text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
         >
           取消选择
         </button>
@@ -467,13 +467,13 @@ export function FileGridSelectionBar({
           <>
             <button
               onClick={() => void handleBatchDelete()}
-              className="whitespace-nowrap rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
+              className="whitespace-nowrap rounded-xl bg-red-500 px-3 py-1 text-[13px] text-white hover:bg-red-600"
             >
               确认删除
             </button>
             <button
               onClick={() => setShowBatchDeleteConfirm(false)}
-              className="whitespace-nowrap rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+              className="whitespace-nowrap rounded-xl bg-gray-100 px-3 py-1 text-[13px] text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
             >
               取消
             </button>
@@ -481,7 +481,7 @@ export function FileGridSelectionBar({
         ) : (
           <button
             onClick={() => setShowBatchDeleteConfirm(true)}
-            className="whitespace-nowrap rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
+            className="whitespace-nowrap rounded-xl bg-red-500 px-3 py-1 text-[13px] text-white hover:bg-red-600"
           >
             批量删除
           </button>

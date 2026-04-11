@@ -85,69 +85,69 @@ export default function Header({ onOpenSettings }: HeaderProps) {
   };
 
   return (
-    <header className="border-b border-gray-200 bg-white dark:border-dark-border dark:bg-dark-surface">
-      <div className="flex items-center gap-4 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <img src={appLogo} alt="" className="h-6 w-6" />
-          <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+    <header className="app-topbar">
+      <div className="flex h-full items-center gap-3 px-3">
+        <div className="flex min-w-0 items-center gap-2.5 pr-1">
+          <img src={appLogo} alt="" className="size-6 rounded-md" />
+          <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-gray-800 dark:text-gray-100">
             拾光
           </h1>
         </div>
 
-        <div className="flex-1 min-w-0 max-w-xl">
+        <div className="min-w-0 max-w-[38rem] flex-1">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <Input
               type="text"
               placeholder="搜索图片，支持中文自然语言..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="h-9 rounded-xl border-gray-200/90 bg-white/80 pl-9 shadow-none dark:border-dark-border dark:bg-dark-bg/50"
             />
           </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
+          {isImporting && (
+            <div
+              className="hidden min-w-[96px] items-center gap-2 rounded-full border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 sm:flex dark:border-blue-900/40 dark:bg-blue-950/20"
+              role="status"
+              aria-live="polite"
+              aria-label={`导入进度 ${importCountLabel}`}
+            >
+              <span className="text-[11px] font-medium leading-none tabular-nums text-blue-700 dark:text-blue-300">
+                {importCountLabel}
+              </span>
+              <div className="h-1 min-w-10 flex-1 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/30">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-[width] duration-300"
+                  style={{ width: `${importProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <Button
             onClick={handleImport}
             disabled={isImporting}
             title="导入图片"
+            className="rounded-xl px-3.5"
           >
-            <Download className="w-4 h-4" />
+            <Download className="h-4 w-4" />
             导入
           </Button>
-
-          <div className="flex h-9 w-[7.5rem] flex-shrink-0 items-center justify-end">
-            {isImporting && (
-              <div
-                className="w-full rounded-lg border border-blue-200/80 bg-blue-50/80 px-2.5 py-1.5 dark:border-blue-900/40 dark:bg-blue-950/20"
-                role="status"
-                aria-live="polite"
-                aria-label={`导入进度 ${importCountLabel}`}
-              >
-                <div className="text-right text-[11px] font-medium leading-none tabular-nums text-blue-700 dark:text-blue-300">
-                  {importCountLabel}
-                </div>
-                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/30">
-                  <div
-                    className="h-full rounded-full bg-blue-500 transition-[width] duration-300"
-                    style={{ width: `${importProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
 
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
             title={theme === "light" ? "切换到深色模式" : "切换到浅色模式"}
+            className="rounded-xl"
           >
             {theme === "light" ? (
-              <Moon className="w-5 h-5" />
+              <Moon className="h-4 w-4" />
             ) : (
-              <Sun className="w-5 h-5" />
+              <Sun className="h-4 w-4" />
             )}
           </Button>
 
@@ -156,8 +156,9 @@ export default function Header({ onOpenSettings }: HeaderProps) {
             size="icon"
             onClick={onOpenSettings}
             title="设置"
+            className="rounded-xl"
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="h-4 w-4" />
           </Button>
         </div>
       </div>

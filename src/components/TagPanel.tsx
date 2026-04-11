@@ -22,6 +22,12 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/ContextMenu"
+import {
+  appPanelHeaderClass,
+  appPanelMetaClass,
+  appPanelTitleClass,
+  appTreeRowClass,
+} from "@/lib/ui"
 import { requestFocusFirstFile } from "@/lib/libraryNavigation"
 import { useFilterStore } from "@/stores/filterStore"
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore"
@@ -183,7 +189,7 @@ function TagItem({
               elementRef.current = element
               registerKeyboardItem(tag.id, element)
             }}
-            className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+            className={`${appTreeRowClass} cursor-pointer ${
               isDragging
                 ? "opacity-50"
                 : isSelected
@@ -217,13 +223,13 @@ function TagItem({
             <TagIcon className="w-4 h-4 flex-shrink-0" style={{ color: tag.color }} />
             <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{tag.name}</span>
             {tag.count > 0 && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">{tag.count}</span>
+              <span className={`${appPanelMetaClass} tabular-nums`}>{tag.count}</span>
             )}
             {isSelected && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-5 w-5 flex-shrink-0"
+                className="size-5 flex-shrink-0 rounded-md"
                 onClick={(e) => {
                   e.stopPropagation()
                   focusPanel()
@@ -258,7 +264,7 @@ function TagItem({
       </ContextMenu>
 
       {hasChildren && isExpanded && (
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           {tag.children.map((child) => (
             <TagItem
               key={child.id}
@@ -534,25 +540,28 @@ export default function TagPanel() {
 
   return (
     <div className="flex flex-col">
-      <div className="p-3 border-b border-gray-200 dark:border-dark-border">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">标签</h2>
-          <Button variant="ghost" size="icon" onClick={() => openAddDialog()}>
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
+      <div className={appPanelHeaderClass}>
+        <h2 className={appPanelTitleClass}>标签</h2>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-lg"
+          onClick={() => openAddDialog()}
+        >
+          <Plus className="w-4 h-4" />
+        </Button>
       </div>
 
       <div
         ref={panelRef}
-        className="flex-1 overflow-auto p-2 focus:outline-none"
+        className="flex-1 overflow-auto p-2.5 focus:outline-none"
         tabIndex={0}
         onKeyDown={handlePanelKeyDown}
       >
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <div
             ref={(element) => registerKeyboardItem(null, element)}
-            className={`group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+            className={`${appTreeRowClass} cursor-pointer ${
               selectedTagId === null
                 ? "bg-primary-100 dark:bg-primary-900/30"
                 : "hover:bg-gray-100 dark:hover:bg-dark-border"
@@ -587,7 +596,7 @@ export default function TagPanel() {
           ))}
 
           {tags.length === 0 && (
-            <div className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+            <div className="py-4 text-center text-[12px] text-gray-400 dark:text-gray-500">
               暂无标签
             </div>
           )}
@@ -614,7 +623,7 @@ export default function TagPanel() {
               </DialogDescription>
             )}
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="flex flex-col gap-4 py-4">
             <Input
               value={newTagName}
               onChange={(e) => setNewTagName(e.target.value)}
@@ -666,7 +675,7 @@ export default function TagPanel() {
           <DialogHeader>
             <DialogTitle>编辑标签</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="flex flex-col gap-4 py-4">
             <Input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}

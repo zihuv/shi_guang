@@ -1,4 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
 import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -7,6 +14,18 @@ import { useTrashStore } from "@/stores/trashStore";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileTagInput from "@/components/FileTagInput";
 import { getFilePreviewMode, getFileSrc, getTextPreviewContent, getThumbnailImageSrc, getVideoThumbnailSrc, formatSize, findFolderById, debounce } from "@/utils";
+import { cn } from "@/lib/utils";
+import {
+  appIconButtonClass,
+  appPanelClass,
+  appPanelHeaderClass,
+  appPanelMetaClass,
+  appPanelTitleClass,
+  appPanelValueClass,
+  appQuietButtonClass,
+  appSectionHeadingClass,
+  appSectionLabelClass,
+} from "@/lib/ui";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 
@@ -22,6 +41,51 @@ interface DetailPanelProps {
   width: number;
 }
 
+function PanelIconButton({
+  className,
+  type = "button",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type={type}
+      className={cn(appIconButtonClass, className)}
+      {...props}
+    />
+  );
+}
+
+function PanelActionButton({
+  className,
+  type = "button",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type={type}
+      className={cn(appQuietButtonClass, className)}
+      {...props}
+    />
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className={appPanelMetaClass}>{label}</span>
+      <span className="text-right text-[12px] font-medium text-gray-800 dark:text-gray-200">
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function DetailPanel({ width }: DetailPanelProps) {
   const selectedFile = useSelectionStore((state) => state.selectedFile);
   const { folders, selectedFolderId } = useFolderStore();
@@ -35,11 +99,11 @@ export default function DetailPanel({ width }: DetailPanelProps) {
   if (!selectedFile && !selectedFolder) {
     return (
       <div
-        className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col items-center justify-center p-6"
+        className={`${appPanelClass} flex-shrink-0 items-center justify-center p-6`}
         style={{ width }}
       >
         <svg
-          className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4"
+          className="mb-4 h-14 w-14 text-gray-300 dark:text-gray-600"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -51,7 +115,7 @@ export default function DetailPanel({ width }: DetailPanelProps) {
             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
           />
         </svg>
-        <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+        <p className="text-center text-[13px] text-gray-500 dark:text-gray-400">
           选择文件或文件夹查看详情
         </p>
       </div>
@@ -82,33 +146,31 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 
   return (
     <div
-      className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col"
+      className={`${appPanelClass} flex-shrink-0`}
       style={{ width }}
     >
-      <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-dark-border">
-        <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">
-          文件夹详情
-        </h3>
+      <div className={appPanelHeaderClass}>
+        <h3 className={appPanelTitleClass}>文件夹详情</h3>
         <div className="flex items-center gap-1">
           {showDeleteConfirm ? (
             <>
-              <button
+              <PanelActionButton
                 onClick={handleDelete}
-                className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
+                className="bg-red-500 text-white hover:bg-red-600"
               >
                 确认删除
-              </button>
-              <button
+              </PanelActionButton>
+              <PanelActionButton
                 onClick={() => setShowDeleteConfirm(false)}
-                className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
+                className="bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
               >
                 取消
-              </button>
+              </PanelActionButton>
             </>
           ) : (
-            <button
+            <PanelIconButton
               onClick={() => setShowDeleteConfirm(true)}
-              className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500"
+              className="text-red-500 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
               title="删除文件夹"
             >
               <svg
@@ -124,17 +186,17 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-            </button>
+            </PanelIconButton>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-hidden overflow-y-auto p-4 space-y-4">
+      <div className="flex flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4">
         {/* Folder icon */}
         <div className="flex justify-center">
-          <div className="w-20 h-20 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+          <div className="flex size-20 items-center justify-center rounded-2xl bg-yellow-100 dark:bg-yellow-900/30">
             <svg
-              className="w-10 h-10 text-yellow-500"
+              className="h-10 w-10 text-yellow-500"
               fill="currentColor"
               viewBox="0 0 24 24"
             >
@@ -145,30 +207,30 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 
         {/* Folder name */}
         <div>
-          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <h4 className={appSectionLabelClass}>
             文件夹名称
           </h4>
-          <p className="text-sm text-gray-800 dark:text-gray-200 break-all">
+          <p className={`${appPanelValueClass} break-all`}>
             {folder.name}
           </p>
         </div>
 
         {/* File count */}
         <div>
-          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <h4 className={appSectionLabelClass}>
             文件数量
           </h4>
-          <p className="text-sm text-gray-800 dark:text-gray-200">
+          <p className={appPanelValueClass}>
             {folder.fileCount} 个文件
           </p>
         </div>
 
         {/* Path */}
         <div>
-          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <h4 className={appSectionLabelClass}>
             路径
           </h4>
-          <p className="text-xs text-gray-800 dark:text-gray-200 break-all">
+          <p className={`${appPanelMetaClass} break-all`}>
             {folder.path}
           </p>
         </div>
@@ -458,17 +520,15 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
   return (
     <div
-      className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col"
+      className={`${appPanelClass} flex-shrink-0`}
       style={{ width }}
     >
-      <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-dark-border">
-        <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">
-          文件详情
-        </h3>
+      <div className={appPanelHeaderClass}>
+        <h3 className={appPanelTitleClass}>文件详情</h3>
         <div className="flex items-center gap-1">
-          <button
+          <PanelIconButton
             onClick={handleExport}
-            className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500"
+            className="text-blue-500 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30"
             title="导出文件"
           >
             <svg
@@ -484,26 +544,26 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
               />
             </svg>
-          </button>
+          </PanelIconButton>
           {showDeleteConfirm ? (
             <>
-              <button
+              <PanelActionButton
                 onClick={handleDelete}
-                className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
+                className="bg-red-500 text-white hover:bg-red-600"
               >
                 确认删除
-              </button>
-              <button
+              </PanelActionButton>
+              <PanelActionButton
                 onClick={() => setShowDeleteConfirm(false)}
-                className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded"
+                className="bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
               >
                 取消
-              </button>
+              </PanelActionButton>
             </>
           ) : (
-            <button
+            <PanelIconButton
               onClick={() => setShowDeleteConfirm(true)}
-              className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500"
+              className="text-red-500 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
               title="删除文件"
             >
               <svg
@@ -519,20 +579,20 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-            </button>
+            </PanelIconButton>
           )}
         </div>
       </div>
 
       {showExportSuccess && (
-        <div className="px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs">
+        <div className="bg-green-100 px-3 py-2 text-[12px] text-green-700 dark:bg-green-900/30 dark:text-green-300">
           导出成功
         </div>
       )}
 
-      <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3">
+      <div className="flex flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3.5">
         {/* Preview image */}
-        <div className="aspect-video bg-gray-100 dark:bg-dark-bg rounded-lg overflow-hidden relative">
+        <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-dark-bg">
           {previewType === "image" ? (
             <div
               onDoubleClick={() => void handleOpenOriginalImage()}
@@ -546,7 +606,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                   className="w-full h-full object-contain"
                 />
               ) : previewError ? (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
                   <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
@@ -555,7 +615,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                       d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
                   </svg>
-                  <p className="text-sm">预览加载失败</p>
+                  <p className="text-[13px]">预览加载失败</p>
                 </div>
               ) : (
                 <div className="h-full w-full" />
@@ -611,7 +671,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
             >
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
                 <FileTypeIcon ext={file.ext} className="h-10 w-10" />
-                <p className="text-sm">当前环境不支持 PDF 内嵌预览</p>
+                <p className="text-[13px]">当前环境不支持 PDF 内嵌预览</p>
               </div>
             </object>
           ) : previewError && previewType !== "none" ? (
@@ -624,18 +684,18 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
-              <p className="text-sm">预览加载失败</p>
+              <p className="text-[13px]">预览加载失败</p>
             </div>
           ) : previewType === "text" ? (
             <div className="h-full w-full overflow-auto bg-white p-3 dark:bg-dark-surface">
-              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-700 dark:text-gray-200">
+              <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-gray-700 dark:text-gray-200">
                 {textContent || "空文本文件"}
               </pre>
             </div>
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
               <FileTypeIcon ext={file.ext} className="h-12 w-12" />
-              <span className="rounded bg-white/80 px-2 py-1 text-xs font-medium dark:bg-black/20">
+              <span className="rounded-full bg-white/80 px-2 py-1 text-[11px] font-medium dark:bg-black/20">
                 {file.ext.toUpperCase()}
               </span>
             </div>
@@ -711,20 +771,19 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
         </div>
 
         {/* Rating and File info list */}
-        <div className="space-y-1">
-          <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 my-2 block">
+        <div className="flex flex-col gap-2 rounded-xl bg-gray-50/80 p-3 dark:bg-dark-bg/40">
+          <span className={appSectionHeadingClass}>
             素材信息
           </span>
 
           {/* Rating */}
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              评级
-            </span>
+          <div className="flex items-center justify-between gap-3">
+            <span className={appPanelMetaClass}>评级</span>
             <div className="flex items-center gap-0.5">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
+                  type="button"
                   onClick={() => handleRatingChange(star === rating ? 0 : star)}
                   className="p-0.5 hover:scale-110 transition-transform"
                 >
@@ -744,64 +803,15 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
             </div>
           </div>
           {folder && (
-            <div className="flex justify-between">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                文件夹
-              </span>
-              <span className="text-xs text-gray-800 dark:text-gray-200">
-                {folder.name}
-              </span>
-            </div>
+            <InfoRow label="文件夹" value={folder.name} />
           )}
           {/* File info list - left label, right value */}
-          <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              尺寸
-            </span>
-            <span className="text-xs text-gray-800 dark:text-gray-200">
-              {file.width} x {file.height}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              大小
-            </span>
-            <span className="text-xs text-gray-800 dark:text-gray-200">
-              {formatSize(file.size)}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              格式
-            </span>
-            <span className="text-xs text-gray-800 dark:text-gray-200">
-              {file.ext.toUpperCase()}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              创建时间
-            </span>
-            <span className="text-xs text-gray-800 dark:text-gray-200">
-              {formatDateTime(file.createdAt)}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              修改时间
-            </span>
-            <span className="text-xs text-gray-800 dark:text-gray-200">
-              {formatDateTime(file.modifiedAt)}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              导入时间
-            </span>
-            <span className="text-xs text-gray-800 dark:text-gray-200">
-              {formatDateTime(file.importedAt)}
-            </span>
-          </div>
+          <InfoRow label="尺寸" value={`${file.width} x ${file.height}`} />
+          <InfoRow label="大小" value={formatSize(file.size)} />
+          <InfoRow label="格式" value={file.ext.toUpperCase()} />
+          <InfoRow label="创建时间" value={formatDateTime(file.createdAt)} />
+          <InfoRow label="修改时间" value={formatDateTime(file.modifiedAt)} />
+          <InfoRow label="导入时间" value={formatDateTime(file.importedAt)} />
         </div>
       </div>
     </div>

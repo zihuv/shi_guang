@@ -1,3 +1,4 @@
+import { appPanelClass } from "@/lib/ui"
 import FolderTree from "@/components/FolderTree"
 import TagPanel from "@/components/TagPanel"
 
@@ -8,13 +9,13 @@ interface SidePanelProps {
 export default function SidePanel({ width }: SidePanelProps) {
   return (
     <aside
-      className="flex-shrink-0 bg-white dark:bg-dark-surface flex flex-col overflow-hidden"
+      className={`${appPanelClass} flex-shrink-0`}
       style={{ width }}
     >
       <div className="flex-1 overflow-auto">
         <FolderTree />
       </div>
-      <div className="border-t border-gray-200 dark:border-dark-border flex-1 overflow-auto">
+      <div className="app-panel-divider border-t flex-1 overflow-auto">
         <TagPanel />
       </div>
     </aside>

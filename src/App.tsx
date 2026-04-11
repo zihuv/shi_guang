@@ -439,7 +439,7 @@ function App() {
 
   return (
     <div
-      className="flex flex-col h-screen bg-gray-50 dark:bg-dark-bg"
+      className="app-shell flex h-screen flex-col"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -447,7 +447,7 @@ function App() {
     >
       {isDragging && !isDraggingInternal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 pointer-events-none">
-          <div className="flex flex-col items-center gap-4 p-8 bg-white dark:bg-dark-card rounded-xl shadow-2xl">
+          <div className="app-card-surface flex flex-col items-center gap-4 rounded-2xl p-8 dark:bg-dark-surface">
             <svg
               className="w-16 h-16 text-primary"
               fill="none"
@@ -461,7 +461,7 @@ function App() {
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
               />
             </svg>
-            <p className="text-lg font-medium text-gray-900 dark:text-gray-100">
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
               拖放文件到此处导入
             </p>
           </div>

@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { cn } from "@/lib/utils";
+import { appTagPillClass } from "@/lib/ui";
 import type { Tag as FileTag } from "@/stores/fileTypes";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useTagStore } from "@/stores/tagStore";
@@ -249,13 +250,13 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
       }}
     >
       <div
-        className="flex min-h-9 w-full cursor-text flex-wrap items-center gap-1 rounded-md border border-gray-300 bg-transparent px-2 py-1 text-sm text-gray-800 transition-colors focus-within:border-transparent focus-within:ring-2 focus-within:ring-primary-500 dark:border-gray-600 dark:text-gray-200"
+        className="flex min-h-[34px] w-full cursor-text flex-wrap items-center gap-1 rounded-[10px] border border-gray-300/90 bg-white/70 px-2 py-1 text-[13px] text-gray-800 shadow-sm transition-[border-color,box-shadow,background-color] focus-within:border-transparent focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500 dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200 dark:focus-within:bg-dark-surface"
         onClick={() => inputRef.current?.focus()}
       >
         {fileTags.map((tag) => (
           <span
             key={tag.id}
-            className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs text-white"
+            className={appTagPillClass}
             style={{ backgroundColor: tag.color }}
           >
             <span className="truncate">{tag.name}</span>
@@ -286,7 +287,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
           ref={inputRef}
           type="text"
           value={tagInput}
-          className="input-system-font h-7 min-w-[88px] flex-1 border-0 bg-transparent px-1 py-0 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none dark:text-gray-200"
+          className="input-system-font h-7 min-w-[88px] flex-1 border-0 bg-transparent px-1 py-0 text-[13px] text-gray-800 placeholder:text-gray-400 focus:outline-none dark:text-gray-200"
           placeholder={"添加标签"}
           aria-autocomplete="list"
           aria-controls={isDropdownOpen ? listboxId : undefined}
@@ -314,7 +315,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
         <div
           id={listboxId}
           role="listbox"
-          className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-dark-border dark:bg-dark-surface"
+          className="absolute z-20 mt-1 w-full overflow-hidden rounded-[12px] border border-gray-200 bg-white shadow-xl dark:border-dark-border dark:bg-dark-surface"
         >
           {suggestionItems.map((item, index) => {
             const isActive = index === activeSuggestionIndex;
@@ -328,7 +329,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
                   role="option"
                   aria-selected={isActive}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors",
                     isActive
                       ? "bg-gray-100 dark:bg-dark-border"
                       : "hover:bg-gray-50 dark:hover:bg-dark-border/80",
@@ -360,8 +361,8 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
                 type="button"
                 role="option"
                 aria-selected={isActive}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+                  className={cn(
+                  "flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors",
                   isActive
                     ? "bg-gray-100 dark:bg-dark-border"
                     : "hover:bg-gray-50 dark:hover:bg-dark-border/80",
