@@ -11,6 +11,7 @@ import {
   type LibraryViewMode,
   type LibraryVisibleField,
 } from "@/stores/settingsStore"
+import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore"
 import { cn } from "@/lib/utils"
 import { useExternalFileDrag } from "@/hooks/useExternalFileDrag"
 import FileTypeIcon from "@/components/FileTypeIcon"
@@ -21,15 +22,13 @@ import {
 import {
   canGenerateThumbnail,
   formatSize,
-  getImageSrc,
   getThumbnailImageSrc,
   getVideoThumbnailSrc,
-  isImageFile,
   isVideoFile,
 } from "@/utils"
 
 const OBSERVER_ROOT_MARGIN = "300px"
-const IMAGE_SRC_CACHE_LIMIT = 300
+const IMAGE_SRC_CACHE_LIMIT = 48
 const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"]
@@ -134,6 +133,7 @@ function useLazyImageSrc(
   ext: string,
   cacheKey: string,
   isVisible: boolean,
+  refreshVersion: number,
 ) {
   const [imageError, setImageError] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(() =>
@@ -141,7 +141,11 @@ function useLazyImageSrc(
   )
 
   useEffect(() => {
-    if (!isVisible) return
+    if (!isVisible) {
+      setImageSrc(null)
+      setImageError(false)
+      return
+    }
 
     if (!canGenerateThumbnail(ext)) {
       setImageError(false)
@@ -159,11 +163,9 @@ function useLazyImageSrc(
     let active = true
     setImageError(false)
 
-    const loadSrc = isImageFile(ext)
-      ? getThumbnailImageSrc(path, ext).then(
-          async (thumbnailSrc) => thumbnailSrc || (await getImageSrc(path)),
-        )
-      : getVideoThumbnailSrc(path)
+    const loadSrc = isVideoFile(ext)
+      ? getVideoThumbnailSrc(path)
+      : getThumbnailImageSrc(path, ext)
 
     loadSrc.then((src) => {
       if (!active) {
@@ -177,7 +179,7 @@ function useLazyImageSrc(
     return () => {
       active = false
     }
-  }, [cacheKey, ext, isVisible, path])
+  }, [cacheKey, ext, isVisible, path, refreshVersion])
 
   return {
     imageSrc,
@@ -197,12 +199,16 @@ export function FileCard({
   onDoubleClick,
 }: FileCardBaseProps & { footerHeight: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const thumbnailRefreshVersion = useThumbnailRefreshStore(
+    (state) => state.fileVersions[file.id] ?? 0,
+  )
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
     cacheKey,
     isVisible,
+    thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
   const showName = visibleFields.includes("name")
@@ -328,12 +334,16 @@ export function AdaptiveFileCard({
   onDoubleClick,
 }: FileCardBaseProps) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const thumbnailRefreshVersion = useThumbnailRefreshStore(
+    (state) => state.fileVersions[file.id] ?? 0,
+  )
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
     cacheKey,
     isVisible,
+    thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
   const footerHeight = getAdaptiveFooterHeight(file, visibleFields)
@@ -465,12 +475,16 @@ export function FileRow({
   onDoubleClick,
 }: FileCardBaseProps & { thumbnailSize: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const thumbnailRefreshVersion = useThumbnailRefreshStore(
+    (state) => state.fileVersions[file.id] ?? 0,
+  )
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
     cacheKey,
     isVisible,
+    thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
   const showTags = shouldShowTags(file, visibleFields)

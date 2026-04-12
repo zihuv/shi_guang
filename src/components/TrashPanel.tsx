@@ -51,6 +51,14 @@ function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, forma
     return () => { mounted = false }
   }, [file.path, previewType])
 
+  useEffect(() => {
+    return () => {
+      if (imageSrc?.startsWith('blob:')) {
+        URL.revokeObjectURL(imageSrc)
+      }
+    }
+  }, [imageSrc])
+
   return (
     <div
       className={`relative group cursor-pointer rounded-lg border-2 transition-colors ${

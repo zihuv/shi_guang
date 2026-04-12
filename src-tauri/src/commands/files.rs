@@ -326,8 +326,7 @@ pub async fn filter_files(
                 .visual_model_runtime
                 .lock()
                 .map_err(|e| e.to_string())?;
-            let model = runtime.get_or_load(&resolved_model)?;
-            model.encode_text(&natural_language_query)?
+            runtime.encode_text(&resolved_model, &natural_language_query)?
         };
 
         let db = state.db.lock().map_err(|e| e.to_string())?;

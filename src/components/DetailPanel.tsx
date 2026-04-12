@@ -10,6 +10,7 @@ import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { useTrashStore } from "@/stores/trashStore";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileTagInput from "@/components/FileTagInput";
@@ -263,6 +264,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const [sourceUrl, setSourceUrl] = useState(file.sourceUrl || "");
   const [showExportSuccess, setShowExportSuccess] = useState(false);
   const [editedName, setEditedName] = useState(getNameWithoutExt(file.name));
+  const thumbnailRefreshVersion = useThumbnailRefreshStore(
+    (state) => state.fileVersions[file.id] ?? 0,
+  );
   const videoLoadVersionRef = useRef(0);
   const imageLoadVersionRef = useRef(0);
 
@@ -371,7 +375,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     return () => {
       mounted = false;
     };
-  }, [file.path, file.size, previewType]);
+  }, [file.path, file.size, previewType, file.ext, thumbnailRefreshVersion]);
 
   useEffect(() => {
     return () => {

@@ -785,3 +785,59 @@ If follow-up work starts tomorrow with no additional context, the most likely hi
 2. fix preview thumbnail strip blob cleanup
 3. reduce or redesign image source caching
 4. add model-session idle unload
+
+## Implemented Follow-Up On 2026-04-12
+
+The highest-yield fixes from this document have now been implemented in the app codebase.
+
+### Frontend and WebView
+
+- thumbnail display now prefers asset-backed file URLs instead of `data:` payloads
+- file-grid cards no longer fall back to the original full-resolution image when a thumbnail is missing
+- file-grid image cache limit was reduced further to keep fewer decoded sources resident
+- offscreen file cards clear their current image source instead of holding onto it while scrolled away
+- adaptive mode now renders only visible items plus overscan instead of mounting the full page
+
+Relevant code anchors:
+
+- `src/utils/index.ts`
+- `src/components/file-grid/fileGridCards.tsx`
+- `src/components/file-grid/FileGridViewport.tsx`
+- `src/components/FileGrid.tsx`
+
+### Import pipeline
+
+- imported backend-decodable images now generate thumbnails inside the existing post-import async pipeline
+- when the async thumbnail task finishes, the backend emits `file-updated`
+- frontend thumbnail consumers now subscribe to a lightweight per-file refresh signal so visible cards retry thumbnail loading after that event
+
+Relevant code anchors:
+
+- `src-tauri/src/commands/post_import.rs`
+- `src/hooks/useTauriImportListeners.ts`
+- `src/stores/thumbnailRefreshStore.ts`
+- `src/components/file-grid/fileGridCards.tsx`
+
+What is proven:
+
+- adaptive mode previously rendered all cards and now virtualizes by visible range
+- grid/adaptive/list cards previously retried with original images and now stop at thumbnails only
+- import already had a unified async post-import entry point, and thumbnail generation now runs there
+
+What is still inferred until runtime verification is restored:
+
+- the exact reduction in total app private memory during `全部文件 -> 自适应` scrolling on this machine
+- whether any remaining memory growth is dominated by WebView2 decode caches, other non-virtualized surfaces, or unrelated browser/runtime behavior
+
+### Validation status
+
+- `cargo test`: passed
+- `node .\node_modules\typescript\bin\tsc`: passed
+
+Interactive validation is still blocked in this environment:
+
+- `tauri-mcp` CLI is not available on the current shell `PATH`
+- MCP driver status currently reports `connected: false`
+- `pnpm tauri dev` currently fails before app startup in this shell with `TypeError [ERR_INVALID_ARG_TYPE]` inside `@pnpm/npm-conf`
+
+So the code changes above are verified by static/build checks, but not yet by a live MCP-driven UI pass on this machine.

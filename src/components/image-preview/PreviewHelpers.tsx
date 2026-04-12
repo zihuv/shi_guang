@@ -1,14 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FileItem } from '@/stores/fileTypes'
 import FileTypeIcon from '@/components/FileTypeIcon'
 import { getFilePreviewMode, getFileSrc, getVideoThumbnailSrc } from '@/utils'
 
+function revokeBlobUrl(src: string | null) {
+  if (src?.startsWith('blob:')) {
+    URL.revokeObjectURL(src)
+  }
+}
+
 export function ThumbnailItem({ file }: { file: FileItem }) {
   const [src, setSrc] = useState<string | null>(null)
+  const srcRef = useRef<string | null>(null)
   const previewType = getFilePreviewMode(file.ext)
 
   useEffect(() => {
     let mounted = true
+    revokeBlobUrl(srcRef.current)
+    srcRef.current = null
     setSrc(null)
 
     if (previewType !== 'image' && previewType !== 'video') {
@@ -20,13 +29,20 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
     const loader = previewType === 'video' ? getVideoThumbnailSrc(file.path) : getFileSrc(file.path)
 
     loader.then((imageSrc) => {
-      if (mounted) {
-        setSrc(imageSrc)
+      if (!mounted) {
+        revokeBlobUrl(imageSrc)
+        return
       }
+
+      revokeBlobUrl(srcRef.current)
+      srcRef.current = imageSrc
+      setSrc(imageSrc)
     })
 
     return () => {
       mounted = false
+      revokeBlobUrl(srcRef.current)
+      srcRef.current = null
     }
   }, [file.path, previewType])
 

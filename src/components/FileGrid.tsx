@@ -10,7 +10,6 @@ import { useTrashStore } from "@/stores/trashStore"
 import { getActiveFilterCount } from "@/features/filters/schema"
 import { REQUEST_FOCUS_FIRST_FILE_EVENT } from "@/lib/libraryNavigation"
 import {
-  buildAdaptiveColumns,
   buildAdaptiveLayout,
   findAdaptiveNeighborIndex,
   getGridMetadataHeight,
@@ -290,7 +289,6 @@ export default function FileGrid() {
   const adaptiveColumns = adaptiveLayoutColumns.columns
   const adaptiveColumnWidth = adaptiveLayoutColumns.itemWidth
   const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth, libraryVisibleFields)
-  const adaptiveColumnsData = buildAdaptiveColumns(adaptiveLayout.items, adaptiveColumns)
 
   const listRowVirtualizer = useVirtualizer({
     count: filteredFiles.length,
@@ -763,7 +761,6 @@ export default function FileGrid() {
         </div>
       ) : (
         <FileGridViewport
-          adaptiveColumnsData={adaptiveColumnsData}
           adaptiveLayout={adaptiveLayout}
           filteredFiles={filteredFiles}
           gridColumns={gridColumns}
@@ -782,10 +779,12 @@ export default function FileGrid() {
           listThumbnailSize={listThumbnailSize}
           listTotalSize={listTotalSize}
           listVirtualItems={listVirtualItems}
+          scrollTop={scrollTop}
           scrollParentRef={scrollParentRef}
           selectedFileId={selectedFile?.id ?? null}
           selectedFiles={selectedFiles}
           selectionBox={selectionBox}
+          viewportHeight={viewportHeight}
           viewMode={viewMode}
         />
       )}

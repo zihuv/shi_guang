@@ -32,6 +32,10 @@ export function rebuildLibraryIndex() {
   return invokeTauri<number>("rebuild_library_index")
 }
 
+export function getThumbnailPath(filePath: string) {
+  return invokeTauri<string | null>("get_thumbnail_path", { filePath })
+}
+
 export function getThumbnailDataBase64(filePath: string) {
   return invokeTauri<string | null>("get_thumbnail_data_base64", { filePath })
 }
@@ -39,4 +43,3 @@ export function getThumbnailDataBase64(filePath: string) {
 export function saveThumbnailCache(args: { filePath: string; dataBase64: string }) {
   return invokeTauri<string | null>("save_thumbnail_cache", args)
 }
-

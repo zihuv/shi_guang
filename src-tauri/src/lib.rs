@@ -23,6 +23,9 @@ use tauri::Manager;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+const VISUAL_MODEL_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const VISUAL_MODEL_SWEEP_INTERVAL: Duration = Duration::from_secs(15);
+
 /// Clean up folders and files that start with '.' from the database
 fn cleanup_dot_folders(db: &db::Database) -> Result<(), String> {
     // Get all folders and delete those starting with '.'
@@ -170,6 +173,29 @@ pub fn run() {
                 visual_index_tasks: Arc::new(Mutex::new(HashMap::new())),
                 import_write_lock: Arc::new(Mutex::new(())),
                 app_handle: app.handle().clone(),
+            });
+
+            let visual_model_app_handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(VISUAL_MODEL_SWEEP_INTERVAL);
+                let cleared = {
+                    let state = visual_model_app_handle.state::<AppState>();
+                    let clear_result = match state.visual_model_runtime.lock() {
+                        Ok(mut runtime) => runtime.clear_if_idle(VISUAL_MODEL_IDLE_TIMEOUT),
+                        Err(error) => {
+                            log::warn!("Failed to lock visual model runtime sweeper: {}", error);
+                            false
+                        }
+                    };
+                    clear_result
+                };
+
+                if cleared {
+                    log::info!(
+                        "Cleared visual model runtime after {:?} of inactivity",
+                        VISUAL_MODEL_IDLE_TIMEOUT
+                    );
+                }
             });
 
             // Start HTTP server in background

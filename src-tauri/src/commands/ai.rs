@@ -698,12 +698,11 @@ fn reindex_visual_candidate(
             .visual_model_runtime
             .lock()
             .map_err(|e| e.to_string())?;
-        let model = runtime.get_or_load(resolved_model)?;
         if let Some(image_data_url) = image_data_url {
             let image_bytes = decode_image_data_url(image_data_url)?;
-            model.encode_image_bytes(&image_bytes)?
+            runtime.encode_image_bytes(resolved_model, &image_bytes)?
         } else {
-            model.encode_image_path(Path::new(&candidate.file.path))?
+            runtime.encode_image_path(resolved_model, Path::new(&candidate.file.path))?
         }
     };
 
@@ -726,6 +725,7 @@ pub(crate) fn reindex_file_visual_embedding_impl(
     file_id: i64,
     image_data_url: Option<String>,
 ) -> Result<(), String> {
+    let _visual_model_task = crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime)?;
     let (resolved_model, candidate) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let config = load_visual_search_config(&db)?;
@@ -898,6 +898,7 @@ fn rebuild_visual_index_impl(
     app_handle: Option<&tauri::AppHandle>,
     process_unindexed_only: bool,
 ) -> Result<VisualIndexRebuildResult, String> {
+    let _visual_model_task = crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime)?;
     let (resolved_model, candidates) = load_visual_index_candidates(state, process_unindexed_only)?;
 
     let mut result = VisualIndexRebuildResult {
@@ -1074,8 +1075,11 @@ fn spawn_visual_index_task(
         });
         emit_visual_index_task_update(&app_handle, &task_id_for_worker);
         let state = app_handle.state::<AppState>();
+        let visual_model_task =
+            crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime);
 
         let run_result: Result<(), String> = (|| {
+            let _visual_model_task = visual_model_task?;
             for candidate in candidates {
                 if cancel_flag.load(Ordering::Relaxed) {
                     break;

@@ -5,6 +5,7 @@ import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useTagStore } from "@/stores/tagStore";
+import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -20,6 +21,10 @@ type UseTauriImportListenersOptions = {
     sourcePaths: string[],
     targetFolderId?: number | null,
   ) => Promise<unknown>;
+};
+
+type FileUpdatedPayload = {
+  fileId?: number;
 };
 
 export function useTauriImportListeners({
@@ -130,7 +135,11 @@ export function useTauriImportListeners({
         },
       );
 
-      unlistenFileUpdated = await listen("file-updated", async () => {
+      unlistenFileUpdated = await listen<FileUpdatedPayload>("file-updated", async (event) => {
+        if (typeof event.payload?.fileId === "number") {
+          useThumbnailRefreshStore.getState().bumpFileVersion(event.payload.fileId);
+        }
+
         const libraryStore = useLibraryQueryStore.getState();
         await Promise.all([
           libraryStore.runCurrentQuery(libraryStore.selectedFolderId),

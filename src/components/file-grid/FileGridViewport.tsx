@@ -2,7 +2,7 @@ import { type Key, type MouseEvent as ReactMouseEvent, type RefObject, type Whee
 import { type FileItem } from "@/stores/fileTypes"
 import { type LibraryVisibleField, type LibraryViewMode } from "@/stores/settingsStore"
 import { AdaptiveFileCard, FileCard, FileRow } from "@/components/file-grid/fileGridCards"
-import { GRID_GAP, type SelectionBox } from "@/components/file-grid/fileGridLayout"
+import { GRID_GAP, VIEWPORT_OVERSCAN_PX, type AdaptiveLayoutItem, type SelectionBox } from "@/components/file-grid/fileGridLayout"
 
 type ListVirtualItem = {
   index: number
@@ -11,15 +11,10 @@ type ListVirtualItem = {
   start: number
 }
 
-type AdaptiveColumnItem = {
-  file: FileItem
-  index: number
-  width: number
-}
-
 interface FileGridViewportProps {
-  adaptiveColumnsData: AdaptiveColumnItem[][]
   adaptiveLayout: {
+    items: AdaptiveLayoutItem[]
+    totalHeight: number
     columnWidth: number
     trackWidth: number
   }
@@ -40,15 +35,16 @@ interface FileGridViewportProps {
   listThumbnailSize: number
   listTotalSize: number
   listVirtualItems: ListVirtualItem[]
+  scrollTop: number
   scrollParentRef: RefObject<HTMLDivElement | null>
   selectedFileId: number | null
   selectedFiles: number[]
   selectionBox: SelectionBox | null
+  viewportHeight: number
   viewMode: LibraryViewMode
 }
 
 export function FileGridViewport({
-  adaptiveColumnsData,
   adaptiveLayout,
   filteredFiles,
   gridColumns,
@@ -67,12 +63,20 @@ export function FileGridViewport({
   listThumbnailSize,
   listTotalSize,
   listVirtualItems,
+  scrollTop,
   scrollParentRef,
   selectedFileId,
   selectedFiles,
   selectionBox,
+  viewportHeight,
   viewMode,
 }: FileGridViewportProps) {
+  const adaptiveVisibleStart = scrollTop - VIEWPORT_OVERSCAN_PX
+  const adaptiveVisibleEnd = scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX
+  const adaptiveVisibleItems = adaptiveLayout.items.filter(
+    (item) => item.top + item.height >= adaptiveVisibleStart && item.top <= adaptiveVisibleEnd,
+  )
+
   return (
     <div
       ref={scrollParentRef}
@@ -83,35 +87,31 @@ export function FileGridViewport({
     >
       {viewMode === "adaptive" ? (
         <div
-          className="flex items-start gap-4"
+          className="relative"
           style={{
+            height: `${adaptiveLayout.totalHeight}px`,
             width: `${adaptiveLayout.trackWidth}px`,
             maxWidth: "100%",
           }}
         >
-          {adaptiveColumnsData.filter((column) => column.length > 0).map((column, columnIndex) => (
+          {adaptiveVisibleItems.map((item) => (
             <div
-              key={`adaptive-column-${columnIndex}`}
-              className="flex min-w-0 flex-col gap-4"
-              style={{ width: `${adaptiveLayout.columnWidth}px`, flex: "0 0 auto" }}
+              key={`adaptive-${item.index}`}
+              className="absolute left-0 top-0"
+              style={{
+                transform: `translate(${item.left}px, ${item.top}px)`,
+                width: `${item.width}px`,
+              }}
             >
-              {column.map(({ file, index, width }) => (
-                <div
-                  key={`adaptive-${index}`}
-                  className="mx-auto w-full"
-                  style={{ maxWidth: `${width}px` }}
-                >
-                  <AdaptiveFileCard
-                    file={file}
-                    visibleFields={libraryVisibleFields}
-                    isSelected={selectedFileId === file.id}
-                    isMultiSelected={selectedFiles.includes(file.id)}
-                    scrollRootRef={scrollParentRef}
-                    onClick={(event) => handleFileClick(file, event)}
-                    onDoubleClick={() => handleFileDoubleClick(index)}
-                  />
-                </div>
-              ))}
+              <AdaptiveFileCard
+                file={item.file}
+                visibleFields={libraryVisibleFields}
+                isSelected={selectedFileId === item.file.id}
+                isMultiSelected={selectedFiles.includes(item.file.id)}
+                scrollRootRef={scrollParentRef}
+                onClick={(event) => handleFileClick(item.file, event)}
+                onDoubleClick={() => handleFileDoubleClick(item.index)}
+              />
             </div>
           ))}
         </div>

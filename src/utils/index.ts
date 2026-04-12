@@ -1,5 +1,6 @@
-import { readFile, readTextFile } from '@tauri-apps/plugin-fs'
-import { getIndexPaths, getThumbnailDataBase64, saveThumbnailCache, syncIndexPath } from '@/services/tauri/indexing'
+import { convertFileSrc } from '@tauri-apps/api/core'
+import { exists, readFile, readTextFile } from '@tauri-apps/plugin-fs'
+import { getIndexPaths, getThumbnailPath, saveThumbnailCache, syncIndexPath } from '@/services/tauri/indexing'
 import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
 import { FolderNode, useFolderStore } from '@/stores/folderStore'
 
@@ -132,6 +133,10 @@ function scheduleMissingFileCleanup(path: string) {
       console.error('Failed to sync missing file cleanup:', error)
     }
   })()
+}
+
+function toAssetSrc(path: string): string {
+  return convertFileSrc(path)
 }
 
 export type FilePreviewMode = 'image' | 'video' | 'pdf' | 'text' | 'none'
@@ -289,16 +294,29 @@ export function getFileKind(ext: string): FileKind {
 
 export async function getFileSrc(path: string): Promise<string> {
   try {
-    const contents = await readFile(path)
-    const blob = new Blob([contents], { type: detectMimeTypeFromContents(contents, path) })
-    return URL.createObjectURL(blob)
+    if (!(await exists(path))) {
+      scheduleMissingFileCleanup(path)
+      return ''
+    }
+
+    return toAssetSrc(path)
   } catch (e: any) {
     if (isMissingFileError(e)) {
       scheduleMissingFileCleanup(path)
       return ''
     }
-    console.error('Failed to read file:', e)
-    return ''
+    try {
+      const contents = await readFile(path)
+      const blob = new Blob([contents], { type: detectMimeTypeFromContents(contents, path) })
+      return URL.createObjectURL(blob)
+    } catch (readError: any) {
+      if (isMissingFileError(readError)) {
+        scheduleMissingFileCleanup(path)
+        return ''
+      }
+      console.error('Failed to read file:', readError)
+      return ''
+    }
   }
 }
 
@@ -411,19 +429,21 @@ async function renderVideoThumbnailDataUrl(path: string): Promise<string> {
   })
 }
 
-async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<void> {
+async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<string> {
   const dataBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
   if (!dataBase64) {
-    return
+    return ''
   }
 
   try {
-    await saveThumbnailCache({
+    const thumbnailPath = await saveThumbnailCache({
       filePath: path,
       dataBase64,
     })
+    return thumbnailPath ? toAssetSrc(thumbnailPath) : ''
   } catch (e) {
     console.error('Failed to persist thumbnail:', e)
+    return ''
   }
 }
 
@@ -444,8 +464,8 @@ export async function getVideoThumbnailSrc(path: string): Promise<string> {
         return ''
       }
 
-      await persistThumbnailDataUrl(path, thumbnailDataUrl)
-      return thumbnailDataUrl
+      const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl)
+      return persistedThumbnailSrc || thumbnailDataUrl
     })
     .finally(() => {
       videoThumbnailPromiseCache.delete(path)
@@ -540,13 +560,12 @@ export async function getThumbnailImageSrc(path: string, ext?: string): Promise<
   }
 
   try {
-    const thumbnailDataBase64 = await getThumbnailDataBase64(path)
-
-    if (!thumbnailDataBase64) {
+    const thumbnailPath = await getThumbnailPath(path)
+    if (!thumbnailPath) {
       return ''
     }
 
-    return `data:image/jpeg;base64,${thumbnailDataBase64}`
+    return toAssetSrc(thumbnailPath)
   } catch (e) {
     if (isMissingFileError(e)) {
       scheduleMissingFileCleanup(path)

@@ -40,6 +40,14 @@ export default function DragPreview({ fileId, files }: DragPreviewProps) {
     };
   }, [file, previewType]);
 
+  useEffect(() => {
+    return () => {
+      if (imageSrc?.startsWith("blob:")) {
+        URL.revokeObjectURL(imageSrc);
+      }
+    };
+  }, [imageSrc]);
+
   return (
     <div className="h-24 w-24 overflow-hidden rounded-lg bg-white shadow-xl dark:bg-dark-surface">
       {imageSrc ? (
