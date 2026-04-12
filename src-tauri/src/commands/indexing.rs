@@ -75,12 +75,14 @@ pub fn switch_index_path_and_restart(state: State<AppState>, path: String) -> Re
 pub fn get_thumbnail_path(
     state: State<AppState>,
     file_path: String,
+    max_edge: Option<u32>,
 ) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
     drop(db);
 
-    let thumbnail = storage::get_or_create_thumbnail(&index_paths, Path::new(&file_path))?;
+    let thumbnail =
+        storage::get_or_create_thumbnail(&index_paths, Path::new(&file_path), max_edge)?;
     Ok(thumbnail.map(|path| path.to_string_lossy().to_string()))
 }
 
@@ -88,24 +90,27 @@ pub fn get_thumbnail_path(
 pub fn get_thumbnail_data_base64(
     state: State<AppState>,
     file_path: String,
+    max_edge: Option<u32>,
 ) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
     drop(db);
 
-    storage::get_or_create_thumbnail_base64(&index_paths, Path::new(&file_path))
+    storage::get_or_create_thumbnail_base64(&index_paths, Path::new(&file_path), max_edge)
 }
 
 #[tauri::command]
 pub fn get_thumbnail_cache_path(
     state: State<AppState>,
     file_path: String,
+    max_edge: Option<u32>,
 ) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
     drop(db);
 
-    let thumbnail = storage::get_thumbnail_cache_path(&index_paths, Path::new(&file_path))?;
+    let thumbnail =
+        storage::get_thumbnail_cache_path(&index_paths, Path::new(&file_path), max_edge)?;
     Ok(thumbnail.map(|path| path.to_string_lossy().to_string()))
 }
 
@@ -114,13 +119,14 @@ pub fn save_thumbnail_cache(
     state: State<AppState>,
     file_path: String,
     data_base64: String,
+    max_edge: Option<u32>,
 ) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
     drop(db);
 
     let Some(thumbnail_path) =
-        storage::get_thumbnail_cache_path(&index_paths, Path::new(&file_path))?
+        storage::get_thumbnail_cache_path(&index_paths, Path::new(&file_path), max_edge)?
     else {
         return Ok(None);
     };

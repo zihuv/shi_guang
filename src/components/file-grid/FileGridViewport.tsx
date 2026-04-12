@@ -105,6 +105,7 @@ export function FileGridViewport({
             >
               <AdaptiveFileCard
                 file={item.file}
+                previewWidth={item.width}
                 visibleFields={libraryVisibleFields}
                 isSelected={selectedFileId === item.file.id}
                 isMultiSelected={selectedFiles.includes(item.file.id)}
@@ -143,6 +144,7 @@ export function FileGridViewport({
                       key={`grid-${rowIndex}-${offset}`}
                       file={file}
                       footerHeight={gridMetadataHeight}
+                      previewWidth={gridItemWidth}
                       visibleFields={libraryVisibleFields}
                       isSelected={selectedFileId === file.id}
                       isMultiSelected={selectedFiles.includes(file.id)}

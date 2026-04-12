@@ -67,6 +67,7 @@ const TEXT_EXTENSIONS = ['txt', 'log', 'ini', 'conf']
 const TEXT_PREVIEW_EXTENSIONS = ['txt', 'log', 'md', 'csv', 'ini', 'conf']
 const MAX_TEXT_PREVIEW_SIZE = 512 * 1024
 const THUMBNAIL_MAX_EDGE = 320
+export const LIST_THUMBNAIL_MAX_EDGE = 160
 const THUMBNAIL_JPEG_QUALITY = 0.82
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>()
 const browserThumbnailPromiseCache = new Map<string, Promise<string>>()
@@ -77,6 +78,10 @@ const MISSING_FILE_ERROR_MARKERS = [
   '系统找不到指定的文件',
   '(os error 2)',
 ]
+
+function getThumbnailVariantCacheKey(path: string, maxEdge: number) {
+  return `${path}::${maxEdge}`
+}
 
 function normalizeFsPath(path: string): string {
   return path.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
@@ -346,7 +351,10 @@ export async function getTextPreviewContent(path: string, size?: number): Promis
   }
 }
 
-async function renderVideoThumbnailDataUrl(path: string): Promise<string> {
+async function renderVideoThumbnailDataUrl(
+  path: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
   const fileSrc = await getFileSrc(path)
   if (!fileSrc) {
     return ''
@@ -384,7 +392,7 @@ async function renderVideoThumbnailDataUrl(path: string): Promise<string> {
         return
       }
 
-      const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(video.videoWidth, video.videoHeight))
+      const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight))
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
       canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
@@ -431,7 +439,11 @@ async function renderVideoThumbnailDataUrl(path: string): Promise<string> {
   })
 }
 
-async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<string> {
+async function persistThumbnailDataUrl(
+  path: string,
+  dataUrl: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
   const dataBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
   if (!dataBase64) {
     return ''
@@ -441,6 +453,7 @@ async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<s
     const thumbnailPath = await saveThumbnailCache({
       filePath: path,
       dataBase64,
+      maxEdge,
     })
     return thumbnailPath ? toAssetSrc(thumbnailPath) : ''
   } catch (e) {
@@ -449,14 +462,18 @@ async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<s
   }
 }
 
-async function getBrowserThumbnailSrc(path: string): Promise<string> {
-  const pending = browserThumbnailPromiseCache.get(path)
+async function getBrowserThumbnailSrc(
+  path: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
+  const cacheKey = getThumbnailVariantCacheKey(path, maxEdge)
+  const pending = browserThumbnailPromiseCache.get(cacheKey)
   if (pending) {
     return pending
   }
 
   const nextThumbnailPromise = buildBrowserDecodedImageDataUrl(path, {
-    maxEdge: THUMBNAIL_MAX_EDGE,
+    maxEdge,
     quality: THUMBNAIL_JPEG_QUALITY,
     outputMimeType: 'image/jpeg',
   })
@@ -465,7 +482,7 @@ async function getBrowserThumbnailSrc(path: string): Promise<string> {
         return ''
       }
 
-      const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl)
+      const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl, maxEdge)
       return persistedThumbnailSrc || thumbnailDataUrl
     })
     .catch((error) => {
@@ -473,42 +490,49 @@ async function getBrowserThumbnailSrc(path: string): Promise<string> {
       return ''
     })
     .finally(() => {
-      browserThumbnailPromiseCache.delete(path)
+      browserThumbnailPromiseCache.delete(cacheKey)
     })
 
-  browserThumbnailPromiseCache.set(path, nextThumbnailPromise)
+  browserThumbnailPromiseCache.set(cacheKey, nextThumbnailPromise)
   return nextThumbnailPromise
 }
 
-export async function generateBrowserThumbnailCache(path: string): Promise<string> {
-  return getBrowserThumbnailSrc(path)
+export async function generateBrowserThumbnailCache(
+  path: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
+  return getBrowserThumbnailSrc(path, maxEdge)
 }
 
-export async function getVideoThumbnailSrc(path: string): Promise<string> {
-  const cachedThumbnailSrc = await getThumbnailImageSrc(path)
+export async function getVideoThumbnailSrc(
+  path: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
+  const cachedThumbnailSrc = await getThumbnailImageSrc(path, undefined, maxEdge)
   if (cachedThumbnailSrc) {
     return cachedThumbnailSrc
   }
 
-  const pending = videoThumbnailPromiseCache.get(path)
+  const cacheKey = getThumbnailVariantCacheKey(path, maxEdge)
+  const pending = videoThumbnailPromiseCache.get(cacheKey)
   if (pending) {
     return pending
   }
 
-  const nextThumbnailPromise = renderVideoThumbnailDataUrl(path)
+  const nextThumbnailPromise = renderVideoThumbnailDataUrl(path, maxEdge)
     .then(async (thumbnailDataUrl) => {
       if (!thumbnailDataUrl) {
         return ''
       }
 
-      const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl)
+      const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl, maxEdge)
       return persistedThumbnailSrc || thumbnailDataUrl
     })
     .finally(() => {
-      videoThumbnailPromiseCache.delete(path)
+      videoThumbnailPromiseCache.delete(cacheKey)
     })
 
-  videoThumbnailPromiseCache.set(path, nextThumbnailPromise)
+  videoThumbnailPromiseCache.set(cacheKey, nextThumbnailPromise)
   return nextThumbnailPromise
 }
 
@@ -607,13 +631,17 @@ export async function buildAiImageDataUrl(path: string): Promise<string> {
   })
 }
 
-export async function getThumbnailImageSrc(path: string, ext?: string): Promise<string> {
+export async function getThumbnailImageSrc(
+  path: string,
+  ext?: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
   if (ext && !canGenerateThumbnail(ext)) {
     return ''
   }
 
   try {
-    const thumbnailPath = await getThumbnailPath(path)
+    const thumbnailPath = await getThumbnailPath(path, maxEdge)
     if (thumbnailPath) {
       return toAssetSrc(thumbnailPath)
     }
@@ -625,6 +653,49 @@ export async function getThumbnailImageSrc(path: string, ext?: string): Promise<
     console.error('Failed to get thumbnail path:', e)
   }
   return ''
+}
+
+export async function getThumbnailBlobSrc(
+  path: string,
+  ext?: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
+  if (ext && !canGenerateThumbnail(ext)) {
+    return ''
+  }
+
+  try {
+    const thumbnailPath = await getThumbnailPath(path, maxEdge)
+    if (thumbnailPath) {
+      return await getCanvasSafeImageSrc(thumbnailPath)
+    }
+  } catch (e) {
+    if (isMissingFileError(e)) {
+      scheduleMissingFileCleanup(path)
+      return ''
+    }
+    console.error('Failed to get thumbnail blob source:', e)
+  }
+
+  const generatedSrc = await getBrowserThumbnailSrc(path, maxEdge)
+  if (!generatedSrc) {
+    return ''
+  }
+
+  try {
+    const persistedThumbnailPath = await getThumbnailPath(path, maxEdge)
+    if (persistedThumbnailPath) {
+      return await getCanvasSafeImageSrc(persistedThumbnailPath)
+    }
+  } catch (e) {
+    if (isMissingFileError(e)) {
+      scheduleMissingFileCleanup(path)
+      return ''
+    }
+    console.error('Failed to re-read persisted thumbnail as blob:', e)
+  }
+
+  return generatedSrc
 }
 
 // Format file size to human readable string

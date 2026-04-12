@@ -20,7 +20,8 @@ fn generate_import_thumbnail_if_missing(
     }
 
     let file_path = std::path::Path::new(&file.path);
-    let Some(thumbnail_path) = crate::storage::get_thumbnail_cache_path(index_paths, file_path)?
+    let Some(thumbnail_path) =
+        crate::storage::get_thumbnail_cache_path(index_paths, file_path, None)?
     else {
         return Ok(false);
     };
@@ -29,7 +30,7 @@ fn generate_import_thumbnail_if_missing(
         return Ok(false);
     }
 
-    match crate::storage::get_or_create_thumbnail(index_paths, file_path)? {
+    match crate::storage::get_or_create_thumbnail(index_paths, file_path, None)? {
         Some(_) => Ok(true),
         None => Ok(false),
     }

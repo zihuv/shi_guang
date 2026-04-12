@@ -12,6 +12,15 @@ const DB_FILE_NAME: &str = "shiguang.db";
 const CURRENT_INDEX_PATH_FILE_NAME: &str = "current-index-path.txt";
 const THUMBNAIL_QUALITY: u8 = 82;
 pub const THUMBNAIL_SIZE: u32 = 320;
+pub const LIST_THUMBNAIL_SIZE: u32 = 160;
+const MIN_THUMBNAIL_SIZE: u32 = 64;
+const KNOWN_THUMBNAIL_SIZES: [u32; 2] = [THUMBNAIL_SIZE, LIST_THUMBNAIL_SIZE];
+
+fn normalize_thumbnail_size(requested_size: Option<u32>) -> u32 {
+    requested_size
+        .unwrap_or(THUMBNAIL_SIZE)
+        .clamp(MIN_THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+}
 
 pub fn get_default_index_path() -> PathBuf {
     let pictures_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -118,10 +127,10 @@ pub fn find_matching_index_path<'a>(index_paths: &'a [String], file_path: &str) 
     best_match
 }
 
-fn hash_thumbnail_key(file_path: &Path, metadata: &fs::Metadata) -> String {
+fn hash_thumbnail_key(file_path: &Path, metadata: &fs::Metadata, thumbnail_size: u32) -> String {
     let mut hasher = DefaultHasher::new();
     file_path.to_string_lossy().hash(&mut hasher);
-    THUMBNAIL_SIZE.hash(&mut hasher);
+    thumbnail_size.hash(&mut hasher);
     metadata.len().hash(&mut hasher);
 
     let modified = metadata
@@ -135,9 +144,13 @@ fn hash_thumbnail_key(file_path: &Path, metadata: &fs::Metadata) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-pub fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<PathBuf, String> {
+pub fn get_thumbnail_output_path(
+    index_path: &Path,
+    file_path: &Path,
+    thumbnail_size: u32,
+) -> Result<PathBuf, String> {
     let metadata = fs::metadata(file_path).map_err(|e| e.to_string())?;
-    let hash = hash_thumbnail_key(file_path, &metadata);
+    let hash = hash_thumbnail_key(file_path, &metadata, thumbnail_size);
     let shard = &hash[0..2];
     let shard_dir = get_thumbnail_dir(index_path).join(shard);
     if !shard_dir.exists() {
@@ -150,6 +163,7 @@ pub fn get_thumbnail_output_path(index_path: &Path, file_path: &Path) -> Result<
 pub fn get_thumbnail_cache_path(
     index_paths: &[String],
     file_path: &Path,
+    thumbnail_size: Option<u32>,
 ) -> Result<Option<PathBuf>, String> {
     let file_path_str = file_path.to_string_lossy().to_string();
     let Some(index_path) = find_matching_index_path(index_paths, &file_path_str) else {
@@ -157,9 +171,11 @@ pub fn get_thumbnail_cache_path(
     };
 
     ensure_storage_dirs(Path::new(index_path))?;
+    let normalized_thumbnail_size = normalize_thumbnail_size(thumbnail_size);
     Ok(Some(get_thumbnail_output_path(
         Path::new(index_path),
         file_path,
+        normalized_thumbnail_size,
     )?))
 }
 
@@ -183,8 +199,12 @@ fn flatten_on_white(image: DynamicImage) -> image::RgbImage {
 pub fn get_or_create_thumbnail(
     index_paths: &[String],
     file_path: &Path,
+    thumbnail_size: Option<u32>,
 ) -> Result<Option<PathBuf>, String> {
-    let Some(output_path) = get_thumbnail_cache_path(index_paths, file_path)? else {
+    let normalized_thumbnail_size = normalize_thumbnail_size(thumbnail_size);
+    let Some(output_path) =
+        get_thumbnail_cache_path(index_paths, file_path, Some(normalized_thumbnail_size))?
+    else {
         return Ok(None);
     };
     if output_path.exists() {
@@ -196,7 +216,11 @@ pub fn get_or_create_thumbnail(
         Err(_) => return Ok(None),
     };
 
-    let thumbnail = image.resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, FilterType::Lanczos3);
+    let thumbnail = image.resize(
+        normalized_thumbnail_size,
+        normalized_thumbnail_size,
+        FilterType::Lanczos3,
+    );
     let rgb = flatten_on_white(thumbnail);
 
     let file = fs::File::create(&output_path)
@@ -213,8 +237,9 @@ pub fn get_or_create_thumbnail(
 pub fn get_or_create_thumbnail_base64(
     index_paths: &[String],
     file_path: &Path,
+    thumbnail_size: Option<u32>,
 ) -> Result<Option<String>, String> {
-    let Some(output_path) = get_or_create_thumbnail(index_paths, file_path)? else {
+    let Some(output_path) = get_or_create_thumbnail(index_paths, file_path, thumbnail_size)? else {
         return Ok(None);
     };
 
@@ -236,10 +261,13 @@ pub fn remove_thumbnail_for_file(index_paths: &[String], file_path: &Path) -> Re
         return Ok(());
     };
 
-    let output_path = get_thumbnail_output_path(Path::new(index_path), file_path)?;
-    if output_path.exists() {
-        fs::remove_file(&output_path)
-            .map_err(|e| format!("Failed to remove thumbnail {:?}: {}", output_path, e))?;
+    for thumbnail_size in KNOWN_THUMBNAIL_SIZES {
+        let output_path =
+            get_thumbnail_output_path(Path::new(index_path), file_path, thumbnail_size)?;
+        if output_path.exists() {
+            fs::remove_file(&output_path)
+                .map_err(|e| format!("Failed to remove thumbnail {:?}: {}", output_path, e))?;
+        }
     }
 
     Ok(())
@@ -333,8 +361,11 @@ pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<(PathBuf, PathBuf),
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_storage_dirs, get_or_create_thumbnail_base64, get_thumbnail_cache_path};
-    use image::{Rgb, RgbImage};
+    use super::{
+        ensure_storage_dirs, get_or_create_thumbnail, get_or_create_thumbnail_base64,
+        get_thumbnail_cache_path, LIST_THUMBNAIL_SIZE, THUMBNAIL_SIZE,
+    };
+    use image::{GenericImageView, Rgb, RgbImage};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -359,13 +390,43 @@ mod tests {
         image.save(&source_path).unwrap();
 
         let index_paths = vec![index_path.to_string_lossy().to_string()];
-        let thumbnail_base64 = get_or_create_thumbnail_base64(&index_paths, &source_path).unwrap();
+        let thumbnail_base64 =
+            get_or_create_thumbnail_base64(&index_paths, &source_path, None).unwrap();
         assert!(thumbnail_base64.is_some());
         assert!(!thumbnail_base64.unwrap().is_empty());
 
-        let thumbnail_path = get_thumbnail_cache_path(&index_paths, &source_path).unwrap();
+        let thumbnail_path = get_thumbnail_cache_path(&index_paths, &source_path, None).unwrap();
         assert!(thumbnail_path.is_some());
         assert!(thumbnail_path.unwrap().exists());
+
+        fs::remove_dir_all(index_path).unwrap();
+    }
+
+    #[test]
+    fn thumbnail_generation_respects_requested_size() {
+        let index_path = create_temp_dir();
+        ensure_storage_dirs(&index_path).unwrap();
+
+        let source_path = index_path.join("wide.png");
+        let image = RgbImage::from_pixel(800, 400, Rgb([120, 45, 200]));
+        image.save(&source_path).unwrap();
+
+        let index_paths = vec![index_path.to_string_lossy().to_string()];
+        let default_thumbnail = get_or_create_thumbnail(&index_paths, &source_path, None)
+            .unwrap()
+            .unwrap();
+        let list_thumbnail =
+            get_or_create_thumbnail(&index_paths, &source_path, Some(LIST_THUMBNAIL_SIZE))
+                .unwrap()
+                .unwrap();
+
+        assert_ne!(default_thumbnail, list_thumbnail);
+
+        let default_dimensions = image::open(&default_thumbnail).unwrap().dimensions();
+        let list_dimensions = image::open(&list_thumbnail).unwrap().dimensions();
+
+        assert_eq!(default_dimensions.0, THUMBNAIL_SIZE);
+        assert_eq!(list_dimensions.0, LIST_THUMBNAIL_SIZE);
 
         fs::remove_dir_all(index_path).unwrap();
     }

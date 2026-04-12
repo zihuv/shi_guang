@@ -22,9 +22,11 @@ import {
 import {
   canGenerateThumbnail,
   formatSize,
+  getThumbnailBlobSrc,
   getThumbnailImageSrc,
   getVideoThumbnailSrc,
   isVideoFile,
+  LIST_THUMBNAIL_MAX_EDGE,
 } from "@/utils"
 
 const OBSERVER_ROOT_MARGIN = "300px"
@@ -39,6 +41,7 @@ const CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS =
 const CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-90"
 const CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS =
   "after:scale-x-100 after:opacity-100"
+const TILE_THUMBNAIL_MAX_EDGES = [LIST_THUMBNAIL_MAX_EDGE, 240, 320] as const
 
 type FileCardBaseProps = {
   file: FileItem
@@ -102,6 +105,29 @@ function cacheImageSrc(cacheKey: string, src: string) {
   }
 }
 
+function deleteCachedImageSrc(cacheKey: string) {
+  const existing = imageSrcCache.get(cacheKey)
+  if (existing?.startsWith("blob:")) {
+    URL.revokeObjectURL(existing)
+  }
+  imageSrcCache.delete(cacheKey)
+}
+
+function resolveCardThumbnailMaxEdge(previewWidth: number, previewHeight: number = previewWidth) {
+  const targetEdge = Math.max(
+    LIST_THUMBNAIL_MAX_EDGE,
+    Math.min(320, Math.round(Math.max(previewWidth, previewHeight))),
+  )
+
+  for (const edge of TILE_THUMBNAIL_MAX_EDGES) {
+    if (targetEdge <= edge) {
+      return edge
+    }
+  }
+
+  return TILE_THUMBNAIL_MAX_EDGES[TILE_THUMBNAIL_MAX_EDGES.length - 1]
+}
+
 function useVisibility(rootRef: RefObject<HTMLElement | null>) {
   const ref = useRef<HTMLDivElement>(null)
   const [isVisible, setIsVisible] = useState(false)
@@ -133,6 +159,9 @@ function useLazyImageSrc(
   ext: string,
   cacheKey: string,
   isVisible: boolean,
+  maxEdge: number | undefined,
+  useBlobTransport: boolean,
+  purgeHiddenCache: boolean,
   refreshVersion: number,
 ) {
   const [imageError, setImageError] = useState(false)
@@ -142,6 +171,9 @@ function useLazyImageSrc(
 
   useEffect(() => {
     if (!isVisible) {
+      if (purgeHiddenCache) {
+        deleteCachedImageSrc(cacheKey)
+      }
       setImageSrc(null)
       setImageError(false)
       return
@@ -155,17 +187,23 @@ function useLazyImageSrc(
 
     const cached = getCachedImageSrc(cacheKey)
     if (cached) {
+      if (useBlobTransport && !cached.startsWith("blob:")) {
+        deleteCachedImageSrc(cacheKey)
+      } else {
       setImageError(false)
       setImageSrc(cached)
       return
+      }
     }
 
     let active = true
     setImageError(false)
 
     const loadSrc = isVideoFile(ext)
-      ? getVideoThumbnailSrc(path)
-      : getThumbnailImageSrc(path, ext)
+      ? getVideoThumbnailSrc(path, maxEdge)
+      : useBlobTransport
+        ? getThumbnailBlobSrc(path, ext, maxEdge)
+        : getThumbnailImageSrc(path, ext, maxEdge)
 
     loadSrc.then((src) => {
       if (!active) {
@@ -179,7 +217,7 @@ function useLazyImageSrc(
     return () => {
       active = false
     }
-  }, [cacheKey, ext, isVisible, path, refreshVersion])
+  }, [cacheKey, ext, isVisible, maxEdge, path, purgeHiddenCache, refreshVersion, useBlobTransport])
 
   return {
     imageSrc,
@@ -192,22 +230,27 @@ export function FileCard({
   file,
   visibleFields,
   footerHeight,
+  previewWidth,
   isSelected,
   isMultiSelected,
   scrollRootRef,
   onClick,
   onDoubleClick,
-}: FileCardBaseProps & { footerHeight: number }) {
+}: FileCardBaseProps & { footerHeight: number; previewWidth: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
+  const thumbnailMaxEdge = resolveCardThumbnailMaxEdge(previewWidth)
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
     cacheKey,
     isVisible,
+    thumbnailMaxEdge,
+    true,
+    true,
     thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
@@ -327,22 +370,31 @@ export function FileCard({
 export function AdaptiveFileCard({
   file,
   visibleFields,
+  previewWidth,
   isSelected,
   isMultiSelected,
   scrollRootRef,
   onClick,
   onDoubleClick,
-}: FileCardBaseProps) {
+}: FileCardBaseProps & { previewWidth: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
+  const previewHeight =
+    !file.width || !file.height || file.width <= 0 || file.height <= 0
+      ? previewWidth
+      : Math.max(80, Math.round((file.height / file.width) * previewWidth))
+  const thumbnailMaxEdge = resolveCardThumbnailMaxEdge(previewWidth, previewHeight)
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
     cacheKey,
     isVisible,
+    thumbnailMaxEdge,
+    true,
+    true,
     thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
@@ -478,12 +530,16 @@ export function FileRow({
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}`
+  const thumbnailMaxEdge = LIST_THUMBNAIL_MAX_EDGE
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
     cacheKey,
     isVisible,
+    thumbnailMaxEdge,
+    true,
+    true,
     thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
