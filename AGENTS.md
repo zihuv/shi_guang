@@ -14,6 +14,20 @@ Use `pnpm` because the repo is checked in with `pnpm-lock.yaml`.
 
 For Rust-only validation, run `cargo test` or `cargo check` from `src-tauri/`.
 
+If Codex is launching Tauri on Windows, use this startup command to avoid missing shell env vars breaking `pnpm` or local socket binding:
+
+```powershell
+$env:APPDATA = Join-Path $env:USERPROFILE 'AppData\\Roaming'
+$env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\\Local'
+$env:HOME = $env:USERPROFILE
+$env:SystemRoot = 'C:\\Windows'
+$env:windir = 'C:\\Windows'
+$env:ComSpec = 'C:\\Windows\\System32\\cmd.exe'
+pnpm tauri dev
+```
+
+Keep the dev server on `127.0.0.1`; do not switch it back to `localhost`.
+
 ## Coding Style & Naming Conventions
 Follow the existing code style in each layer: TypeScript files generally use 2-space indentation and double quotes in newer files; Rust uses `rustfmt` defaults with 4 spaces. Keep React components and Zustand stores in PascalCase file names such as `FileGrid.tsx` and `fileStore.ts`. Prefer descriptive function names and keep Tauri command logic in `src-tauri/src/commands.rs` or adjacent backend modules. Use Tailwind utility classes in JSX and keep shared class composition in helpers like `src/lib/utils.ts`. If a file grows too large, refactor it into smaller modules where appropriate.
 
