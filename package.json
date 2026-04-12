@@ -11,6 +11,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:dev:mem": "tauri dev --features memory-diagnostics",
+    "tauri:dev:heap": "tauri dev --features memory-heap",
     "release": "node scripts/release.cjs",
     "docs:dev": "cd website && rspress dev",
     "docs:build": "cd website && rspress build",

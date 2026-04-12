@@ -4,7 +4,10 @@ impl Database {
     pub fn insert_file(&self, file: &FileRecord) -> Result<i64> {
         let existing = self.get_file_by_path(&file.path).ok().flatten();
 
-        let rating = existing.as_ref().map(|entry| entry.rating).unwrap_or(file.rating);
+        let rating = existing
+            .as_ref()
+            .map(|entry| entry.rating)
+            .unwrap_or(file.rating);
         let description = existing
             .as_ref()
             .map(|entry| entry.description.as_str())
@@ -179,11 +182,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn update_file_content_hash(
-        &self,
-        file_id: i64,
-        content_hash: Option<&str>,
-    ) -> Result<()> {
+    pub fn update_file_content_hash(&self, file_id: i64, content_hash: Option<&str>) -> Result<()> {
         self.conn.execute(
             "UPDATE files SET content_hash = ?1 WHERE id = ?2",
             params![content_hash, file_id],

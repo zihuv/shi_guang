@@ -33,7 +33,10 @@ pub(super) fn map_file_record_with_deleted_at(
     Ok((map_file_record(row)?, row.get(16)?))
 }
 
-pub(super) fn collect_file_records<P>(stmt: &mut Statement<'_>, params: P) -> Result<Vec<FileRecord>>
+pub(super) fn collect_file_records<P>(
+    stmt: &mut Statement<'_>,
+    params: P,
+) -> Result<Vec<FileRecord>>
 where
     P: Params,
 {
@@ -88,10 +91,7 @@ pub(super) fn active_files_with_tags(
     db: &Database,
     files: Vec<FileRecord>,
 ) -> Result<Vec<FileWithTags>> {
-    files_with_tags(
-        db,
-        files.into_iter().map(|file| (file, None)).collect(),
-    )
+    files_with_tags(db, files.into_iter().map(|file| (file, None)).collect())
 }
 
 pub(super) fn files_with_tags(

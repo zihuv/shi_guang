@@ -6,6 +6,8 @@ mod indexer;
 mod linux_glibc_compat;
 mod logging;
 mod media;
+#[cfg(feature = "memory-diagnostics")]
+mod memory_diagnostics;
 mod ml;
 mod openai;
 mod path_utils;
@@ -16,6 +18,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
+
+#[cfg(feature = "memory-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 /// Clean up folders and files that start with '.' from the database
 fn cleanup_dot_folders(db: &db::Database) -> Result<(), String> {
@@ -88,6 +94,9 @@ pub struct VisualIndexTaskEntry {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(feature = "memory-diagnostics")]
+    let _memory_diagnostics = memory_diagnostics::start();
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
