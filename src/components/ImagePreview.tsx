@@ -1,60 +1,52 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, type MouseEvent as ReactMouseEvent, type SyntheticEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type SyntheticEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
-import type { FileItem } from '@/stores/fileTypes'
-import { useFolderStore, FolderNode } from '@/stores/folderStore'
+import { copyFilesToClipboard } from '@/lib/clipboard'
+import { startExternalFileDrag } from '@/lib/externalDrag'
+import {
+  AI_IMAGE_EXTENSIONS,
+  BASE_WHEEL_ZOOM_SENSITIVITY,
+  BUTTON_ZOOM_FACTOR,
+  FIT_MODE_SNAP_EPSILON,
+  IS_MACOS,
+  clampValue,
+  clampZoom,
+  flattenFolders,
+  getPreviewMetaText,
+} from '@/components/image-preview/constants'
+import { PreviewContextMenuContent } from '@/components/image-preview/PreviewContextMenu'
+import {
+  TextPreviewPane,
+  UnsupportedPreviewState,
+} from '@/components/image-preview/PreviewHelpers'
+import {
+  FullscreenPreviewShell,
+  StandardPreviewShell,
+} from '@/components/image-preview/PreviewShells'
+import { updateFileDimensions } from '@/services/tauri/files'
+import { openFile, showInExplorer } from '@/services/tauri/system'
+import { useFolderStore } from '@/stores/folderStore'
 import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
 import { usePreviewStore } from '@/stores/previewStore'
 import { useSelectionStore } from '@/stores/selectionStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useTrashStore } from '@/stores/trashStore'
-import { copyFilesToClipboard } from '@/lib/clipboard'
-import { startExternalFileDrag } from '@/lib/externalDrag'
-import { updateFileDimensions } from '@/services/tauri/files'
-import { openFile, showInExplorer } from '@/services/tauri/system'
-import FileTypeIcon from '@/components/FileTypeIcon'
-import { buildAiImageDataUrl, formatSize, getFilePreviewMode, getFileSrc, getTextPreviewContent, getVideoThumbnailSrc, isPdfFile, isVideoFile } from '@/utils'
 import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubTrigger,
-  ContextMenuSubContent,
-} from '@/components/ui/ContextMenu'
-import { ExternalLink, FolderOpen, Copy, Move, Scan, Sparkles, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
-
-const AI_IMAGE_EXTENSIONS = new Set([
-  'jpg',
-  'jpeg',
-  'png',
-  'webp',
-  'bmp',
-  'gif',
-  'tif',
-  'tiff',
-  'ico',
-  'avif',
-])
-
-const MIN_ZOOM = 1
-const MAX_ZOOM = 10000
-const BUTTON_ZOOM_FACTOR = 1.2
-const FIT_MODE_SNAP_EPSILON = 0.5
-const BASE_WHEEL_ZOOM_SENSITIVITY = 0.002
-const OVERLAY_BUTTON_CLASS = 'flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/80 backdrop-blur transition hover:bg-black/70 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
-const OVERLAY_CHIP_CLASS = 'rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-xs text-white/70 backdrop-blur'
-const IS_MACOS = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
-
-function clampZoom(value: number) {
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value))
-}
-
-function clampValue(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value))
-}
+  buildAiImageDataUrl,
+  getFilePreviewMode,
+  getFileSrc,
+  getTextPreviewContent,
+  isPdfFile,
+  isVideoFile,
+} from '@/utils'
 
 export default function ImagePreview() {
   const previewMode = usePreviewStore((state) => state.previewMode)
@@ -72,9 +64,9 @@ export default function ImagePreview() {
   const previewTrackpadZoomSpeed = useSettingsStore((state) => state.previewTrackpadZoomSpeed)
 
   const [imageSrc, setImageSrc] = useState<string | null>(null)
-  const [textContent, setTextContent] = useState<string>("")
+  const [textContent, setTextContent] = useState('')
   const [imageError, setImageError] = useState(false)
-  const [zoom, setZoom] = useState<number | 'auto'>('auto')  // 'auto' = 适应视图, 其他数字 = 手动缩放比例
+  const [zoom, setZoom] = useState<number | 'auto'>('auto')
   const [isLoading, setIsLoading] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -96,12 +88,10 @@ export default function ImagePreview() {
   const pendingScrollRef = useRef<{ left: number; top: number } | null>(null)
   const persistedDimensionsRef = useRef<Record<number, string>>({})
 
-  // 获取当前文件夹名称
   const currentFolderName = selectedFolderId
-    ? folders.find(f => f.id === selectedFolderId)?.name || '未知文件夹'
+    ? folders.find((folder) => folder.id === selectedFolderId)?.name || '未知文件夹'
     : '全部文件'
 
-  // 当前文件
   const currentFile = previewFiles[previewIndex]
   const previewType = currentFile ? getFilePreviewMode(currentFile.ext) : 'none'
   const isVideo = currentFile ? isVideoFile(currentFile.ext) : false
@@ -114,8 +104,8 @@ export default function ImagePreview() {
   const handleCopyFileToClipboard = useCallback(async () => {
     try {
       await copyFilesToClipboard([currentFile.id])
-    } catch (e) {
-      console.error('Failed to copy file to clipboard:', e)
+    } catch (error) {
+      console.error('Failed to copy file to clipboard:', error)
     }
   }, [currentFile])
 
@@ -130,18 +120,17 @@ export default function ImagePreview() {
       const imageDataUrl = await buildAiImageDataUrl(currentFile.path)
       await analyzeFileMetadata(currentFile.id, imageDataUrl)
       toast.success('AI 已更新名称、标签和备注', { id: loadingToast })
-    } catch (e) {
-      console.error('Failed to analyze file metadata:', e)
-      toast.error(`AI 分析失败: ${String(e)}`, { id: loadingToast })
+    } catch (error) {
+      console.error('Failed to analyze file metadata:', error)
+      toast.error(`AI 分析失败: ${String(error)}`, { id: loadingToast })
     }
   }
 
-  // 切换预览时同步更新选中文件
   useEffect(() => {
     if (currentFile) {
       setSelectedFile(currentFile)
     }
-  }, [previewIndex, currentFile, setSelectedFile])
+  }, [currentFile, previewIndex, setSelectedFile])
 
   useEffect(() => {
     if (!currentFile) {
@@ -165,7 +154,6 @@ export default function ImagePreview() {
     setLoadedImageSize({ width: 0, height: 0 })
   }, [currentFile?.id])
 
-  // 加载图片
   useEffect(() => {
     if (!currentFile) return
 
@@ -173,7 +161,7 @@ export default function ImagePreview() {
     setIsLoading(true)
     setImageError(false)
     setImageSrc(null)
-    setTextContent("")
+    setTextContent('')
 
     if (previewType === 'none') {
       setIsLoading(false)
@@ -195,15 +183,14 @@ export default function ImagePreview() {
       }
     }
 
-    getFileSrc(currentFile.path).then(src => {
-      if (mounted) {
-        if (src) {
-          setImageSrc(src)
-        } else {
-          setImageError(true)
-        }
-        setIsLoading(false)
+    getFileSrc(currentFile.path).then((src) => {
+      if (!mounted) return
+      if (src) {
+        setImageSrc(src)
+      } else {
+        setImageError(true)
       }
+      setIsLoading(false)
     })
 
     return () => {
@@ -211,7 +198,6 @@ export default function ImagePreview() {
     }
   }, [currentFile?.path, currentFile?.size, previewType])
 
-  // 清理 URL 对象
   useEffect(() => {
     return () => {
       if (imageSrc?.startsWith('blob:')) {
@@ -220,12 +206,23 @@ export default function ImagePreview() {
     }
   }, [imageSrc])
 
-  // 键盘导航
+  const goToPrev = useCallback(() => {
+    if (previewIndex > 0) {
+      setPreviewIndex(previewIndex - 1)
+    }
+  }, [previewIndex, setPreviewIndex])
+
+  const goToNext = useCallback(() => {
+    if (previewIndex < previewFiles.length - 1) {
+      setPreviewIndex(previewIndex + 1)
+    }
+  }, [previewFiles.length, previewIndex, setPreviewIndex])
+
   useEffect(() => {
     if (!previewMode) return
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      switch (event.key) {
         case 'Escape':
           if (isFullscreen) {
             setIsFullscreen(false)
@@ -242,7 +239,7 @@ export default function ImagePreview() {
         case 'f':
         case 'F':
           if (previewType !== 'none') {
-            setIsFullscreen(prev => !prev)
+            setIsFullscreen((prev) => !prev)
           }
           break
       }
@@ -250,7 +247,7 @@ export default function ImagePreview() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [previewMode, previewIndex, previewFiles.length, isFullscreen, previewType])
+  }, [closePreview, goToNext, goToPrev, isFullscreen, previewMode, previewType])
 
   useEffect(() => {
     const node = viewportRef.current
@@ -309,37 +306,23 @@ export default function ImagePreview() {
     }
 
     previousZoomRef.current = zoom
-  }, [zoom, previewIndex, isFullscreen, viewportSize.width, viewportSize.height])
-
-  // 扁平化文件夹树
-  const flattenFolders = (nodes: FolderNode[], depth = 0): FolderNode[] => {
-    let result: FolderNode[] = []
-    for (const node of nodes) {
-      result.push({ ...node, sortOrder: depth } as FolderNode)
-      if (node.children && node.children.length > 0) {
-        result = result.concat(flattenFolders(node.children, depth + 1))
-      }
-    }
-    return result
-  }
+  }, [isFullscreen, previewIndex, viewportSize.height, viewportSize.width, zoom])
 
   const flatFolders = flattenFolders(folders)
 
-  // 打开文件
   const handleOpenFile = async () => {
     try {
       await openFile(currentFile.id)
-    } catch (e) {
-      console.error('Failed to open file:', e)
+    } catch (error) {
+      console.error('Failed to open file:', error)
     }
   }
 
-  // 在资源管理器中显示
   const handleShowInExplorer = async () => {
     try {
       await showInExplorer(currentFile.id)
-    } catch (e) {
-      console.error('Failed to open directory:', e)
+    } catch (error) {
+      console.error('Failed to open directory:', error)
     }
   }
 
@@ -359,9 +342,7 @@ export default function ImagePreview() {
   }
 
   const handleExternalDragMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
-    if (!IS_MACOS || event.button !== 0) {
-      return
-    }
+    if (!IS_MACOS || event.button !== 0) return
 
     suppressExternalDragEvent(event)
 
@@ -398,62 +379,44 @@ export default function ImagePreview() {
     void action()
   }
 
-  // 复制到
   const handleCopyFile = async (targetFolderId: number | null) => {
     try {
       await copyFiles([currentFile.id], targetFolderId)
-    } catch (e) {
-      console.error('Failed to copy file:', e)
-      toast.error(`复制文件失败: ${String(e)}`)
+    } catch (error) {
+      console.error('Failed to copy file:', error)
+      toast.error(`复制文件失败: ${String(error)}`)
     }
   }
 
-  // 移动到
   const handleMoveFile = async (targetFolderId: number | null) => {
     try {
       await moveFiles([currentFile.id], targetFolderId)
-    } catch (e) {
-      console.error('Failed to move file:', e)
-      toast.error(`移动文件失败: ${String(e)}`)
+    } catch (error) {
+      console.error('Failed to move file:', error)
+      toast.error(`移动文件失败: ${String(error)}`)
     }
   }
 
-  // 删除文件
   const handleDeleteFile = async () => {
     try {
       await deleteFile(currentFile.id)
       closePreview()
-    } catch (e) {
-      console.error('Failed to delete file:', e)
+    } catch (error) {
+      console.error('Failed to delete file:', error)
     }
   }
 
-  // 切换上一张
-  const goToPrev = useCallback(() => {
-    if (previewIndex > 0) {
-      setPreviewIndex(previewIndex - 1)
-    }
-  }, [previewIndex, setPreviewIndex])
-
-  // 切换下一张
-  const goToNext = useCallback(() => {
-    if (previewIndex < previewFiles.length - 1) {
-      setPreviewIndex(previewIndex + 1)
-    }
-  }, [previewIndex, previewFiles.length, setPreviewIndex])
-
-  // 判断是否为适应窗口模式（'auto' 表示适应窗口）
   const isFitMode = zoom === 'auto'
   const canPanImage = isImageLike && !isFitMode
   const manualZoomScale = typeof zoom === 'number' ? zoom / 100 : 1
   const imageWidth =
-    currentFile.width > 0
+    currentFile?.width > 0
       ? currentFile.width
       : loadedImageSize.width > 0
         ? loadedImageSize.width
         : null
   const imageHeight =
-    currentFile.height > 0
+    currentFile?.height > 0
       ? currentFile.height
       : loadedImageSize.height > 0
         ? loadedImageSize.height
@@ -473,13 +436,9 @@ export default function ImagePreview() {
         )
       : 100
   const scaledImageWidth =
-    !isFitMode && imageWidth
-      ? Math.max(1, Math.round(imageWidth * manualZoomScale))
-      : null
+    !isFitMode && imageWidth ? Math.max(1, Math.round(imageWidth * manualZoomScale)) : null
   const scaledImageHeight =
-    !isFitMode && imageHeight
-      ? Math.max(1, Math.round(imageHeight * manualZoomScale))
-      : null
+    !isFitMode && imageHeight ? Math.max(1, Math.round(imageHeight * manualZoomScale)) : null
 
   const applyZoom = (
     nextZoomInput: number | ((currentZoom: number) => number),
@@ -493,7 +452,7 @@ export default function ImagePreview() {
     const currentScrollLeft = container.scrollLeft
     const currentScrollTop = container.scrollTop
 
-    setZoom(prevZoom => {
+    setZoom((prevZoom) => {
       const baseZoom = prevZoom === 'auto' ? fitZoomPercent : prevZoom
       const nextZoom = clampZoom(
         typeof nextZoomInput === 'function' ? nextZoomInput(baseZoom) : nextZoomInput,
@@ -511,8 +470,14 @@ export default function ImagePreview() {
       if (imageWidth && imageHeight) {
         const currentCanvasWidth = Math.max(imageWidth * currentScale, viewportSize.width)
         const currentCanvasHeight = Math.max(imageHeight * currentScale, viewportSize.height)
-        const currentImageOffsetLeft = Math.max(0, (currentCanvasWidth - imageWidth * currentScale) / 2)
-        const currentImageOffsetTop = Math.max(0, (currentCanvasHeight - imageHeight * currentScale) / 2)
+        const currentImageOffsetLeft = Math.max(
+          0,
+          (currentCanvasWidth - imageWidth * currentScale) / 2,
+        )
+        const currentImageOffsetTop = Math.max(
+          0,
+          (currentCanvasHeight - imageHeight * currentScale) / 2,
+        )
         const nextCanvasWidth = Math.max(imageWidth * nextScale, viewportSize.width)
         const nextCanvasHeight = Math.max(imageHeight * nextScale, viewportSize.height)
         const nextImageOffsetLeft = Math.max(0, (nextCanvasWidth - imageWidth * nextScale) / 2)
@@ -542,108 +507,111 @@ export default function ImagePreview() {
   }
 
   const handleZoomOut = () => {
-    applyZoom(currentZoom => currentZoom / BUTTON_ZOOM_FACTOR)
+    applyZoom((currentZoom) => currentZoom / BUTTON_ZOOM_FACTOR)
   }
 
   const handleZoomIn = () => {
-    applyZoom(currentZoom => currentZoom * BUTTON_ZOOM_FACTOR)
+    applyZoom((currentZoom) => currentZoom * BUTTON_ZOOM_FACTOR)
   }
 
   const toggleFullscreen = () => {
-    setIsFullscreen(prev => !prev)
+    setIsFullscreen((prev) => !prev)
   }
 
-  const handleNativeWheel = useCallback((event: WheelEvent) => {
-    if (!supportsZoom) return
-    if (!event.ctrlKey && !event.metaKey) return
+  const handleNativeWheel = useCallback(
+    (event: WheelEvent) => {
+      if (!supportsZoom) return
+      if (!event.ctrlKey && !event.metaKey) return
 
-    event.preventDefault()
-    const container = viewportRef.current
-    if (!container) return
+      event.preventDefault()
+      const container = viewportRef.current
+      if (!container) return
 
-    const rect = container.getBoundingClientRect()
-    const pointerX = event.clientX - rect.left
-    const pointerY = event.clientY - rect.top
-    const deltaY =
-      event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 16 : event.deltaY
+      const rect = container.getBoundingClientRect()
+      const pointerX = event.clientX - rect.left
+      const pointerY = event.clientY - rect.top
+      const deltaY =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 16 : event.deltaY
 
-    applyZoom(
-      currentZoom => currentZoom * Math.exp(-deltaY * wheelZoomSensitivity),
-      { x: pointerX, y: pointerY },
-    )
-  }, [applyZoom, supportsZoom, wheelZoomSensitivity])
+      applyZoom(
+        (currentZoom) => currentZoom * Math.exp(-deltaY * wheelZoomSensitivity),
+        { x: pointerX, y: pointerY },
+      )
+    },
+    [applyZoom, supportsZoom, wheelZoomSensitivity],
+  )
 
   useEffect(() => {
     const container = viewportRef.current
-    if (!container) {
-      return
-    }
+    if (!container) return
 
     container.addEventListener('wheel', handleNativeWheel, { passive: false })
     return () => {
       container.removeEventListener('wheel', handleNativeWheel)
     }
-  }, [handleNativeWheel, isFullscreen, previewMode, previewIndex])
+  }, [handleNativeWheel, isFullscreen, previewIndex, previewMode])
 
-  const hydrateCurrentFileDimensions = useCallback((width: number, height: number) => {
-    if (!currentFile || width <= 0 || height <= 0) {
-      return
-    }
+  const hydrateCurrentFileDimensions = useCallback(
+    (width: number, height: number) => {
+      if (!currentFile || width <= 0 || height <= 0) return
 
-    setLoadedImageSize((current) => {
-      if (current.width === width && current.height === height) {
-        return current
+      setLoadedImageSize((current) => {
+        if (current.width === width && current.height === height) {
+          return current
+        }
+        return { width, height }
+      })
+
+      if (currentFile.width === width && currentFile.height === height) {
+        return
       }
-      return { width, height }
-    })
 
-    if (currentFile.width === width && currentFile.height === height) {
-      return
-    }
+      const patch = { width, height }
 
-    const patch = { width, height }
+      usePreviewStore.setState((state) => ({
+        previewFiles: state.previewFiles.map((file) =>
+          file.id === currentFile.id ? { ...file, ...patch } : file,
+        ),
+      }))
 
-    usePreviewStore.setState((state) => ({
-      previewFiles: state.previewFiles.map((file) =>
-        file.id === currentFile.id ? { ...file, ...patch } : file,
-      ),
-    }))
+      useLibraryQueryStore.setState((state) => ({
+        files: state.files.map((file) => (file.id === currentFile.id ? { ...file, ...patch } : file)),
+      }))
 
-    useLibraryQueryStore.setState((state) => ({
-      files: state.files.map((file) =>
-        file.id === currentFile.id ? { ...file, ...patch } : file,
-      ),
-    }))
+      const { selectedFile } = useSelectionStore.getState()
+      if (selectedFile?.id === currentFile.id) {
+        useSelectionStore.getState().setSelectedFile({
+          ...selectedFile,
+          ...patch,
+        })
+      }
 
-    const { selectedFile } = useSelectionStore.getState()
-    if (selectedFile?.id === currentFile.id) {
-      useSelectionStore.getState().setSelectedFile({
-        ...selectedFile,
-        ...patch,
-      })
-    }
+      const persistedKey = `${width}x${height}`
+      if (
+        (currentFile.width <= 0 || currentFile.height <= 0) &&
+        persistedDimensionsRef.current[currentFile.id] !== persistedKey
+      ) {
+        persistedDimensionsRef.current[currentFile.id] = persistedKey
+        void updateFileDimensions({
+          fileId: currentFile.id,
+          width,
+          height,
+        }).catch((error) => {
+          console.error('Failed to persist file dimensions:', error)
+          delete persistedDimensionsRef.current[currentFile.id]
+        })
+      }
+    },
+    [currentFile],
+  )
 
-    const persistedKey = `${width}x${height}`
-    if (
-      (currentFile.width <= 0 || currentFile.height <= 0) &&
-      persistedDimensionsRef.current[currentFile.id] !== persistedKey
-    ) {
-      persistedDimensionsRef.current[currentFile.id] = persistedKey
-      void updateFileDimensions({
-        fileId: currentFile.id,
-        width,
-        height,
-      }).catch((error) => {
-        console.error('Failed to persist file dimensions:', error)
-        delete persistedDimensionsRef.current[currentFile.id]
-      })
-    }
-  }, [currentFile])
-
-  const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
-    const target = event.currentTarget
-    hydrateCurrentFileDimensions(target.naturalWidth, target.naturalHeight)
-  }, [hydrateCurrentFileDimensions])
+  const handleImageLoad = useCallback(
+    (event: SyntheticEvent<HTMLImageElement>) => {
+      const target = event.currentTarget
+      hydrateCurrentFileDimensions(target.naturalWidth, target.naturalHeight)
+    },
+    [hydrateCurrentFileDimensions],
+  )
 
   const finishPan = (pointerId: number) => {
     const container = viewportRef.current
@@ -665,38 +633,38 @@ export default function ImagePreview() {
     setZoom('auto')
   }
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!canPanImage || e.button !== 0) return
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!canPanImage || event.button !== 0) return
 
     const container = viewportRef.current
     if (!container) return
 
     panStateRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
       scrollLeft: container.scrollLeft,
       scrollTop: container.scrollTop,
     }
-    container.setPointerCapture(e.pointerId)
+    container.setPointerCapture(event.pointerId)
     setIsPanning(true)
   }
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const panState = panStateRef.current
     const container = viewportRef.current
-    if (!panState || !container || panState.pointerId !== e.pointerId) return
+    if (!panState || !container || panState.pointerId !== event.pointerId) return
 
-    const deltaX = e.clientX - panState.startX
-    const deltaY = e.clientY - panState.startY
+    const deltaX = event.clientX - panState.startX
+    const deltaY = event.clientY - panState.startY
     container.scrollLeft = panState.scrollLeft - deltaX
     container.scrollTop = panState.scrollTop - deltaY
   }
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     const panState = panStateRef.current
-    if (!panState || panState.pointerId !== e.pointerId) return
-    finishPan(e.pointerId)
+    if (!panState || panState.pointerId !== event.pointerId) return
+    finishPan(event.pointerId)
   }
 
   if (!previewMode || !currentFile) return null
@@ -706,17 +674,27 @@ export default function ImagePreview() {
   const canGoPrev = previewIndex > 0
   const canGoNext = previewIndex < totalFiles - 1
   const previewMeta = getPreviewMetaText(currentFile, loadedImageSize)
+
   const renderedPreviewContent = isLoading ? (
     <div className="flex h-full min-h-full items-center justify-center p-4">
       <svg className="h-10 w-10 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        />
       </svg>
     </div>
   ) : imageError ? (
     <div className="flex h-full min-h-full flex-col items-center justify-center p-4 text-gray-400">
       <svg className="mb-2 h-16 w-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+        />
       </svg>
       <p>无法加载预览</p>
     </div>
@@ -788,463 +766,80 @@ export default function ImagePreview() {
   ) : null
 
   const previewContextMenu = (
-    <ContextMenuContent>
-      <ContextMenuItem onSelect={() => triggerMenuAction('open', handleOpenFile)} onClick={() => triggerMenuAction('open', handleOpenFile)}>
-        <ExternalLink className="w-4 h-4 mr-2" />
-        默认应用打开
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => triggerMenuAction('explorer', handleShowInExplorer)} onClick={() => triggerMenuAction('explorer', handleShowInExplorer)}>
-        <FolderOpen className="w-4 h-4 mr-2" />
-        在资源管理器中显示
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => triggerMenuAction('clipboard', handleCopyFileToClipboard)} onClick={() => triggerMenuAction('clipboard', handleCopyFileToClipboard)}>
-        <Copy className="w-4 h-4 mr-2" />
-        复制到剪贴板
-      </ContextMenuItem>
-      <ContextMenuItem
-        disabled={!canAnalyzeWithAi}
-        onSelect={() => triggerMenuAction('ai', handleAnalyzeMetadata)}
-        onClick={() => triggerMenuAction('ai', handleAnalyzeMetadata)}
-      >
-        <Sparkles className="w-4 h-4 mr-2" />
-        AI 分析
-      </ContextMenuItem>
-      <ContextMenuSeparator />
-
-      <ContextMenuSub>
-        <ContextMenuSubTrigger>
-          <Copy className="w-4 h-4 mr-2" />
-          复制到
-        </ContextMenuSubTrigger>
-        <ContextMenuSubContent>
-          {flatFolders.length > 0 ? (
-            flatFolders.map((folder) => (
-              <ContextMenuItem
-                key={folder.id}
-                onPointerDown={(event) => {
-                  if (event.button !== 0) {
-                    return
-                  }
-                  triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))
-                }}
-                onSelect={() => triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))}
-                onClick={() => triggerMenuAction(`copy:${folder.id}`, () => handleCopyFile(folder.id))}
-                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
-              >
-                {folder.name}
-              </ContextMenuItem>
-            ))
-          ) : (
-            <ContextMenuItem disabled>
-              暂无可用文件夹
-            </ContextMenuItem>
-          )}
-        </ContextMenuSubContent>
-      </ContextMenuSub>
-
-      <ContextMenuSub>
-        <ContextMenuSubTrigger>
-          <Move className="w-4 h-4 mr-2" />
-          移动到
-        </ContextMenuSubTrigger>
-        <ContextMenuSubContent>
-          {flatFolders.length > 0 ? (
-            flatFolders.map((folder) => (
-              <ContextMenuItem
-                key={folder.id}
-                onPointerDown={(event) => {
-                  if (event.button !== 0) {
-                    return
-                  }
-                  triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))
-                }}
-                onSelect={() => triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))}
-                onClick={() => triggerMenuAction(`move:${folder.id}`, () => handleMoveFile(folder.id))}
-                style={{ paddingLeft: `${(folder.sortOrder || 0) * 12 + 8}px` }}
-              >
-                {folder.name}
-              </ContextMenuItem>
-            ))
-          ) : (
-            <ContextMenuItem disabled>
-              暂无可用文件夹
-            </ContextMenuItem>
-          )}
-        </ContextMenuSubContent>
-      </ContextMenuSub>
-
-      <ContextMenuSeparator />
-      <ContextMenuItem
-        onSelect={() => triggerMenuAction('delete', handleDeleteFile)}
-        onClick={() => triggerMenuAction('delete', handleDeleteFile)}
-        className="text-red-600 dark:text-red-400"
-      >
-        <Trash2 className="w-4 h-4 mr-2" />
-        删除
-      </ContextMenuItem>
-    </ContextMenuContent>
-  )
-
-  const fullscreenPreviewShell = (
-    <div className="fixed inset-0 z-[80] bg-black text-white">
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="relative h-full w-full">
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-24 bg-gradient-to-b from-black/70 to-transparent" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-20 bg-gradient-to-t from-black/50 to-transparent" />
-
-            <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
-              {supportsZoom && (
-                <>
-                  <button
-                    onClick={handleZoomOut}
-                    className={OVERLAY_BUTTON_CLASS}
-                    title="缩小"
-                  >
-                    <ZoomOut className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={handleZoomIn}
-                    className={OVERLAY_BUTTON_CLASS}
-                    title="放大"
-                  >
-                    <ZoomIn className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={handleFitToView}
-                    className={OVERLAY_BUTTON_CLASS}
-                    title="适应视图"
-                    aria-pressed={isFitMode}
-                  >
-                    <Scan className="h-5 w-5" />
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
-              {totalFiles > 1 && (
-                <span className={OVERLAY_CHIP_CLASS}>
-                  {currentNum} / {totalFiles}
-                </span>
-              )}
-              <button
-                onClick={toggleFullscreen}
-                className={OVERLAY_BUTTON_CLASS}
-                title="退出全屏 (Esc)"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {totalFiles > 1 && (
-              <>
-                <button
-                  onClick={goToPrev}
-                  disabled={!canGoPrev}
-                  className={`${OVERLAY_BUTTON_CLASS} absolute left-4 top-1/2 z-20 -translate-y-1/2`}
-                  title="上一张"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={goToNext}
-                  disabled={!canGoNext}
-                  className={`${OVERLAY_BUTTON_CLASS} absolute right-4 top-1/2 z-20 -translate-y-1/2`}
-                  title="下一张"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </>
-            )}
-
-            <div
-              ref={viewportRef}
-              className={`preview-wheel-container h-full w-full overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
-              style={{ scrollbarGutter: 'stable' }}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-            >
-              {renderedPreviewContent}
-            </div>
-          </div>
-        </ContextMenuTrigger>
-        {previewContextMenu}
-      </ContextMenu>
-    </div>
-  )
-
-  const previewShell = (
-    <div className="h-full flex flex-col bg-gray-100 dark:bg-dark-bg">
-      <div className="flex items-center justify-between px-4 py-2 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border">
-        <div className="flex items-center gap-4">
-          <span className="text-sm">{currentFolderName}</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={goToPrev}
-            disabled={!canGoPrev}
-            className={`p-1.5 rounded ${canGoPrev ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-50 cursor-not-allowed'}`}
-            title="上一张"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <span className="text-sm min-w-[60px] text-center">
-            {currentNum} / {totalFiles}
-          </span>
-          <button
-            onClick={goToNext}
-            disabled={!canGoNext}
-            className={`p-1.5 rounded ${canGoNext ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-50 cursor-not-allowed'}`}
-            title="下一张"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {supportsZoom ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleZoomOut}
-                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
-                title="缩小"
-              >
-                <ZoomOut className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleZoomIn}
-                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
-                title="放大"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
-              {previewType === 'video' ? '视频播放' : previewType === 'pdf' ? 'PDF 预览' : '文件预览'}
-            </span>
-          )}
-
-          {previewType !== 'none' && (
-            <>
-              {supportsZoom && (
-                <button
-                  onClick={handleFitToView}
-                  className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
-                  title="适应视图"
-                  aria-pressed={isFitMode}
-                >
-                  <Scan className="h-4 w-4" />
-                </button>
-              )}
-              <button
-                onClick={toggleFullscreen}
-                className="px-2 py-1 text-sm rounded hover:bg-gray-200 dark:hover:bg-gray-700"
-                title={isFullscreen ? '退出全屏 (F)' : '全屏预览 (F)'}
-              >
-                {isFullscreen ? '退出全屏' : '全屏'}
-              </button>
-            </>
-          )}
-
-          <button
-            onClick={closePreview}
-            className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-            title="关闭 (Esc)"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div
-            ref={viewportRef}
-            className={`preview-wheel-container flex-1 overflow-auto ${canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
-            style={{ scrollbarGutter: 'stable' }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-          >
-            {renderedPreviewContent}
-          </div>
-        </ContextMenuTrigger>
-        {previewContextMenu}
-      </ContextMenu>
-
-      <div className="px-4 py-1 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border text-xs flex items-center justify-between">
-        <button
-          type="button"
-          className="flex min-w-0 items-center gap-2 border-0 bg-transparent p-0 text-left cursor-grab active:cursor-grabbing"
-          {...externalDragProps}
-        >
-          <FileTypeIcon ext={currentFile.ext} className="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-gray-400" />
-          <span className="truncate text-gray-600 dark:text-gray-400">{currentFile.name}</span>
-        </button>
-        <span className="text-gray-500 dark:text-gray-500">{previewMeta} · {formatSize(currentFile.size)}</span>
-      </div>
-
-      <div className="h-20 bg-white dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border flex items-center px-4 gap-2 overflow-x-auto">
-        <button
-          onClick={goToPrev}
-          disabled={!canGoPrev}
-          className={`flex-shrink-0 p-1 rounded ${canGoPrev ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-50 cursor-not-allowed'}`}
-        >
-          <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-
-        <div className="flex-1 flex items-center gap-1 overflow-x-auto py-1">
-          {previewFiles.map((file, index) => (
-            <button
-              key={file.id}
-              onClick={() => setPreviewIndex(index)}
-              className={`flex-shrink-0 w-14 h-14 rounded overflow-hidden transition-all ${
-                index === previewIndex
-                  ? 'ring-2 ring-white'
-                  : 'opacity-50 hover:opacity-80'
-              }`}
-            >
-              <ThumbnailItem file={file} />
-            </button>
-          ))}
-        </div>
-
-        <button
-          onClick={goToNext}
-          disabled={!canGoNext}
-          className={`flex-shrink-0 p-1 rounded ${canGoNext ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-50 cursor-not-allowed'}`}
-        >
-          <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-      </div>
-    </div>
+    <PreviewContextMenuContent
+      flatFolders={flatFolders}
+      canAnalyzeWithAi={canAnalyzeWithAi}
+      triggerMenuAction={triggerMenuAction}
+      onOpenFile={handleOpenFile}
+      onShowInExplorer={handleShowInExplorer}
+      onCopyFileToClipboard={handleCopyFileToClipboard}
+      onAnalyzeMetadata={handleAnalyzeMetadata}
+      onCopyFile={handleCopyFile}
+      onMoveFile={handleMoveFile}
+      onDeleteFile={handleDeleteFile}
+    />
   )
 
   if (isFullscreen && typeof document !== 'undefined') {
-    return createPortal(fullscreenPreviewShell, document.body)
-  }
-
-  return previewShell
-}
-
-function ThumbnailItem({ file }: { file: FileItem }) {
-  const [src, setSrc] = useState<string | null>(null)
-  const previewType = getFilePreviewMode(file.ext)
-
-  useEffect(() => {
-    let mounted = true
-    setSrc(null)
-
-    if (previewType !== 'image' && previewType !== 'video') {
-      return () => {
-        mounted = false
-      }
-    }
-
-    const loader = previewType === 'video' ? getVideoThumbnailSrc(file.path) : getFileSrc(file.path)
-
-    loader.then(imageSrc => {
-      if (mounted) setSrc(imageSrc)
-    })
-    return () => { mounted = false }
-  }, [file.path, previewType])
-
-  if (!src || (previewType !== 'image' && previewType !== 'video')) {
-    return (
-      <div className="h-full w-full bg-gray-900/90">
-        <UnsupportedThumbnail ext={file.ext} />
-      </div>
+    return createPortal(
+      <FullscreenPreviewShell
+        currentNum={currentNum}
+        totalFiles={totalFiles}
+        canGoPrev={canGoPrev}
+        canGoNext={canGoNext}
+        supportsZoom={supportsZoom}
+        isFitMode={isFitMode}
+        canPanImage={canPanImage}
+        isPanning={isPanning}
+        viewportRef={viewportRef}
+        renderedPreviewContent={renderedPreviewContent}
+        previewContextMenu={previewContextMenu}
+        onZoomOut={handleZoomOut}
+        onZoomIn={handleZoomIn}
+        onFitToView={handleFitToView}
+        onToggleFullscreen={toggleFullscreen}
+        onGoPrev={goToPrev}
+        onGoNext={goToNext}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      />,
+      document.body,
     )
   }
 
   return (
-    <img
-      src={src}
-      alt={file.name}
-      className="w-full h-full object-cover"
+    <StandardPreviewShell
+      currentFolderName={currentFolderName}
+      currentNum={currentNum}
+      totalFiles={totalFiles}
+      canGoPrev={canGoPrev}
+      canGoNext={canGoNext}
+      supportsZoom={supportsZoom}
+      previewType={previewType}
+      isFullscreen={isFullscreen}
+      isFitMode={isFitMode}
+      canPanImage={canPanImage}
+      isPanning={isPanning}
+      viewportRef={viewportRef}
+      renderedPreviewContent={renderedPreviewContent}
+      previewContextMenu={previewContextMenu}
+      externalDragProps={externalDragProps}
+      currentFile={currentFile}
+      previewMeta={previewMeta}
+      previewFiles={previewFiles}
+      previewIndex={previewIndex}
+      onZoomOut={handleZoomOut}
+      onZoomIn={handleZoomIn}
+      onFitToView={handleFitToView}
+      onToggleFullscreen={toggleFullscreen}
+      onClose={closePreview}
+      onGoPrev={goToPrev}
+      onGoNext={goToNext}
+      onSelectPreviewIndex={setPreviewIndex}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
     />
-  )
-}
-
-function getPreviewMetaText(
-  file: FileItem,
-  fallbackDimensions?: { width: number; height: number },
-) {
-  const width = file.width > 0 ? file.width : fallbackDimensions?.width ?? 0
-  const height = file.height > 0 ? file.height : fallbackDimensions?.height ?? 0
-
-  if (width > 0 && height > 0) {
-    return `${width} x ${height}`
-  }
-
-  return file.ext.toUpperCase()
-}
-
-function UnsupportedPreviewState({
-  file,
-  onOpenFile,
-}: {
-  file: FileItem
-  onOpenFile: () => Promise<void>
-}) {
-  return (
-    <div className="flex w-full max-w-lg flex-col items-center gap-4 rounded-2xl border border-gray-200 bg-white/90 px-8 py-10 text-center shadow-lg dark:border-dark-border dark:bg-dark-surface">
-      <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-bg">
-        <FileTypeIcon ext={file.ext} className="h-12 w-12" />
-      </div>
-      <div className="space-y-1">
-        <p className="text-lg font-medium text-gray-800 dark:text-gray-100">{file.name}</p>
-        <p className="text-sm text-gray-500 dark:text-gray-400">此文件暂不支持内置预览</p>
-      </div>
-      <button
-        onClick={() => void onOpenFile()}
-        className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white transition hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
-      >
-        使用默认应用打开
-      </button>
-    </div>
-  )
-}
-
-function TextPreviewPane({ content }: { content: string }) {
-  return (
-    <div className="flex h-full w-full max-w-5xl justify-center">
-      <div className="h-full w-full overflow-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-lg dark:border-dark-border dark:bg-dark-surface">
-        <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-6 text-gray-800 dark:text-gray-100">
-          {content || '空文本文件'}
-        </pre>
-      </div>
-    </div>
-  )
-}
-
-function UnsupportedThumbnail({ ext }: { ext: string }) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-gray-800 to-gray-900 text-gray-300">
-      <FileTypeIcon ext={ext} className="h-5 w-5" />
-      <span className="text-[9px] font-medium">{ext.toUpperCase()}</span>
-    </div>
   )
 }
