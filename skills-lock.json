@@ -86,6 +86,11 @@
       "sourceType": "github",
       "computedHash": "8edad33758f2461f51afdb51741bfcc4cc57d84ea42e2751a84be2c6a2d48f69"
     },
+    "tauri-mcp-cli": {
+      "source": "hypothesi/mcp-server-tauri",
+      "sourceType": "github",
+      "computedHash": "8e6c5f71bdc4a205559d7b6b13db1c97e92d38c4fc76b595450ab16269eef60a"
+    },
     "typeset": {
       "source": "pbakaus/impeccable",
       "sourceType": "github",
