@@ -227,6 +227,93 @@ impl Database {
             .collect())
     }
 
+    pub fn get_unindexed_visual_index_candidates(
+        &self,
+        model_id: &str,
+    ) -> Result<Vec<VisualIndexCandidate>> {
+        let ext_list = supported_image_extension_list();
+        let sql = format!(
+            "SELECT f.id, f.path, f.name, f.ext, f.size, f.width, f.height, f.folder_id, f.created_at, f.modified_at, f.imported_at,
+                    f.rating, f.description, f.source_url, f.dominant_color, f.color_distribution, f.deleted_at, f.fs_modified_at
+             FROM files f
+             LEFT JOIN file_visual_embeddings fve
+               ON fve.file_id = f.id
+              AND fve.model_id = ?1
+             WHERE f.deleted_at IS NULL
+               AND LOWER(f.ext) IN ({ext_list})
+               AND (
+                    fve.file_id IS NULL
+                    OR fve.status != 'ready'
+                    OR fve.embedding IS NULL
+                    OR {}
+               )
+             ORDER BY f.imported_at DESC, f.id ASC",
+            outdated_visual_source_match_sql()
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map([model_id], |row| {
+                Ok((
+                    FileRecord {
+                        id: row.get(0)?,
+                        path: row.get(1)?,
+                        name: row.get(2)?,
+                        ext: row.get(3)?,
+                        size: row.get(4)?,
+                        width: row.get(5)?,
+                        height: row.get(6)?,
+                        folder_id: row.get(7)?,
+                        created_at: row.get(8)?,
+                        modified_at: row.get(9)?,
+                        imported_at: row.get(10)?,
+                        rating: row.get(11)?,
+                        description: row.get(12)?,
+                        source_url: row.get(13)?,
+                        dominant_color: row.get(14)?,
+                        color_distribution: row.get(15)?,
+                    },
+                    row.get::<_, Option<String>>(16)?,
+                    row.get::<_, String>(17)?,
+                ))
+            })?
+            .filter_map(|row| row.ok())
+            .collect::<Vec<_>>();
+
+        let file_ids = rows.iter().map(|(file, _, _)| file.id).collect::<Vec<_>>();
+        let tags_map = self.get_tags_for_files(&file_ids)?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(file, deleted_at, source_modified_at)| VisualIndexCandidate {
+                    source_size: file.size,
+                    source_modified_at,
+                    file: FileWithTags {
+                        id: file.id,
+                        path: file.path,
+                        name: file.name,
+                        ext: file.ext,
+                        size: file.size,
+                        width: file.width,
+                        height: file.height,
+                        folder_id: file.folder_id,
+                        created_at: file.created_at,
+                        modified_at: file.modified_at,
+                        imported_at: file.imported_at,
+                        rating: file.rating,
+                        description: file.description,
+                        source_url: file.source_url,
+                        dominant_color: file.dominant_color,
+                        color_distribution: file.color_distribution,
+                        tags: tags_map.get(&file.id).cloned().unwrap_or_default(),
+                        deleted_at,
+                    },
+                },
+            )
+            .collect())
+    }
+
     pub fn get_visual_index_counts(&self, model_id: &str) -> Result<VisualIndexCounts> {
         let ext_list = supported_image_extension_list();
 
@@ -771,5 +858,136 @@ mod tests {
         assert_eq!(counts.total_images, 1);
         assert_eq!(counts.ready, 1);
         assert_eq!(counts.outdated, 0);
+    }
+
+    #[test]
+    fn unindexed_visual_index_candidates_include_pending_error_outdated_and_other_models() {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-visual-pending-candidates-test-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let db = Database::new(&path).unwrap();
+        let ready_id = db
+            .insert_file(&make_file_record("D:\\visual\\ready.png", "ready.png"))
+            .unwrap();
+        let error_id = db
+            .insert_file(&make_file_record("D:\\visual\\error.png", "error.png"))
+            .unwrap();
+        let outdated_id = db
+            .insert_file(&make_file_record(
+                "D:\\visual\\outdated.png",
+                "outdated.png",
+            ))
+            .unwrap();
+        let pending_id = db
+            .insert_file(&make_file_record("D:\\visual\\pending.png", "pending.png"))
+            .unwrap();
+        let other_model_id = db
+            .insert_file(&make_file_record(
+                "D:\\visual\\other-model.png",
+                "other-model.png",
+            ))
+            .unwrap();
+
+        let ready_modified_at = db
+            .conn
+            .query_row(
+                "SELECT fs_modified_at FROM files WHERE id = ?1",
+                [ready_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+        let error_modified_at = db
+            .conn
+            .query_row(
+                "SELECT fs_modified_at FROM files WHERE id = ?1",
+                [error_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+        let outdated_modified_at = db
+            .conn
+            .query_row(
+                "SELECT fs_modified_at FROM files WHERE id = ?1",
+                [outdated_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+        let other_model_modified_at = db
+            .conn
+            .query_row(
+                "SELECT fs_modified_at FROM files WHERE id = ?1",
+                [other_model_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+
+        db.upsert_file_visual_embedding(
+            ready_id,
+            "fgclip2-test",
+            2,
+            &embedding_blob(&[1.0, 0.0]),
+            1,
+            &ready_modified_at,
+            "hash-ready",
+        )
+        .unwrap();
+        set_file_content_hash(&db, ready_id, "hash-ready");
+
+        db.mark_file_visual_embedding_error(
+            error_id,
+            "fgclip2-test",
+            1,
+            &error_modified_at,
+            Some("hash-error"),
+            "decode failed",
+        )
+        .unwrap();
+        set_file_content_hash(&db, error_id, "hash-error");
+
+        db.upsert_file_visual_embedding(
+            outdated_id,
+            "fgclip2-test",
+            2,
+            &embedding_blob(&[0.0, 1.0]),
+            1,
+            &outdated_modified_at,
+            "hash-outdated-old",
+        )
+        .unwrap();
+        set_file_content_hash(&db, outdated_id, "hash-outdated-new");
+
+        db.upsert_file_visual_embedding(
+            other_model_id,
+            "another-model",
+            2,
+            &embedding_blob(&[0.5, 0.5]),
+            1,
+            &other_model_modified_at,
+            "hash-other-model",
+        )
+        .unwrap();
+        set_file_content_hash(&db, other_model_id, "hash-other-model");
+
+        let candidates = db
+            .get_unindexed_visual_index_candidates("fgclip2-test")
+            .unwrap();
+        let candidate_ids = candidates
+            .into_iter()
+            .map(|candidate| candidate.file.id)
+            .collect::<Vec<_>>();
+
+        let _ = std::fs::remove_file(&path);
+
+        assert!(!candidate_ids.contains(&ready_id));
+        assert!(candidate_ids.contains(&error_id));
+        assert!(candidate_ids.contains(&outdated_id));
+        assert!(candidate_ids.contains(&pending_id));
+        assert!(candidate_ids.contains(&other_model_id));
     }
 }

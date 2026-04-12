@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { toast } from 'sonner'
 import { testAiEndpoint, type AiEndpointTarget as TauriAiEndpointTarget } from '@/services/tauri/files'
@@ -11,6 +10,7 @@ import {
   type ShortcutActionId,
 } from '@/lib/shortcuts'
 import { useSettingsStore, type AiConfigTarget } from '@/stores/settingsStore'
+import { useVisualIndexTaskStore } from '@/stores/visualIndexTaskStore'
 import {
   Dialog,
   DialogContent,
@@ -25,11 +25,6 @@ import { ShortcutsSettingsSection } from '@/components/settings-modal/ShortcutsS
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
-}
-
-interface VisualIndexProgressPayload {
-  processed: number
-  total: number
 }
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -51,7 +46,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setVisualSearchField = useSettingsStore((state) => state.setVisualSearchField)
   const autoAnalyzeOnImport = useSettingsStore((state) => state.autoAnalyzeOnImport)
   const setAutoAnalyzeOnImport = useSettingsStore((state) => state.setAutoAnalyzeOnImport)
-  const rebuildVisualIndex = useSettingsStore((state) => state.rebuildVisualIndex)
   const refreshVisualSearchStatus = useSettingsStore((state) => state.refreshVisualSearchStatus)
   const visualIndexStatus = useSettingsStore((state) => state.visualIndexStatus)
   const visualModelValidation = useSettingsStore((state) => state.visualModelValidation)
@@ -63,11 +57,13 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setPreviewTrackpadZoomSpeed = useSettingsStore(
     (state) => state.setPreviewTrackpadZoomSpeed,
   )
+  const visualIndexTask = useVisualIndexTaskStore((state) => state.visualIndexTask)
+  const startVisualIndexTask = useVisualIndexTaskStore((state) => state.startVisualIndexTask)
+  const cancelVisualIndexTask = useVisualIndexTaskStore((state) => state.cancelVisualIndexTask)
 
   const [isAdding, setIsAdding] = useState(false)
   const [isSelectingModelDir, setIsSelectingModelDir] = useState(false)
   const [isRebuilding, setIsRebuilding] = useState(false)
-  const [isRebuildingVisual, setIsRebuildingVisual] = useState(false)
   const [isValidatingModelDir, setIsValidatingModelDir] = useState(false)
   const [testingTargets, setTestingTargets] = useState<Record<AiConfigTarget, boolean>>({
     metadata: false,
@@ -204,38 +200,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
   }
 
-  const handleRebuildVisualIndex = async () => {
-    setIsRebuildingVisual(true)
-    const loadingToast = toast.loading('正在重建视觉索引...')
-    let unlistenProgress: UnlistenFn | null = null
-
-    try {
-      unlistenProgress = await listen<VisualIndexProgressPayload>(
-        'visual-index-progress',
-        (event) => {
-          const { processed, total } = event.payload
-          if (total <= 0) {
-            toast.loading('正在重建视觉索引...', { id: loadingToast })
-            return
-          }
-
-          toast.loading(`正在重建视觉索引... ${processed}/${total}`, { id: loadingToast })
-        },
-      )
-
-      const result = await rebuildVisualIndex()
-      toast.success(
-        `视觉索引完成：成功 ${result.indexed}，失败 ${result.failed}，跳过 ${result.skipped}`,
-        { id: loadingToast },
-      )
-    } catch (error) {
-      toast.error(`重建视觉索引失败: ${String(error)}`, { id: loadingToast })
-    } finally {
-      unlistenProgress?.()
-      setIsRebuildingVisual(false)
-    }
-  }
-
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="flex h-[42rem] max-h-[85vh] w-[64rem] max-w-[92vw] flex-col overflow-hidden p-0">
@@ -279,10 +243,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 aiBatchAnalyzeConcurrency={aiBatchAnalyzeConcurrency}
                 visualSearch={visualSearch}
                 visualIndexStatus={visualIndexStatus}
+                visualIndexTask={visualIndexTask}
                 visualModelValidation={visualModelValidation}
                 isSelectingModelDir={isSelectingModelDir}
                 isValidatingModelDir={isValidatingModelDir}
-                isRebuildingVisual={isRebuildingVisual}
                 onSetAiConfigField={setAiConfigField}
                 onTestAiEndpoint={(target, endpointTarget) =>
                   void handleTestAiEndpoint(target, endpointTarget)
@@ -294,7 +258,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 onSetVisualSearchField={setVisualSearchField}
                 onSelectModelDir={() => void handleSelectModelDir()}
                 onValidateModelDir={(modelPath) => void handleValidateModelDir(modelPath)}
-                onRebuildVisualIndex={() => void handleRebuildVisualIndex()}
+                onStartVisualIndexTask={() =>
+                  void startVisualIndexTask(visualSearch.processUnindexedOnly)
+                }
+                onCancelVisualIndexTask={() => void cancelVisualIndexTask()}
               />
             ) : (
               <ShortcutsSettingsSection

@@ -4,6 +4,7 @@ import type {
   FileItem,
   ImportTaskSnapshot,
   PaginatedFilesResponse,
+  VisualIndexTaskSnapshot,
 } from "@/stores/fileTypes"
 
 export interface FileFilterPayload {
@@ -155,6 +156,20 @@ export function cancelAiMetadataTask(taskId: string) {
 
 export function rebuildVisualIndex() {
   return invokeTauri<VisualIndexRebuildResult>("rebuild_visual_index")
+}
+
+export function startVisualIndexTask(processUnindexedOnly: boolean) {
+  return invokeTauri<VisualIndexTaskSnapshot>("start_visual_index_task", {
+    processUnindexedOnly,
+  })
+}
+
+export function getVisualIndexTask(taskId: string) {
+  return invokeTauri<VisualIndexTaskSnapshot>("get_visual_index_task", { taskId })
+}
+
+export function cancelVisualIndexTask(taskId: string) {
+  return invokeTauri<void>("cancel_visual_index_task", { taskId })
 }
 
 export function reindexFileVisualEmbedding(fileId: number, imageDataUrl?: string) {

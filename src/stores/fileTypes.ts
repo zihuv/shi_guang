@@ -77,6 +77,19 @@ export interface AiMetadataTaskSnapshot {
   results: AiMetadataTaskItemResult[]
 }
 
+export interface VisualIndexTaskSnapshot {
+  id: string
+  status: string
+  total: number
+  processed: number
+  indexedCount: number
+  failureCount: number
+  skippedCount: number
+  currentFileId?: number | null
+  currentFileName?: string | null
+  processUnindexedOnly: boolean
+}
+
 export const TERMINAL_IMPORT_TASK_STATUSES = new Set([
   "completed",
   "completed_with_errors",
@@ -85,6 +98,13 @@ export const TERMINAL_IMPORT_TASK_STATUSES = new Set([
 ])
 
 export const TERMINAL_AI_METADATA_TASK_STATUSES = new Set([
+  "completed",
+  "completed_with_errors",
+  "cancelled",
+  "failed",
+])
+
+export const TERMINAL_VISUAL_INDEX_TASK_STATUSES = new Set([
   "completed",
   "completed_with_errors",
   "cancelled",

@@ -83,6 +83,26 @@ pub struct AiMetadataTaskSnapshot {
     pub results: Vec<AiMetadataTaskItemResult>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VisualIndexTaskSnapshot {
+    pub id: String,
+    pub status: String,
+    pub total: usize,
+    pub processed: usize,
+    #[serde(rename = "indexedCount")]
+    pub indexed_count: usize,
+    #[serde(rename = "failureCount")]
+    pub failure_count: usize,
+    #[serde(rename = "skippedCount")]
+    pub skipped_count: usize,
+    #[serde(rename = "currentFileId")]
+    pub current_file_id: Option<i64>,
+    #[serde(rename = "currentFileName")]
+    pub current_file_name: Option<String>,
+    #[serde(rename = "processUnindexedOnly")]
+    pub process_unindexed_only: bool,
+}
+
 pub(crate) mod ai;
 pub(crate) mod files;
 pub(crate) mod folders;

@@ -15,17 +15,11 @@ import {
 import { scanFolders } from "@/services/tauri/folders";
 import {
   getRecommendedVisualModelPath as getRecommendedVisualModelPathCommand,
-  getVisualIndexRetryCandidates as getVisualIndexRetryCandidatesCommand,
   getVisualIndexStatus as getVisualIndexStatusCommand,
-  rebuildVisualIndex as rebuildVisualIndexCommand,
-  reindexFileVisualEmbedding as reindexFileVisualEmbeddingCommand,
   validateVisualModelPath as validateVisualModelPathCommand,
-  type VisualIndexRebuildResult,
   type VisualIndexStatus,
-  type VisualIndexRetryCandidate,
   type VisualModelValidationResult,
 } from "@/services/tauri/files";
-import { buildBrowserDecodedImageDataUrl } from "@/utils";
 import { getDeleteMode, setDeleteMode as setDeleteModeCommand } from "@/services/tauri/trash";
 
 const SHORTCUTS_SETTING_KEY = "shortcuts";
@@ -102,6 +96,7 @@ export interface VisualSearchConfig {
   enabled: boolean;
   modelPath: string;
   autoVectorizeOnImport: boolean;
+  processUnindexedOnly: boolean;
 }
 
 export const DEFAULT_AI_SERVICE_CONFIG: AiServiceConfig = {
@@ -118,6 +113,7 @@ export const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
   enabled: false,
   modelPath: "",
   autoVectorizeOnImport: false,
+  processUnindexedOnly: true,
 };
 
 function cloneAiConfig(config: AiConfig): AiConfig {
@@ -131,6 +127,7 @@ function cloneVisualSearchConfig(config: VisualSearchConfig): VisualSearchConfig
     enabled: config.enabled,
     modelPath: config.modelPath,
     autoVectorizeOnImport: config.autoVectorizeOnImport,
+    processUnindexedOnly: config.processUnindexedOnly,
   };
 }
 
@@ -363,6 +360,10 @@ function resolveVisualSearchConfig(value: unknown): VisualSearchConfig {
     enabled: Boolean(config.enabled),
     modelPath: typeof config.modelPath === "string" ? config.modelPath : "",
     autoVectorizeOnImport: Boolean(config.autoVectorizeOnImport),
+    processUnindexedOnly:
+      typeof config.processUnindexedOnly === "boolean"
+        ? config.processUnindexedOnly
+        : DEFAULT_VISUAL_SEARCH_CONFIG.processUnindexedOnly,
   };
 }
 
@@ -407,32 +408,6 @@ const loadFilesInCurrentFolder = async () => {
   const libraryStore = useLibraryQueryStore.getState();
   await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
 };
-
-async function retryVisualIndexWithBrowserDecode(
-  candidates: VisualIndexRetryCandidate[],
-) {
-  let recovered = 0;
-
-  for (const candidate of candidates) {
-    try {
-      const imageDataUrl = await buildBrowserDecodedImageDataUrl(candidate.path, {
-        maxEdge: 1280,
-        quality: 0.9,
-        outputMimeType: "image/jpeg",
-      });
-      await reindexFileVisualEmbeddingCommand(candidate.fileId, imageDataUrl);
-      recovered += 1;
-    } catch (error) {
-      console.warn("Failed to rebuild visual index via browser decode:", {
-        fileId: candidate.fileId,
-        path: candidate.path,
-        error,
-      });
-    }
-  }
-
-  return recovered;
-}
 
 interface Settings {
   theme: "light" | "dark";
@@ -479,7 +454,6 @@ interface SettingsStore extends Settings {
   setDetailPanelWidth: (width: number) => void;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
-  rebuildVisualIndex: () => Promise<VisualIndexRebuildResult>;
   refreshVisualSearchStatus: () => Promise<void>;
   validateVisualModelPath: (
     modelPath?: string,
@@ -838,26 +812,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     await scanFolders();
     await useFolderStore.getState().loadFolders();
     await loadFilesInCurrentFolder();
-  },
-
-  rebuildVisualIndex: async () => {
-    const result = await rebuildVisualIndexCommand();
-    let recoveredByBrowserDecode = 0;
-
-    if (result.failed > 0) {
-      const retryCandidates = await getVisualIndexRetryCandidatesCommand();
-      if (retryCandidates.length > 0) {
-        recoveredByBrowserDecode =
-          await retryVisualIndexWithBrowserDecode(retryCandidates);
-      }
-    }
-
-    await get().refreshVisualSearchStatus();
-    return {
-      ...result,
-      indexed: result.indexed + recoveredByBrowserDecode,
-      failed: Math.max(0, result.failed - recoveredByBrowserDecode),
-    };
   },
 
   refreshVisualSearchStatus: async () => {

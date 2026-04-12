@@ -1,4 +1,5 @@
 import type { AiEndpointTarget as TauriAiEndpointTarget, VisualIndexStatus, VisualModelValidationResult } from '@/services/tauri/files'
+import { X } from 'lucide-react'
 import {
   MAX_AI_BATCH_ANALYZE_CONCURRENCY,
   MIN_AI_BATCH_ANALYZE_CONCURRENCY,
@@ -7,6 +8,10 @@ import {
   type AiServiceConfig,
   type VisualSearchConfig,
 } from '@/stores/settingsStore'
+import {
+  TERMINAL_VISUAL_INDEX_TASK_STATUSES,
+  type VisualIndexTaskSnapshot,
+} from '@/stores/fileTypes'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -29,10 +34,10 @@ interface AiSettingsSectionProps {
   aiBatchAnalyzeConcurrency: number
   visualSearch: VisualSearchConfig
   visualIndexStatus: VisualIndexStatus | null
+  visualIndexTask: VisualIndexTaskSnapshot | null
   visualModelValidation: VisualModelValidationResult | null
   isSelectingModelDir: boolean
   isValidatingModelDir: boolean
-  isRebuildingVisual: boolean
   onSetAiConfigField: <K extends keyof AiServiceConfig>(
     target: AiConfigTarget,
     field: K,
@@ -50,7 +55,8 @@ interface AiSettingsSectionProps {
   ) => void
   onSelectModelDir: () => void
   onValidateModelDir: (modelPath?: string) => void
-  onRebuildVisualIndex: () => void
+  onStartVisualIndexTask: () => void
+  onCancelVisualIndexTask: () => void
 }
 
 function AiConfigCard({
@@ -202,10 +208,10 @@ export function AiSettingsSection({
   aiBatchAnalyzeConcurrency,
   visualSearch,
   visualIndexStatus,
+  visualIndexTask,
   visualModelValidation,
   isSelectingModelDir,
   isValidatingModelDir,
-  isRebuildingVisual,
   onSetAiConfigField,
   onTestAiEndpoint,
   onSetAutoAnalyzeOnImport,
@@ -213,7 +219,8 @@ export function AiSettingsSection({
   onSetVisualSearchField,
   onSelectModelDir,
   onValidateModelDir,
-  onRebuildVisualIndex,
+  onStartVisualIndexTask,
+  onCancelVisualIndexTask,
 }: AiSettingsSectionProps) {
   const metadataConfig = aiConfig.metadata
   const metadataDraftExists =
@@ -253,6 +260,23 @@ export function AiSettingsSection({
   const totalImageCount = visualIndexStatus?.totalImageCount ?? 0
   const pendingCount = visualIndexStatus?.pendingCount ?? 0
   const failedCount = visualIndexStatus?.failedCount ?? 0
+  const outdatedCount = visualIndexStatus?.outdatedCount ?? 0
+  const unindexedCount = pendingCount + failedCount + outdatedCount
+  const isVisualIndexRunning =
+    !!visualIndexTask && !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(visualIndexTask.status)
+  const visualIndexProgress = visualIndexTask?.total
+    ? Math.min(100, Math.round((visualIndexTask.processed / visualIndexTask.total) * 100))
+    : 0
+  const visualIndexCountLabel = `${visualIndexTask?.processed ?? 0}/${visualIndexTask?.total ?? 0}`
+  const visualIndexActionLabel = visualSearch.processUnindexedOnly
+    ? '处理未索引图片'
+    : '重建视觉索引'
+  const visualIndexTaskTitle =
+    visualIndexTask?.status === 'queued'
+      ? '正在准备视觉索引任务'
+      : visualIndexTask?.processUnindexedOnly
+        ? '正在处理未索引图片'
+        : '正在重建视觉索引'
 
   return (
     <div className="space-y-6">
@@ -486,10 +510,10 @@ export function AiSettingsSection({
                 </div>
                 <Button
                   variant="outline"
-                  disabled={isRebuildingVisual}
-                  onClick={onRebuildVisualIndex}
+                  disabled={isVisualIndexRunning}
+                  onClick={onStartVisualIndexTask}
                 >
-                  {isRebuildingVisual ? '重建中...' : '重建视觉索引'}
+                  {isVisualIndexRunning ? '处理中...' : visualIndexActionLabel}
                 </Button>
               </div>
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
@@ -501,9 +525,80 @@ export function AiSettingsSection({
                 </p>
                 <p>
                   待处理 {pendingCount} · 失败 {failedCount} · 已过期{' '}
-                  {visualIndexStatus?.outdatedCount ?? 0}
+                  {outdatedCount}
                 </p>
+                <p>当前未就绪 {unindexedCount}</p>
               </div>
+
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white/70 p-4 dark:border-dark-border dark:bg-dark-surface/30">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                      处理未索引图片
+                    </p>
+                    <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
+                      开启后只处理待处理、失败和已过期图片，适合增量更新；关闭后会全量重建所有视觉索引。
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <Switch
+                      checked={visualSearch.processUnindexedOnly}
+                      onCheckedChange={(enabled) =>
+                        onSetVisualSearchField('processUnindexedOnly', enabled)
+                      }
+                      disabled={isVisualIndexRunning}
+                      aria-label="处理未索引图片"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {isVisualIndexRunning ? (
+                <div
+                  className="mt-4 rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 dark:border-amber-900/40 dark:bg-amber-950/20"
+                  role="status"
+                  aria-live="polite"
+                  aria-label={`${visualIndexTaskTitle} ${visualIndexCountLabel}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                          {visualIndexTaskTitle}
+                        </span>
+                        <span className="text-xs font-medium tabular-nums text-amber-700 dark:text-amber-300">
+                          {visualIndexCountLabel}
+                        </span>
+                      </div>
+                      {visualIndexTask?.currentFileName ? (
+                        <p className="mt-1 truncate text-xs leading-6 text-amber-700/80 dark:text-amber-200/80">
+                          当前：{visualIndexTask.currentFileName}
+                        </p>
+                      ) : null}
+                      <p className="mt-1 text-xs leading-6 text-amber-700/80 dark:text-amber-200/80">
+                        成功 {visualIndexTask?.indexedCount ?? 0} · 失败{' '}
+                        {visualIndexTask?.failureCount ?? 0} · 跳过{' '}
+                        {visualIndexTask?.skippedCount ?? 0}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onCancelVisualIndexTask}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-amber-700 transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:bg-amber-900/40 dark:hover:text-amber-100"
+                      title="取消视觉索引任务"
+                      aria-label="取消视觉索引任务"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-amber-100 dark:bg-amber-900/30">
+                    <div
+                      className="h-full rounded-full bg-amber-500 transition-[width] duration-300"
+                      style={{ width: `${visualIndexProgress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

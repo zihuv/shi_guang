@@ -64,6 +64,7 @@ pub struct AppState {
     pub db_path: std::path::PathBuf, // Add db_path for HTTP server to create its own connection
     pub import_tasks: Arc<Mutex<HashMap<String, ImportTaskEntry>>>,
     pub ai_metadata_tasks: Arc<Mutex<HashMap<String, AiMetadataTaskEntry>>>,
+    pub visual_index_tasks: Arc<Mutex<HashMap<String, VisualIndexTaskEntry>>>,
     pub import_write_lock: Arc<Mutex<()>>,
     pub app_handle: tauri::AppHandle,
 }
@@ -77,6 +78,11 @@ pub struct ImportTaskEntry {
 
 pub struct AiMetadataTaskEntry {
     pub snapshot: commands::AiMetadataTaskSnapshot,
+    pub cancel_flag: Arc<AtomicBool>,
+}
+
+pub struct VisualIndexTaskEntry {
+    pub snapshot: commands::VisualIndexTaskSnapshot,
     pub cancel_flag: Arc<AtomicBool>,
 }
 
@@ -152,6 +158,7 @@ pub fn run() {
                 db_path: db_path.clone(),
                 import_tasks: Arc::new(Mutex::new(HashMap::new())),
                 ai_metadata_tasks: Arc::new(Mutex::new(HashMap::new())),
+                visual_index_tasks: Arc::new(Mutex::new(HashMap::new())),
                 import_write_lock: Arc::new(Mutex::new(())),
                 app_handle: app.handle().clone(),
             });
@@ -175,6 +182,9 @@ pub fn run() {
             commands::ai::get_visual_index_retry_candidates,
             commands::ai::get_recommended_visual_model_path,
             commands::ai::validate_visual_model_path,
+            commands::ai::start_visual_index_task,
+            commands::ai::get_visual_index_task,
+            commands::ai::cancel_visual_index_task,
             commands::ai::test_ai_endpoint,
             commands::ai::start_ai_metadata_task,
             commands::ai::get_ai_metadata_task,
