@@ -41,6 +41,12 @@ export type AdaptiveLayoutItem = {
   height: number
 }
 
+export type PackedTileColumns = {
+  columns: number
+  itemWidth: number
+  trackWidth: number
+}
+
 export function getPointerPositionInScrollContainer(
   clientX: number,
   clientY: number,
@@ -122,6 +128,80 @@ export function getGridMetadataHeight(
     : GRID_METADATA_HEIGHT
   const minHeight = showsTags ? 62 : 48
   return Math.max(minHeight, Math.round(baseHeight * (0.88 + scale * 0.1)))
+}
+
+export function resolvePackedTileColumns({
+  containerWidth,
+  preferredWidth,
+  minWidth,
+  itemCount,
+}: {
+  containerWidth: number
+  preferredWidth: number
+  minWidth: number
+  itemCount?: number
+}): PackedTileColumns {
+  const safeContainerWidth = Math.max(0, Math.floor(containerWidth))
+  const safePreferredWidth = Math.max(1, Math.round(preferredWidth))
+  const safeMinWidth = Math.max(1, Math.min(Math.round(minWidth), safePreferredWidth))
+  const maxColumnsByWidth = Math.max(
+    1,
+    Math.floor((Math.max(safeContainerWidth, safeMinWidth) + GRID_GAP) / (safeMinWidth + GRID_GAP)),
+  )
+  const maxColumns =
+    itemCount && itemCount > 0
+      ? Math.max(1, Math.min(maxColumnsByWidth, itemCount))
+      : maxColumnsByWidth
+
+  let bestLayout: PackedTileColumns | null = null
+  let bestScore = Number.POSITIVE_INFINITY
+
+  for (let columns = 1; columns <= maxColumns; columns += 1) {
+    const availableWidth =
+      safeContainerWidth > 0
+        ? Math.floor((safeContainerWidth - GRID_GAP * (columns - 1)) / columns)
+        : safePreferredWidth
+
+    if (availableWidth <= 0) {
+      continue
+    }
+
+    if (availableWidth < safeMinWidth && !(columns === 1 && safeContainerWidth < safeMinWidth)) {
+      continue
+    }
+
+    const oversize = Math.max(0, availableWidth - safePreferredWidth)
+    const undersize = Math.max(0, safePreferredWidth - availableWidth)
+    const score = oversize * 1.25 + undersize * 0.9
+
+    if (
+      !bestLayout ||
+      score < bestScore ||
+      (score === bestScore && columns > bestLayout.columns)
+    ) {
+      bestLayout = {
+        columns,
+        itemWidth: availableWidth,
+        trackWidth: columns * availableWidth + GRID_GAP * Math.max(0, columns - 1),
+      }
+      bestScore = score
+    }
+  }
+
+  if (bestLayout) {
+    return bestLayout
+  }
+
+  const fallbackWidth =
+    safeContainerWidth > 0
+      ? Math.max(1, Math.min(safeContainerWidth, safePreferredWidth))
+      : safePreferredWidth
+
+  return {
+    columns: 1,
+    itemWidth: fallbackWidth,
+    trackWidth: fallbackWidth,
+  }
 }
 
 export function findAdaptiveNeighborIndex(

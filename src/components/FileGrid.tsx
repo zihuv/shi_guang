@@ -23,6 +23,7 @@ import {
   isEditableTarget,
   LIST_BASE_ROW_HEIGHT,
   LIST_BASE_THUMBNAIL_SIZE,
+  resolvePackedTileColumns,
   SELECTION_DRAG_THRESHOLD,
   type SelectionBox,
   TILE_CARD_BASE_WIDTH,
@@ -254,13 +255,16 @@ export default function FileGrid() {
   const listRowHeight = Math.max(42, Math.round(LIST_BASE_ROW_HEIGHT * listViewScale))
   const listThumbnailSize = Math.max(28, Math.round(LIST_BASE_THUMBNAIL_SIZE * listViewScale))
   const adaptiveTargetWidth = tileTargetWidth
-  const contentWidth = Math.max(containerWidth, gridMinWidth)
-  const gridColumns = Math.max(1, Math.floor((contentWidth + GRID_GAP) / (gridMinWidth + GRID_GAP)))
-  const gridItemWidth = Math.min(
-    gridMinWidth,
-    Math.max(0, Math.floor((contentWidth - GRID_GAP * (gridColumns - 1)) / gridColumns)),
-  )
-  const gridTrackWidth = gridColumns * gridItemWidth + GRID_GAP * Math.max(0, gridColumns - 1)
+  const contentWidth = Math.max(0, containerWidth)
+  const gridLayout = resolvePackedTileColumns({
+    containerWidth: contentWidth,
+    preferredWidth: gridMinWidth,
+    minWidth: TILE_CARD_MIN_WIDTH,
+    itemCount: filteredFiles.length,
+  })
+  const gridColumns = gridLayout.columns
+  const gridItemWidth = gridLayout.itemWidth
+  const gridTrackWidth = gridLayout.trackWidth
   const gridPreviewHeight = Math.ceil(gridItemWidth * GRID_PREVIEW_HEIGHT_RATIO)
   const gridRowHeight = gridPreviewHeight + gridMetadataHeight
   const gridRowSpan = gridRowHeight + GRID_GAP
@@ -277,18 +281,14 @@ export default function FileGrid() {
           (_, idx) => gridVisibleStartRow + idx,
         )
       : []
-  const adaptiveColumns = Math.max(
-    1,
-    Math.min(
-      Math.max(1, Math.floor((Math.max(containerWidth, adaptiveTargetWidth) + GRID_GAP) / (adaptiveTargetWidth + GRID_GAP))),
-      Math.max(1, filteredFiles.length),
-    ),
-  )
-  const adaptiveAvailableColumnWidth = Math.max(
-    0,
-    Math.floor((Math.max(containerWidth, adaptiveTargetWidth) - GRID_GAP * (adaptiveColumns - 1)) / adaptiveColumns),
-  )
-  const adaptiveColumnWidth = Math.min(adaptiveTargetWidth, adaptiveAvailableColumnWidth)
+  const adaptiveLayoutColumns = resolvePackedTileColumns({
+    containerWidth: contentWidth,
+    preferredWidth: adaptiveTargetWidth,
+    minWidth: TILE_CARD_MIN_WIDTH,
+    itemCount: filteredFiles.length,
+  })
+  const adaptiveColumns = adaptiveLayoutColumns.columns
+  const adaptiveColumnWidth = adaptiveLayoutColumns.itemWidth
   const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth, libraryVisibleFields)
   const adaptiveColumnsData = buildAdaptiveColumns(adaptiveLayout.items, adaptiveColumns)
 
