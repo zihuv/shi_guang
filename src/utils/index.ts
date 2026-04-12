@@ -66,7 +66,10 @@ const CODE_EXTENSIONS = [
 const TEXT_EXTENSIONS = ['txt', 'log', 'ini', 'conf']
 const TEXT_PREVIEW_EXTENSIONS = ['txt', 'log', 'md', 'csv', 'ini', 'conf']
 const MAX_TEXT_PREVIEW_SIZE = 512 * 1024
+const THUMBNAIL_MAX_EDGE = 320
+const THUMBNAIL_JPEG_QUALITY = 0.82
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>()
+const browserThumbnailPromiseCache = new Map<string, Promise<string>>()
 const missingFileSyncs = new Set<string>()
 const MISSING_FILE_ERROR_MARKERS = [
   'No such file or directory',
@@ -381,8 +384,7 @@ async function renderVideoThumbnailDataUrl(path: string): Promise<string> {
         return
       }
 
-      const maxEdge = 320
-      const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight))
+      const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(video.videoWidth, video.videoHeight))
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
       canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
@@ -394,7 +396,7 @@ async function renderVideoThumbnailDataUrl(path: string): Promise<string> {
       }
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      finish(canvas.toDataURL('image/jpeg', 0.82))
+      finish(canvas.toDataURL('image/jpeg', THUMBNAIL_JPEG_QUALITY))
     }
 
     const seekToCapturePoint = () => {
@@ -447,6 +449,41 @@ async function persistThumbnailDataUrl(path: string, dataUrl: string): Promise<s
   }
 }
 
+async function getBrowserThumbnailSrc(path: string): Promise<string> {
+  const pending = browserThumbnailPromiseCache.get(path)
+  if (pending) {
+    return pending
+  }
+
+  const nextThumbnailPromise = buildBrowserDecodedImageDataUrl(path, {
+    maxEdge: THUMBNAIL_MAX_EDGE,
+    quality: THUMBNAIL_JPEG_QUALITY,
+    outputMimeType: 'image/jpeg',
+  })
+    .then(async (thumbnailDataUrl) => {
+      if (!thumbnailDataUrl) {
+        return ''
+      }
+
+      const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl)
+      return persistedThumbnailSrc || thumbnailDataUrl
+    })
+    .catch((error) => {
+      console.error('Failed to generate browser thumbnail:', error)
+      return ''
+    })
+    .finally(() => {
+      browserThumbnailPromiseCache.delete(path)
+    })
+
+  browserThumbnailPromiseCache.set(path, nextThumbnailPromise)
+  return nextThumbnailPromise
+}
+
+export async function generateBrowserThumbnailCache(path: string): Promise<string> {
+  return getBrowserThumbnailSrc(path)
+}
+
 export async function getVideoThumbnailSrc(path: string): Promise<string> {
   const cachedThumbnailSrc = await getThumbnailImageSrc(path)
   if (cachedThumbnailSrc) {
@@ -480,17 +517,33 @@ export async function getImageSrc(path: string): Promise<string> {
   return getFileSrc(path)
 }
 
+async function getCanvasSafeImageSrc(path: string): Promise<string> {
+  try {
+    const contents = await readFile(path)
+    const blob = new Blob([contents], { type: detectMimeTypeFromContents(contents, path) })
+    return URL.createObjectURL(blob)
+  } catch (e: any) {
+    if (isMissingFileError(e)) {
+      scheduleMissingFileCleanup(path)
+      return ''
+    }
+    console.error('Failed to read canvas-safe image source:', e)
+    return ''
+  }
+}
+
 export async function buildBrowserDecodedImageDataUrl(
   path: string,
   options: BrowserDecodedImageOptions = {},
 ): Promise<string> {
-  const sourceUrl = await getFileSrc(path)
+  const sourceUrl = await getCanvasSafeImageSrc(path)
   if (!sourceUrl) {
     throw new Error("无法读取图片文件")
   }
 
   return await new Promise<string>((resolve, reject) => {
     const image = new Image()
+    image.crossOrigin = "anonymous"
 
     const cleanup = () => {
       image.onload = null
@@ -561,19 +614,17 @@ export async function getThumbnailImageSrc(path: string, ext?: string): Promise<
 
   try {
     const thumbnailPath = await getThumbnailPath(path)
-    if (!thumbnailPath) {
-      return ''
+    if (thumbnailPath) {
+      return toAssetSrc(thumbnailPath)
     }
-
-    return toAssetSrc(thumbnailPath)
   } catch (e) {
     if (isMissingFileError(e)) {
       scheduleMissingFileCleanup(path)
       return ''
     }
     console.error('Failed to get thumbnail path:', e)
-    return ''
   }
+  return ''
 }
 
 // Format file size to human readable string

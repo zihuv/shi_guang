@@ -6,6 +6,7 @@ import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
+import { generateBrowserThumbnailCache, normalizeExt } from "@/utils";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -26,6 +27,32 @@ type UseTauriImportListenersOptions = {
 type FileUpdatedPayload = {
   fileId?: number;
 };
+
+type FileImportedPayload = {
+  file_id?: number;
+  path?: string;
+};
+
+function getPathExtension(path: string): string {
+  const ext = path.split(".").pop();
+  return ext ? normalizeExt(ext) : "";
+}
+
+async function maybeGenerateImportedAvifThumbnail(payload?: FileImportedPayload) {
+  const path = payload?.path?.trim();
+  if (!path || getPathExtension(path) !== "avif") {
+    return;
+  }
+
+  const thumbnailSrc = await generateBrowserThumbnailCache(path);
+  if (!thumbnailSrc) {
+    return;
+  }
+
+  if (typeof payload?.file_id === "number") {
+    useThumbnailRefreshStore.getState().bumpFileVersion(payload.file_id);
+  }
+}
 
 export function useTauriImportListeners({
   dragOverFolderId,
@@ -120,12 +147,16 @@ export function useTauriImportListeners({
         },
       );
 
-      unlistenFileImported = await listen("file-imported", async () => {
+      unlistenFileImported = await listen<FileImportedPayload>("file-imported", async (event) => {
         const libraryStore = useLibraryQueryStore.getState();
         await Promise.all([
           libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
           useFolderStore.getState().loadFolders(),
         ]);
+
+        void maybeGenerateImportedAvifThumbnail(event.payload).catch((error) => {
+          console.error("Failed to generate imported AVIF thumbnail:", error);
+        });
       });
 
       unlistenFileImportError = await listen<{ error: string }>(
