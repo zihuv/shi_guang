@@ -652,6 +652,11 @@ export async function getThumbnailImageSrc(
     }
     console.error('Failed to get thumbnail path:', e)
   }
+
+  if (ext && isImageFile(ext)) {
+    return getBrowserThumbnailSrc(path, maxEdge)
+  }
+
   return ''
 }
 

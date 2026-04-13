@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { type FileItem } from "@/stores/fileTypes"
 import { useFilterStore } from "@/stores/filterStore"
@@ -15,6 +15,7 @@ import {
   getGridMetadataHeight,
   getPointerPositionInScrollContainer,
   getSelectionBounds,
+  GRID_VIEWPORT_OVERSCAN_PX,
   GRID_GAP,
   GRID_PREVIEW_HEIGHT_RATIO,
   isCardIntersectingSelection,
@@ -28,7 +29,6 @@ import {
   TILE_CARD_BASE_WIDTH,
   TILE_CARD_MAX_WIDTH,
   TILE_CARD_MIN_WIDTH,
-  VIEWPORT_OVERSCAN_PX,
   VIEW_SCALE_KEYBOARD_STEP,
   VIEW_SCALE_WHEEL_SENSITIVITY,
 } from "@/components/file-grid/fileGridLayout"
@@ -112,6 +112,8 @@ export default function FileGrid() {
   const currentViewScaleRef = useRef(viewMode === "list" ? libraryViewScales.list : libraryViewScales.grid)
   const wheelScaleRemainderRef = useRef(0)
   const sortDidMountRef = useRef(false)
+  const scrollFrameRef = useRef<number | null>(null)
+  const pendingScrollTopRef = useRef(0)
 
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null)
@@ -226,6 +228,7 @@ export default function FileGrid() {
 
       setContainerWidth(Math.max(0, element.clientWidth - horizontalPadding))
       setViewportHeight(Math.max(0, element.clientHeight - verticalPadding))
+      pendingScrollTopRef.current = element.scrollTop
       setScrollTop(element.scrollTop)
     }
 
@@ -234,12 +237,24 @@ export default function FileGrid() {
     observer.observe(element)
 
     const handleScroll = () => {
-      setScrollTop(element.scrollTop)
+      pendingScrollTopRef.current = element.scrollTop
+      if (scrollFrameRef.current !== null) {
+        return
+      }
+
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null
+        setScrollTop(pendingScrollTopRef.current)
+      })
     }
 
     element.addEventListener("scroll", handleScroll, { passive: true })
 
     return () => {
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current)
+        scrollFrameRef.current = null
+      }
       observer.disconnect()
       element.removeEventListener("scroll", handleScroll)
     }
@@ -255,12 +270,16 @@ export default function FileGrid() {
   const listThumbnailSize = Math.max(28, Math.round(LIST_BASE_THUMBNAIL_SIZE * listViewScale))
   const adaptiveTargetWidth = tileTargetWidth
   const contentWidth = Math.max(0, containerWidth)
-  const gridLayout = resolvePackedTileColumns({
-    containerWidth: contentWidth,
-    preferredWidth: gridMinWidth,
-    minWidth: TILE_CARD_MIN_WIDTH,
-    itemCount: filteredFiles.length,
-  })
+  const gridLayout = useMemo(
+    () =>
+      resolvePackedTileColumns({
+        containerWidth: contentWidth,
+        preferredWidth: gridMinWidth,
+        minWidth: TILE_CARD_MIN_WIDTH,
+        itemCount: filteredFiles.length,
+      }),
+    [contentWidth, filteredFiles.length, gridMinWidth],
+  )
   const gridColumns = gridLayout.columns
   const gridItemWidth = gridLayout.itemWidth
   const gridTrackWidth = gridLayout.trackWidth
@@ -268,27 +287,43 @@ export default function FileGrid() {
   const gridRowHeight = gridPreviewHeight + gridMetadataHeight
   const gridRowSpan = gridRowHeight + GRID_GAP
   const gridRowCount = Math.ceil(filteredFiles.length / gridColumns)
-  const gridVisibleStartRow = Math.max(0, Math.floor((scrollTop - VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)))
+  const gridVisibleStartRow = Math.max(0, Math.floor((scrollTop - GRID_VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)))
   const gridVisibleEndRow = Math.min(
     Math.max(0, gridRowCount - 1),
-    Math.ceil((scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)),
+    Math.ceil((scrollTop + viewportHeight + GRID_VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)),
   )
-  const gridVirtualRows =
-    gridRowCount > 0
-      ? Array.from(
-          { length: Math.max(0, gridVisibleEndRow - gridVisibleStartRow + 1) },
-          (_, idx) => gridVisibleStartRow + idx,
-        )
-      : []
-  const adaptiveLayoutColumns = resolvePackedTileColumns({
-    containerWidth: contentWidth,
-    preferredWidth: adaptiveTargetWidth,
-    minWidth: TILE_CARD_MIN_WIDTH,
-    itemCount: filteredFiles.length,
-  })
+  const gridVirtualRows = useMemo(
+    () =>
+      gridRowCount > 0
+        ? Array.from(
+            { length: Math.max(0, gridVisibleEndRow - gridVisibleStartRow + 1) },
+            (_, idx) => gridVisibleStartRow + idx,
+          )
+        : [],
+    [gridRowCount, gridVisibleEndRow, gridVisibleStartRow],
+  )
+  const adaptiveLayoutColumns = useMemo(
+    () =>
+      resolvePackedTileColumns({
+        containerWidth: contentWidth,
+        preferredWidth: adaptiveTargetWidth,
+        minWidth: TILE_CARD_MIN_WIDTH,
+        itemCount: filteredFiles.length,
+      }),
+    [adaptiveTargetWidth, contentWidth, filteredFiles.length],
+  )
   const adaptiveColumns = adaptiveLayoutColumns.columns
   const adaptiveColumnWidth = adaptiveLayoutColumns.itemWidth
-  const adaptiveLayout = buildAdaptiveLayout(filteredFiles, adaptiveColumns, adaptiveColumnWidth, libraryVisibleFields)
+  const adaptiveLayout = useMemo(
+    () =>
+      buildAdaptiveLayout(
+        filteredFiles,
+        adaptiveColumns,
+        adaptiveColumnWidth,
+        libraryVisibleFields,
+      ),
+    [adaptiveColumnWidth, adaptiveColumns, filteredFiles, libraryVisibleFields],
+  )
 
   const listRowVirtualizer = useVirtualizer({
     count: filteredFiles.length,

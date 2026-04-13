@@ -841,3 +841,163 @@ Interactive validation is still blocked in this environment:
 - `pnpm tauri dev` currently fails before app startup in this shell with `TypeError [ERR_INVALID_ARG_TYPE]` inside `@pnpm/npm-conf`
 
 So the code changes above are verified by static/build checks, but not yet by a live MCP-driven UI pass on this machine.
+
+## Adaptive Scroll Retest On 2026-04-12
+
+This round focused only on the adaptive list-scroll path in the running Tauri app.
+
+### Reproduction path
+
+1. launch `pnpm tauri dev`
+2. switch to `全部文件`
+3. set page size to `500/页`
+4. keep `布局：自适应`
+5. measure at top
+6. scroll about `4` screens
+7. scroll down-up-down across the page
+8. wait `10s` idle and run `window.gc()`
+
+### Code changes validated in this retest
+
+- `src/components/file-grid/fileGridCards.tsx`
+  - list and adaptive cards no longer use `getThumbnailBlobSrc`
+  - abandoned async image loads now revoke unused `blob:` URLs instead of leaking them
+  - cache now skips `blob:` and `data:` sources
+  - observer prefetch margin reduced from `300px` to `180px`
+  - tile thumbnail caps reduced from `160/240/320` to `160/224/256`
+- `src/components/FileGrid.tsx`
+  - adaptive layout and packed column calculations are memoized instead of rebuilding on every scroll tick
+  - scroll position updates are throttled through `requestAnimationFrame`
+- `src/components/file-grid/fileGridLayout.ts`
+  - viewport overscan reduced from `600px` to `400px`
+- `src/utils/index.ts`
+  - normal thumbnail path keeps the asset-backed transport
+  - when an image thumbnail file is missing, browser-side thumbnail generation still backfills it so AVIF cards do not regress to placeholders
+
+### Measured results
+
+Same machine, same app session, measured across `shiguang.exe` plus matching `msedgewebview2.exe` processes:
+
+- top of `全部文件`, `500/页`
+  - total private memory: about `340.12 MB`
+  - frontend `usedJSHeapSize`: about `22.47 MB`
+  - DOM images: `13`
+  - `asset:` images: `12`
+  - `blob:` images: `0`
+  - `data:` images: `0`
+  - visible `.file-card`: `13`
+- after scrolling about `4` screens
+  - total private memory: about `344.87 MB`
+  - frontend `usedJSHeapSize`: about `27.93 MB`
+  - DOM images: `21`
+  - `asset:` images: `20`
+  - `blob:` images: `0`
+  - `data:` images: `0`
+  - visible `.file-card`: `27`
+- after down-up-down page traversal
+  - total private memory: about `384.74 MB`
+  - frontend `usedJSHeapSize`: about `32.62 MB`
+  - DOM images: `20`
+  - `asset:` images: `19`
+  - `blob:` images: `0`
+  - `data:` images: `0`
+  - visible `.file-card`: `24`
+- after `10s` idle plus `window.gc()`
+  - total private memory: about `360.85 MB`
+  - frontend `usedJSHeapSize`: about `22.94 MB`
+
+### Comparison against the pre-tightening pass in the same environment
+
+Before the second tuning pass in this repo state, the same adaptive down-up-down traversal reached about:
+
+- total private memory: `462.19 MB`
+- visible `.file-card`: `33`
+- DOM images: `25`
+- `blob:` images: `0`
+- `data:` images: `0`
+
+After the tuning pass, the same style of traversal reached about:
+
+- total private memory: `384.74 MB`
+- visible `.file-card`: `24`
+- DOM images: `20`
+- `blob:` images: `0`
+- `data:` images: `0`
+
+Interpretation:
+
+- the biggest confirmed win is removal of frontend-retained `blob:` and `data:` display paths in the adaptive grid
+- the remaining growth during aggressive scrolling is primarily WebView2 native image/decode memory, not JS heap retention
+- lowering mounted-card count and thumbnail size reduced the measured peak by about `77 MB` in this environment for the same traversal pattern
+
+### Ownership
+
+- proven owner of the remaining growth: WebView2/native image memory
+- disproven as primary owner in this flow: JS heap, `blob:` URL retention, `data:` display strings
+
+### Next actions if more reduction is needed
+
+1. instrument per-format thumbnail generation and identify which image formats still produce the highest decode footprint in adaptive mode
+2. consider format-specific smaller thumbnail caps for very dense adaptive layouts
+3. inspect whether WebView2 GPU process growth is dominated by specific large aspect-ratio assets and whether `object-cover` or alternative fit behavior changes retention
+
+## Adaptive Prefetch Retest On 2026-04-13
+
+This follow-up kept the same `全部文件 -> 500/页 -> 自适应` reproduction path and only tightened adaptive-specific prefetch windows.
+
+### Additional code changes validated in this retest
+
+- `src/components/file-grid/fileGridLayout.ts`
+  - split overscan into `GRID_VIEWPORT_OVERSCAN_PX = 400` and `ADAPTIVE_VIEWPORT_OVERSCAN_PX = 320`
+- `src/components/file-grid/FileGridViewport.tsx`
+  - adaptive visibility range now uses the smaller adaptive overscan
+- `src/components/file-grid/fileGridCards.tsx`
+  - adaptive cards now use a smaller `IntersectionObserver` root margin of `120px`
+  - grid/list cards keep the less aggressive `180px` root margin
+
+### Measured results
+
+Same machine, new live Tauri session, measured across `shiguang.exe` plus matching `msedgewebview2.exe` processes:
+
+- top of `全部文件`, `500/页`
+  - total private memory: about `316.42 MB`
+  - frontend `usedJSHeapSize`: about `23.83 MB`
+  - DOM images: `11`
+  - `asset:` images: `10`
+  - `blob:` images: `0`
+  - `data:` images: `0`
+  - visible `.file-card`: `13`
+- after scrolling about `4` screens
+  - total private memory: about `307.67 MB`
+  - frontend `usedJSHeapSize`: about `27.40 MB`
+  - DOM images: `19`
+  - `asset:` images: `18`
+  - `blob:` images: `0`
+  - `data:` images: `0`
+  - visible `.file-card`: `24`
+- after down-up-down page traversal
+  - total private memory: about `349.32 MB`
+  - frontend `usedJSHeapSize`: about `30.64 MB`
+  - DOM images: `16`
+  - `asset:` images: `15`
+  - `blob:` images: `0`
+  - `data:` images: `0`
+  - visible `.file-card`: `21`
+- after `10s` idle plus `window.gc()`
+  - total private memory: about `315.31 MB`
+  - frontend `usedJSHeapSize`: about `20.13 MB`
+
+### Comparison against the previous adaptive retest
+
+Against the `2026-04-12` adaptive retest in this document:
+
+- aggressive traversal peak private memory improved from about `384.74 MB` to about `349.32 MB`
+- post-idle private memory improved from about `360.85 MB` to about `315.31 MB`
+- visible `.file-card` during the traversal tail improved from `24` to `21`
+- DOM images during the traversal tail improved from `20` to `16`
+
+Interpretation:
+
+- this confirms the remaining retained memory was still sensitive to how many adaptive cards stayed mounted ahead of the viewport
+- shrinking adaptive-only prefetch windows reduced WebView2 native image pressure without reintroducing `blob:` or `data:` display paths
+- live screenshot validation showed thumbnails still rendered correctly after the tighter adaptive prefetch settings

@@ -2,7 +2,7 @@ import { type Key, type MouseEvent as ReactMouseEvent, type RefObject, type Whee
 import { type FileItem } from "@/stores/fileTypes"
 import { type LibraryVisibleField, type LibraryViewMode } from "@/stores/settingsStore"
 import { AdaptiveFileCard, FileCard, FileRow } from "@/components/file-grid/fileGridCards"
-import { GRID_GAP, VIEWPORT_OVERSCAN_PX, type AdaptiveLayoutItem, type SelectionBox } from "@/components/file-grid/fileGridLayout"
+import { ADAPTIVE_VIEWPORT_OVERSCAN_PX, GRID_GAP, type AdaptiveLayoutItem, type SelectionBox } from "@/components/file-grid/fileGridLayout"
 
 type ListVirtualItem = {
   index: number
@@ -71,8 +71,8 @@ export function FileGridViewport({
   viewportHeight,
   viewMode,
 }: FileGridViewportProps) {
-  const adaptiveVisibleStart = scrollTop - VIEWPORT_OVERSCAN_PX
-  const adaptiveVisibleEnd = scrollTop + viewportHeight + VIEWPORT_OVERSCAN_PX
+  const adaptiveVisibleStart = scrollTop - ADAPTIVE_VIEWPORT_OVERSCAN_PX
+  const adaptiveVisibleEnd = scrollTop + viewportHeight + ADAPTIVE_VIEWPORT_OVERSCAN_PX
   const adaptiveVisibleItems = adaptiveLayout.items.filter(
     (item) => item.top + item.height >= adaptiveVisibleStart && item.top <= adaptiveVisibleEnd,
   )
