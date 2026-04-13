@@ -39,6 +39,8 @@ Thumbs.db
 .vite
 tmp
 .debug-models
+%SystemDrive%/
+*.db
 
 # Rspress
 website/.rspress
