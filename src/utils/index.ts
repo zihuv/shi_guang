@@ -365,7 +365,7 @@ export async function getFileSrc(path: string): Promise<string> {
 }
 
 export interface BrowserDecodedImageOptions {
-  maxEdge?: number
+  maxEdge?: number | null
   quality?: number
   outputMimeType?: string
 }
@@ -624,8 +624,11 @@ export async function buildBrowserDecodedImageDataUrl(
         return
       }
 
-      const maxEdge = options.maxEdge ?? 1280
-      const scale = Math.min(1, maxEdge / Math.max(width, height))
+      const maxEdge = options.maxEdge
+      const scale =
+        typeof maxEdge === "number" && Number.isFinite(maxEdge) && maxEdge > 0
+          ? Math.min(1, maxEdge / Math.max(width, height))
+          : 1
       const canvas = document.createElement("canvas")
       canvas.width = Math.max(1, Math.round(width * scale))
       canvas.height = Math.max(1, Math.round(height * scale))

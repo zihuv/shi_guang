@@ -6,7 +6,12 @@ import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
-import { generateBrowserThumbnailCache, normalizeExt } from "@/utils";
+import { completeVisualIndexBrowserDecodeRequest } from "@/services/tauri/files";
+import {
+  buildBrowserDecodedImageDataUrl,
+  generateBrowserThumbnailCache,
+  normalizeExt,
+} from "@/utils";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -33,6 +38,16 @@ type FileImportedPayload = {
   path?: string;
 };
 
+type VisualIndexBrowserDecodeRequestPayload = {
+  requestId?: string;
+  request_id?: string;
+  fileId?: number;
+  file_id?: number;
+  path?: string;
+  outputMimeType?: string;
+  output_mime_type?: string;
+};
+
 function getPathExtension(path: string): string {
   const ext = path.split(".").pop();
   return ext ? normalizeExt(ext) : "";
@@ -52,6 +67,35 @@ async function maybeGenerateImportedAvifThumbnail(payload?: FileImportedPayload)
   if (typeof payload?.file_id === "number") {
     useThumbnailRefreshStore.getState().bumpFileVersion(payload.file_id);
   }
+}
+
+async function handleVisualIndexBrowserDecodeRequest(
+  payload?: VisualIndexBrowserDecodeRequestPayload,
+) {
+  const requestId = (payload?.requestId ?? payload?.request_id)?.trim();
+  const path = payload?.path?.trim();
+
+  if (!requestId || !path) {
+    return;
+  }
+
+  let imageDataUrl: string | undefined;
+  let errorMessage: string | undefined;
+
+  try {
+    imageDataUrl = await buildBrowserDecodedImageDataUrl(path, {
+      maxEdge: null,
+      outputMimeType: payload?.outputMimeType ?? payload?.output_mime_type ?? "image/png",
+    });
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : String(error);
+  }
+
+  await completeVisualIndexBrowserDecodeRequest({
+    requestId,
+    imageDataUrl,
+    error: errorMessage,
+  });
 }
 
 export function useTauriImportListeners({
@@ -79,6 +123,7 @@ export function useTauriImportListeners({
     let unlistenFileImported: (() => void) | undefined;
     let unlistenFileImportError: (() => void) | undefined;
     let unlistenFileUpdated: (() => void) | undefined;
+    let unlistenVisualIndexBrowserDecodeRequest: (() => void) | undefined;
 
     const setupListeners = async () => {
       unlistenDragEnter = await listen("tauri://drag-enter", () => {
@@ -179,6 +224,17 @@ export function useTauriImportListeners({
         ]);
       });
 
+      unlistenVisualIndexBrowserDecodeRequest = await listen<VisualIndexBrowserDecodeRequestPayload>(
+        "visual-index-browser-decode-request",
+        async (event) => {
+          try {
+            await handleVisualIndexBrowserDecodeRequest(event.payload);
+          } catch (error) {
+            console.error("Failed to resolve visual index browser decode request:", error);
+          }
+        },
+      );
+
       dragDropState.listenersReady = true;
     };
 
@@ -191,6 +247,7 @@ export function useTauriImportListeners({
       unlistenFileImported?.();
       unlistenFileImportError?.();
       unlistenFileUpdated?.();
+      unlistenVisualIndexBrowserDecodeRequest?.();
       dragDropState.listenersReady = false;
     };
   }, [setIsDragging]);

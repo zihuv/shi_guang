@@ -187,6 +187,14 @@ export function getVisualIndexRetryCandidates() {
   return invokeTauri<VisualIndexRetryCandidate[]>("get_visual_index_retry_candidates")
 }
 
+export function completeVisualIndexBrowserDecodeRequest(args: {
+  requestId: string
+  imageDataUrl?: string
+  error?: string
+}) {
+  return invokeTauri<void>("complete_visual_index_browser_decode_request", args)
+}
+
 export function validateVisualModelPath(modelPath: string) {
   return invokeTauri<VisualModelValidationResult>("validate_visual_model_path", {
     modelPath,

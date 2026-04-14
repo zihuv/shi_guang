@@ -33,10 +33,11 @@ async function retryVisualIndexWithBrowserDecode() {
 
   for (const candidate of candidates) {
     try {
+      const isAvif = candidate.ext.toLowerCase() === "avif"
       const imageDataUrl = await buildBrowserDecodedImageDataUrl(candidate.path, {
-        maxEdge: 1280,
-        quality: 0.9,
-        outputMimeType: "image/jpeg",
+        maxEdge: isAvif ? null : 1280,
+        quality: isAvif ? undefined : 0.9,
+        outputMimeType: isAvif ? "image/png" : "image/jpeg",
       })
       await reindexFileVisualEmbeddingCommand(candidate.fileId, imageDataUrl)
       recovered += 1

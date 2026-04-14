@@ -74,6 +74,8 @@ pub struct AppState {
     pub import_tasks: Arc<Mutex<HashMap<String, ImportTaskEntry>>>,
     pub ai_metadata_tasks: Arc<Mutex<HashMap<String, AiMetadataTaskEntry>>>,
     pub visual_index_tasks: Arc<Mutex<HashMap<String, VisualIndexTaskEntry>>>,
+    pub visual_index_browser_decode_requests:
+        Arc<Mutex<HashMap<String, std::sync::mpsc::Sender<Result<String, String>>>>>,
     pub import_write_lock: Arc<Mutex<()>>,
     pub app_handle: tauri::AppHandle,
 }
@@ -171,6 +173,7 @@ pub fn run() {
                 import_tasks: Arc::new(Mutex::new(HashMap::new())),
                 ai_metadata_tasks: Arc::new(Mutex::new(HashMap::new())),
                 visual_index_tasks: Arc::new(Mutex::new(HashMap::new())),
+                visual_index_browser_decode_requests: Arc::new(Mutex::new(HashMap::new())),
                 import_write_lock: Arc::new(Mutex::new(())),
                 app_handle: app.handle().clone(),
             });
@@ -215,6 +218,7 @@ pub fn run() {
             commands::ai::reindex_file_visual_embedding,
             commands::ai::get_visual_index_status,
             commands::ai::get_visual_index_retry_candidates,
+            commands::ai::complete_visual_index_browser_decode_request,
             commands::ai::get_recommended_visual_model_path,
             commands::ai::validate_visual_model_path,
             commands::ai::start_visual_index_task,

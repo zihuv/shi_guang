@@ -24,6 +24,7 @@ const MAX_AI_TAGS: usize = 5;
 const MAX_AI_DESCRIPTION_CHARS: usize = 200;
 const AI_METADATA_TASK_EVENT: &str = "ai-metadata-task-updated";
 const VISUAL_INDEX_TASK_EVENT: &str = "visual-index-task-updated";
+const VISUAL_INDEX_BROWSER_DECODE_REQUEST_EVENT: &str = "visual-index-browser-decode-request";
 const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY: &str = "aiBatchAnalyzeConcurrency";
 const AI_METADATA_TASK_DEFAULT_CONCURRENCY: usize = 5;
 const AI_METADATA_TASK_MIN_CONCURRENCY: usize = 1;
@@ -60,6 +61,15 @@ pub struct VisualIndexRetryCandidatePayload {
     pub last_error: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualIndexBrowserDecodeRequestPayload {
+    pub request_id: String,
+    pub file_id: i64,
+    pub path: String,
+    pub output_mime_type: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualIndexStatus {
@@ -88,6 +98,10 @@ enum AiMetadataTaskItemOutcome {
 
 pub(crate) fn is_backend_decodable_image(file: &FileWithTags) -> bool {
     media::is_backend_decodable_image_extension(&file.ext)
+}
+
+fn requires_browser_decoded_visual_index(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("avif")
 }
 
 fn is_supported_image_for_ai(file: &FileWithTags, has_image_data_url: bool) -> bool {
@@ -298,6 +312,71 @@ fn decode_image_data_url(data_url: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|e| format!("无法解析图片 data URL: {}", e))
+}
+
+fn request_browser_decoded_image_data_url(
+    state: &AppState,
+    candidate: &crate::db::VisualIndexCandidate,
+    output_mime_type: &str,
+) -> Result<String, String> {
+    let request_id = format!(
+        "visual-index-browser-decode-{}",
+        crate::commands::imports::uuid_simple_shared()
+    );
+    let (response_tx, response_rx) = std::sync::mpsc::channel::<Result<String, String>>();
+
+    {
+        let mut requests = state
+            .visual_index_browser_decode_requests
+            .lock()
+            .map_err(|e| e.to_string())?;
+        requests.insert(request_id.clone(), response_tx);
+    }
+
+    if let Err(error) = state.app_handle.emit(
+        VISUAL_INDEX_BROWSER_DECODE_REQUEST_EVENT,
+        VisualIndexBrowserDecodeRequestPayload {
+            request_id: request_id.clone(),
+            file_id: candidate.file.id,
+            path: candidate.file.path.clone(),
+            output_mime_type: output_mime_type.to_string(),
+        },
+    ) {
+        if let Ok(mut requests) = state.visual_index_browser_decode_requests.lock() {
+            requests.remove(&request_id);
+        }
+        return Err(format!("无法请求前端解码图片: {}", error));
+    }
+
+    match response_rx.recv_timeout(std::time::Duration::from_secs(90)) {
+        Ok(result) => result,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            if let Ok(mut requests) = state.visual_index_browser_decode_requests.lock() {
+                requests.remove(&request_id);
+            }
+            Err(format!("等待前端解码图片超时: {}", candidate.file.path))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            if let Ok(mut requests) = state.visual_index_browser_decode_requests.lock() {
+                requests.remove(&request_id);
+            }
+            Err(format!("前端解码图片通道已断开: {}", candidate.file.path))
+        }
+    }
+}
+
+fn resolve_visual_index_image_data_url(
+    state: &AppState,
+    candidate: &crate::db::VisualIndexCandidate,
+    image_data_url: Option<String>,
+) -> Result<Option<String>, String> {
+    match image_data_url {
+        Some(image_data_url) if !image_data_url.trim().is_empty() => Ok(Some(image_data_url)),
+        _ if requires_browser_decoded_visual_index(&candidate.file.ext) => {
+            request_browser_decoded_image_data_url(state, candidate, "image/png").map(Some)
+        }
+        _ => Ok(None),
+    }
 }
 
 fn sync_visual_content_hash(
@@ -743,6 +822,8 @@ pub(crate) fn reindex_file_visual_embedding_impl(
         (visual_search_config, resolved_model, candidate)
     };
 
+    let image_data_url = resolve_visual_index_image_data_url(state, &candidate, image_data_url)?;
+
     let source_content_hash =
         match sync_visual_content_hash(state, &candidate, image_data_url.as_deref()) {
             Ok(content_hash) => content_hash,
@@ -889,6 +970,35 @@ pub fn get_visual_index_retry_candidates(
         .collect())
 }
 
+#[tauri::command]
+pub fn complete_visual_index_browser_decode_request(
+    state: State<'_, AppState>,
+    request_id: String,
+    image_data_url: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    let response_tx = {
+        let mut requests = state
+            .visual_index_browser_decode_requests
+            .lock()
+            .map_err(|e| e.to_string())?;
+        requests
+            .remove(&request_id)
+            .ok_or_else(|| "视觉索引前端解码请求不存在或已过期".to_string())?
+    };
+
+    let response = match image_data_url {
+        Some(image_data_url) if !image_data_url.trim().is_empty() => Ok(image_data_url),
+        _ => Err(error
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "前端未返回可用图片数据".to_string())),
+    };
+
+    response_tx
+        .send(response)
+        .map_err(|_| "视觉索引前端解码结果发送失败".to_string())
+}
+
 fn load_visual_index_candidates(
     state: &AppState,
     process_unindexed_only: bool,
@@ -949,10 +1059,9 @@ fn rebuild_visual_index_impl(
             );
         }
 
-        let source_content_hash = match sync_visual_content_hash(state, &candidate, None) {
-            Ok(content_hash) => content_hash,
+        let image_data_url = match resolve_visual_index_image_data_url(state, &candidate, None) {
+            Ok(image_data_url) => image_data_url,
             Err(error) => {
-                clear_visual_content_hash(state, &candidate)?;
                 let db = state.db.lock().map_err(|e| e.to_string())?;
                 db.mark_file_visual_embedding_error(
                     candidate.file.id,
@@ -982,12 +1091,46 @@ fn rebuild_visual_index_impl(
             }
         };
 
+        let source_content_hash =
+            match sync_visual_content_hash(state, &candidate, image_data_url.as_deref()) {
+                Ok(content_hash) => content_hash,
+                Err(error) => {
+                    clear_visual_content_hash(state, &candidate)?;
+                    let db = state.db.lock().map_err(|e| e.to_string())?;
+                    db.mark_file_visual_embedding_error(
+                        candidate.file.id,
+                        &resolved_model.manifest.model_id,
+                        candidate.source_size,
+                        &candidate.source_modified_at,
+                        None,
+                        &error,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    result.failed += 1;
+                    if let Some(app_handle) = app_handle {
+                        let _ = app_handle.emit(
+                            "visual-index-progress",
+                            VisualIndexProgressPayload {
+                                processed: result.indexed + result.failed + result.skipped,
+                                total: result.total,
+                                indexed: result.indexed,
+                                failed: result.failed,
+                                skipped: result.skipped,
+                                current_file_id: candidate.file.id,
+                                current_file_name: candidate.file.name.clone(),
+                            },
+                        );
+                    }
+                    continue;
+                }
+            };
+
         match reindex_visual_candidate(
             &state,
             &visual_search_config,
             &resolved_model,
             &candidate,
-            None,
+            image_data_url.as_deref(),
             &source_content_hash,
         ) {
             Ok(()) => {
@@ -1117,39 +1260,67 @@ fn spawn_visual_index_task(
                 });
                 emit_visual_index_task_update(&app_handle, &task_id_for_worker);
 
-                let source_content_hash = match sync_visual_content_hash(&state, &candidate, None) {
-                    Ok(content_hash) => content_hash,
-                    Err(error) => {
-                        clear_visual_content_hash(&state, &candidate)?;
-                        let db = state.db.lock().map_err(|e| e.to_string())?;
-                        db.mark_file_visual_embedding_error(
-                            candidate.file.id,
-                            &resolved_model.manifest.model_id,
-                            candidate.source_size,
-                            &candidate.source_modified_at,
-                            None,
-                            &error,
-                        )
-                        .map_err(|e| e.to_string())?;
-                        update_visual_index_task_snapshot(
-                            &tasks,
-                            &task_id_for_worker,
-                            |snapshot| {
-                                snapshot.processed += 1;
-                                snapshot.failure_count += 1;
-                            },
-                        );
-                        emit_visual_index_task_update(&app_handle, &task_id_for_worker);
-                        continue;
-                    }
-                };
+                let image_data_url =
+                    match resolve_visual_index_image_data_url(&state, &candidate, None) {
+                        Ok(image_data_url) => image_data_url,
+                        Err(error) => {
+                            let db = state.db.lock().map_err(|e| e.to_string())?;
+                            db.mark_file_visual_embedding_error(
+                                candidate.file.id,
+                                &resolved_model.manifest.model_id,
+                                candidate.source_size,
+                                &candidate.source_modified_at,
+                                None,
+                                &error,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            update_visual_index_task_snapshot(
+                                &tasks,
+                                &task_id_for_worker,
+                                |snapshot| {
+                                    snapshot.processed += 1;
+                                    snapshot.failure_count += 1;
+                                },
+                            );
+                            emit_visual_index_task_update(&app_handle, &task_id_for_worker);
+                            continue;
+                        }
+                    };
+
+                let source_content_hash =
+                    match sync_visual_content_hash(&state, &candidate, image_data_url.as_deref()) {
+                        Ok(content_hash) => content_hash,
+                        Err(error) => {
+                            clear_visual_content_hash(&state, &candidate)?;
+                            let db = state.db.lock().map_err(|e| e.to_string())?;
+                            db.mark_file_visual_embedding_error(
+                                candidate.file.id,
+                                &resolved_model.manifest.model_id,
+                                candidate.source_size,
+                                &candidate.source_modified_at,
+                                None,
+                                &error,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            update_visual_index_task_snapshot(
+                                &tasks,
+                                &task_id_for_worker,
+                                |snapshot| {
+                                    snapshot.processed += 1;
+                                    snapshot.failure_count += 1;
+                                },
+                            );
+                            emit_visual_index_task_update(&app_handle, &task_id_for_worker);
+                            continue;
+                        }
+                    };
 
                 match reindex_visual_candidate(
                     &state,
                     &visual_search_config,
                     &resolved_model,
                     &candidate,
-                    None,
+                    image_data_url.as_deref(),
                     &source_content_hash,
                 ) {
                     Ok(()) => {
@@ -1244,12 +1415,17 @@ pub fn cancel_visual_index_task(state: State<'_, AppState>, task_id: String) -> 
 }
 
 #[tauri::command]
-pub fn reindex_file_visual_embedding(
-    state: State<'_, AppState>,
+pub async fn reindex_file_visual_embedding(
+    app_handle: tauri::AppHandle,
     file_id: i64,
     image_data_url: Option<String>,
 ) -> Result<(), String> {
-    reindex_file_visual_embedding_impl(&state, file_id, image_data_url)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<AppState>();
+        reindex_file_visual_embedding_impl(&state, file_id, image_data_url)
+    })
+    .await
+    .map_err(|e| format!("视觉索引后台任务失败: {}", e))?
 }
 
 #[tauri::command]
@@ -1337,6 +1513,13 @@ mod tests {
             parse_ai_metadata_task_concurrency(Some("99")),
             AI_METADATA_TASK_MAX_CONCURRENCY
         );
+    }
+
+    #[test]
+    fn visual_index_browser_decode_requirement_is_avif_only() {
+        assert!(requires_browser_decoded_visual_index("avif"));
+        assert!(requires_browser_decoded_visual_index("AVIF"));
+        assert!(!requires_browser_decoded_visual_index("png"));
     }
 
     #[test]
