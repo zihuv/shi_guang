@@ -16,6 +16,7 @@ import {
   updateFileMetadata,
   updateFileName,
 } from "@/services/tauri/files";
+import { setLastSelectedFolderId } from "@/services/tauri/indexing";
 import { copyFiles, moveFile, moveFiles } from "@/services/tauri/system";
 import {
   addTagToFile as addTagToFileCommand,
@@ -284,6 +285,10 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
   loadFilesInFolder: async (folderId) => {
     set({ selectedFolderId: folderId });
+    void setLastSelectedFolderId(folderId).catch((error) => {
+      console.error("Failed to persist last selected folder:", error);
+    });
+
     const criteria = useFilterStore.getState().criteria;
     if (hasStructuredFilters(criteria) || get().searchQuery.trim()) {
       await get().runCurrentQuery(folderId);

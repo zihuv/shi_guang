@@ -100,7 +100,6 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
       if (!folder) {
         return null;
       }
-      await get().loadFolders();
       set({ selectedFolderId: folder.id });
       return folder;
     } catch (e) {

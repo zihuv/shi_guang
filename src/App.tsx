@@ -8,6 +8,7 @@ import {
   useSettingsStore,
 } from "@/stores/settingsStore";
 import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
+import { useBootstrapStore } from "@/stores/bootstrapStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -18,6 +19,7 @@ import SidePanel from "@/components/SidePanel";
 import FileGrid from "@/components/FileGrid";
 import DetailPanel from "@/components/DetailPanel";
 import DragPreview from "@/components/DragPreview";
+import AppStartupScreen from "@/components/AppStartupScreen";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useClipboardImport } from "@/hooks/useClipboardImport";
 import { useDocumentTheme } from "@/hooks/useDocumentTheme";
@@ -122,6 +124,8 @@ function PanelResizeHandle({
 }
 
 function App() {
+  const hasBootstrapped = useBootstrapStore((state) => state.hasBootstrapped);
+  const bootstrapError = useBootstrapStore((state) => state.bootstrapError);
   const theme = useSettingsStore((state) => state.theme);
   const sidebarWidthPreference = useSettingsStore((state) => state.sidebarWidth);
   const detailPanelWidthPreference = useSettingsStore((state) => state.detailPanelWidth);
@@ -445,6 +449,16 @@ function App() {
       setDragOverFolderId,
     ],
   );
+
+  if (!hasBootstrapped) {
+    return (
+      <AppStartupScreen
+        sidebarWidth={sidebarWidth}
+        detailPanelWidth={detailPanelWidth}
+        errorMessage={bootstrapError}
+      />
+    );
+  }
 
   return (
     <div
