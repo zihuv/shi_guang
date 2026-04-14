@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { FileItem } from "@/stores/fileTypes";
 import FileTypeIcon from "@/components/FileTypeIcon";
-import { getFilePreviewMode, getFileSrc, getVideoThumbnailSrc } from "@/utils";
+import {
+  getFilePreviewMode,
+  getFileSrc,
+  getVideoThumbnailSrc,
+  rememberPreviewImageSrc,
+} from "@/utils";
 
 function revokeBlobUrl(src: string | null) {
   if (src?.startsWith("blob:")) {
@@ -46,6 +51,12 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
       srcRef.current = null;
     };
   }, [file.path, previewType]);
+
+  useEffect(() => {
+    if (src) {
+      rememberPreviewImageSrc(file.path, src);
+    }
+  }, [file.path, src]);
 
   if (!src || (previewType !== "image" && previewType !== "video")) {
     return (

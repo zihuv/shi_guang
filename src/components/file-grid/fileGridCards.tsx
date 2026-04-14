@@ -21,6 +21,7 @@ import {
   getThumbnailImageSrc,
   getVideoThumbnailSrc,
   isVideoFile,
+  rememberPreviewImageSrc,
   resolveThumbnailRequestMaxEdge,
 } from "@/utils";
 
@@ -241,6 +242,12 @@ function useLazyImageSrc(
       active = false;
     };
   }, [cacheKey, ext, isVisible, maxEdge, path, refreshVersion]);
+
+  useEffect(() => {
+    if (imageSrc) {
+      rememberPreviewImageSrc(path, imageSrc);
+    }
+  }, [imageSrc, path]);
 
   return {
     imageSrc,

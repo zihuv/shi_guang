@@ -41,12 +41,27 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useTrashStore } from "@/stores/trashStore";
 import {
   buildAiImageDataUrl,
+  getRememberedPreviewImageSrc,
   getFilePreviewMode,
   getFileSrc,
   getTextPreviewContent,
   isPdfFile,
+  preloadFileImage,
   isVideoFile,
 } from "@/utils";
+
+function isGeneratedThumbnailSrc(src: string) {
+  if (!src) {
+    return false;
+  }
+
+  try {
+    const normalizedSrc = decodeURIComponent(src).replace(/\\/g, "/").toLowerCase();
+    return normalizedSrc.includes("/.shiguang/thumbnails/");
+  } catch {
+    return src.toLowerCase().includes(".shiguang/thumbnails");
+  }
+}
 
 export default function ImagePreview() {
   const previewMode = usePreviewStore((state) => state.previewMode);
@@ -66,6 +81,7 @@ export default function ImagePreview() {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [textContent, setTextContent] = useState("");
   const [imageError, setImageError] = useState(false);
+  const [isPlaceholderImageSrc, setIsPlaceholderImageSrc] = useState(false);
   const [zoom, setZoom] = useState<number | "auto">("auto");
   const [isLoading, setIsLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -162,15 +178,59 @@ export default function ImagePreview() {
     let mounted = true;
     setIsLoading(true);
     setImageError(false);
-    setImageSrc(null);
     setTextContent("");
+    setIsPlaceholderImageSrc(false);
 
     if (previewType === "none") {
+      setImageSrc(null);
       setIsLoading(false);
       return () => {
         mounted = false;
       };
     }
+
+    if (previewType === "image") {
+      const rememberedSrc = getRememberedPreviewImageSrc(currentFile.path);
+      const rememberedSrcIsPlaceholder = isGeneratedThumbnailSrc(rememberedSrc);
+
+      if (rememberedSrc) {
+        setImageSrc(rememberedSrc);
+        setIsPlaceholderImageSrc(rememberedSrcIsPlaceholder);
+        setIsLoading(false);
+      } else {
+        setImageSrc(null);
+      }
+
+      preloadFileImage(currentFile.path)
+        .then((result) => {
+          if (!mounted) return;
+
+          if (result?.src) {
+            setImageSrc(result.src);
+            setImageError(false);
+            setIsPlaceholderImageSrc(false);
+          } else if (!rememberedSrc) {
+            setImageError(true);
+          }
+
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          if (!mounted) return;
+
+          console.error("Failed to load preview image:", error);
+          if (!rememberedSrc) {
+            setImageError(true);
+          }
+          setIsLoading(false);
+        });
+
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setImageSrc(null);
 
     if (previewType === "text") {
       getTextPreviewContent(currentFile.path, currentFile.size).then((content) => {
@@ -199,6 +259,26 @@ export default function ImagePreview() {
       mounted = false;
     };
   }, [currentFile, previewType]);
+
+  useEffect(() => {
+    if (!previewMode || previewType !== "image") {
+      return;
+    }
+
+    const nearbyFiles = [previewFiles[previewIndex - 1], previewFiles[previewIndex + 1]].filter(
+      (file): file is NonNullable<typeof file> => Boolean(file),
+    );
+
+    nearbyFiles.forEach((file) => {
+      if (getFilePreviewMode(file.ext) !== "image") {
+        return;
+      }
+
+      void preloadFileImage(file.path).catch((error) => {
+        console.error("Failed to warm nearby preview image:", error);
+      });
+    });
+  }, [previewFiles, previewIndex, previewMode, previewType]);
 
   useEffect(() => {
     return () => {
@@ -614,10 +694,14 @@ export default function ImagePreview() {
 
   const handleImageLoad = useCallback(
     (event: SyntheticEvent<HTMLImageElement>) => {
+      if (isPlaceholderImageSrc) {
+        return;
+      }
+
       const target = event.currentTarget;
       hydrateCurrentFileDimensions(target.naturalWidth, target.naturalHeight);
     },
-    [hydrateCurrentFileDimensions],
+    [hydrateCurrentFileDimensions, isPlaceholderImageSrc],
   );
 
   const finishPan = (pointerId: number) => {
