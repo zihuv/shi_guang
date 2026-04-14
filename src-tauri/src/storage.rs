@@ -10,16 +10,29 @@ use std::time::UNIX_EPOCH;
 
 const DB_FILE_NAME: &str = "shiguang.db";
 const CURRENT_INDEX_PATH_FILE_NAME: &str = "current-index-path.txt";
-const THUMBNAIL_QUALITY: u8 = 82;
+const THUMBNAIL_CACHE_VERSION: u8 = 2;
+const THUMBNAIL_QUALITY: u8 = 88;
 pub const THUMBNAIL_SIZE: u32 = 320;
 pub const LIST_THUMBNAIL_SIZE: u32 = 160;
-const MIN_THUMBNAIL_SIZE: u32 = 64;
-const KNOWN_THUMBNAIL_SIZES: [u32; 2] = [THUMBNAIL_SIZE, LIST_THUMBNAIL_SIZE];
+pub const MAX_THUMBNAIL_SIZE: u32 = 640;
+const MIN_THUMBNAIL_SIZE: u32 = LIST_THUMBNAIL_SIZE;
+const KNOWN_THUMBNAIL_SIZES: [u32; 5] = [
+    LIST_THUMBNAIL_SIZE,
+    224,
+    THUMBNAIL_SIZE,
+    448,
+    MAX_THUMBNAIL_SIZE,
+];
 
 fn normalize_thumbnail_size(requested_size: Option<u32>) -> u32 {
-    requested_size
+    let normalized = requested_size
         .unwrap_or(THUMBNAIL_SIZE)
-        .clamp(MIN_THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+        .clamp(MIN_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE);
+
+    KNOWN_THUMBNAIL_SIZES
+        .into_iter()
+        .find(|size| normalized <= *size)
+        .unwrap_or(MAX_THUMBNAIL_SIZE)
 }
 
 pub fn get_default_index_path() -> PathBuf {
@@ -129,6 +142,7 @@ pub fn find_matching_index_path<'a>(index_paths: &'a [String], file_path: &str) 
 
 fn hash_thumbnail_key(file_path: &Path, metadata: &fs::Metadata, thumbnail_size: u32) -> String {
     let mut hasher = DefaultHasher::new();
+    THUMBNAIL_CACHE_VERSION.hash(&mut hasher);
     file_path.to_string_lossy().hash(&mut hasher);
     thumbnail_size.hash(&mut hasher);
     metadata.len().hash(&mut hasher);
@@ -363,7 +377,7 @@ pub fn migrate_or_get_db_path(app_data_dir: &Path) -> Result<(PathBuf, PathBuf),
 mod tests {
     use super::{
         ensure_storage_dirs, get_or_create_thumbnail, get_or_create_thumbnail_base64,
-        get_thumbnail_cache_path, LIST_THUMBNAIL_SIZE, THUMBNAIL_SIZE,
+        get_thumbnail_cache_path, LIST_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE, THUMBNAIL_SIZE,
     };
     use image::{GenericImageView, Rgb, RgbImage};
     use std::fs;
@@ -427,6 +441,32 @@ mod tests {
 
         assert_eq!(default_dimensions.0, THUMBNAIL_SIZE);
         assert_eq!(list_dimensions.0, LIST_THUMBNAIL_SIZE);
+
+        fs::remove_dir_all(index_path).unwrap();
+    }
+
+    #[test]
+    fn thumbnail_generation_rounds_up_to_supported_variant() {
+        let index_path = create_temp_dir();
+        ensure_storage_dirs(&index_path).unwrap();
+
+        let source_path = index_path.join("portrait.png");
+        let image = RgbImage::from_pixel(400, 800, Rgb([200, 90, 45]));
+        image.save(&source_path).unwrap();
+
+        let index_paths = vec![index_path.to_string_lossy().to_string()];
+        let requested_thumbnail = get_or_create_thumbnail(&index_paths, &source_path, Some(500))
+            .unwrap()
+            .unwrap();
+        let max_thumbnail = get_or_create_thumbnail(&index_paths, &source_path, Some(9999))
+            .unwrap()
+            .unwrap();
+
+        let requested_dimensions = image::open(&requested_thumbnail).unwrap().dimensions();
+        let max_dimensions = image::open(&max_thumbnail).unwrap().dimensions();
+
+        assert_eq!(requested_dimensions.1, 640);
+        assert_eq!(max_dimensions.1, MAX_THUMBNAIL_SIZE);
 
         fs::remove_dir_all(index_path).unwrap();
     }

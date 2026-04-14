@@ -14,7 +14,17 @@ import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { useTrashStore } from "@/stores/trashStore";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileTagInput from "@/components/FileTagInput";
-import { getFilePreviewMode, getFileSrc, getTextPreviewContent, getThumbnailImageSrc, getVideoThumbnailSrc, formatSize, findFolderById, debounce } from "@/utils";
+import {
+  getFilePreviewMode,
+  getFileSrc,
+  getTextPreviewContent,
+  getThumbnailImageSrc,
+  getVideoThumbnailSrc,
+  formatSize,
+  findFolderById,
+  debounce,
+  resolveThumbnailRequestMaxEdge,
+} from "@/utils";
 import { cn } from "@/lib/utils";
 import {
   appIconButtonClass,
@@ -269,6 +279,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   );
   const videoLoadVersionRef = useRef(0);
   const imageLoadVersionRef = useRef(0);
+  const previewWidth = Math.max(160, width - 28);
+  const previewHeight = Math.round((previewWidth * 9) / 16);
+  const previewThumbnailMaxEdge = resolveThumbnailRequestMaxEdge(previewWidth, previewHeight);
 
   // Helper to get extension
   const getExt = (name: string) => {
@@ -318,7 +331,11 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
     if (previewType === "image") {
       void (async () => {
-        const thumbnailSrc = await getThumbnailImageSrc(file.path, file.ext);
+        const thumbnailSrc = await getThumbnailImageSrc(
+          file.path,
+          file.ext,
+          previewThumbnailMaxEdge,
+        );
         if (!mounted) {
           if (thumbnailSrc.startsWith("blob:")) {
             URL.revokeObjectURL(thumbnailSrc);
@@ -353,7 +370,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     }
 
     if (previewType === "video") {
-      getVideoThumbnailSrc(file.path).then((src) => {
+      getVideoThumbnailSrc(file.path, previewThumbnailMaxEdge).then((src) => {
         if (mounted && src) {
           setVideoPosterSrc(src);
         }
@@ -375,7 +392,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     return () => {
       mounted = false;
     };
-  }, [file.path, file.size, previewType, file.ext, thumbnailRefreshVersion]);
+  }, [file.path, file.size, previewType, file.ext, previewThumbnailMaxEdge, thumbnailRefreshVersion]);
 
   useEffect(() => {
     return () => {

@@ -66,9 +66,19 @@ const CODE_EXTENSIONS = [
 const TEXT_EXTENSIONS = ['txt', 'log', 'ini', 'conf']
 const TEXT_PREVIEW_EXTENSIONS = ['txt', 'log', 'md', 'csv', 'ini', 'conf']
 const MAX_TEXT_PREVIEW_SIZE = 512 * 1024
+const THUMBNAIL_CACHE_VERSION = 'v2'
 const THUMBNAIL_MAX_EDGE = 320
 export const LIST_THUMBNAIL_MAX_EDGE = 160
-const THUMBNAIL_JPEG_QUALITY = 0.82
+export const MAX_THUMBNAIL_MAX_EDGE = 640
+const THUMBNAIL_VARIANT_MAX_EDGES = [
+  LIST_THUMBNAIL_MAX_EDGE,
+  224,
+  THUMBNAIL_MAX_EDGE,
+  448,
+  MAX_THUMBNAIL_MAX_EDGE,
+] as const
+const MAX_THUMBNAIL_DEVICE_PIXEL_RATIO = 2
+const THUMBNAIL_JPEG_QUALITY = 0.88
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>()
 const browserThumbnailPromiseCache = new Map<string, Promise<string>>()
 const missingFileSyncs = new Set<string>()
@@ -80,7 +90,7 @@ const MISSING_FILE_ERROR_MARKERS = [
 ]
 
 function getThumbnailVariantCacheKey(path: string, maxEdge: number) {
-  return `${path}::${maxEdge}`
+  return `${THUMBNAIL_CACHE_VERSION}:${path}::${maxEdge}`
 }
 
 function normalizeFsPath(path: string): string {
@@ -264,6 +274,27 @@ export function canGenerateThumbnail(ext: string): boolean {
   return isImageFile(ext) || isVideoFile(ext)
 }
 
+export function resolveThumbnailRequestMaxEdge(
+  renderWidth: number,
+  renderHeight: number = renderWidth,
+): number {
+  const safeWidth = Number.isFinite(renderWidth) ? Math.max(1, renderWidth) : THUMBNAIL_MAX_EDGE
+  const safeHeight = Number.isFinite(renderHeight) ? Math.max(1, renderHeight) : safeWidth
+  const dpr =
+    typeof window === 'undefined' || !Number.isFinite(window.devicePixelRatio)
+      ? 1
+      : Math.min(window.devicePixelRatio, MAX_THUMBNAIL_DEVICE_PIXEL_RATIO)
+  const targetEdge = Math.ceil(Math.max(safeWidth, safeHeight) * dpr)
+
+  for (const edge of THUMBNAIL_VARIANT_MAX_EDGES) {
+    if (targetEdge <= edge) {
+      return edge
+    }
+  }
+
+  return THUMBNAIL_VARIANT_MAX_EDGES[THUMBNAIL_VARIANT_MAX_EDGES.length - 1]
+}
+
 export function getFileKind(ext: string): FileKind {
   const normalizedExt = normalizeExt(ext)
 
@@ -403,6 +434,8 @@ async function renderVideoThumbnailDataUrl(
         return
       }
 
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
       finish(canvas.toDataURL('image/jpeg', THUMBNAIL_JPEG_QUALITY))
     }
@@ -599,6 +632,8 @@ export async function buildBrowserDecodedImageDataUrl(
         return
       }
 
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = "high"
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
 
       try {

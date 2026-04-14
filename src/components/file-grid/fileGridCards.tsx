@@ -25,7 +25,7 @@ import {
   getThumbnailImageSrc,
   getVideoThumbnailSrc,
   isVideoFile,
-  LIST_THUMBNAIL_MAX_EDGE,
+  resolveThumbnailRequestMaxEdge,
 } from "@/utils"
 
 const OBSERVER_ROOT_MARGIN = "180px"
@@ -41,8 +41,6 @@ const CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS =
 const CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-90"
 const CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS =
   "after:scale-x-100 after:opacity-100"
-const TILE_THUMBNAIL_MAX_EDGES = [LIST_THUMBNAIL_MAX_EDGE, 224, 256] as const
-
 type FileCardBaseProps = {
   file: FileItem
   visibleFields: LibraryVisibleField[]
@@ -128,18 +126,7 @@ function deleteCachedImageSrc(cacheKey: string) {
 }
 
 function resolveCardThumbnailMaxEdge(previewWidth: number, previewHeight: number = previewWidth) {
-  const targetEdge = Math.max(
-    LIST_THUMBNAIL_MAX_EDGE,
-    Math.min(256, Math.round(Math.max(previewWidth, previewHeight))),
-  )
-
-  for (const edge of TILE_THUMBNAIL_MAX_EDGES) {
-    if (targetEdge <= edge) {
-      return edge
-    }
-  }
-
-  return TILE_THUMBNAIL_MAX_EDGES[TILE_THUMBNAIL_MAX_EDGES.length - 1]
+  return resolveThumbnailRequestMaxEdge(previewWidth, previewHeight)
 }
 
 function useVisibility(
@@ -551,7 +538,7 @@ export function FileRow({
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
-  const thumbnailMaxEdge = LIST_THUMBNAIL_MAX_EDGE
+  const thumbnailMaxEdge = resolveThumbnailRequestMaxEdge(thumbnailSize)
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
