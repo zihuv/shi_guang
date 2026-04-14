@@ -25,6 +25,8 @@ const MAX_AI_DESCRIPTION_CHARS: usize = 200;
 const AI_METADATA_TASK_EVENT: &str = "ai-metadata-task-updated";
 const VISUAL_INDEX_TASK_EVENT: &str = "visual-index-task-updated";
 const VISUAL_INDEX_BROWSER_DECODE_REQUEST_EVENT: &str = "visual-index-browser-decode-request";
+const VISUAL_INDEX_BROWSER_DECODE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(1800);
 const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY: &str = "aiBatchAnalyzeConcurrency";
 const AI_METADATA_TASK_DEFAULT_CONCURRENCY: usize = 5;
 const AI_METADATA_TASK_MIN_CONCURRENCY: usize = 1;
@@ -348,13 +350,17 @@ fn request_browser_decoded_image_data_url(
         return Err(format!("无法请求前端解码图片: {}", error));
     }
 
-    match response_rx.recv_timeout(std::time::Duration::from_secs(90)) {
+    match response_rx.recv_timeout(VISUAL_INDEX_BROWSER_DECODE_TIMEOUT) {
         Ok(result) => result,
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
             if let Ok(mut requests) = state.visual_index_browser_decode_requests.lock() {
                 requests.remove(&request_id);
             }
-            Err(format!("等待前端解码图片超时: {}", candidate.file.path))
+            Err(format!(
+                "等待前端解码图片超时（>{} 秒）: {}",
+                VISUAL_INDEX_BROWSER_DECODE_TIMEOUT.as_secs(),
+                candidate.file.path
+            ))
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
             if let Ok(mut requests) = state.visual_index_browser_decode_requests.lock() {
@@ -977,14 +983,18 @@ pub fn complete_visual_index_browser_decode_request(
     image_data_url: Option<String>,
     error: Option<String>,
 ) -> Result<(), String> {
-    let response_tx = {
+    let Some(response_tx) = ({
         let mut requests = state
             .visual_index_browser_decode_requests
             .lock()
             .map_err(|e| e.to_string())?;
-        requests
-            .remove(&request_id)
-            .ok_or_else(|| "视觉索引前端解码请求不存在或已过期".to_string())?
+        requests.remove(&request_id)
+    }) else {
+        log::debug!(
+            "Ignore stale visual index browser decode response: {}",
+            request_id
+        );
+        return Ok(());
     };
 
     let response = match image_data_url {
@@ -994,9 +1004,14 @@ pub fn complete_visual_index_browser_decode_request(
             .unwrap_or_else(|| "前端未返回可用图片数据".to_string())),
     };
 
-    response_tx
-        .send(response)
-        .map_err(|_| "视觉索引前端解码结果发送失败".to_string())
+    if response_tx.send(response).is_err() {
+        log::debug!(
+            "Dropped visual index browser decode response because receiver is gone: {}",
+            request_id
+        );
+    }
+
+    Ok(())
 }
 
 fn load_visual_index_candidates(

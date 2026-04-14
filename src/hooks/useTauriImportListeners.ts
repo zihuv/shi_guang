@@ -19,6 +19,10 @@ const dragDropState = {
   listenersReady: false,
 };
 
+const visualIndexBrowserDecodeState = {
+  queue: Promise.resolve() as Promise<void>,
+};
+
 type UseTauriImportListenersOptions = {
   dragOverFolderId: number | null;
   setDragOverFolderId: (folderId: number | null) => void;
@@ -96,6 +100,18 @@ async function handleVisualIndexBrowserDecodeRequest(
     imageDataUrl,
     error: errorMessage,
   });
+}
+
+function enqueueVisualIndexBrowserDecodeRequest(
+  payload?: VisualIndexBrowserDecodeRequestPayload,
+) {
+  // Serialize large browser-side transcodes so timed-out AVIF requests do not pile up
+  // and keep the main thread saturated.
+  const task = visualIndexBrowserDecodeState.queue.then(() =>
+    handleVisualIndexBrowserDecodeRequest(payload),
+  );
+  visualIndexBrowserDecodeState.queue = task.catch(() => undefined);
+  return task;
 }
 
 export function useTauriImportListeners({
@@ -228,7 +244,7 @@ export function useTauriImportListeners({
         "visual-index-browser-decode-request",
         async (event) => {
           try {
-            await handleVisualIndexBrowserDecodeRequest(event.payload);
+            await enqueueVisualIndexBrowserDecodeRequest(event.payload);
           } catch (error) {
             console.error("Failed to resolve visual index browser decode request:", error);
           }
