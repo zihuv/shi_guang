@@ -1,70 +1,80 @@
-import { useState, useEffect } from 'react'
-import { useTrashStore } from '@/stores/trashStore'
-import { Button } from '@/components/ui/Button'
-import FileTypeIcon from '@/components/FileTypeIcon'
+import { useState, useEffect } from "react";
+import { useTrashStore } from "@/stores/trashStore";
+import { Button } from "@/components/ui/Button";
+import FileTypeIcon from "@/components/FileTypeIcon";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/Dialog'
-import { Trash2, RotateCcw, X, AlertTriangle } from 'lucide-react'
-import { getFilePreviewMode, getFileSrc } from '@/utils'
+} from "@/components/ui/Dialog";
+import { Trash2, RotateCcw, X, AlertTriangle } from "lucide-react";
+import { getFilePreviewMode, getFileSrc } from "@/utils";
 
 type TrashPanelProps = {
-  variant?: 'sidebar' | 'header'
-}
+  variant?: "sidebar" | "header";
+};
 
 interface TrashFileItemProps {
   file: {
-    id: number
-    name: string
-    ext: string
-    size: number
-    path: string
-    deletedAt?: string | null
-  }
-  isSelected: boolean
-  onToggleSelect: () => void
-  formatFileSize: (bytes: number) => string
-  formatDate: (dateStr: string | null | undefined) => string
+    id: number;
+    name: string;
+    ext: string;
+    size: number;
+    path: string;
+    deletedAt?: string | null;
+  };
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  formatFileSize: (bytes: number) => string;
+  formatDate: (dateStr: string | null | undefined) => string;
 }
 
-function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, formatDate }: TrashFileItemProps) {
-  const [imageSrc, setImageSrc] = useState<string | null>(null)
-  const [imageError, setImageError] = useState(false)
-  const previewType = getFilePreviewMode(file.ext)
+function TrashFileItem({
+  file,
+  isSelected,
+  onToggleSelect,
+  formatFileSize,
+  formatDate,
+}: TrashFileItemProps) {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+  const previewType = getFilePreviewMode(file.ext);
 
   useEffect(() => {
-    let mounted = true
-    setImageSrc(null)
-    setImageError(false)
+    let mounted = true;
+    setImageSrc(null);
+    setImageError(false);
 
-    if (previewType !== 'image') {
-      return () => { mounted = false }
+    if (previewType !== "image") {
+      return () => {
+        mounted = false;
+      };
     }
 
-    getFileSrc(file.path).then(src => {
-      if (mounted) setImageSrc(src)
-    })
-    return () => { mounted = false }
-  }, [file.path, previewType])
+    getFileSrc(file.path).then((src) => {
+      if (mounted) setImageSrc(src);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [file.path, previewType]);
 
   useEffect(() => {
     return () => {
-      if (imageSrc?.startsWith('blob:')) {
-        URL.revokeObjectURL(imageSrc)
+      if (imageSrc?.startsWith("blob:")) {
+        URL.revokeObjectURL(imageSrc);
       }
-    }
-  }, [imageSrc])
+    };
+  }, [imageSrc]);
 
   return (
     <div
       className={`relative group cursor-pointer rounded-lg border-2 transition-colors ${
         isSelected
-          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-          : 'border-transparent hover:border-gray-200 dark:hover:border-dark-border'
+          ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
+          : "border-transparent hover:border-gray-200 dark:hover:border-dark-border"
       }`}
       onClick={onToggleSelect}
     >
@@ -88,9 +98,7 @@ function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, forma
         <p className="text-sm text-gray-700 dark:text-gray-300 truncate" title={file.name}>
           {file.name}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {formatFileSize(file.size)}
-        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{formatFileSize(file.size)}</p>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           删除于 {formatDate(file.deletedAt)}
         </p>
@@ -101,10 +109,10 @@ function TrashFileItem({ file, isSelected, onToggleSelect, formatFileSize, forma
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
+export default function TrashPanel({ variant = "sidebar" }: TrashPanelProps) {
   const {
     trashFiles,
     trashCount,
@@ -113,90 +121,90 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
     restoreFiles,
     permanentDeleteFiles,
     emptyTrash,
-  } = useTrashStore()
+  } = useTrashStore();
 
-  const [selectedTrashFiles, setSelectedTrashFiles] = useState<number[]>([])
-  const [showTrashView, setShowTrashView] = useState(false)
-  const [showEmptyConfirm, setShowEmptyConfirm] = useState(false)
+  const [selectedTrashFiles, setSelectedTrashFiles] = useState<number[]>([]);
+  const [showTrashView, setShowTrashView] = useState(false);
+  const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
 
   // Load trash count on mount
   useEffect(() => {
-    loadTrashCount()
-  }, [loadTrashCount])
+    loadTrashCount();
+  }, [loadTrashCount]);
 
   const handleOpenTrash = async () => {
-    await loadTrashFiles()
-    setShowTrashView(true)
-    setSelectedTrashFiles([])
-  }
+    await loadTrashFiles();
+    setShowTrashView(true);
+    setSelectedTrashFiles([]);
+  };
 
   const handleCloseTrash = () => {
-    setShowTrashView(false)
-    setSelectedTrashFiles([])
-  }
+    setShowTrashView(false);
+    setSelectedTrashFiles([]);
+  };
 
   const handleToggleSelect = (fileId: number) => {
     if (selectedTrashFiles.includes(fileId)) {
-      setSelectedTrashFiles(selectedTrashFiles.filter(id => id !== fileId))
+      setSelectedTrashFiles(selectedTrashFiles.filter((id) => id !== fileId));
     } else {
-      setSelectedTrashFiles([...selectedTrashFiles, fileId])
+      setSelectedTrashFiles([...selectedTrashFiles, fileId]);
     }
-  }
+  };
 
   const handleSelectAll = () => {
     if (selectedTrashFiles.length === trashFiles.length) {
-      setSelectedTrashFiles([])
+      setSelectedTrashFiles([]);
     } else {
-      setSelectedTrashFiles(trashFiles.map(f => f.id))
+      setSelectedTrashFiles(trashFiles.map((f) => f.id));
     }
-  }
+  };
 
   const handleRestoreSelected = async () => {
     if (selectedTrashFiles.length > 0) {
-      await restoreFiles(selectedTrashFiles)
-      setSelectedTrashFiles([])
+      await restoreFiles(selectedTrashFiles);
+      setSelectedTrashFiles([]);
     }
-  }
+  };
 
   const handlePermanentDeleteSelected = async () => {
     if (selectedTrashFiles.length > 0) {
-      await permanentDeleteFiles(selectedTrashFiles)
-      setSelectedTrashFiles([])
+      await permanentDeleteFiles(selectedTrashFiles);
+      setSelectedTrashFiles([]);
     }
-  }
+  };
 
   const handleEmptyTrash = async () => {
-    await emptyTrash()
-    setShowEmptyConfirm(false)
-  }
+    await emptyTrash();
+    setShowEmptyConfirm(false);
+  };
 
   const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return ''
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  }
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  };
 
   return (
     <>
-      {variant === 'header' ? (
+      {variant === "header" ? (
         <button
           type="button"
           className="relative inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-border"
           onClick={handleOpenTrash}
-          title={trashCount > 0 ? `回收站（${trashCount}）` : '回收站'}
-          aria-label={trashCount > 0 ? `回收站，${trashCount} 个文件` : '回收站'}
+          title={trashCount > 0 ? `回收站（${trashCount}）` : "回收站"}
+          aria-label={trashCount > 0 ? `回收站，${trashCount} 个文件` : "回收站"}
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -235,12 +243,8 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
               <div className="space-y-2">
                 {/* Toolbar */}
                 <div className="flex items-center gap-2 pb-3 border-b border-gray-200 dark:border-dark-border">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectAll}
-                  >
-                    {selectedTrashFiles.length === trashFiles.length ? '取消全选' : '全选'}
+                  <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                    {selectedTrashFiles.length === trashFiles.length ? "取消全选" : "全选"}
                   </Button>
                   <Button
                     variant="outline"
@@ -299,7 +303,10 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
       </Dialog>
 
       {/* Empty trash confirmation dialog */}
-      <Dialog open={showEmptyConfirm} onOpenChange={(isOpen) => !isOpen && setShowEmptyConfirm(false)}>
+      <Dialog
+        open={showEmptyConfirm}
+        onOpenChange={(isOpen) => !isOpen && setShowEmptyConfirm(false)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
@@ -311,9 +318,7 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
             <p className="text-gray-700 dark:text-gray-300">
               确定要清空回收站吗？此操作不可恢复，所有文件将被永久删除。
             </p>
-            <p className="text-sm text-gray-500 mt-2">
-              回收站中共有 {trashFiles.length} 个文件
-            </p>
+            <p className="text-sm text-gray-500 mt-2">回收站中共有 {trashFiles.length} 个文件</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEmptyConfirm(false)}>
@@ -326,5 +331,5 @@ export default function TrashPanel({ variant = 'sidebar' }: TrashPanelProps) {
         </DialogContent>
       </Dialog>
     </>
-  )
+  );
 }

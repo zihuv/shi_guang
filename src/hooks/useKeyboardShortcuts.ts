@@ -16,7 +16,9 @@ function isEditableTarget(target: EventTarget | null) {
     return true;
   }
 
-  return Boolean(target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']"));
+  return Boolean(
+    target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']"),
+  );
 }
 
 function isDialogTarget(target: EventTarget | null) {

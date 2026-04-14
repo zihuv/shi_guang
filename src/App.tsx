@@ -68,18 +68,12 @@ function constrainPanelWidths(
     return { sidebarWidth, detailPanelWidth };
   }
 
-  const detailPanelReducible = Math.max(
-    0,
-    detailPanelWidth - MIN_RENDERED_DETAIL_PANEL_WIDTH,
-  );
+  const detailPanelReducible = Math.max(0, detailPanelWidth - MIN_RENDERED_DETAIL_PANEL_WIDTH);
   const detailPanelReduction = Math.min(detailPanelReducible, overflow);
   detailPanelWidth -= detailPanelReduction;
   overflow -= detailPanelReduction;
 
-  const sidebarReducible = Math.max(
-    0,
-    sidebarWidth - MIN_RENDERED_SIDEBAR_WIDTH,
-  );
+  const sidebarReducible = Math.max(0, sidebarWidth - MIN_RENDERED_SIDEBAR_WIDTH);
   const sidebarReduction = Math.min(sidebarReducible, overflow);
   sidebarWidth -= sidebarReduction;
   overflow -= sidebarReduction;
@@ -134,10 +128,7 @@ function App() {
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const setDetailPanelWidth = useSettingsStore((state) => state.setDetailPanelWidth);
 
-  const {
-    importImagesFromBase64,
-    importFiles,
-  } = useImportStore();
+  const { importImagesFromBase64, importFiles } = useImportStore();
   const previewMode = usePreviewStore((state) => state.previewMode);
   const files = useLibraryQueryStore((state) => state.files);
   const { dragOverFolderId, setDragOverFolderId } = useFolderStore();
@@ -200,25 +191,28 @@ function App() {
   }, []);
 
   useEffect(() => {
-    Object.assign(window as Window & {
-      __SHIGUANG_DEBUG__?: {
-        aiBatchAnalyzeStore: typeof useAiBatchAnalyzeStore;
-        importStore: typeof useImportStore;
-        libraryQueryStore: typeof useLibraryQueryStore;
-        previewStore: typeof usePreviewStore;
-        selectionStore: typeof useSelectionStore;
-        folderStore: typeof useFolderStore;
-      };
-    }, {
-      __SHIGUANG_DEBUG__: {
-        aiBatchAnalyzeStore: useAiBatchAnalyzeStore,
-        importStore: useImportStore,
-        libraryQueryStore: useLibraryQueryStore,
-        previewStore: usePreviewStore,
-        selectionStore: useSelectionStore,
-        folderStore: useFolderStore,
+    Object.assign(
+      window as Window & {
+        __SHIGUANG_DEBUG__?: {
+          aiBatchAnalyzeStore: typeof useAiBatchAnalyzeStore;
+          importStore: typeof useImportStore;
+          libraryQueryStore: typeof useLibraryQueryStore;
+          previewStore: typeof usePreviewStore;
+          selectionStore: typeof useSelectionStore;
+          folderStore: typeof useFolderStore;
+        };
       },
-    });
+      {
+        __SHIGUANG_DEBUG__: {
+          aiBatchAnalyzeStore: useAiBatchAnalyzeStore,
+          importStore: useImportStore,
+          libraryQueryStore: useLibraryQueryStore,
+          previewStore: usePreviewStore,
+          selectionStore: useSelectionStore,
+          folderStore: useFolderStore,
+        },
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -357,88 +351,100 @@ function App() {
   }, []);
 
   // Handle drag and drop to import files while keeping internal DnD enabled.
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!isDraggingInternal && isExternalFileDrag(e)) {
-      e.dataTransfer.dropEffect = "copy";
-      dragCounterRef.current = 1;
-      setIsDragging(true);
-    }
-  }, [isDraggingInternal, isExternalFileDrag]);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (isDraggingInternal || !isExternalFileDrag(e)) {
-      return;
-    }
-
-    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-    if (dragCounterRef.current === 0) {
-      setIsDragging(false);
-    }
-  }, [isDraggingInternal, isExternalFileDrag]);
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (isDraggingInternal || !isExternalFileDrag(e)) {
-      return;
-    }
-
-    dragCounterRef.current += 1;
-    setIsDragging(true);
-  }, [isDraggingInternal, isExternalFileDrag]);
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    dragCounterRef.current = 0;
-    setIsDragging(false);
-
-    if (isDraggingInternal || !isExternalFileDrag(e)) {
-      return;
-    }
-
-    const targetFolderId =
-      getDropTargetFolderId(e) ??
-      (dragOverFolderIdRef.current !== null ? dragOverFolderIdRef.current : undefined);
-    const paths = getDroppedPaths(e);
-
-    if (paths.length > 0) {
-      void importFiles(paths, targetFolderId);
-    } else {
-      const items = await Promise.all(
-        Array.from(e.dataTransfer.files).map(async (file) => ({
-          base64Data: await fileToBase64(file),
-          ext: getFileExt(file),
-        })),
-      );
-
-      if (items.length > 0) {
-        void importImagesFromBase64(items, targetFolderId);
+      if (!isDraggingInternal && isExternalFileDrag(e)) {
+        e.dataTransfer.dropEffect = "copy";
+        dragCounterRef.current = 1;
+        setIsDragging(true);
       }
-    }
+    },
+    [isDraggingInternal, isExternalFileDrag],
+  );
 
-    if (dragOverFolderIdRef.current !== null) {
-      setDragOverFolderId(null);
-    }
-  }, [
-    fileToBase64,
-    getDropTargetFolderId,
-    getFileExt,
-    getDroppedPaths,
-    importFiles,
-    importImagesFromBase64,
-    isDraggingInternal,
-    isExternalFileDrag,
-    setDragOverFolderId,
-  ]);
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (isDraggingInternal || !isExternalFileDrag(e)) {
+        return;
+      }
+
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) {
+        setIsDragging(false);
+      }
+    },
+    [isDraggingInternal, isExternalFileDrag],
+  );
+
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (isDraggingInternal || !isExternalFileDrag(e)) {
+        return;
+      }
+
+      dragCounterRef.current += 1;
+      setIsDragging(true);
+    },
+    [isDraggingInternal, isExternalFileDrag],
+  );
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+
+      if (isDraggingInternal || !isExternalFileDrag(e)) {
+        return;
+      }
+
+      const targetFolderId =
+        getDropTargetFolderId(e) ??
+        (dragOverFolderIdRef.current !== null ? dragOverFolderIdRef.current : undefined);
+      const paths = getDroppedPaths(e);
+
+      if (paths.length > 0) {
+        void importFiles(paths, targetFolderId);
+      } else {
+        const items = await Promise.all(
+          Array.from(e.dataTransfer.files).map(async (file) => ({
+            base64Data: await fileToBase64(file),
+            ext: getFileExt(file),
+          })),
+        );
+
+        if (items.length > 0) {
+          void importImagesFromBase64(items, targetFolderId);
+        }
+      }
+
+      if (dragOverFolderIdRef.current !== null) {
+        setDragOverFolderId(null);
+      }
+    },
+    [
+      fileToBase64,
+      getDropTargetFolderId,
+      getFileExt,
+      getDroppedPaths,
+      importFiles,
+      importImagesFromBase64,
+      isDraggingInternal,
+      isExternalFileDrag,
+      setDragOverFolderId,
+    ],
+  );
 
   return (
     <div
@@ -483,9 +489,7 @@ function App() {
         />
 
         <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          <Suspense fallback={null}>
-            {previewMode ? <ImagePreview /> : <FileGrid />}
-          </Suspense>
+          <Suspense fallback={null}>{previewMode ? <ImagePreview /> : <FileGrid />}</Suspense>
         </main>
 
         <PanelResizeHandle
@@ -510,10 +514,7 @@ function App() {
       )}
 
       <Suspense fallback={null}>
-        <SettingsModal
-          open={showSettings}
-          onClose={() => setShowSettings(false)}
-        />
+        <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       </Suspense>
       <Toaster position="bottom-right" />
     </div>

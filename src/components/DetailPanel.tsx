@@ -1,7 +1,7 @@
 import {
   useEffect,
   useState,
-  useCallback,
+  useMemo,
   useRef,
   type ButtonHTMLAttributes,
   type ReactNode,
@@ -42,10 +42,10 @@ import { Textarea } from "@/components/ui/Textarea";
 
 // Format date to match database format (YYYY-MM-DD HH:MM:SS)
 function formatDateTime(isoString: string): string {
-  if (!isoString) return ""
-  const date = new Date(isoString)
-  const pad = (n: number) => n.toString().padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 interface DetailPanelProps {
@@ -57,13 +57,7 @@ function PanelIconButton({
   type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type={type}
-      className={cn(appIconButtonClass, className)}
-      {...props}
-    />
-  );
+  return <button type={type} className={cn(appIconButtonClass, className)} {...props} />;
 }
 
 function PanelActionButton({
@@ -71,22 +65,10 @@ function PanelActionButton({
   type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type={type}
-      className={cn(appQuietButtonClass, className)}
-      {...props}
-    />
-  );
+  return <button type={type} className={cn(appQuietButtonClass, className)} {...props} />;
 }
 
-function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <span className={appPanelMetaClass}>{label}</span>
@@ -102,9 +84,7 @@ export default function DetailPanel({ width }: DetailPanelProps) {
   const { folders, selectedFolderId } = useFolderStore();
 
   // Find the selected folder
-  const selectedFolder = selectedFolderId
-    ? findFolderById(folders, selectedFolderId)
-    : null;
+  const selectedFolder = selectedFolderId ? findFolderById(folders, selectedFolderId) : null;
 
   // Show empty state when nothing is selected
   if (!selectedFile && !selectedFolder) {
@@ -156,10 +136,7 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
   };
 
   return (
-    <div
-      className={`${appPanelClass} flex-shrink-0`}
-      style={{ width }}
-    >
+    <div className={`${appPanelClass} flex-shrink-0`} style={{ width }}>
       <div className={appPanelHeaderClass}>
         <h3 className={appPanelTitleClass}>文件夹详情</h3>
         <div className="flex items-center gap-1">
@@ -184,12 +161,7 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
               className="text-red-500 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
               title="删除文件夹"
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -206,11 +178,7 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
         {/* Folder icon */}
         <div className="flex justify-center">
           <div className="flex size-20 items-center justify-center rounded-2xl bg-yellow-100 dark:bg-yellow-900/30">
-            <svg
-              className="h-10 w-10 text-yellow-500"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="h-10 w-10 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
             </svg>
           </div>
@@ -218,32 +186,20 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 
         {/* Folder name */}
         <div>
-          <h4 className={appSectionLabelClass}>
-            文件夹名称
-          </h4>
-          <p className={`${appPanelValueClass} break-all`}>
-            {folder.name}
-          </p>
+          <h4 className={appSectionLabelClass}>文件夹名称</h4>
+          <p className={`${appPanelValueClass} break-all`}>{folder.name}</p>
         </div>
 
         {/* File count */}
         <div>
-          <h4 className={appSectionLabelClass}>
-            文件数量
-          </h4>
-          <p className={appPanelValueClass}>
-            {folder.fileCount} 个文件
-          </p>
+          <h4 className={appSectionLabelClass}>文件数量</h4>
+          <p className={appPanelValueClass}>{folder.fileCount} 个文件</p>
         </div>
 
         {/* Path */}
         <div>
-          <h4 className={appSectionLabelClass}>
-            路径
-          </h4>
-          <p className={`${appPanelMetaClass} break-all`}>
-            {folder.path}
-          </p>
+          <h4 className={appSectionLabelClass}>路径</h4>
+          <p className={`${appPanelMetaClass} break-all`}>{folder.path}</p>
         </div>
       </div>
     </div>
@@ -394,7 +350,14 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     return () => {
       mounted = false;
     };
-  }, [file.path, file.size, previewType, file.ext, previewThumbnailMaxEdge, thumbnailRefreshVersion]);
+  }, [
+    file.path,
+    file.size,
+    previewType,
+    file.ext,
+    previewThumbnailMaxEdge,
+    thumbnailRefreshVersion,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -425,22 +388,11 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   };
 
   // Auto-save metadata with debounce
-  const saveMetadata = useCallback(
-    debounce(
-      async (
-        newRating: number,
-        newDescription: string,
-        newSourceUrl: string,
-      ) => {
-        await updateFileMetadata(
-          file.id,
-          newRating,
-          newDescription,
-          newSourceUrl,
-        );
-      },
-      500,
-    ),
+  const saveMetadata = useMemo(
+    () =>
+      debounce(async (newRating: number, newDescription: string, newSourceUrl: string) => {
+        await updateFileMetadata(file.id, newRating, newDescription, newSourceUrl);
+      }, 500),
     [file.id, updateFileMetadata],
   );
 
@@ -542,10 +494,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   };
 
   return (
-    <div
-      className={`${appPanelClass} flex-shrink-0`}
-      style={{ width }}
-    >
+    <div className={`${appPanelClass} flex-shrink-0`} style={{ width }}>
       <div className={appPanelHeaderClass}>
         <h3 className={appPanelTitleClass}>文件详情</h3>
         <div className="flex items-center gap-1">
@@ -554,12 +503,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
             className="text-blue-500 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30"
             title="导出文件"
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -589,12 +533,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
               className="text-red-500 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
               title="删除文件"
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -623,13 +562,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
               title={isImageOriginalOpen ? undefined : "双击加载原图"}
             >
               {imageSrc ? (
-                <img
-                  src={imageSrc}
-                  alt={file.name}
-                  className="w-full h-full object-contain"
-                />
+                <img src={imageSrc} alt={file.name} className="w-full h-full object-contain" />
               ) : previewError ? (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
                   <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
@@ -687,11 +622,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
               )}
             </button>
           ) : previewType === "pdf" && imageSrc ? (
-            <object
-              data={imageSrc}
-              type="application/pdf"
-              className="h-full w-full bg-white"
-            >
+            <object data={imageSrc} type="application/pdf" className="h-full w-full bg-white">
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
                 <FileTypeIcon ext={file.ext} className="h-10 w-10" />
                 <p className="text-[13px]">当前环境不支持 PDF 内嵌预览</p>
@@ -738,10 +669,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                     minWidth: colorInfo.percentage > 0 ? "4px" : "0",
                   }}
                 >
-                  <div
-                    className="absolute inset-0"
-                    style={{ backgroundColor: colorInfo.color }}
-                  />
+                  <div className="absolute inset-0" style={{ backgroundColor: colorInfo.color }} />
                   {/* 悬停提示 */}
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-1.5 py-0.5 bg-black/80 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10">
                     {colorInfo.color} {colorInfo.percentage.toFixed(1)}%
@@ -795,9 +723,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
         {/* Rating and File info list */}
         <div className="flex flex-col gap-2 rounded-xl bg-gray-50/80 p-3 dark:bg-dark-bg/40">
-          <span className={appSectionHeadingClass}>
-            素材信息
-          </span>
+          <span className={appSectionHeadingClass}>素材信息</span>
 
           {/* Rating */}
           <div className="flex items-center justify-between gap-3">
@@ -825,9 +751,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
               ))}
             </div>
           </div>
-          {folder && (
-            <InfoRow label="文件夹" value={folder.name} />
-          )}
+          {folder && <InfoRow label="文件夹" value={folder.name} />}
           {/* File info list - left label, right value */}
           <InfoRow label="尺寸" value={`${file.width} x ${file.height}`} />
           <InfoRow label="大小" value={formatSize(file.size)} />

@@ -3,12 +3,7 @@
 
 :root {
   font-family:
-    "Segoe UI Variable Text",
-    "Segoe UI",
-    "Microsoft YaHei UI",
-    "PingFang SC",
-    system-ui,
-    sans-serif;
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: #1f2937;
@@ -55,12 +50,7 @@ body {
 /* WebView2 clips "_" inside form controls with some non-native font stacks. */
 .input-system-font {
   font-family:
-    "Segoe UI Variable Text",
-    "Segoe UI",
-    "Microsoft YaHei UI",
-    "PingFang SC",
-    system-ui,
-    sans-serif;
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
 }
 
 #root {

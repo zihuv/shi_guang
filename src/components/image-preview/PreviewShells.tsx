@@ -1,72 +1,61 @@
-import type {
-  HTMLAttributes,
-  PointerEventHandler,
-  ReactNode,
-  RefObject,
-} from 'react'
-import type { FileItem } from '@/stores/fileTypes'
-import { formatSize } from '@/utils'
-import FileTypeIcon from '@/components/FileTypeIcon'
-import { ThumbnailItem } from '@/components/image-preview/PreviewHelpers'
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-} from '@/components/ui/ContextMenu'
-import {
-  OVERLAY_BUTTON_CLASS,
-  OVERLAY_CHIP_CLASS,
-} from './constants'
-import { Scan, ZoomIn, ZoomOut } from 'lucide-react'
+import type { HTMLAttributes, PointerEventHandler, ReactNode, RefObject } from "react";
+import type { FileItem } from "@/stores/fileTypes";
+import { formatSize } from "@/utils";
+import FileTypeIcon from "@/components/FileTypeIcon";
+import { ThumbnailItem } from "@/components/image-preview/PreviewHelpers";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/ContextMenu";
+import { OVERLAY_BUTTON_CLASS, OVERLAY_CHIP_CLASS } from "./constants";
+import { Scan, ZoomIn, ZoomOut } from "lucide-react";
 
 interface PreviewViewportProps {
-  canPanImage: boolean
-  isPanning: boolean
-  viewportRef: RefObject<HTMLDivElement | null>
-  renderedPreviewContent: ReactNode
-  previewContextMenu: ReactNode
-  onPointerDown: PointerEventHandler<HTMLDivElement>
-  onPointerMove: PointerEventHandler<HTMLDivElement>
-  onPointerUp: PointerEventHandler<HTMLDivElement>
+  canPanImage: boolean;
+  isPanning: boolean;
+  viewportRef: RefObject<HTMLDivElement | null>;
+  renderedPreviewContent: ReactNode;
+  previewContextMenu: ReactNode;
+  onPointerDown: PointerEventHandler<HTMLDivElement>;
+  onPointerMove: PointerEventHandler<HTMLDivElement>;
+  onPointerUp: PointerEventHandler<HTMLDivElement>;
 }
 
 interface FullscreenPreviewShellProps extends PreviewViewportProps {
-  currentNum: number
-  totalFiles: number
-  canGoPrev: boolean
-  canGoNext: boolean
-  supportsZoom: boolean
-  isFitMode: boolean
-  onZoomOut: () => void
-  onZoomIn: () => void
-  onFitToView: () => void
-  onToggleFullscreen: () => void
-  onGoPrev: () => void
-  onGoNext: () => void
+  currentNum: number;
+  totalFiles: number;
+  canGoPrev: boolean;
+  canGoNext: boolean;
+  supportsZoom: boolean;
+  isFitMode: boolean;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onFitToView: () => void;
+  onToggleFullscreen: () => void;
+  onGoPrev: () => void;
+  onGoNext: () => void;
 }
 
 interface StandardPreviewShellProps extends PreviewViewportProps {
-  currentFolderName: string
-  currentNum: number
-  totalFiles: number
-  canGoPrev: boolean
-  canGoNext: boolean
-  supportsZoom: boolean
-  previewType: string
-  isFullscreen: boolean
-  isFitMode: boolean
-  externalDragProps: HTMLAttributes<HTMLElement> & { draggable?: boolean }
-  currentFile: FileItem
-  previewMeta: string
-  previewFiles: FileItem[]
-  previewIndex: number
-  onZoomOut: () => void
-  onZoomIn: () => void
-  onFitToView: () => void
-  onToggleFullscreen: () => void
-  onClose: () => void
-  onGoPrev: () => void
-  onGoNext: () => void
-  onSelectPreviewIndex: (index: number) => void
+  currentFolderName: string;
+  currentNum: number;
+  totalFiles: number;
+  canGoPrev: boolean;
+  canGoNext: boolean;
+  supportsZoom: boolean;
+  previewType: string;
+  isFullscreen: boolean;
+  isFitMode: boolean;
+  externalDragProps: HTMLAttributes<HTMLElement> & { draggable?: boolean };
+  currentFile: FileItem;
+  previewMeta: string;
+  previewFiles: FileItem[];
+  previewIndex: number;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onFitToView: () => void;
+  onToggleFullscreen: () => void;
+  onClose: () => void;
+  onGoPrev: () => void;
+  onGoNext: () => void;
+  onSelectPreviewIndex: (index: number) => void;
 }
 
 function PreviewViewport({
@@ -85,9 +74,9 @@ function PreviewViewport({
         <div
           ref={viewportRef}
           className={`preview-wheel-container flex-1 overflow-auto ${
-            canPanImage ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
+            canPanImage ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
           }`}
-          style={{ scrollbarGutter: 'stable' }}
+          style={{ scrollbarGutter: "stable" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -98,7 +87,7 @@ function PreviewViewport({
       </ContextMenuTrigger>
       {previewContextMenu}
     </ContextMenu>
-  )
+  );
 }
 
 export function FullscreenPreviewShell({
@@ -157,7 +146,12 @@ export function FullscreenPreviewShell({
                 title="退出全屏 (Esc)"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -171,7 +165,12 @@ export function FullscreenPreviewShell({
                   title="上一张"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
                   </svg>
                 </button>
                 <button
@@ -181,7 +180,12 @@ export function FullscreenPreviewShell({
                   title="下一张"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
                   </svg>
                 </button>
               </>
@@ -192,11 +196,11 @@ export function FullscreenPreviewShell({
               className={`preview-wheel-container h-full w-full overflow-auto ${
                 viewportProps.canPanImage
                   ? viewportProps.isPanning
-                    ? 'cursor-grabbing'
-                    : 'cursor-grab'
-                  : ''
+                    ? "cursor-grabbing"
+                    : "cursor-grab"
+                  : ""
               }`}
-              style={{ scrollbarGutter: 'stable' }}
+              style={{ scrollbarGutter: "stable" }}
               onPointerDown={viewportProps.onPointerDown}
               onPointerMove={viewportProps.onPointerMove}
               onPointerUp={viewportProps.onPointerUp}
@@ -209,7 +213,7 @@ export function FullscreenPreviewShell({
         {viewportProps.previewContextMenu}
       </ContextMenu>
     </div>
-  )
+  );
 }
 
 export function StandardPreviewShell({
@@ -249,12 +253,19 @@ export function StandardPreviewShell({
             onClick={onGoPrev}
             disabled={!canGoPrev}
             className={`rounded p-1.5 ${
-              canGoPrev ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'cursor-not-allowed opacity-50'
+              canGoPrev
+                ? "hover:bg-gray-200 dark:hover:bg-gray-700"
+                : "cursor-not-allowed opacity-50"
             }`}
             title="上一张"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
           </button>
           <span className="min-w-[60px] text-center text-sm">
@@ -264,7 +275,9 @@ export function StandardPreviewShell({
             onClick={onGoNext}
             disabled={!canGoNext}
             className={`rounded p-1.5 ${
-              canGoNext ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'cursor-not-allowed opacity-50'
+              canGoNext
+                ? "hover:bg-gray-200 dark:hover:bg-gray-700"
+                : "cursor-not-allowed opacity-50"
             }`}
             title="下一张"
           >
@@ -277,20 +290,32 @@ export function StandardPreviewShell({
         <div className="flex items-center gap-3">
           {supportsZoom ? (
             <div className="flex items-center gap-2">
-              <button onClick={onZoomOut} className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700" title="缩小">
+              <button
+                onClick={onZoomOut}
+                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+                title="缩小"
+              >
                 <ZoomOut className="h-4 w-4" />
               </button>
-              <button onClick={onZoomIn} className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700" title="放大">
+              <button
+                onClick={onZoomIn}
+                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+                title="放大"
+              >
                 <ZoomIn className="h-4 w-4" />
               </button>
             </div>
           ) : (
             <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
-              {previewType === 'video' ? '视频播放' : previewType === 'pdf' ? 'PDF 预览' : '文件预览'}
+              {previewType === "video"
+                ? "视频播放"
+                : previewType === "pdf"
+                  ? "PDF 预览"
+                  : "文件预览"}
             </span>
           )}
 
-          {previewType !== 'none' && (
+          {previewType !== "none" && (
             <>
               {supportsZoom && (
                 <button
@@ -305,16 +330,25 @@ export function StandardPreviewShell({
               <button
                 onClick={onToggleFullscreen}
                 className="rounded px-2 py-1 text-sm hover:bg-gray-200 dark:hover:bg-gray-700"
-                title={isFullscreen ? '退出全屏 (F)' : '全屏预览 (F)'}
+                title={isFullscreen ? "退出全屏 (F)" : "全屏预览 (F)"}
               >
-                {isFullscreen ? '退出全屏' : '全屏'}
+                {isFullscreen ? "退出全屏" : "全屏"}
               </button>
             </>
           )}
 
-          <button onClick={onClose} className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700" title="关闭 (Esc)">
+          <button
+            onClick={onClose}
+            className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+            title="关闭 (Esc)"
+          >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -344,11 +378,21 @@ export function StandardPreviewShell({
           onClick={onGoPrev}
           disabled={!canGoPrev}
           className={`flex-shrink-0 rounded p-1 ${
-            canGoPrev ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'cursor-not-allowed opacity-50'
+            canGoPrev ? "hover:bg-gray-200 dark:hover:bg-gray-700" : "cursor-not-allowed opacity-50"
           }`}
         >
-          <svg className="h-5 w-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          <svg
+            className="h-5 w-5 text-gray-600 dark:text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
         </button>
 
@@ -358,7 +402,7 @@ export function StandardPreviewShell({
               key={file.id}
               onClick={() => onSelectPreviewIndex(index)}
               className={`h-14 w-14 flex-shrink-0 overflow-hidden rounded transition-all ${
-                index === previewIndex ? 'ring-2 ring-white' : 'opacity-50 hover:opacity-80'
+                index === previewIndex ? "ring-2 ring-white" : "opacity-50 hover:opacity-80"
               }`}
             >
               <ThumbnailItem file={file} />
@@ -370,14 +414,19 @@ export function StandardPreviewShell({
           onClick={onGoNext}
           disabled={!canGoNext}
           className={`flex-shrink-0 rounded p-1 ${
-            canGoNext ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'cursor-not-allowed opacity-50'
+            canGoNext ? "hover:bg-gray-200 dark:hover:bg-gray-700" : "cursor-not-allowed opacity-50"
           }`}
         >
-          <svg className="h-5 w-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            className="h-5 w-5 text-gray-600 dark:text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
       </div>
     </div>
-  )
+  );
 }

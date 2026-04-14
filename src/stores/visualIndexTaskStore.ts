@@ -1,171 +1,169 @@
-import { listen } from "@tauri-apps/api/event"
-import { create } from "zustand"
-import { toast } from "sonner"
+import { listen } from "@tauri-apps/api/event";
+import { create } from "zustand";
+import { toast } from "sonner";
 import {
   cancelVisualIndexTask as cancelVisualIndexTaskCommand,
   getVisualIndexRetryCandidates as getVisualIndexRetryCandidatesCommand,
   getVisualIndexTask,
   reindexFileVisualEmbedding as reindexFileVisualEmbeddingCommand,
   startVisualIndexTask as startVisualIndexTaskCommand,
-} from "@/services/tauri/files"
-import { getErrorMessage } from "@/services/tauri/core"
+} from "@/services/tauri/files";
+import { getErrorMessage } from "@/services/tauri/core";
 import {
   TERMINAL_VISUAL_INDEX_TASK_STATUSES,
   type VisualIndexTaskSnapshot,
-} from "@/stores/fileTypes"
-import { useSettingsStore } from "@/stores/settingsStore"
-import { buildBrowserDecodedImageDataUrl } from "@/utils"
+} from "@/stores/fileTypes";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { buildBrowserDecodedImageDataUrl } from "@/utils";
 
-const VISUAL_INDEX_TASK_EVENT = "visual-index-task-updated"
+const VISUAL_INDEX_TASK_EVENT = "visual-index-task-updated";
 
 interface VisualIndexTaskStore {
-  visualIndexTask: VisualIndexTaskSnapshot | null
-  setVisualIndexTask: (task: VisualIndexTaskSnapshot | null) => void
-  startVisualIndexTask: (
-    processUnindexedOnly: boolean,
-  ) => Promise<VisualIndexTaskSnapshot | null>
-  cancelVisualIndexTask: () => Promise<void>
+  visualIndexTask: VisualIndexTaskSnapshot | null;
+  setVisualIndexTask: (task: VisualIndexTaskSnapshot | null) => void;
+  startVisualIndexTask: (processUnindexedOnly: boolean) => Promise<VisualIndexTaskSnapshot | null>;
+  cancelVisualIndexTask: () => Promise<void>;
 }
 
 async function retryVisualIndexWithBrowserDecode() {
-  let recovered = 0
-  const candidates = await getVisualIndexRetryCandidatesCommand()
+  let recovered = 0;
+  const candidates = await getVisualIndexRetryCandidatesCommand();
 
   for (const candidate of candidates) {
     try {
-      const isAvif = candidate.ext.toLowerCase() === "avif"
+      const isAvif = candidate.ext.toLowerCase() === "avif";
       const imageDataUrl = await buildBrowserDecodedImageDataUrl(candidate.path, {
         maxEdge: isAvif ? null : 1280,
         quality: isAvif ? undefined : 0.9,
         outputMimeType: isAvif ? "image/png" : "image/jpeg",
-      })
-      await reindexFileVisualEmbeddingCommand(candidate.fileId, imageDataUrl)
-      recovered += 1
+      });
+      await reindexFileVisualEmbeddingCommand(candidate.fileId, imageDataUrl);
+      recovered += 1;
     } catch (error) {
       console.warn("Failed to rebuild visual index via browser decode:", {
         fileId: candidate.fileId,
         path: candidate.path,
         error,
-      })
+      });
     }
   }
 
-  return recovered
+  return recovered;
 }
 
 async function waitForVisualIndexTask(
   taskId: string,
   onUpdate: (task: VisualIndexTaskSnapshot) => void,
 ) {
-  let unlisten: (() => void) | null = null
-  let fallbackTimer: ReturnType<typeof setInterval> | null = null
-  let isSettled = false
-  let isRefreshing = false
-  let needsRefresh = false
+  let unlisten: (() => void) | null = null;
+  let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+  let isSettled = false;
+  let isRefreshing = false;
+  let needsRefresh = false;
 
   return await new Promise<VisualIndexTaskSnapshot>((resolve, reject) => {
     const cleanup = () => {
       if (fallbackTimer) {
-        clearInterval(fallbackTimer)
-        fallbackTimer = null
+        clearInterval(fallbackTimer);
+        fallbackTimer = null;
       }
       if (unlisten) {
-        unlisten()
-        unlisten = null
+        unlisten();
+        unlisten = null;
       }
-    }
+    };
 
     const finish = (snapshot: VisualIndexTaskSnapshot) => {
-      if (isSettled) return
-      isSettled = true
-      cleanup()
-      resolve(snapshot)
-    }
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      resolve(snapshot);
+    };
 
     const fail = (error: unknown) => {
-      if (isSettled) return
-      isSettled = true
-      cleanup()
-      reject(error)
-    }
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      reject(error);
+    };
 
     const refreshSnapshot = async () => {
-      if (isSettled) return
+      if (isSettled) return;
       if (isRefreshing) {
-        needsRefresh = true
-        return
+        needsRefresh = true;
+        return;
       }
 
-      isRefreshing = true
+      isRefreshing = true;
       try {
-        const snapshot = await getVisualIndexTask(taskId)
-        onUpdate(snapshot)
+        const snapshot = await getVisualIndexTask(taskId);
+        onUpdate(snapshot);
         if (TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(snapshot.status)) {
-          finish(snapshot)
+          finish(snapshot);
         }
       } catch (error) {
-        fail(error)
+        fail(error);
       } finally {
-        isRefreshing = false
+        isRefreshing = false;
         if (needsRefresh && !isSettled) {
-          needsRefresh = false
-          void refreshSnapshot()
+          needsRefresh = false;
+          void refreshSnapshot();
         }
       }
-    }
+    };
 
     fallbackTimer = setInterval(() => {
-      void refreshSnapshot()
-    }, 1000)
+      void refreshSnapshot();
+    }, 1000);
 
     void listen<string>(VISUAL_INDEX_TASK_EVENT, (event) => {
-      if (event.payload !== taskId || isSettled) return
-      void refreshSnapshot()
+      if (event.payload !== taskId || isSettled) return;
+      void refreshSnapshot();
     })
       .then((dispose) => {
         if (isSettled) {
-          dispose()
-          return
+          dispose();
+          return;
         }
-        unlisten = dispose
+        unlisten = dispose;
       })
       .catch(() => {
         // Keep fallback timer when event subscription fails.
-      })
+      });
 
-    void refreshSnapshot()
-  })
+    void refreshSnapshot();
+  });
 }
 
 async function finalizeVisualIndexTask(
   task: VisualIndexTaskSnapshot,
   setVisualIndexTask: (task: VisualIndexTaskSnapshot | null) => void,
 ) {
-  let recoveredByBrowserDecode = 0
+  let recoveredByBrowserDecode = 0;
 
   if (task.failureCount > 0 && task.status === "completed_with_errors") {
-    recoveredByBrowserDecode = await retryVisualIndexWithBrowserDecode()
+    recoveredByBrowserDecode = await retryVisualIndexWithBrowserDecode();
   }
 
-  await useSettingsStore.getState().refreshVisualSearchStatus()
+  await useSettingsStore.getState().refreshVisualSearchStatus();
 
-  const indexedCount = task.indexedCount + recoveredByBrowserDecode
-  const failedCount = Math.max(0, task.failureCount - recoveredByBrowserDecode)
-  const taskLabel = task.processUnindexedOnly ? "未索引图片处理" : "视觉索引"
+  const indexedCount = task.indexedCount + recoveredByBrowserDecode;
+  const failedCount = Math.max(0, task.failureCount - recoveredByBrowserDecode);
+  const taskLabel = task.processUnindexedOnly ? "未索引图片处理" : "视觉索引";
 
   if (task.status === "completed") {
-    toast.success(`${taskLabel}完成：成功 ${indexedCount} 张`)
+    toast.success(`${taskLabel}完成：成功 ${indexedCount} 张`);
   } else if (task.status === "completed_with_errors" && failedCount === 0) {
-    toast.success(`${taskLabel}完成：成功 ${indexedCount} 张`)
+    toast.success(`${taskLabel}完成：成功 ${indexedCount} 张`);
   } else if (task.status === "completed_with_errors") {
-    toast.error(`${taskLabel}完成：成功 ${indexedCount} 张，失败 ${failedCount} 张`)
+    toast.error(`${taskLabel}完成：成功 ${indexedCount} 张，失败 ${failedCount} 张`);
   } else if (task.status === "cancelled") {
-    toast.error(`${taskLabel}已取消：已完成 ${task.processed}/${task.total}`)
+    toast.error(`${taskLabel}已取消：已完成 ${task.processed}/${task.total}`);
   } else if (task.status === "failed") {
-    toast.error(`${taskLabel}失败`)
+    toast.error(`${taskLabel}失败`);
   }
 
-  setVisualIndexTask(null)
+  setVisualIndexTask(null);
 }
 
 export const useVisualIndexTaskStore = create<VisualIndexTaskStore>((set, get) => ({
@@ -174,52 +172,49 @@ export const useVisualIndexTaskStore = create<VisualIndexTaskStore>((set, get) =
   setVisualIndexTask: (task) => set({ visualIndexTask: task }),
 
   startVisualIndexTask: async (processUnindexedOnly) => {
-    const currentTask = get().visualIndexTask
-    if (
-      currentTask &&
-      !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(currentTask.status)
-    ) {
-      toast.error("已有视觉索引任务正在进行")
-      return null
+    const currentTask = get().visualIndexTask;
+    if (currentTask && !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(currentTask.status)) {
+      toast.error("已有视觉索引任务正在进行");
+      return null;
     }
 
     try {
-      const task = await startVisualIndexTaskCommand(processUnindexedOnly)
-      set({ visualIndexTask: task })
+      const task = await startVisualIndexTaskCommand(processUnindexedOnly);
+      set({ visualIndexTask: task });
 
       void waitForVisualIndexTask(task.id, (nextTask) => {
-        set({ visualIndexTask: nextTask })
+        set({ visualIndexTask: nextTask });
       })
         .then((finalTask) =>
           finalizeVisualIndexTask(finalTask, (nextTask) => set({ visualIndexTask: nextTask })),
         )
         .catch(async (error) => {
-          console.error("Failed to track visual index task:", error)
-          set({ visualIndexTask: null })
-          await useSettingsStore.getState().refreshVisualSearchStatus()
-          toast.error(`视觉索引任务状态同步失败: ${getErrorMessage(error)}`)
-        })
+          console.error("Failed to track visual index task:", error);
+          set({ visualIndexTask: null });
+          await useSettingsStore.getState().refreshVisualSearchStatus();
+          toast.error(`视觉索引任务状态同步失败: ${getErrorMessage(error)}`);
+        });
 
-      return task
+      return task;
     } catch (error) {
-      console.error("Failed to start visual index task:", error)
-      set({ visualIndexTask: null })
-      toast.error(`启动视觉索引失败: ${getErrorMessage(error)}`)
-      return null
+      console.error("Failed to start visual index task:", error);
+      set({ visualIndexTask: null });
+      toast.error(`启动视觉索引失败: ${getErrorMessage(error)}`);
+      return null;
     }
   },
 
   cancelVisualIndexTask: async () => {
-    const task = get().visualIndexTask
+    const task = get().visualIndexTask;
     if (!task || TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(task.status)) {
-      return
+      return;
     }
 
     try {
-      await cancelVisualIndexTaskCommand(task.id)
+      await cancelVisualIndexTaskCommand(task.id);
     } catch (error) {
-      console.error("Failed to cancel visual index task:", error)
-      toast.error(`取消视觉索引任务失败: ${getErrorMessage(error)}`)
+      console.error("Failed to cancel visual index task:", error);
+      toast.error(`取消视觉索引任务失败: ${getErrorMessage(error)}`);
     }
   },
-}))
+}));

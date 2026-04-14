@@ -4,21 +4,16 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
-} from "react"
-import { Play } from "lucide-react"
-import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes"
-import {
-  type LibraryViewMode,
-  type LibraryVisibleField,
-} from "@/stores/settingsStore"
-import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore"
-import { cn } from "@/lib/utils"
-import { useExternalFileDrag } from "@/hooks/useExternalFileDrag"
-import FileTypeIcon from "@/components/FileTypeIcon"
-import FileContextMenu from "@/components/FileContextMenu"
-import {
-  GRID_PREVIEW_HEIGHT_RATIO,
-} from "@/components/file-grid/fileGridLayout"
+} from "react";
+import { Play } from "lucide-react";
+import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
+import { type LibraryViewMode, type LibraryVisibleField } from "@/stores/settingsStore";
+import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
+import { cn } from "@/lib/utils";
+import { useExternalFileDrag } from "@/hooks/useExternalFileDrag";
+import FileTypeIcon from "@/components/FileTypeIcon";
+import FileContextMenu from "@/components/FileContextMenu";
+import { GRID_PREVIEW_HEIGHT_RATIO } from "@/components/file-grid/fileGridLayout";
 import {
   canGenerateThumbnail,
   formatSize,
@@ -27,61 +22,59 @@ import {
   getVideoThumbnailSrc,
   isVideoFile,
   resolveThumbnailRequestMaxEdge,
-} from "@/utils"
+} from "@/utils";
 
-const OBSERVER_ROOT_MARGIN = "96px"
-const ADAPTIVE_OBSERVER_ROOT_MARGIN = "72px"
-const IMAGE_SRC_CACHE_LIMIT = 192
-const MAX_CONCURRENT_CARD_THUMBNAIL_LOADS = 6
-const MAX_VISIBLE_TAGS = 3
-const LIST_MAX_VISIBLE_TAGS = 2
-const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"]
+const OBSERVER_ROOT_MARGIN = "96px";
+const ADAPTIVE_OBSERVER_ROOT_MARGIN = "72px";
+const IMAGE_SRC_CACHE_LIMIT = 192;
+const MAX_CONCURRENT_CARD_THUMBNAIL_LOADS = 6;
+const MAX_VISIBLE_TAGS = 3;
+const LIST_MAX_VISIBLE_TAGS = 2;
+const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"];
 const CARD_BOTTOM_HIGHLIGHT_CLASS =
-  "after:pointer-events-none after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-95 after:rounded-full after:bg-primary-400/70 after:opacity-0 after:content-[''] after:transition-[opacity,transform] after:duration-150 dark:after:bg-primary-500/80"
-const CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS =
-  "active:after:scale-x-100 active:after:opacity-70"
-const CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-90"
-const CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS =
-  "after:scale-x-100 after:opacity-100"
+  "after:pointer-events-none after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-95 after:rounded-full after:bg-primary-400/70 after:opacity-0 after:content-[''] after:transition-[opacity,transform] after:duration-150 dark:after:bg-primary-500/80";
+const CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS = "active:after:scale-x-100 active:after:opacity-70";
+const CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-90";
+const CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-100";
 type FileCardBaseProps = {
-  file: FileItem
-  visibleFields: LibraryVisibleField[]
-  isSelected: boolean
-  isMultiSelected: boolean
-  scrollRootRef: RefObject<HTMLDivElement | null>
-  onClick: (event: ReactMouseEvent<HTMLDivElement>) => void
-  onDoubleClick?: () => void
-}
+  file: FileItem;
+  visibleFields: LibraryVisibleField[];
+  isSelected: boolean;
+  isMultiSelected: boolean;
+  scrollRootRef: RefObject<HTMLDivElement | null>;
+  onClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  onDoubleClick?: () => void;
+};
 
 type VideoPlayBadgeProps = {
-  compact?: boolean
-  className?: string
-}
+  compact?: boolean;
+  className?: string;
+};
 
 type FilePreviewFallbackProps = {
-  ext: string
-  compact?: boolean
-  className?: string
-  iconClassName?: string
-  labelClassName?: string
-}
+  ext: string;
+  compact?: boolean;
+  className?: string;
+  iconClassName?: string;
+  labelClassName?: string;
+};
 
-const imageSrcCache = new Map<string, string>()
-const pendingCardThumbnailTasks: Array<() => void> = []
-let activeCardThumbnailTaskCount = 0
+const imageSrcCache = new Map<string, string>();
+const pendingCardThumbnailTasks: Array<() => void> = [];
+let activeCardThumbnailTaskCount = 0;
 
 function isRevocableBlobSrc(src: string | null | undefined): src is string {
-  return typeof src === "string" && src.startsWith("blob:")
+  return typeof src === "string" && src.startsWith("blob:");
 }
 
 function releaseUnusedImageSrc(src: string | null | undefined) {
   if (isRevocableBlobSrc(src)) {
-    URL.revokeObjectURL(src)
+    URL.revokeObjectURL(src);
   }
 }
 
 function shouldCacheImageSrc(src: string) {
-  return Boolean(src) && !src.startsWith("blob:") && !src.startsWith("data:")
+  return Boolean(src) && !src.startsWith("blob:") && !src.startsWith("data:");
 }
 
 function flushCardThumbnailTaskQueue() {
@@ -89,102 +82,99 @@ function flushCardThumbnailTaskQueue() {
     activeCardThumbnailTaskCount < MAX_CONCURRENT_CARD_THUMBNAIL_LOADS &&
     pendingCardThumbnailTasks.length > 0
   ) {
-    const nextTask = pendingCardThumbnailTasks.shift()
-    nextTask?.()
+    const nextTask = pendingCardThumbnailTasks.shift();
+    nextTask?.();
   }
 }
 
 function scheduleCardThumbnailTask<T>(task: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const runTask = () => {
-      activeCardThumbnailTaskCount += 1
+      activeCardThumbnailTaskCount += 1;
       task()
         .then(resolve)
         .catch(reject)
         .finally(() => {
-          activeCardThumbnailTaskCount = Math.max(0, activeCardThumbnailTaskCount - 1)
-          flushCardThumbnailTaskQueue()
-        })
-    }
+          activeCardThumbnailTaskCount = Math.max(0, activeCardThumbnailTaskCount - 1);
+          flushCardThumbnailTaskQueue();
+        });
+    };
 
-    pendingCardThumbnailTasks.push(runTask)
-    flushCardThumbnailTaskQueue()
-  })
+    pendingCardThumbnailTasks.push(runTask);
+    flushCardThumbnailTaskQueue();
+  });
 }
 
 function getCachedImageSrc(cacheKey: string) {
-  const cached = imageSrcCache.get(cacheKey)
+  const cached = imageSrcCache.get(cacheKey);
   if (!cached) {
-    return null
+    return null;
   }
 
-  imageSrcCache.delete(cacheKey)
-  imageSrcCache.set(cacheKey, cached)
-  return cached
+  imageSrcCache.delete(cacheKey);
+  imageSrcCache.set(cacheKey, cached);
+  return cached;
 }
 
 function cacheImageSrc(cacheKey: string, src: string) {
   if (!shouldCacheImageSrc(src)) {
-    return
+    return;
   }
 
-  const existing = imageSrcCache.get(cacheKey)
+  const existing = imageSrcCache.get(cacheKey);
   if (existing && existing !== src && isRevocableBlobSrc(existing)) {
-    URL.revokeObjectURL(existing)
+    URL.revokeObjectURL(existing);
   }
 
-  imageSrcCache.set(cacheKey, src)
+  imageSrcCache.set(cacheKey, src);
 
   while (imageSrcCache.size > IMAGE_SRC_CACHE_LIMIT) {
-    const oldestKey = imageSrcCache.keys().next().value
+    const oldestKey = imageSrcCache.keys().next().value;
     if (!oldestKey) {
-      break
+      break;
     }
 
-    const oldestSrc = imageSrcCache.get(oldestKey)
+    const oldestSrc = imageSrcCache.get(oldestKey);
     if (isRevocableBlobSrc(oldestSrc)) {
-      URL.revokeObjectURL(oldestSrc)
+      URL.revokeObjectURL(oldestSrc);
     }
-    imageSrcCache.delete(oldestKey)
+    imageSrcCache.delete(oldestKey);
   }
 }
 
-function resolveCardThumbnailMaxEdge(
-  previewWidth: number,
-  previewHeight: number = previewWidth,
-) {
+function resolveCardThumbnailMaxEdge(previewWidth: number, previewHeight: number = previewWidth) {
   return resolveThumbnailRequestMaxEdge(previewWidth, previewHeight, {
     devicePixelRatioCap: 1,
-  })
+  });
 }
 
 function useVisibility(
   rootRef: RefObject<HTMLElement | null>,
   rootMargin: string = OBSERVER_ROOT_MARGIN,
 ) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [isVisible, setIsVisible] = useState(false)
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    const element = ref.current
-    const root = rootRef.current
-    if (!element || !root) return
+    const element = ref.current;
+    const root = rootRef.current;
+    if (!element || !root) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        setIsVisible(entries.some((entry) => entry.isIntersecting))
+        setIsVisible(entries.some((entry) => entry.isIntersecting));
       },
       {
         root,
         rootMargin,
       },
-    )
+    );
 
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [rootMargin, rootRef])
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [rootMargin, rootRef]);
 
-  return { ref, isVisible }
+  return { ref, isVisible };
 }
 
 function useLazyImageSrc(
@@ -195,70 +185,68 @@ function useLazyImageSrc(
   maxEdge: number | undefined,
   refreshVersion: number,
 ) {
-  const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState<string | null>(() =>
-    getCachedImageSrc(cacheKey),
-  )
+  const [imageError, setImageError] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string | null>(() => getCachedImageSrc(cacheKey));
 
   useEffect(() => {
     if (!isVisible) {
-      setImageSrc(null)
-      setImageError(false)
-      return
+      setImageSrc(null);
+      setImageError(false);
+      return;
     }
 
     if (!canGenerateThumbnail(ext)) {
-      setImageError(false)
-      setImageSrc("")
-      return
+      setImageError(false);
+      setImageSrc("");
+      return;
     }
 
-    const cached = getCachedImageSrc(cacheKey)
+    const cached = getCachedImageSrc(cacheKey);
     if (cached) {
-      setImageError(false)
-      setImageSrc(cached)
-      return
+      setImageError(false);
+      setImageSrc(cached);
+      return;
     }
 
-    let active = true
-    setImageError(false)
+    let active = true;
+    setImageError(false);
 
     scheduleCardThumbnailTask(async () => {
       if (isVideoFile(ext)) {
-        return getVideoThumbnailSrc(path, maxEdge)
+        return getVideoThumbnailSrc(path, maxEdge);
       }
 
-      const thumbnailSrc = await getThumbnailImageSrc(path, ext, maxEdge)
-      return thumbnailSrc || getFileSrc(path)
+      const thumbnailSrc = await getThumbnailImageSrc(path, ext, maxEdge);
+      return thumbnailSrc || getFileSrc(path);
     })
       .then((src) => {
         if (!active) {
-          releaseUnusedImageSrc(src)
-          return
+          releaseUnusedImageSrc(src);
+          return;
         }
 
-        cacheImageSrc(cacheKey, src)
-        setImageSrc(src)
+        cacheImageSrc(cacheKey, src);
+        setImageSrc(src);
       })
       .catch((error) => {
         if (!active) {
-          return
+          return;
         }
-        console.error("Failed to load card thumbnail:", error)
-        setImageError(true)
-        setImageSrc("")
-      })
+        console.error("Failed to load card thumbnail:", error);
+        setImageError(true);
+        setImageSrc("");
+      });
 
     return () => {
-      active = false
-    }
-  }, [cacheKey, ext, isVisible, maxEdge, path, refreshVersion])
+      active = false;
+    };
+  }, [cacheKey, ext, isVisible, maxEdge, path, refreshVersion]);
 
   return {
     imageSrc,
     imageError,
     setImageError,
-  }
+  };
 }
 
 export function FileCard({
@@ -272,13 +260,13 @@ export function FileCard({
   onClick,
   onDoubleClick,
 }: FileCardBaseProps & { footerHeight: number; previewWidth: number }) {
-  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
-  const isVideo = isVideoFile(file.ext)
+  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef);
+  const isVideo = isVideoFile(file.ext);
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
-  )
-  const thumbnailMaxEdge = isVideo ? resolveCardThumbnailMaxEdge(previewWidth) : undefined
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? thumbnailMaxEdge ?? 'video' : 'image-preview'}`
+  );
+  const thumbnailMaxEdge = isVideo ? resolveCardThumbnailMaxEdge(previewWidth) : undefined;
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? (thumbnailMaxEdge ?? "video") : "image-preview"}`;
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
@@ -286,11 +274,11 @@ export function FileCard({
     isVisible,
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
-  )
-  const showName = visibleFields.includes("name")
-  const metaTokens = getFileInfoTokens(file, visibleFields)
-  const showTags = shouldShowTags(file, visibleFields)
-  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id)
+  );
+  const showName = visibleFields.includes("name");
+  const metaTokens = getFileInfoTokens(file, visibleFields);
+  const showTags = shouldShowTags(file, visibleFields);
+  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id);
 
   return (
     <FileContextMenu file={file}>
@@ -350,10 +338,7 @@ export function FileCard({
                 decoding="async"
               />
             ) : (
-              <FilePreviewFallback
-                ext={file.ext}
-                className="absolute inset-0"
-              />
+              <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
             )}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
@@ -368,10 +353,7 @@ export function FileCard({
             )}
             {metaTokens.length > 0 && (
               <p
-                className={cn(
-                  "truncate text-[11px] leading-4 text-gray-400",
-                  showName && "mt-0.5",
-                )}
+                className={cn("truncate text-[11px] leading-4 text-gray-400", showName && "mt-0.5")}
               >
                 {metaTokens.join(" · ")}
               </p>
@@ -398,7 +380,7 @@ export function FileCard({
         </div>
       </div>
     </FileContextMenu>
-  )
+  );
 }
 
 export function AdaptiveFileCard({
@@ -414,19 +396,19 @@ export function AdaptiveFileCard({
   const { ref: visibilityRef, isVisible } = useVisibility(
     scrollRootRef,
     ADAPTIVE_OBSERVER_ROOT_MARGIN,
-  )
-  const isVideo = isVideoFile(file.ext)
+  );
+  const isVideo = isVideoFile(file.ext);
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
-  )
+  );
   const previewHeight =
     !file.width || !file.height || file.width <= 0 || file.height <= 0
       ? previewWidth
-      : Math.max(80, Math.round((file.height / file.width) * previewWidth))
+      : Math.max(80, Math.round((file.height / file.width) * previewWidth));
   const thumbnailMaxEdge = isVideo
     ? resolveCardThumbnailMaxEdge(previewWidth, previewHeight)
-    : undefined
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? thumbnailMaxEdge ?? 'video' : 'image-preview'}`
+    : undefined;
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? (thumbnailMaxEdge ?? "video") : "image-preview"}`;
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
@@ -434,16 +416,16 @@ export function AdaptiveFileCard({
     isVisible,
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
-  )
-  const footerHeight = getAdaptiveFooterHeight(file, visibleFields)
-  const showName = visibleFields.includes("name")
-  const metaTokens = getFileInfoTokens(file, visibleFields)
-  const showTags = shouldShowTags(file, visibleFields)
-  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id)
+  );
+  const footerHeight = getAdaptiveFooterHeight(file, visibleFields);
+  const showName = visibleFields.includes("name");
+  const metaTokens = getFileInfoTokens(file, visibleFields);
+  const showTags = shouldShowTags(file, visibleFields);
+  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id);
   const aspectRatio =
     !file.width || !file.height || file.width === 0
       ? "100%"
-      : `${(file.height / file.width) * 100}%`
+      : `${(file.height / file.width) * 100}%`;
 
   return (
     <FileContextMenu file={file}>
@@ -503,10 +485,7 @@ export function AdaptiveFileCard({
                 decoding="async"
               />
             ) : (
-              <FilePreviewFallback
-                ext={file.ext}
-                className="absolute inset-0"
-              />
+              <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
             )}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
@@ -521,10 +500,7 @@ export function AdaptiveFileCard({
             )}
             {metaTokens.length > 0 && (
               <p
-                className={cn(
-                  "truncate text-[11px] leading-4 text-gray-400",
-                  showName && "mt-0.5",
-                )}
+                className={cn("truncate text-[11px] leading-4 text-gray-400", showName && "mt-0.5")}
               >
                 {metaTokens.join(" · ")}
               </p>
@@ -551,7 +527,7 @@ export function AdaptiveFileCard({
         </div>
       </div>
     </FileContextMenu>
-  )
+  );
 }
 
 export function FileRow({
@@ -564,13 +540,13 @@ export function FileRow({
   onClick,
   onDoubleClick,
 }: FileCardBaseProps & { thumbnailSize: number }) {
-  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
-  const isVideo = isVideoFile(file.ext)
+  const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef);
+  const isVideo = isVideoFile(file.ext);
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
-  )
-  const thumbnailMaxEdge = isVideo ? resolveThumbnailRequestMaxEdge(thumbnailSize) : undefined
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? thumbnailMaxEdge ?? 'video' : 'image-preview'}`
+  );
+  const thumbnailMaxEdge = isVideo ? resolveThumbnailRequestMaxEdge(thumbnailSize) : undefined;
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? (thumbnailMaxEdge ?? "video") : "image-preview"}`;
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
@@ -578,12 +554,12 @@ export function FileRow({
     isVisible,
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
-  )
-  const showTags = shouldShowTags(file, visibleFields)
-  const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : []
-  const showName = visibleFields.includes("name")
-  const metaTokens = getFileInfoTokens(file, visibleFields)
-  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id)
+  );
+  const showTags = shouldShowTags(file, visibleFields);
+  const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : [];
+  const showName = visibleFields.includes("name");
+  const metaTokens = getFileInfoTokens(file, visibleFields);
+  const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id);
 
   return (
     <FileContextMenu file={file}>
@@ -649,9 +625,7 @@ export function FileRow({
                 labelClassName="text-[9px]"
               />
             )}
-            {isVideo && (
-              <VideoPlayBadge compact className="absolute inset-0" />
-            )}
+            {isVideo && <VideoPlayBadge compact className="absolute inset-0" />}
           </div>
           <div className="min-w-0 flex-1">
             {showName && (
@@ -666,13 +640,8 @@ export function FileRow({
               )}
             >
               {metaTokens.map((token, index) => (
-                <span
-                  key={`${token}-${index}`}
-                  className="flex min-w-0 items-center gap-1"
-                >
-                  {index > 0 && (
-                    <span className="text-gray-300 dark:text-gray-600">·</span>
-                  )}
+                <span key={`${token}-${index}`} className="flex min-w-0 items-center gap-1">
+                  {index > 0 && <span className="text-gray-300 dark:text-gray-600">·</span>}
                   <span className="truncate">{token}</span>
                 </span>
               ))}
@@ -701,7 +670,7 @@ export function FileRow({
         </div>
       </div>
     </FileContextMenu>
-  )
+  );
 }
 
 export function InfoDisplayIcon({ className }: { className?: string }) {
@@ -726,16 +695,10 @@ export function InfoDisplayIcon({ className }: { className?: string }) {
         d="M6.5 6.5h.01v.01H6.5zM6.5 11.5h.01v.01H6.5zM6.5 16.5h.01v.01H6.5z"
       />
     </svg>
-  )
+  );
 }
 
-export function ViewModeIcon({
-  mode,
-  className,
-}: {
-  mode: LibraryViewMode
-  className?: string
-}) {
+export function ViewModeIcon({ mode, className }: { mode: LibraryViewMode; className?: string }) {
   if (mode === "list") {
     return (
       <svg
@@ -752,7 +715,7 @@ export function ViewModeIcon({
           d="M6 7h12M6 12h12M6 17h12"
         />
       </svg>
-    )
+    );
   }
 
   if (mode === "adaptive") {
@@ -768,7 +731,7 @@ export function ViewModeIcon({
         <rect x="14" y="5" width="6" height="8" rx="1.5" strokeWidth={1.8} />
         <rect x="14" y="15" width="6" height="4" rx="1.5" strokeWidth={1.8} />
       </svg>
-    )
+    );
   }
 
   return (
@@ -784,65 +747,56 @@ export function ViewModeIcon({
       <rect x="4" y="13" width="6" height="6" rx="1.5" strokeWidth={1.8} />
       <rect x="14" y="13" width="6" height="6" rx="1.5" strokeWidth={1.8} />
     </svg>
-  )
+  );
 }
 
-function getAdaptiveFooterHeight(
-  file: FileItem,
-  visibleFields: LibraryVisibleField[],
-) {
-  return shouldShowTags(file, visibleFields) ? 62 : 44
+function getAdaptiveFooterHeight(file: FileItem, visibleFields: LibraryVisibleField[]) {
+  return shouldShowTags(file, visibleFields) ? 62 : 44;
 }
 
 function getFileDimensionsText(file: FileItem) {
   if (file.width > 0 && file.height > 0) {
-    return `${file.width} × ${file.height}`
+    return `${file.width} × ${file.height}`;
   }
 
-  return null
+  return null;
 }
 
 function shouldShowTags(file: FileItem, visibleFields: LibraryVisibleField[]) {
-  return visibleFields.includes("tags") && file.tags.length > 0
+  return visibleFields.includes("tags") && file.tags.length > 0;
 }
 
-function getFileInfoTokens(
-  file: FileItem,
-  visibleFields: LibraryVisibleField[],
-) {
-  const tokens: string[] = []
+function getFileInfoTokens(file: FileItem, visibleFields: LibraryVisibleField[]) {
+  const tokens: string[] = [];
 
   INFO_TOKEN_FIELDS.forEach((field) => {
     if (!visibleFields.includes(field)) {
-      return
+      return;
     }
 
     switch (field) {
       case "ext":
-        tokens.push(file.ext.toUpperCase())
-        break
+        tokens.push(file.ext.toUpperCase());
+        break;
       case "size":
-        tokens.push(formatSize(file.size))
-        break
+        tokens.push(formatSize(file.size));
+        break;
       case "dimensions": {
-        const dimensionsText = getFileDimensionsText(file)
+        const dimensionsText = getFileDimensionsText(file);
         if (dimensionsText) {
-          tokens.push(dimensionsText)
+          tokens.push(dimensionsText);
         }
-        break
+        break;
       }
       default:
-        break
+        break;
     }
-  })
+  });
 
-  return tokens
+  return tokens;
 }
 
-function VideoPlayBadge({
-  compact = false,
-  className,
-}: VideoPlayBadgeProps) {
+function VideoPlayBadge({ compact = false, className }: VideoPlayBadgeProps) {
   return (
     <div
       className={cn(
@@ -860,7 +814,7 @@ function VideoPlayBadge({
         <Play className={compact ? "ml-0.5 h-3 w-3 fill-current" : "ml-0.5 h-4 w-4 fill-current"} />
       </span>
     </div>
-  )
+  );
 }
 
 function FilePreviewFallback({
@@ -878,11 +832,8 @@ function FilePreviewFallback({
         className,
       )}
     >
-      <FileTypeIcon
-        ext={ext}
-        className={cn(compact ? "h-5 w-5" : "h-8 w-8", iconClassName)}
-      />
+      <FileTypeIcon ext={ext} className={cn(compact ? "h-5 w-5" : "h-8 w-8", iconClassName)} />
       <span className={cn("uppercase", labelClassName)}>{ext || "FILE"}</span>
     </div>
-  )
+  );
 }

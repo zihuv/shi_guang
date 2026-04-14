@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FocusEvent,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { appTagPillClass } from "@/lib/ui";
 import type { Tag as FileTag } from "@/stores/fileTypes";
@@ -34,9 +28,7 @@ const getMatchScore = (name: string, query: string) => {
   return matchIndex === -1 ? Number.MAX_SAFE_INTEGER : matchIndex + 2;
 };
 
-type SuggestionTag = ReturnType<
-  typeof useTagStore.getState
->["flatTags"][number];
+type SuggestionTag = ReturnType<typeof useTagStore.getState>["flatTags"][number];
 
 type SuggestionItem =
   | {
@@ -77,8 +69,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
         .filter((tag) => normalizeTagName(tag.name).includes(normalizedInput))
         .sort((a, b) => {
           const scoreDiff =
-            getMatchScore(a.name, normalizedInput) -
-            getMatchScore(b.name, normalizedInput);
+            getMatchScore(a.name, normalizedInput) - getMatchScore(b.name, normalizedInput);
 
           if (scoreDiff !== 0) return scoreDiff;
 
@@ -108,9 +99,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
   ];
 
   const isDropdownOpen = showSuggestions && suggestionItems.length > 0;
-  const activeSuggestion = isDropdownOpen
-    ? suggestionItems[activeSuggestionIndex]
-    : undefined;
+  const activeSuggestion = isDropdownOpen ? suggestionItems[activeSuggestionIndex] : undefined;
 
   useEffect(() => {
     setTagInput("");
@@ -128,9 +117,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
       return;
     }
 
-    setActiveSuggestionIndex((current) =>
-      Math.min(current, suggestionItems.length - 1),
-    );
+    setActiveSuggestionIndex((current) => Math.min(current, suggestionItems.length - 1));
   }, [suggestionItems.length]);
 
   const focusInput = () => {
@@ -154,8 +141,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
   const handleCreateTag = async () => {
     if (!trimmedInput) return;
 
-    const randomColor =
-      TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+    const randomColor = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
 
     await addTag(trimmedInput, randomColor);
 
@@ -199,9 +185,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
     if (event.key === "ArrowDown" && suggestionItems.length > 0) {
       event.preventDefault();
       setShowSuggestions(true);
-      setActiveSuggestionIndex((current) =>
-        Math.min(current + 1, suggestionItems.length - 1),
-      );
+      setActiveSuggestionIndex((current) => Math.min(current + 1, suggestionItems.length - 1));
       return;
     }
 
@@ -228,10 +212,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
 
   const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
     const nextTarget = event.relatedTarget;
-    if (
-      nextTarget instanceof Node &&
-      event.currentTarget.contains(nextTarget)
-    ) {
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
       return;
     }
 
@@ -254,11 +235,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
         onClick={() => inputRef.current?.focus()}
       >
         {fileTags.map((tag) => (
-          <span
-            key={tag.id}
-            className={appTagPillClass}
-            style={{ backgroundColor: tag.color }}
-          >
+          <span key={tag.id} className={appTagPillClass} style={{ backgroundColor: tag.color }}>
             <span className="truncate">{tag.name}</span>
             <button
               type="button"
@@ -266,12 +243,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
               onClick={() => void removeTagFromFile(fileId, tag.id)}
               title={`移除标签 ${tag.name}`}
             >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   d="M6 18L18 6M6 6l12 12"
                   strokeLinecap="round"
@@ -361,7 +333,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
                 type="button"
                 role="option"
                 aria-selected={isActive}
-                  className={cn(
+                className={cn(
                   "flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors",
                   isActive
                     ? "bg-gray-100 dark:bg-dark-border"

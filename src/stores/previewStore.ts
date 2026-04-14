@@ -1,15 +1,15 @@
-import { create } from "zustand"
-import type { FileItem } from "@/stores/fileTypes"
+import { create } from "zustand";
+import type { FileItem } from "@/stores/fileTypes";
 
 interface PreviewStore {
-  previewMode: boolean
-  previewIndex: number
-  previewFiles: FileItem[]
-  setPreviewMode: (mode: boolean) => void
-  setPreviewIndex: (index: number) => void
-  setPreviewFiles: (files: FileItem[]) => void
-  openPreview: (index: number, files: FileItem[]) => void
-  closePreview: () => void
+  previewMode: boolean;
+  previewIndex: number;
+  previewFiles: FileItem[];
+  setPreviewMode: (mode: boolean) => void;
+  setPreviewIndex: (index: number) => void;
+  setPreviewFiles: (files: FileItem[]) => void;
+  openPreview: (index: number, files: FileItem[]) => void;
+  closePreview: () => void;
 }
 
 export const usePreviewStore = create<PreviewStore>((set) => ({
@@ -32,5 +32,4 @@ export const usePreviewStore = create<PreviewStore>((set) => ({
       previewIndex: 0,
       previewFiles: [],
     }),
-}))
-
+}));

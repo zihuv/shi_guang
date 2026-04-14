@@ -1,47 +1,57 @@
-import { type Key, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
-import { type FileItem } from "@/stores/fileTypes"
-import { type LibraryVisibleField, type LibraryViewMode } from "@/stores/settingsStore"
-import { AdaptiveFileCard, FileCard, FileRow } from "@/components/file-grid/fileGridCards"
-import { ADAPTIVE_VIEWPORT_OVERSCAN_PX, GRID_GAP, type AdaptiveLayoutItem, type SelectionBox } from "@/components/file-grid/fileGridLayout"
+import {
+  type Key,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
+import { type FileItem } from "@/stores/fileTypes";
+import { type LibraryVisibleField, type LibraryViewMode } from "@/stores/settingsStore";
+import { AdaptiveFileCard, FileCard, FileRow } from "@/components/file-grid/fileGridCards";
+import {
+  ADAPTIVE_VIEWPORT_OVERSCAN_PX,
+  GRID_GAP,
+  type AdaptiveLayoutItem,
+  type SelectionBox,
+} from "@/components/file-grid/fileGridLayout";
 
 type ListVirtualItem = {
-  index: number
-  key: Key
-  size: number
-  start: number
-}
+  index: number;
+  key: Key;
+  size: number;
+  start: number;
+};
 
 interface FileGridViewportProps {
   adaptiveLayout: {
-    items: AdaptiveLayoutItem[]
-    totalHeight: number
-    columnWidth: number
-    trackWidth: number
-  }
-  filteredFiles: FileItem[]
-  gridColumns: number
-  gridItemWidth: number
-  gridMetadataHeight: number
-  gridRowCount: number
-  gridRowHeight: number
-  gridRowSpan: number
-  gridTrackWidth: number
-  gridVirtualRows: number[]
-  handleFileClick: (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => void
-  handleFileDoubleClick: (index: number) => void
-  handleSelectionStart: (event: ReactMouseEvent<HTMLDivElement>) => void
-  handleViewportWheel: (event: ReactWheelEvent<HTMLDivElement>) => void
-  libraryVisibleFields: LibraryVisibleField[]
-  listThumbnailSize: number
-  listTotalSize: number
-  listVirtualItems: ListVirtualItem[]
-  scrollTop: number
-  scrollParentRef: RefObject<HTMLDivElement | null>
-  selectedFileId: number | null
-  selectedFiles: number[]
-  selectionBox: SelectionBox | null
-  viewportHeight: number
-  viewMode: LibraryViewMode
+    items: AdaptiveLayoutItem[];
+    totalHeight: number;
+    columnWidth: number;
+    trackWidth: number;
+  };
+  filteredFiles: FileItem[];
+  gridColumns: number;
+  gridItemWidth: number;
+  gridMetadataHeight: number;
+  gridRowCount: number;
+  gridRowHeight: number;
+  gridRowSpan: number;
+  gridTrackWidth: number;
+  gridVirtualRows: number[];
+  handleFileClick: (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => void;
+  handleFileDoubleClick: (index: number) => void;
+  handleSelectionStart: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  handleViewportWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
+  libraryVisibleFields: LibraryVisibleField[];
+  listThumbnailSize: number;
+  listTotalSize: number;
+  listVirtualItems: ListVirtualItem[];
+  scrollTop: number;
+  scrollParentRef: RefObject<HTMLDivElement | null>;
+  selectedFileId: number | null;
+  selectedFiles: number[];
+  selectionBox: SelectionBox | null;
+  viewportHeight: number;
+  viewMode: LibraryViewMode;
 }
 
 export function FileGridViewport({
@@ -71,11 +81,11 @@ export function FileGridViewport({
   viewportHeight,
   viewMode,
 }: FileGridViewportProps) {
-  const adaptiveVisibleStart = scrollTop - ADAPTIVE_VIEWPORT_OVERSCAN_PX
-  const adaptiveVisibleEnd = scrollTop + viewportHeight + ADAPTIVE_VIEWPORT_OVERSCAN_PX
+  const adaptiveVisibleStart = scrollTop - ADAPTIVE_VIEWPORT_OVERSCAN_PX;
+  const adaptiveVisibleEnd = scrollTop + viewportHeight + ADAPTIVE_VIEWPORT_OVERSCAN_PX;
   const adaptiveVisibleItems = adaptiveLayout.items.filter(
     (item) => item.top + item.height >= adaptiveVisibleStart && item.top <= adaptiveVisibleEnd,
-  )
+  );
 
   return (
     <div
@@ -122,8 +132,8 @@ export function FileGridViewport({
           style={{ height: `${Math.max(0, gridRowCount * gridRowSpan - GRID_GAP)}px` }}
         >
           {gridVirtualRows.map((rowIndex) => {
-            const startIndex = rowIndex * gridColumns
-            const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns)
+            const startIndex = rowIndex * gridColumns;
+            const rowFiles = filteredFiles.slice(startIndex, startIndex + gridColumns);
 
             return (
               <div
@@ -155,15 +165,15 @@ export function FileGridViewport({
                   ))}
                 </div>
               </div>
-            )
+            );
           })}
         </div>
       ) : (
         <div className="relative" style={{ height: `${listTotalSize}px` }}>
           {listVirtualItems.map((virtualRow) => {
-            const file = filteredFiles[virtualRow.index]
+            const file = filteredFiles[virtualRow.index];
             if (!file) {
-              return null
+              return null;
             }
 
             return (
@@ -186,7 +196,7 @@ export function FileGridViewport({
                   onDoubleClick={() => handleFileDoubleClick(virtualRow.index)}
                 />
               </div>
-            )
+            );
           })}
         </div>
       )}
@@ -203,5 +213,5 @@ export function FileGridViewport({
         />
       )}
     </div>
-  )
+  );
 }

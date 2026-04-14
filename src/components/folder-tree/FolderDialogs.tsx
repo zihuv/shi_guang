@@ -1,13 +1,13 @@
-import { useFolderStore } from '@/stores/folderStore'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { useFolderStore } from "@/stores/folderStore";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/Dialog'
+} from "@/components/ui/Dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,15 +17,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/AlertDialog'
+} from "@/components/ui/AlertDialog";
 
 interface FolderDialogsProps {
-  isAdding: boolean
-  setIsAdding: (value: boolean) => void
-  onAddFolder: () => Promise<void>
-  onAddSubfolderSubmit: () => Promise<void>
-  onRenameSubmit: () => Promise<void>
-  onConfirmDelete: () => Promise<void>
+  isAdding: boolean;
+  setIsAdding: (value: boolean) => void;
+  onAddFolder: () => Promise<void>;
+  onAddSubfolderSubmit: () => Promise<void>;
+  onRenameSubmit: () => Promise<void>;
+  onConfirmDelete: () => Promise<void>;
 }
 
 export function FolderDialogs({
@@ -45,7 +45,7 @@ export function FolderDialogs({
     setEditingFolder,
     setDeleteConfirm,
     setNewFolderName,
-  } = useFolderStore()
+  } = useFolderStore();
 
   return (
     <>
@@ -53,8 +53,8 @@ export function FolderDialogs({
         open={isAdding}
         onOpenChange={(isOpen) => {
           if (!isOpen) {
-            setIsAdding(false)
-            setNewFolderName('')
+            setIsAdding(false);
+            setNewFolderName("");
           }
         }}
       >
@@ -67,8 +67,8 @@ export function FolderDialogs({
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void onAddFolder()
+                if (event.key === "Enter") {
+                  void onAddFolder();
                 }
               }}
               placeholder="文件夹名称"
@@ -79,8 +79,8 @@ export function FolderDialogs({
             <Button
               variant="outline"
               onClick={() => {
-                setIsAdding(false)
-                setNewFolderName('')
+                setIsAdding(false);
+                setNewFolderName("");
               }}
             >
               取消
@@ -94,8 +94,8 @@ export function FolderDialogs({
         open={!!addingSubfolder}
         onOpenChange={(isOpen) => {
           if (!isOpen) {
-            setAddingSubfolder(null)
-            setNewFolderName('')
+            setAddingSubfolder(null);
+            setNewFolderName("");
           }
         }}
       >
@@ -109,8 +109,8 @@ export function FolderDialogs({
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void onAddSubfolderSubmit()
+                if (event.key === "Enter") {
+                  void onAddSubfolderSubmit();
                 }
               }}
               placeholder="子文件夹名称"
@@ -121,8 +121,8 @@ export function FolderDialogs({
             <Button
               variant="outline"
               onClick={() => {
-                setAddingSubfolder(null)
-                setNewFolderName('')
+                setAddingSubfolder(null);
+                setNewFolderName("");
               }}
             >
               取消
@@ -136,8 +136,8 @@ export function FolderDialogs({
         open={!!editingFolder}
         onOpenChange={(isOpen) => {
           if (!isOpen) {
-            setEditingFolder(null)
-            setNewFolderName('')
+            setEditingFolder(null);
+            setNewFolderName("");
           }
         }}
       >
@@ -150,8 +150,8 @@ export function FolderDialogs({
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void onRenameSubmit()
+                if (event.key === "Enter") {
+                  void onRenameSubmit();
                 }
               }}
               placeholder="新名称"
@@ -162,8 +162,8 @@ export function FolderDialogs({
             <Button
               variant="outline"
               onClick={() => {
-                setEditingFolder(null)
-                setNewFolderName('')
+                setEditingFolder(null);
+                setNewFolderName("");
               }}
             >
               取消
@@ -177,7 +177,7 @@ export function FolderDialogs({
         open={!!deleteConfirm}
         onOpenChange={(isOpen) => {
           if (!isOpen) {
-            setDeleteConfirm(null)
+            setDeleteConfirm(null);
           }
         }}
       >
@@ -185,7 +185,8 @@ export function FolderDialogs({
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要删除文件夹 "{deleteConfirm?.name}" 吗？删除后文件夹中的文件不会被删除，但会变成未分类状态。
+              确定要删除文件夹 "{deleteConfirm?.name}"
+              吗？删除后文件夹中的文件不会被删除，但会变成未分类状态。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -195,5 +196,5 @@ export function FolderDialogs({
         </AlertDialogContent>
       </AlertDialog>
     </>
-  )
+  );
 }

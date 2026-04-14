@@ -1,9 +1,7 @@
 import { useCallback, useEffect } from "react";
 
 export function useClipboardImport(
-  importImagesFromBase64: (
-    items: { base64Data: string; ext: string }[],
-  ) => Promise<unknown>,
+  importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<unknown>,
 ) {
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {

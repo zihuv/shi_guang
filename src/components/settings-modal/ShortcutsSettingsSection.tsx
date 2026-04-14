@@ -3,16 +3,16 @@ import {
   SHORTCUT_ACTIONS,
   type ShortcutActionId,
   type ShortcutConfig,
-} from '@/lib/shortcuts'
-import ShortcutRecorder from '@/components/ShortcutRecorder'
-import { Button } from '@/components/ui/Button'
-import { RotateCcw } from 'lucide-react'
+} from "@/lib/shortcuts";
+import ShortcutRecorder from "@/components/ShortcutRecorder";
+import { Button } from "@/components/ui/Button";
+import { RotateCcw } from "lucide-react";
 
 interface ShortcutsSettingsSectionProps {
-  shortcuts: ShortcutConfig
-  onShortcutChange: (actionId: ShortcutActionId, nextShortcut: string) => void
-  onShortcutClear: (actionId: ShortcutActionId) => void
-  onShortcutReset: (actionId: ShortcutActionId) => void
+  shortcuts: ShortcutConfig;
+  onShortcutChange: (actionId: ShortcutActionId, nextShortcut: string) => void;
+  onShortcutClear: (actionId: ShortcutActionId) => void;
+  onShortcutReset: (actionId: ShortcutActionId) => void;
 }
 
 export function ShortcutsSettingsSection({
@@ -33,8 +33,8 @@ export function ShortcutsSettingsSection({
             key={action.id}
             className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${
               index !== SHORTCUT_ACTIONS.length - 1
-                ? 'border-b border-gray-200 dark:border-dark-border'
-                : ''
+                ? "border-b border-gray-200 dark:border-dark-border"
+                : ""
             }`}
           >
             <div className="min-w-0">
@@ -68,5 +68,5 @@ export function ShortcutsSettingsSection({
         ))}
       </div>
     </section>
-  )
+  );
 }

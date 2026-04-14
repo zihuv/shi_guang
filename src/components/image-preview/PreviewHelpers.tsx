@@ -1,68 +1,69 @@
-import { useEffect, useRef, useState } from 'react'
-import type { FileItem } from '@/stores/fileTypes'
-import FileTypeIcon from '@/components/FileTypeIcon'
-import { getFilePreviewMode, getFileSrc, getVideoThumbnailSrc } from '@/utils'
+import { useEffect, useRef, useState } from "react";
+import type { FileItem } from "@/stores/fileTypes";
+import FileTypeIcon from "@/components/FileTypeIcon";
+import { getFilePreviewMode, getFileSrc, getVideoThumbnailSrc } from "@/utils";
 
 function revokeBlobUrl(src: string | null) {
-  if (src?.startsWith('blob:')) {
-    URL.revokeObjectURL(src)
+  if (src?.startsWith("blob:")) {
+    URL.revokeObjectURL(src);
   }
 }
 
 export function ThumbnailItem({ file }: { file: FileItem }) {
-  const [src, setSrc] = useState<string | null>(null)
-  const srcRef = useRef<string | null>(null)
-  const previewType = getFilePreviewMode(file.ext)
+  const [src, setSrc] = useState<string | null>(null);
+  const srcRef = useRef<string | null>(null);
+  const previewType = getFilePreviewMode(file.ext);
 
   useEffect(() => {
-    let mounted = true
-    revokeBlobUrl(srcRef.current)
-    srcRef.current = null
-    setSrc(null)
+    let mounted = true;
+    revokeBlobUrl(srcRef.current);
+    srcRef.current = null;
+    setSrc(null);
 
-    if (previewType !== 'image' && previewType !== 'video') {
+    if (previewType !== "image" && previewType !== "video") {
       return () => {
-        mounted = false
-      }
+        mounted = false;
+      };
     }
 
-    const loader = previewType === 'video' ? getVideoThumbnailSrc(file.path) : getFileSrc(file.path)
+    const loader =
+      previewType === "video" ? getVideoThumbnailSrc(file.path) : getFileSrc(file.path);
 
     loader.then((imageSrc) => {
       if (!mounted) {
-        revokeBlobUrl(imageSrc)
-        return
+        revokeBlobUrl(imageSrc);
+        return;
       }
 
-      revokeBlobUrl(srcRef.current)
-      srcRef.current = imageSrc
-      setSrc(imageSrc)
-    })
+      revokeBlobUrl(srcRef.current);
+      srcRef.current = imageSrc;
+      setSrc(imageSrc);
+    });
 
     return () => {
-      mounted = false
-      revokeBlobUrl(srcRef.current)
-      srcRef.current = null
-    }
-  }, [file.path, previewType])
+      mounted = false;
+      revokeBlobUrl(srcRef.current);
+      srcRef.current = null;
+    };
+  }, [file.path, previewType]);
 
-  if (!src || (previewType !== 'image' && previewType !== 'video')) {
+  if (!src || (previewType !== "image" && previewType !== "video")) {
     return (
       <div className="h-full w-full bg-gray-900/90">
         <UnsupportedThumbnail ext={file.ext} />
       </div>
-    )
+    );
   }
 
-  return <img src={src} alt={file.name} className="h-full w-full object-cover" />
+  return <img src={src} alt={file.name} className="h-full w-full object-cover" />;
 }
 
 export function UnsupportedPreviewState({
   file,
   onOpenFile,
 }: {
-  file: FileItem
-  onOpenFile: () => Promise<void>
+  file: FileItem;
+  onOpenFile: () => Promise<void>;
 }) {
   return (
     <div className="flex w-full max-w-lg flex-col items-center gap-4 rounded-2xl border border-gray-200 bg-white/90 px-8 py-10 text-center shadow-lg dark:border-dark-border dark:bg-dark-surface">
@@ -80,7 +81,7 @@ export function UnsupportedPreviewState({
         使用默认应用打开
       </button>
     </div>
-  )
+  );
 }
 
 export function TextPreviewPane({ content }: { content: string }) {
@@ -88,11 +89,11 @@ export function TextPreviewPane({ content }: { content: string }) {
     <div className="flex h-full w-full max-w-5xl justify-center">
       <div className="h-full w-full overflow-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-lg dark:border-dark-border dark:bg-dark-surface">
         <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-6 text-gray-800 dark:text-gray-100">
-          {content || '空文本文件'}
+          {content || "空文本文件"}
         </pre>
       </div>
     </div>
-  )
+  );
 }
 
 export function UnsupportedThumbnail({ ext }: { ext: string }) {
@@ -101,5 +102,5 @@ export function UnsupportedThumbnail({ ext }: { ext: string }) {
       <FileTypeIcon ext={ext} className="h-5 w-5" />
       <span className="text-[9px] font-medium">{ext.toUpperCase()}</span>
     </div>
-  )
+  );
 }

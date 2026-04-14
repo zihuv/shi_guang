@@ -1,9 +1,7 @@
 import { useEffect } from "react";
 import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 
-export function useInternalFileDrag(
-  setDraggingFileId: (fileId: number | null) => void,
-) {
+export function useInternalFileDrag(setDraggingFileId: (fileId: number | null) => void) {
   useEffect(() => {
     return monitorForElements({
       onDragStart: ({ source }) => {

@@ -1,20 +1,17 @@
-import { type RefObject } from "react"
-import { ArrowUpDown, Filter } from "lucide-react"
-import { type FileSortField, type SortDirection } from "@/stores/filterStore"
-import {
-  type LibraryViewMode,
-  type LibraryVisibleField,
-} from "@/stores/settingsStore"
-import { cn } from "@/lib/utils"
-import { InfoDisplayIcon, ViewModeIcon } from "@/components/file-grid/fileGridCards"
-import FilterPanel from "@/components/FilterPanel"
+import { type RefObject } from "react";
+import { ArrowUpDown, Filter } from "lucide-react";
+import { type FileSortField, type SortDirection } from "@/stores/filterStore";
+import { type LibraryViewMode, type LibraryVisibleField } from "@/stores/settingsStore";
+import { cn } from "@/lib/utils";
+import { InfoDisplayIcon, ViewModeIcon } from "@/components/file-grid/fileGridCards";
+import FilterPanel from "@/components/FilterPanel";
 
-export type ToolbarMenu = "sort" | "layout" | "info"
+export type ToolbarMenu = "sort" | "layout" | "info";
 
 const SORT_DIRECTION_OPTIONS: Array<{ value: SortDirection; label: string }> = [
   { value: "asc", label: "升序" },
   { value: "desc", label: "降序" },
-]
+];
 
 const SORT_FIELD_OPTIONS: Array<{ value: FileSortField; label: string }> = [
   { value: "imported_at", label: "导入时间" },
@@ -23,13 +20,13 @@ const SORT_FIELD_OPTIONS: Array<{ value: FileSortField; label: string }> = [
   { value: "name", label: "名称" },
   { value: "ext", label: "类型" },
   { value: "size", label: "文件大小" },
-]
+];
 
 const VIEW_MODE_OPTIONS: Array<{ value: LibraryViewMode; label: string }> = [
   { value: "grid", label: "网格" },
   { value: "adaptive", label: "自适应" },
   { value: "list", label: "列表" },
-]
+];
 
 const INFO_FIELD_OPTIONS: Array<{ value: LibraryVisibleField; label: string }> = [
   { value: "name", label: "名称" },
@@ -37,10 +34,10 @@ const INFO_FIELD_OPTIONS: Array<{ value: LibraryVisibleField; label: string }> =
   { value: "size", label: "文件大小" },
   { value: "dimensions", label: "尺寸" },
   { value: "tags", label: "标签" },
-]
+];
 
 const TOOLBAR_BUTTON_CLASS_NAME =
-  "relative inline-flex size-8 items-center justify-center rounded-[10px] border text-gray-500 transition-colors"
+  "relative inline-flex size-8 items-center justify-center rounded-[10px] border text-gray-500 transition-colors";
 
 function getToolbarButtonClassName(isActive: boolean) {
   return cn(
@@ -48,41 +45,41 @@ function getToolbarButtonClassName(isActive: boolean) {
     isActive
       ? "border-gray-200 bg-gray-100 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
       : "border-transparent bg-transparent hover:border-gray-200/80 hover:bg-gray-100/80 hover:text-gray-700 dark:hover:border-dark-border dark:hover:bg-dark-border dark:hover:text-gray-200",
-  )
+  );
 }
 
 interface FileGridToolbarProps {
-  activeFilterCount: number
-  currentSortDirectionLabel: string
-  currentSortFieldLabel: string
-  currentViewModeLabel: string
-  currentViewScale: number
-  currentViewScaleRange: { min: number; max: number }
-  filteredFileCount: number
-  isFilterPanelOpen: boolean
-  libraryVisibleFields: LibraryVisibleField[]
-  openToolbarMenu: ToolbarMenu | null
-  paginationLabel?: string
-  resetCurrentViewScale: () => void
-  setOpenToolbarMenu: (menu: ToolbarMenu | null) => void
-  setSortBy: (sortBy: FileSortField) => void
-  setSortDirection: (sortDirection: SortDirection) => void
-  toggleFilterPanel: () => void
-  toggleLibraryVisibleField: (field: LibraryVisibleField) => void
-  handleViewModeChange: (mode: LibraryViewMode) => void
-  applyCurrentViewScale: (scale: number) => void
-  filterMenuButtonRef: RefObject<HTMLButtonElement | null>
-  filterMenuRef: RefObject<HTMLDivElement | null>
-  layoutMenuButtonRef: RefObject<HTMLButtonElement | null>
-  layoutMenuRef: RefObject<HTMLDivElement | null>
-  infoMenuButtonRef: RefObject<HTMLButtonElement | null>
-  infoMenuRef: RefObject<HTMLDivElement | null>
-  sortMenuButtonRef: RefObject<HTMLButtonElement | null>
-  sortMenuRef: RefObject<HTMLDivElement | null>
-  sortBy: FileSortField
-  sortDirection: SortDirection
-  viewMode: LibraryViewMode
-  visibleInfoFieldLabels: string[]
+  activeFilterCount: number;
+  currentSortDirectionLabel: string;
+  currentSortFieldLabel: string;
+  currentViewModeLabel: string;
+  currentViewScale: number;
+  currentViewScaleRange: { min: number; max: number };
+  filteredFileCount: number;
+  isFilterPanelOpen: boolean;
+  libraryVisibleFields: LibraryVisibleField[];
+  openToolbarMenu: ToolbarMenu | null;
+  paginationLabel?: string;
+  resetCurrentViewScale: () => void;
+  setOpenToolbarMenu: (menu: ToolbarMenu | null) => void;
+  setSortBy: (sortBy: FileSortField) => void;
+  setSortDirection: (sortDirection: SortDirection) => void;
+  toggleFilterPanel: () => void;
+  toggleLibraryVisibleField: (field: LibraryVisibleField) => void;
+  handleViewModeChange: (mode: LibraryViewMode) => void;
+  applyCurrentViewScale: (scale: number) => void;
+  filterMenuButtonRef: RefObject<HTMLButtonElement | null>;
+  filterMenuRef: RefObject<HTMLDivElement | null>;
+  layoutMenuButtonRef: RefObject<HTMLButtonElement | null>;
+  layoutMenuRef: RefObject<HTMLDivElement | null>;
+  infoMenuButtonRef: RefObject<HTMLButtonElement | null>;
+  infoMenuRef: RefObject<HTMLDivElement | null>;
+  sortMenuButtonRef: RefObject<HTMLButtonElement | null>;
+  sortMenuRef: RefObject<HTMLDivElement | null>;
+  sortBy: FileSortField;
+  sortDirection: SortDirection;
+  viewMode: LibraryViewMode;
+  visibleInfoFieldLabels: string[];
 }
 
 export function FileGridToolbar({
@@ -119,8 +116,8 @@ export function FileGridToolbar({
   visibleInfoFieldLabels,
 }: FileGridToolbarProps) {
   const toggleToolbarMenu = (menu: ToolbarMenu) => {
-    setOpenToolbarMenu(openToolbarMenu === menu ? null : menu)
-  }
+    setOpenToolbarMenu(openToolbarMenu === menu ? null : menu);
+  };
 
   return (
     <div className="relative z-20 border-b border-gray-200/80 bg-white/78 backdrop-blur-xl dark:border-dark-border dark:bg-dark-surface/78">
@@ -137,8 +134,8 @@ export function FileGridToolbar({
             ref={filterMenuButtonRef}
             type="button"
             onClick={() => {
-              setOpenToolbarMenu(null)
-              toggleFilterPanel()
+              setOpenToolbarMenu(null);
+              toggleFilterPanel();
             }}
             className={getToolbarButtonClassName(activeFilterCount > 0)}
             title={activeFilterCount > 0 ? `筛选：已启用 ${activeFilterCount} 项` : "筛选"}
@@ -171,18 +168,16 @@ export function FileGridToolbar({
                 ref={sortMenuRef}
                 className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
               >
-                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">
-                  排序方式
-                </div>
+                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">排序方式</div>
                 {SORT_DIRECTION_OPTIONS.map((option) => {
-                  const isActive = sortDirection === option.value
+                  const isActive = sortDirection === option.value;
                   return (
                     <button
                       key={option.value}
                       type="button"
                       onClick={() => {
-                        setSortDirection(option.value)
-                        setOpenToolbarMenu(null)
+                        setSortDirection(option.value);
+                        setOpenToolbarMenu(null);
                       }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
@@ -199,23 +194,21 @@ export function FileGridToolbar({
                       />
                       <span>{option.label}</span>
                     </button>
-                  )
+                  );
                 })}
 
                 <div className="my-1.5 h-px bg-gray-100 dark:bg-dark-border" />
 
-                <div className="app-kicker px-3 pb-1 pt-1 text-gray-400">
-                  排序依据
-                </div>
+                <div className="app-kicker px-3 pb-1 pt-1 text-gray-400">排序依据</div>
                 {SORT_FIELD_OPTIONS.map((option) => {
-                  const isActive = sortBy === option.value
+                  const isActive = sortBy === option.value;
                   return (
                     <button
                       key={option.value}
                       type="button"
                       onClick={() => {
-                        setSortBy(option.value)
-                        setOpenToolbarMenu(null)
+                        setSortBy(option.value);
+                        setOpenToolbarMenu(null);
                       }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors",
@@ -232,7 +225,7 @@ export function FileGridToolbar({
                       />
                       <span>{option.label}</span>
                     </button>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -255,11 +248,9 @@ export function FileGridToolbar({
                 ref={infoMenuRef}
                 className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
               >
-                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">
-                  信息显示
-                </div>
+                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">信息显示</div>
                 {INFO_FIELD_OPTIONS.map((option) => {
-                  const isActive = libraryVisibleFields.includes(option.value)
+                  const isActive = libraryVisibleFields.includes(option.value);
                   return (
                     <button
                       key={option.value}
@@ -285,7 +276,7 @@ export function FileGridToolbar({
                       </span>
                       <span>{option.label}</span>
                     </button>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -308,11 +299,9 @@ export function FileGridToolbar({
                 ref={layoutMenuRef}
                 className="absolute right-0 top-10 z-30 w-44 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
               >
-                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">
-                  布局
-                </div>
+                <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">布局</div>
                 {VIEW_MODE_OPTIONS.map((option) => {
-                  const isActive = viewMode === option.value
+                  const isActive = viewMode === option.value;
                   return (
                     <button
                       key={option.value}
@@ -334,7 +323,7 @@ export function FileGridToolbar({
                       <ViewModeIcon mode={option.value} className="h-4 w-4 flex-shrink-0" />
                       <span>{option.label}</span>
                     </button>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -363,15 +352,15 @@ export function FileGridToolbar({
         </div>
       )}
     </div>
-  )
+  );
 }
 
 interface FileGridPaginationProps {
-  page: number
-  pageSize: number
-  totalPages: number
-  setPage: (page: number) => void
-  setPageSize: (pageSize: number) => void
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  setPage: (page: number) => void;
+  setPageSize: (pageSize: number) => void;
 }
 
 export function FileGridPagination({
@@ -382,7 +371,7 @@ export function FileGridPagination({
   setPageSize,
 }: FileGridPaginationProps) {
   if (totalPages <= 1) {
-    return null
+    return null;
   }
 
   return (
@@ -429,15 +418,15 @@ export function FileGridPagination({
         <option value={500}>500/页</option>
       </select>
     </div>
-  )
+  );
 }
 
 interface FileGridSelectionBarProps {
-  selectedCount: number
-  showBatchDeleteConfirm: boolean
-  clearSelection: () => void
-  handleBatchDelete: () => Promise<void>
-  setShowBatchDeleteConfirm: (open: boolean) => void
+  selectedCount: number;
+  showBatchDeleteConfirm: boolean;
+  clearSelection: () => void;
+  handleBatchDelete: () => Promise<void>;
+  setShowBatchDeleteConfirm: (open: boolean) => void;
 }
 
 export function FileGridSelectionBar({
@@ -448,7 +437,7 @@ export function FileGridSelectionBar({
   setShowBatchDeleteConfirm,
 }: FileGridSelectionBarProps) {
   if (selectedCount <= 0) {
-    return null
+    return null;
   }
 
   return (
@@ -488,5 +477,5 @@ export function FileGridSelectionBar({
         )}
       </div>
     </div>
-  )
+  );
 }

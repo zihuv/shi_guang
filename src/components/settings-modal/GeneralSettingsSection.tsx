@@ -3,23 +3,23 @@ import {
   PREVIEW_TRACKPAD_ZOOM_SPEED_MAX,
   PREVIEW_TRACKPAD_ZOOM_SPEED_MIN,
   PREVIEW_TRACKPAD_ZOOM_SPEED_STEP,
-} from '@/stores/settingsStore'
-import { Button } from '@/components/ui/Button'
-import { AlertTriangle, Moon, Plus, Sun, Trash } from 'lucide-react'
+} from "@/stores/settingsStore";
+import { Button } from "@/components/ui/Button";
+import { AlertTriangle, Moon, Plus, Sun, Trash } from "lucide-react";
 
 interface GeneralSettingsSectionProps {
-  currentIndexPath: string | null
-  isAdding: boolean
-  isRebuilding: boolean
-  useTrash: boolean
-  theme: 'light' | 'dark'
-  previewTrackpadZoomSpeed: number
-  onAddPath: () => void
-  onRebuildIndex: () => void
-  onSetDeleteMode: (useTrash: boolean) => void
-  onSetPreviewTrackpadZoomSpeed: (value: number) => void
-  onResetPreviewTrackpadZoomSpeed: () => void
-  onSetTheme: (theme: 'light' | 'dark') => void
+  currentIndexPath: string | null;
+  isAdding: boolean;
+  isRebuilding: boolean;
+  useTrash: boolean;
+  theme: "light" | "dark";
+  previewTrackpadZoomSpeed: number;
+  onAddPath: () => void;
+  onRebuildIndex: () => void;
+  onSetDeleteMode: (useTrash: boolean) => void;
+  onSetPreviewTrackpadZoomSpeed: (value: number) => void;
+  onResetPreviewTrackpadZoomSpeed: () => void;
+  onSetTheme: (theme: "light" | "dark") => void;
 }
 
 export function GeneralSettingsSection({
@@ -49,10 +49,10 @@ export function GeneralSettingsSection({
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" onClick={onAddPath} disabled={isAdding}>
               <Plus className="h-4 w-4" />
-              {isAdding ? '选择中...' : currentIndexPath ? '更换目录' : '选择目录'}
+              {isAdding ? "选择中..." : currentIndexPath ? "更换目录" : "选择目录"}
             </Button>
             <Button variant="outline" disabled={isRebuilding} onClick={onRebuildIndex}>
-              {isRebuilding ? '重建中...' : '重建索引'}
+              {isRebuilding ? "重建中..." : "重建索引"}
             </Button>
           </div>
         </div>
@@ -93,8 +93,8 @@ export function GeneralSettingsSection({
                 onClick={() => onSetDeleteMode(true)}
                 className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
                   useTrash
-                    ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-surface dark:text-gray-100'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                    ? "bg-white text-gray-900 shadow-sm dark:bg-dark-surface dark:text-gray-100"
+                    : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
               >
                 <Trash className="h-4 w-4" />
@@ -105,8 +105,8 @@ export function GeneralSettingsSection({
                 onClick={() => onSetDeleteMode(false)}
                 className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
                   !useTrash
-                    ? 'bg-white text-red-600 shadow-sm dark:bg-dark-surface dark:text-red-300'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                    ? "bg-white text-red-600 shadow-sm dark:bg-dark-surface dark:text-red-300"
+                    : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
               >
                 <AlertTriangle className="h-4 w-4" />
@@ -165,16 +165,16 @@ export function GeneralSettingsSection({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Button
-                variant={theme === 'light' ? 'default' : 'outline'}
-                onClick={() => onSetTheme('light')}
+                variant={theme === "light" ? "default" : "outline"}
+                onClick={() => onSetTheme("light")}
                 className="justify-start"
               >
                 <Sun className="h-4 w-4" />
                 浅色
               </Button>
               <Button
-                variant={theme === 'dark' ? 'default' : 'outline'}
-                onClick={() => onSetTheme('dark')}
+                variant={theme === "dark" ? "default" : "outline"}
+                onClick={() => onSetTheme("dark")}
                 className="justify-start"
               >
                 <Moon className="h-4 w-4" />
@@ -185,5 +185,5 @@ export function GeneralSettingsSection({
         </div>
       </section>
     </div>
-  )
+  );
 }

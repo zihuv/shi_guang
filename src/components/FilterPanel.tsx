@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ChevronDown, RotateCcw, SlidersHorizontal, Star, X } from "lucide-react"
-import { Select, SelectContent, SelectItem } from "@/components/ui/Select"
-import { Input } from "@/components/ui/Input"
-import { useLibraryQueryStore } from "@/stores/libraryQueryStore"
-import { useFilterStore } from "@/stores/filterStore"
-import { useTagStore } from "@/stores/tagStore"
-import { getActiveFilterCount } from "@/features/filters/schema"
-import { cn } from "@/lib/utils"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, RotateCcw, SlidersHorizontal, Star, X } from "lucide-react";
+import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
+import { Input } from "@/components/ui/Input";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useFilterStore } from "@/stores/filterStore";
+import { useTagStore } from "@/stores/tagStore";
+import { getActiveFilterCount } from "@/features/filters/schema";
+import { cn } from "@/lib/utils";
 
 const PRESET_COLORS = [
   { name: "红色", value: "#FF0000" },
@@ -20,14 +20,14 @@ const PRESET_COLORS = [
   { name: "白色", value: "#FFFFFF" },
   { name: "灰色", value: "#808080" },
   { name: "黑色", value: "#000000" },
-]
+];
 
 const FILE_TYPES = [
   { label: "全部类型", value: "all" },
   { label: "图片", value: "image" },
   { label: "视频", value: "video" },
   { label: "文档", value: "document" },
-]
+];
 
 const RATING_OPTIONS = [
   { label: "任意评分", value: "0" },
@@ -36,52 +36,52 @@ const RATING_OPTIONS = [
   { label: "3 星及以上", value: "3" },
   { label: "4 星及以上", value: "4" },
   { label: "5 星", value: "5" },
-]
+];
 
 const TRIGGER_CLASS_NAME =
-  "h-8 rounded-full border-gray-200 bg-white px-3 text-[12px] text-gray-700 shadow-none hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg/90 dark:text-gray-200"
+  "h-8 rounded-full border-gray-200 bg-white px-3 text-[12px] text-gray-700 shadow-none hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg/90 dark:text-gray-200";
 
 const INPUT_CLASS_NAME =
-  "h-8 rounded-full border-gray-200 bg-white px-3 text-[12px] shadow-none dark:border-dark-border dark:bg-dark-bg/90"
+  "h-8 rounded-full border-gray-200 bg-white px-3 text-[12px] shadow-none dark:border-dark-border dark:bg-dark-bg/90";
 
 function getColorDisplay(color: string | null) {
-  if (!color) return "颜色"
-  return PRESET_COLORS.find((item) => item.value === color)?.name ?? "颜色"
+  if (!color) return "颜色";
+  return PRESET_COLORS.find((item) => item.value === color)?.name ?? "颜色";
 }
 
 function getFileTypeDisplay(type: string) {
-  return FILE_TYPES.find((item) => item.value === type)?.label ?? "全部类型"
+  return FILE_TYPES.find((item) => item.value === type)?.label ?? "全部类型";
 }
 
 function getRatingDisplay(rating: number) {
-  return RATING_OPTIONS.find((item) => Number(item.value) === rating)?.label ?? "评分"
+  return RATING_OPTIONS.find((item) => Number(item.value) === rating)?.label ?? "评分";
 }
 
 function formatSizeBadge(criteriaMin: number | null, criteriaMax: number | null) {
-  const formatMegabytes = (value: number) => `${value} MB`
+  const formatMegabytes = (value: number) => `${value} MB`;
   if (criteriaMin !== null && criteriaMax !== null) {
-    return `${formatMegabytes(criteriaMin)} - ${formatMegabytes(criteriaMax)}`
+    return `${formatMegabytes(criteriaMin)} - ${formatMegabytes(criteriaMax)}`;
   }
   if (criteriaMin !== null) {
-    return `>= ${formatMegabytes(criteriaMin)}`
+    return `>= ${formatMegabytes(criteriaMin)}`;
   }
   if (criteriaMax !== null) {
-    return `<= ${formatMegabytes(criteriaMax)}`
+    return `<= ${formatMegabytes(criteriaMax)}`;
   }
-  return "大小"
+  return "大小";
 }
 
 function formatDateBadge(start: string | null, end: string | null) {
   if (start && end) {
-    return `${start} 至 ${end}`
+    return `${start} 至 ${end}`;
   }
   if (start) {
-    return `${start} 起`
+    return `${start} 起`;
   }
   if (end) {
-    return `${end} 前`
+    return `${end} 前`;
   }
-  return "时间"
+  return "时间";
 }
 
 export default function FilterPanel() {
@@ -97,26 +97,26 @@ export default function FilterPanel() {
     setSizeRange,
     setMinRating,
     setFavoritesOnly,
-  } = useFilterStore()
-  const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery)
-  const resetPage = useLibraryQueryStore((state) => state.resetPage)
-  const flatTags = useTagStore((state) => state.flatTags)
-  const didMountRef = useRef(false)
+  } = useFilterStore();
+  const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery);
+  const resetPage = useLibraryQueryStore((state) => state.resetPage);
+  const flatTags = useTagStore((state) => state.flatTags);
+  const didMountRef = useRef(false);
 
-  const activeCount = getActiveFilterCount(criteria)
+  const activeCount = getActiveFilterCount(criteria);
   const hasAdvancedFilters = Boolean(
     criteria.keyword.trim() ||
-      criteria.dateRange.start ||
-      criteria.dateRange.end ||
-      criteria.sizeRange.min !== null ||
-      criteria.sizeRange.max !== null,
-  )
+    criteria.dateRange.start ||
+    criteria.dateRange.end ||
+    criteria.sizeRange.min !== null ||
+    criteria.sizeRange.max !== null,
+  );
   const advancedFilterCount = [
     Boolean(criteria.keyword.trim()),
     Boolean(criteria.dateRange.start || criteria.dateRange.end),
     criteria.sizeRange.min !== null || criteria.sizeRange.max !== null,
-  ].filter(Boolean).length
-  const [showAdvanced, setShowAdvanced] = useState(hasAdvancedFilters)
+  ].filter(Boolean).length;
+  const [showAdvanced, setShowAdvanced] = useState(hasAdvancedFilters);
 
   const criteriaKey = useMemo(
     () =>
@@ -131,39 +131,37 @@ export default function FilterPanel() {
         favoritesOnly: criteria.favoritesOnly,
       }),
     [criteria],
-  )
+  );
 
   useEffect(() => {
     if (!didMountRef.current) {
-      didMountRef.current = true
-      return
+      didMountRef.current = true;
+      return;
     }
 
-    resetPage()
-    void runCurrentQuery()
-  }, [criteriaKey, resetPage, runCurrentQuery])
+    resetPage();
+    void runCurrentQuery();
+  }, [criteriaKey, resetPage, runCurrentQuery]);
 
   useEffect(() => {
     if (hasAdvancedFilters) {
-      setShowAdvanced(true)
+      setShowAdvanced(true);
     }
-  }, [hasAdvancedFilters])
+  }, [hasAdvancedFilters]);
 
   const tagDisplay =
     criteria.tagIds.length === 0
       ? "全部标签"
       : criteria.tagIds.length === 1
-        ? flatTags.find((tag) => tag.id === criteria.tagIds[0])?.name ?? "标签"
-        : `${criteria.tagIds.length} 个标签`
+        ? (flatTags.find((tag) => tag.id === criteria.tagIds[0])?.name ?? "标签")
+        : `${criteria.tagIds.length} 个标签`;
 
   return (
     <div className="flex w-full flex-col gap-3 text-gray-900 dark:text-gray-100">
       <div className="flex flex-wrap items-center justify-between gap-2">
         {activeCount > 0 ? (
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-              已筛选
-            </span>
+            <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">已筛选</span>
 
             {criteria.fileType !== "all" && (
               <FilterChip onRemove={() => setFileType("all")}>
@@ -172,9 +170,7 @@ export default function FilterPanel() {
             )}
 
             {criteria.tagIds.length > 0 && (
-              <FilterChip onRemove={() => setTagIds([])}>
-                {tagDisplay}
-              </FilterChip>
+              <FilterChip onRemove={() => setTagIds([])}>{tagDisplay}</FilterChip>
             )}
 
             {criteria.dominantColor && (
@@ -188,9 +184,7 @@ export default function FilterPanel() {
             )}
 
             {criteria.keyword.trim() && (
-              <FilterChip onRemove={() => setKeyword("")}>
-                {criteria.keyword}
-              </FilterChip>
+              <FilterChip onRemove={() => setKeyword("")}>{criteria.keyword}</FilterChip>
             )}
 
             {(criteria.dateRange.start || criteria.dateRange.end) && (
@@ -212,9 +206,7 @@ export default function FilterPanel() {
             )}
 
             {criteria.favoritesOnly && (
-              <FilterChip onRemove={() => setFavoritesOnly(false)}>
-                仅收藏
-              </FilterChip>
+              <FilterChip onRemove={() => setFavoritesOnly(false)}>仅收藏</FilterChip>
             )}
           </div>
         ) : (
@@ -255,10 +247,10 @@ export default function FilterPanel() {
             displayValue={tagDisplay}
             onValueChange={(value) => {
               if (value === "all") {
-                setTagIds([])
-                return
+                setTagIds([]);
+                return;
               }
-              toggleTag(Number(value))
+              toggleTag(Number(value));
             }}
             className="w-[152px] max-w-full"
             triggerClassName={TRIGGER_CLASS_NAME}
@@ -269,7 +261,10 @@ export default function FilterPanel() {
                 <SelectItem key={tag.id} value={tag.id.toString()}>
                   <div className="flex items-center gap-2">
                     <div className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                    <span>{"　".repeat(tag.depth)}{tag.name}</span>
+                    <span>
+                      {"　".repeat(tag.depth)}
+                      {tag.name}
+                    </span>
                   </div>
                 </SelectItem>
               ))}
@@ -424,7 +419,7 @@ export default function FilterPanel() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function FilterInlineGroup({
@@ -432,26 +427,22 @@ function FilterInlineGroup({
   className,
   label,
 }: {
-  children: ReactNode
-  className?: string
-  label: string
+  children: ReactNode;
+  className?: string;
+  label: string;
 }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
+      <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">{label}</span>
       {children}
     </div>
-  )
+  );
 }
 
 function FilterSectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-2 text-[11px] font-medium tracking-[0.08em] text-gray-400">
-      {children}
-    </div>
-  )
+    <div className="mb-2 text-[11px] font-medium tracking-[0.08em] text-gray-400">{children}</div>
+  );
 }
 
 function SegmentButton({
@@ -459,9 +450,9 @@ function SegmentButton({
   children,
   onClick,
 }: {
-  active: boolean
-  children: ReactNode
-  onClick: () => void
+  active: boolean;
+  children: ReactNode;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -477,7 +468,7 @@ function SegmentButton({
     >
       {children}
     </button>
-  )
+  );
 }
 
 function ColorButton({
@@ -487,11 +478,11 @@ function ColorButton({
   label,
   onClick,
 }: {
-  active: boolean
-  children?: ReactNode
-  color?: string
-  label: string
-  onClick: () => void
+  active: boolean;
+  children?: ReactNode;
+  color?: string;
+  label: string;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -519,16 +510,10 @@ function ColorButton({
         children
       )}
     </button>
-  )
+  );
 }
 
-function FilterChip({
-  children,
-  onRemove,
-}: {
-  children: ReactNode
-  onRemove: () => void
-}) {
+function FilterChip({ children, onRemove }: { children: ReactNode; onRemove: () => void }) {
   return (
     <button
       type="button"
@@ -538,5 +523,5 @@ function FilterChip({
       {children}
       <X className="h-3 w-3" />
     </button>
-  )
+  );
 }

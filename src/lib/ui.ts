@@ -1,7 +1,6 @@
 export const appPanelClass = "app-panel flex h-full flex-col overflow-hidden";
 
-export const appPanelHeaderClass =
-  "app-panel-header flex items-center justify-between";
+export const appPanelHeaderClass = "app-panel-header flex items-center justify-between";
 
 export const appPanelTitleClass =
   "text-[13px] font-semibold tracking-[0.01em] text-gray-700 dark:text-gray-200";

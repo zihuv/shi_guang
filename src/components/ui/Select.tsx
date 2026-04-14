@@ -1,38 +1,45 @@
-import * as React from "react"
-import { ChevronDown } from "lucide-react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SelectContextValue {
-  value: string
-  onValueChange: (value: string) => void
-  open: boolean
-  setOpen: (open: boolean) => void
+  value: string;
+  onValueChange: (value: string) => void;
+  open: boolean;
+  setOpen: (open: boolean) => void;
 }
 
-const SelectContext = React.createContext<SelectContextValue | null>(null)
+const SelectContext = React.createContext<SelectContextValue | null>(null);
 
 export interface SelectProps {
-  value: string
-  onValueChange: (value: string) => void
-  children: React.ReactNode
-  className?: string
-  triggerClassName?: string
-  displayValue?: string
+  value: string;
+  onValueChange: (value: string) => void;
+  children: React.ReactNode;
+  className?: string;
+  triggerClassName?: string;
+  displayValue?: string;
 }
 
-export const Select: React.FC<SelectProps> = ({ value, onValueChange, children, className, triggerClassName, displayValue }) => {
-  const [isOpen, setIsOpen] = React.useState(false)
-  const ref = React.useRef<HTMLDivElement>(null)
+export const Select: React.FC<SelectProps> = ({
+  value,
+  onValueChange,
+  children,
+  className,
+  triggerClassName,
+  displayValue,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) {
-        setIsOpen(false)
+        setIsOpen(false);
       }
-    }
-    document.addEventListener("click", handleClickOutside)
-    return () => document.removeEventListener("click", handleClickOutside)
-  }, [])
+    };
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
 
   return (
     <SelectContext.Provider value={{ value, onValueChange, open: isOpen, setOpen: setIsOpen }}>
@@ -41,7 +48,7 @@ export const Select: React.FC<SelectProps> = ({ value, onValueChange, children, 
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
             "flex items-center justify-between h-8 px-3 text-xs border border-gray-200 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg cursor-pointer hover:border-gray-300 dark:hover:border-dark-border",
-            triggerClassName
+            triggerClassName,
           )}
         >
           <span className="truncate">{displayValue || value}</span>
@@ -54,40 +61,40 @@ export const Select: React.FC<SelectProps> = ({ value, onValueChange, children, 
         )}
       </div>
     </SelectContext.Provider>
-  )
-}
+  );
+};
 
 export interface SelectItemProps {
-  value: string
-  children: React.ReactNode
-  className?: string
+  value: string;
+  children: React.ReactNode;
+  className?: string;
 }
 
 export const SelectItem: React.FC<SelectItemProps> = ({ value, children, className }) => {
-  const context = React.useContext(SelectContext)
-  if (!context) throw new Error("SelectItem must be used within Select")
+  const context = React.useContext(SelectContext);
+  if (!context) throw new Error("SelectItem must be used within Select");
 
   return (
     <div
       onClick={(e) => {
-        e.stopPropagation()
-        context.onValueChange(value)
-        context.setOpen(false)
+        e.stopPropagation();
+        context.onValueChange(value);
+        context.setOpen(false);
       }}
       className={cn(
         "px-3 py-2 text-xs cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-border",
-        className
+        className,
       )}
     >
       {children}
     </div>
-  )
-}
+  );
+};
 
 export const SelectContent: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  return <>{children}</>
-}
+  return <>{children}</>;
+};
 
 export const SelectValue: React.FC<{ placeholder?: string }> = ({ placeholder }) => {
-  return <span className="text-gray-500">{placeholder}</span>
-}
+  return <span className="text-gray-500">{placeholder}</span>;
+};

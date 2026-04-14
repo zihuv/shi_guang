@@ -1,45 +1,49 @@
-import { invokeTauri } from "@/services/tauri/core"
+import { invokeTauri } from "@/services/tauri/core";
 
 export function getSetting(key: string) {
-  return invokeTauri<string>("get_setting", { key })
+  return invokeTauri<string>("get_setting", { key });
 }
 
 export function setSetting(key: string, value: string) {
-  return invokeTauri<void>("set_setting", { key, value })
+  return invokeTauri<void>("set_setting", { key, value });
 }
 
 export function getIndexPaths() {
-  return invokeTauri<string[]>("get_index_paths")
+  return invokeTauri<string[]>("get_index_paths");
 }
 
 export function getDefaultIndexPath() {
-  return invokeTauri<string>("get_default_index_path")
+  return invokeTauri<string>("get_default_index_path");
 }
 
 export function addIndexPath(path: string) {
-  return invokeTauri<void>("add_index_path", { path })
+  return invokeTauri<void>("add_index_path", { path });
 }
 
 export function switchIndexPathAndRestart(path: string) {
-  return invokeTauri<void>("switch_index_path_and_restart", { path })
+  return invokeTauri<void>("switch_index_path_and_restart", { path });
 }
 
 export function syncIndexPath(path: string) {
-  return invokeTauri<number>("sync_index_path", { path })
+  return invokeTauri<number>("sync_index_path", { path });
 }
 
 export function rebuildLibraryIndex() {
-  return invokeTauri<number>("rebuild_library_index")
+  return invokeTauri<number>("rebuild_library_index");
 }
 
 export function getThumbnailPath(filePath: string, maxEdge?: number) {
-  return invokeTauri<string | null>("get_thumbnail_path", { filePath, maxEdge })
+  return invokeTauri<string | null>("get_thumbnail_path", { filePath, maxEdge });
 }
 
 export function getThumbnailDataBase64(filePath: string, maxEdge?: number) {
-  return invokeTauri<string | null>("get_thumbnail_data_base64", { filePath, maxEdge })
+  return invokeTauri<string | null>("get_thumbnail_data_base64", { filePath, maxEdge });
 }
 
-export function saveThumbnailCache(args: { filePath: string; dataBase64: string; maxEdge?: number }) {
-  return invokeTauri<string | null>("save_thumbnail_cache", args)
+export function saveThumbnailCache(args: {
+  filePath: string;
+  dataBase64: string;
+  maxEdge?: number;
+}) {
+  return invokeTauri<string | null>("save_thumbnail_cache", args);
 }

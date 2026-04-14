@@ -57,13 +57,10 @@ const SPECIAL_KEY_MAP: Record<string, string> = {
   plus: "Plus",
 };
 
-export const DEFAULT_SHORTCUTS: ShortcutConfig = SHORTCUT_ACTIONS.reduce(
-  (result, action) => {
-    result[action.id] = action.defaultShortcut;
-    return result;
-  },
-  {} as ShortcutConfig,
-);
+export const DEFAULT_SHORTCUTS: ShortcutConfig = SHORTCUT_ACTIONS.reduce((result, action) => {
+  result[action.id] = action.defaultShortcut;
+  return result;
+}, {} as ShortcutConfig);
 
 export function isMacPlatform() {
   if (typeof navigator === "undefined") {
@@ -171,7 +168,9 @@ export function normalizeShortcut(shortcut: string) {
   return [...parsed.modifiers, parsed.key].join("+");
 }
 
-export function resolveShortcuts(savedShortcuts?: Partial<Record<ShortcutActionId, string | null>> | null): ShortcutConfig {
+export function resolveShortcuts(
+  savedShortcuts?: Partial<Record<ShortcutActionId, string | null>> | null,
+): ShortcutConfig {
   const shortcuts: ShortcutConfig = { ...DEFAULT_SHORTCUTS };
 
   if (!savedShortcuts) {
@@ -202,7 +201,9 @@ function normalizeKeyboardEventKey(key: string) {
   return normalizeKeyToken(key);
 }
 
-export function shortcutFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">) {
+export function shortcutFromKeyboardEvent(
+  event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">,
+) {
   if (MODIFIER_ONLY_KEYS.has(event.key.toLowerCase())) {
     return "";
   }

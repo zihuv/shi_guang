@@ -22,18 +22,14 @@ export default function Header({ onOpenSettings }: HeaderProps) {
   const { theme, setTheme } = useSettingsStore();
   const isImporting =
     !!importTask &&
-    !["completed", "completed_with_errors", "cancelled", "failed"].includes(
-      importTask.status,
-    );
+    !["completed", "completed_with_errors", "cancelled", "failed"].includes(importTask.status);
   const importProgress = importTask?.total
     ? Math.min(100, Math.round((importTask.processed / importTask.total) * 100))
     : 0;
   const importCountLabel = `${importTask?.processed ?? 0}/${importTask?.total ?? 0}`;
   const isAiAnalyzing =
     !!aiMetadataTask &&
-    !["completed", "completed_with_errors", "cancelled", "failed"].includes(
-      aiMetadataTask.status,
-    );
+    !["completed", "completed_with_errors", "cancelled", "failed"].includes(aiMetadataTask.status);
   const aiProgress = aiMetadataTask?.total
     ? Math.min(100, Math.round((aiMetadataTask.processed / aiMetadataTask.total) * 100))
     : 0;
@@ -185,11 +181,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
             title={theme === "light" ? "切换到深色模式" : "切换到浅色模式"}
             className="rounded-xl"
           >
-            {theme === "light" ? (
-              <Moon className="h-4 w-4" />
-            ) : (
-              <Sun className="h-4 w-4" />
-            )}
+            {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </Button>
 
           <Button

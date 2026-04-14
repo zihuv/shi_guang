@@ -14,9 +14,7 @@ function clearActiveDragLock() {
 }
 
 export function startExternalFileDrag(fileIds: number[]) {
-  const uniqueFileIds = Array.from(new Set(fileIds)).filter((fileId) =>
-    Number.isFinite(fileId),
-  );
+  const uniqueFileIds = Array.from(new Set(fileIds)).filter((fileId) => Number.isFinite(fileId));
 
   if (uniqueFileIds.length === 0) {
     return Promise.resolve();

@@ -1,8 +1,8 @@
-import { create } from "zustand"
+import { create } from "zustand";
 
 interface ThumbnailRefreshStore {
-  fileVersions: Record<number, number>
-  bumpFileVersion: (fileId: number) => void
+  fileVersions: Record<number, number>;
+  bumpFileVersion: (fileId: number) => void;
 }
 
 export const useThumbnailRefreshStore = create<ThumbnailRefreshStore>((set) => ({
@@ -14,4 +14,4 @@ export const useThumbnailRefreshStore = create<ThumbnailRefreshStore>((set) => (
         [fileId]: (state.fileVersions[fileId] ?? 0) + 1,
       },
     })),
-}))
+}));

@@ -23,10 +23,7 @@ type UseTauriImportListenersOptions = {
   dragOverFolderId: number | null;
   setDragOverFolderId: (folderId: number | null) => void;
   setIsDragging: (isDragging: boolean) => void;
-  importFiles: (
-    sourcePaths: string[],
-    targetFolderId?: number | null,
-  ) => Promise<unknown>;
+  importFiles: (sourcePaths: string[], targetFolderId?: number | null) => Promise<unknown>;
 };
 
 type FileUpdatedPayload = {
@@ -77,9 +74,7 @@ async function handleVisualIndexBrowserDecodeRequest(
   });
 }
 
-function enqueueVisualIndexBrowserDecodeRequest(
-  payload?: VisualIndexBrowserDecodeRequestPayload,
-) {
+function enqueueVisualIndexBrowserDecodeRequest(payload?: VisualIndexBrowserDecodeRequestPayload) {
   // Serialize large browser-side transcodes so timed-out AVIF requests do not pile up
   // and keep the main thread saturated.
   const task = visualIndexBrowserDecodeState.queue.then(() =>
@@ -129,59 +124,54 @@ export function useTauriImportListeners({
         }
       });
 
-      unlistenDragDrop = await listen<{ paths: string[] }>(
-        "tauri://drag-drop",
-        async (event) => {
-          if (useSelectionStore.getState().isDraggingInternal) {
-            return;
-          }
+      unlistenDragDrop = await listen<{ paths: string[] }>("tauri://drag-drop", async (event) => {
+        if (useSelectionStore.getState().isDraggingInternal) {
+          return;
+        }
 
-          if (dragDropState.isProcessing) {
-            return;
-          }
+        if (dragDropState.isProcessing) {
+          return;
+        }
 
-          setIsDragging(false);
-          dragDropState.isProcessing = true;
+        setIsDragging(false);
+        dragDropState.isProcessing = true;
 
-          const uniquePaths = [...new Set(event.payload.paths)].filter(
-            (path) => !dragDropState.processedPaths.has(path),
-          );
+        const uniquePaths = [...new Set(event.payload.paths)].filter(
+          (path) => !dragDropState.processedPaths.has(path),
+        );
 
-          if (uniquePaths.length === 0) {
-            dragDropState.isProcessing = false;
-            return;
-          }
+        if (uniquePaths.length === 0) {
+          dragDropState.isProcessing = false;
+          return;
+        }
 
+        for (const path of uniquePaths) {
+          dragDropState.processedPaths.add(path);
+        }
+
+        try {
+          const targetFolderId =
+            dragOverFolderIdRef.current !== null ? dragOverFolderIdRef.current : undefined;
+          await importFilesRef.current(uniquePaths, targetFolderId);
+        } catch (error) {
+          console.error("[Tauri DragDrop] Import error:", error);
           for (const path of uniquePaths) {
-            dragDropState.processedPaths.add(path);
+            dragDropState.processedPaths.delete(path);
+          }
+        } finally {
+          dragDropState.isProcessing = false;
+
+          if (dragOverFolderIdRef.current !== null) {
+            setDragOverFolderIdRef.current(null);
           }
 
-          try {
-            const targetFolderId =
-              dragOverFolderIdRef.current !== null
-                ? dragOverFolderIdRef.current
-                : undefined;
-            await importFilesRef.current(uniquePaths, targetFolderId);
-          } catch (error) {
-            console.error("[Tauri DragDrop] Import error:", error);
+          setTimeout(() => {
             for (const path of uniquePaths) {
               dragDropState.processedPaths.delete(path);
             }
-          } finally {
-            dragDropState.isProcessing = false;
-
-            if (dragOverFolderIdRef.current !== null) {
-              setDragOverFolderIdRef.current(null);
-            }
-
-            setTimeout(() => {
-              for (const path of uniquePaths) {
-                dragDropState.processedPaths.delete(path);
-              }
-            }, 2000);
-          }
-        },
-      );
+          }, 2000);
+        }
+      });
 
       unlistenFileImported = await listen<FileImportedPayload>("file-imported", async () => {
         const libraryStore = useLibraryQueryStore.getState();
@@ -211,16 +201,17 @@ export function useTauriImportListeners({
         ]);
       });
 
-      unlistenVisualIndexBrowserDecodeRequest = await listen<VisualIndexBrowserDecodeRequestPayload>(
-        "visual-index-browser-decode-request",
-        async (event) => {
-          try {
-            await enqueueVisualIndexBrowserDecodeRequest(event.payload);
-          } catch (error) {
-            console.error("Failed to resolve visual index browser decode request:", error);
-          }
-        },
-      );
+      unlistenVisualIndexBrowserDecodeRequest =
+        await listen<VisualIndexBrowserDecodeRequestPayload>(
+          "visual-index-browser-decode-request",
+          async (event) => {
+            try {
+              await enqueueVisualIndexBrowserDecodeRequest(event.payload);
+            } catch (error) {
+              console.error("Failed to resolve visual index browser decode request:", error);
+            }
+          },
+        );
 
       dragDropState.listenersReady = true;
     };

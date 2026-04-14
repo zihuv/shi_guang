@@ -8,14 +8,14 @@ import {
   FileSpreadsheet,
   FileText,
   Presentation,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { getFileKind } from "@/utils"
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { getFileKind } from "@/utils";
 
 type FileTypeIconProps = {
-  ext: string
-  className?: string
-}
+  ext: string;
+  className?: string;
+};
 
 const kindColorClassMap = {
   image: "text-emerald-500",
@@ -29,10 +29,10 @@ const kindColorClassMap = {
   code: "text-violet-500",
   text: "text-slate-500",
   other: "text-gray-400",
-} as const
+} as const;
 
 export default function FileTypeIcon({ ext, className }: FileTypeIconProps) {
-  const kind = getFileKind(ext)
+  const kind = getFileKind(ext);
 
   const Icon =
     kind === "image"
@@ -51,7 +51,7 @@ export default function FileTypeIcon({ ext, className }: FileTypeIconProps) {
                   ? FileText
                   : kind === "code"
                     ? FileCode
-                    : File
+                    : File;
 
-  return <Icon className={cn(kindColorClassMap[kind], className)} strokeWidth={1.8} />
+  return <Icon className={cn(kindColorClassMap[kind], className)} strokeWidth={1.8} />;
 }

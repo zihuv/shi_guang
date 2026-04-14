@@ -1,5 +1,5 @@
-import type { FileFilterPayload } from "@/services/tauri/files"
-import type { FilterCriteria } from "@/features/filters/types"
+import type { FileFilterPayload } from "@/services/tauri/files";
+import type { FilterCriteria } from "@/features/filters/types";
 
 export type FilterFieldId =
   | "fileType"
@@ -9,12 +9,12 @@ export type FilterFieldId =
   | "dateRange"
   | "sizeRange"
   | "minRating"
-  | "favoritesOnly"
+  | "favoritesOnly";
 
 export interface FilterFieldDefinition {
-  id: FilterFieldId
-  label: string
-  isActive: (criteria: FilterCriteria) => boolean
+  id: FilterFieldId;
+  label: string;
+  isActive: (criteria: FilterCriteria) => boolean;
 }
 
 export const FILTER_FIELD_DEFINITIONS: FilterFieldDefinition[] = [
@@ -46,8 +46,7 @@ export const FILTER_FIELD_DEFINITIONS: FilterFieldDefinition[] = [
   {
     id: "sizeRange",
     label: "文件大小",
-    isActive: (criteria) =>
-      criteria.sizeRange.min !== null || criteria.sizeRange.max !== null,
+    isActive: (criteria) => criteria.sizeRange.min !== null || criteria.sizeRange.max !== null,
   },
   {
     id: "minRating",
@@ -59,26 +58,26 @@ export const FILTER_FIELD_DEFINITIONS: FilterFieldDefinition[] = [
     label: "仅收藏",
     isActive: (criteria) => criteria.favoritesOnly,
   },
-]
+];
 
 export function getActiveFilterCount(criteria: FilterCriteria) {
   return FILTER_FIELD_DEFINITIONS.reduce(
     (count, definition) => count + (definition.isActive(criteria) ? 1 : 0),
     0,
-  )
+  );
 }
 
 export function hasStructuredFilters(criteria: FilterCriteria) {
-  return FILTER_FIELD_DEFINITIONS.some((definition) => definition.isActive(criteria))
+  return FILTER_FIELD_DEFINITIONS.some((definition) => definition.isActive(criteria));
 }
 
 export function buildFileFilterPayload(args: {
-  criteria: FilterCriteria
-  fallbackQuery?: string
-  naturalLanguageQuery?: string
-  folderId?: number | null
+  criteria: FilterCriteria;
+  fallbackQuery?: string;
+  naturalLanguageQuery?: string;
+  folderId?: number | null;
 }): FileFilterPayload {
-  const { criteria, fallbackQuery, naturalLanguageQuery, folderId } = args
+  const { criteria, fallbackQuery, naturalLanguageQuery, folderId } = args;
 
   return {
     query: criteria.keyword || fallbackQuery || null,
@@ -95,5 +94,5 @@ export function buildFileFilterPayload(args: {
     dominant_color: criteria.dominantColor || null,
     sort_by: criteria.sortBy,
     sort_direction: criteria.sortDirection,
-  }
+  };
 }

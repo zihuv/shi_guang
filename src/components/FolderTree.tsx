@@ -1,25 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
-import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge'
-import { Files, Plus } from 'lucide-react'
-import { buildVisibleTreeItems, useTreeKeyboardNavigation } from '@/hooks/useTreeKeyboardNavigation'
-import { requestFocusFirstFile } from '@/lib/libraryNavigation'
-import { appPanelHeaderClass, appPanelTitleClass, appTreeRowClass } from '@/lib/ui'
-import { deleteFolder } from '@/services/tauri/folders'
-import { useFolderStore, type FolderNode } from '@/stores/folderStore'
-import { useLibraryQueryStore } from '@/stores/libraryQueryStore'
-import { Button } from '@/components/ui/Button'
-import TrashPanel from '@/components/TrashPanel'
-import { FolderDialogs } from '@/components/folder-tree/FolderDialogs'
-import { FolderItem } from '@/components/folder-tree/FolderItem'
-import { createTreeItemRegistry, type DragPosition } from '@/components/folder-tree/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
+import { Files, Plus } from "lucide-react";
+import {
+  buildVisibleTreeItems,
+  useTreeKeyboardNavigation,
+} from "@/hooks/useTreeKeyboardNavigation";
+import { requestFocusFirstFile } from "@/lib/libraryNavigation";
+import { appPanelHeaderClass, appPanelTitleClass, appTreeRowClass } from "@/lib/ui";
+import { deleteFolder } from "@/services/tauri/folders";
+import { useFolderStore, type FolderNode } from "@/stores/folderStore";
+import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { Button } from "@/components/ui/Button";
+import TrashPanel from "@/components/TrashPanel";
+import { FolderDialogs } from "@/components/folder-tree/FolderDialogs";
+import { FolderItem } from "@/components/folder-tree/FolderItem";
+import { createTreeItemRegistry, type DragPosition } from "@/components/folder-tree/types";
 import {
   findFolderParentId,
   findSiblings,
   getAllFolderIds,
   isDescendant,
   selectFolderFromTree,
-} from '@/components/folder-tree/utils'
+} from "@/components/folder-tree/utils";
 
 function replaceFolderChildren(
   items: FolderNode[],
@@ -28,13 +31,13 @@ function replaceFolderChildren(
 ): FolderNode[] {
   return items.map((item) => {
     if (item.id === parentId) {
-      return { ...item, children: nextChildren }
+      return { ...item, children: nextChildren };
     }
     if (item.children && item.children.length > 0) {
-      return { ...item, children: replaceFolderChildren(item.children, parentId, nextChildren) }
+      return { ...item, children: replaceFolderChildren(item.children, parentId, nextChildren) };
     }
-    return item
-  })
+    return item;
+  });
 }
 
 function reorderSiblings(
@@ -43,34 +46,34 @@ function reorderSiblings(
   targetId: number,
   insertBefore: boolean,
 ) {
-  const activeIndex = siblings.findIndex((item) => item.id === activeFolderId)
-  const targetIndex = siblings.findIndex((item) => item.id === targetId)
+  const activeIndex = siblings.findIndex((item) => item.id === activeFolderId);
+  const targetIndex = siblings.findIndex((item) => item.id === targetId);
 
   if (activeIndex === -1 || targetIndex === -1) {
-    return null
+    return null;
   }
 
-  let newIndex = targetIndex
+  let newIndex = targetIndex;
   if (!insertBefore && targetIndex < activeIndex) {
-    newIndex = targetIndex + 1
+    newIndex = targetIndex + 1;
   } else if (insertBefore && targetIndex > activeIndex) {
-    newIndex = targetIndex - 1
+    newIndex = targetIndex - 1;
   }
 
   if (newIndex === activeIndex) {
-    return null
+    return null;
   }
 
-  const nextSiblings = [...siblings]
-  const [movedFolder] = nextSiblings.splice(activeIndex, 1)
-  nextSiblings.splice(newIndex, 0, movedFolder)
-  return nextSiblings
+  const nextSiblings = [...siblings];
+  const [movedFolder] = nextSiblings.splice(activeIndex, 1);
+  nextSiblings.splice(newIndex, 0, movedFolder);
+  return nextSiblings;
 }
 
 function getPersistedFolderIds(folders: FolderNode[]) {
   return folders
-    .filter((folder) => !folder.isSystem && folder.name !== '浏览器采集')
-    .map((folder) => folder.id)
+    .filter((folder) => !folder.isSystem && folder.name !== "浏览器采集")
+    .map((folder) => folder.id);
 }
 
 export default function FolderTree() {
@@ -88,25 +91,25 @@ export default function FolderTree() {
     moveFolder,
     setFolders,
     uniqueContextId,
-  } = useFolderStore()
-  const addingSubfolder = useFolderStore((state) => state.addingSubfolder)
-  const editingFolder = useFolderStore((state) => state.editingFolder)
-  const deleteConfirm = useFolderStore((state) => state.deleteConfirm)
-  const setAddingSubfolder = useFolderStore((state) => state.setAddingSubfolder)
-  const setEditingFolder = useFolderStore((state) => state.setEditingFolder)
-  const setDeleteConfirm = useFolderStore((state) => state.setDeleteConfirm)
-  const loadFilesInFolder = useLibraryQueryStore((state) => state.loadFilesInFolder)
+  } = useFolderStore();
+  const addingSubfolder = useFolderStore((state) => state.addingSubfolder);
+  const editingFolder = useFolderStore((state) => state.editingFolder);
+  const deleteConfirm = useFolderStore((state) => state.deleteConfirm);
+  const setAddingSubfolder = useFolderStore((state) => state.setAddingSubfolder);
+  const setEditingFolder = useFolderStore((state) => state.setEditingFolder);
+  const setDeleteConfirm = useFolderStore((state) => state.setDeleteConfirm);
+  const loadFilesInFolder = useLibraryQueryStore((state) => state.loadFilesInFolder);
 
-  const [isAdding, setIsAdding] = useState(false)
-  const [activeId, setActiveId] = useState<number | null>(null)
-  const [dragPosition, setDragPosition] = useState<DragPosition>({ type: 'none' })
+  const [isAdding, setIsAdding] = useState(false);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" });
 
-  const dragPositionRef = useRef<DragPosition>({ type: 'none' })
-  const mouseYRef = useRef(0)
+  const dragPositionRef = useRef<DragPosition>({ type: "none" });
+  const mouseYRef = useRef(0);
 
   useEffect(() => {
-    dragPositionRef.current = dragPosition
-  }, [dragPosition])
+    dragPositionRef.current = dragPosition;
+  }, [dragPosition]);
 
   const visibleFolderItems = useMemo(
     () => [
@@ -124,7 +127,7 @@ export default function FolderTree() {
       }),
     ],
     [expandedFolderIds, folders],
-  )
+  );
 
   const {
     containerRef: treeContainerRef,
@@ -135,241 +138,244 @@ export default function FolderTree() {
     items: visibleFolderItems,
     selectedId: selectedFolderId,
     onSelect: async (folderId) => {
-      focusTree()
-      await selectFolderFromTree(folderId)
+      focusTree();
+      await selectFolderFromTree(folderId);
     },
     onToggle: (folderId) => {
-      useFolderStore.getState().toggleFolder(folderId)
+      useFolderStore.getState().toggleFolder(folderId);
     },
     onActivate: requestFocusFirstFile,
-  })
+  });
 
-  const [registryState] = useState(createTreeItemRegistry)
-  const { registry, registerTreeItem } = registryState
+  const [registryState] = useState(createTreeItemRegistry);
+  const { registry, registerTreeItem } = registryState;
 
   useEffect(() => {
-    const container = document.getElementById('folder-tree-container')
-    if (!container) return
+    const container = document.getElementById("folder-tree-container");
+    if (!container) return;
 
     const handleDragStart = (event: Event) => {
-      const customEvent = event as CustomEvent<{ folderId: number }>
-      setActiveId(customEvent.detail.folderId)
-    }
+      const customEvent = event as CustomEvent<{ folderId: number }>;
+      setActiveId(customEvent.detail.folderId);
+    };
 
     const handleDragEnd = () => {
-      setActiveId(null)
-    }
+      setActiveId(null);
+    };
 
     const handleMouseMove = (event: MouseEvent) => {
-      mouseYRef.current = event.clientY
-    }
+      mouseYRef.current = event.clientY;
+    };
 
-    document.addEventListener('mousemove', handleMouseMove)
-    container.addEventListener('folder-drag-start', handleDragStart)
-    container.addEventListener('folder-drag-end', handleDragEnd)
+    document.addEventListener("mousemove", handleMouseMove);
+    container.addEventListener("folder-drag-start", handleDragStart);
+    container.addEventListener("folder-drag-end", handleDragEnd);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      container.removeEventListener('folder-drag-start', handleDragStart)
-      container.removeEventListener('folder-drag-end', handleDragEnd)
-    }
-  }, [])
+      document.removeEventListener("mousemove", handleMouseMove);
+      container.removeEventListener("folder-drag-start", handleDragStart);
+      container.removeEventListener("folder-drag-end", handleDragEnd);
+    };
+  }, []);
 
-  const applySortDrop = (activeFolderId: number, targetId: number, insertBefore: boolean) => {
-    if (isDescendant(folders, activeFolderId, targetId)) {
-      console.log('Cannot drag parent into its own child (circular reference)')
-      return
-    }
+  const applySortDrop = useCallback(
+    (activeFolderId: number, targetId: number, insertBefore: boolean) => {
+      if (isDescendant(folders, activeFolderId, targetId)) {
+        console.log("Cannot drag parent into its own child (circular reference)");
+        return;
+      }
 
-    const activeParentId = findFolderParentId(folders, activeFolderId, null)
-    const targetParentId = findFolderParentId(folders, targetId, null)
+      const activeParentId = findFolderParentId(folders, activeFolderId, null);
+      const targetParentId = findFolderParentId(folders, targetId, null);
 
-    if (activeParentId !== targetParentId) {
-      moveFolder(activeFolderId, targetParentId)
-      return
-    }
+      if (activeParentId !== targetParentId) {
+        moveFolder(activeFolderId, targetParentId);
+        return;
+      }
 
-    const siblings = findSiblings(folders, activeParentId)
-    const reorderedSiblings = reorderSiblings(siblings, activeFolderId, targetId, insertBefore)
-    if (!reorderedSiblings) {
-      return
-    }
+      const siblings = findSiblings(folders, activeParentId);
+      const reorderedSiblings = reorderSiblings(siblings, activeFolderId, targetId, insertBefore);
+      if (!reorderedSiblings) {
+        return;
+      }
 
-    if (activeParentId === null) {
-      setFolders(reorderedSiblings)
-    } else {
-      setFolders(replaceFolderChildren(folders, activeParentId, reorderedSiblings))
-    }
+      if (activeParentId === null) {
+        setFolders(reorderedSiblings);
+      } else {
+        setFolders(replaceFolderChildren(folders, activeParentId, reorderedSiblings));
+      }
 
-    const folderIds = getPersistedFolderIds(reorderedSiblings)
-    if (folderIds.length > 0) {
-      reorderFolders(folderIds)
-    }
-  }
+      const folderIds = getPersistedFolderIds(reorderedSiblings);
+      if (folderIds.length > 0) {
+        reorderFolders(folderIds);
+      }
+    },
+    [folders, moveFolder, reorderFolders, setFolders],
+  );
 
   useEffect(() => {
     return monitorForElements({
       canMonitor: ({ source }) =>
-        source.data.uniqueContextId === uniqueContextId && source.data.type === 'folder',
+        source.data.uniqueContextId === uniqueContextId && source.data.type === "folder",
       onDragStart: ({ source }) => {
-        if (source.data.type === 'folder') {
-          setActiveId(source.data.folderId as number)
+        if (source.data.type === "folder") {
+          setActiveId(source.data.folderId as number);
         }
       },
       onDrag: ({ source, location }) => {
-        const dropTargets = location.current.dropTargets
+        const dropTargets = location.current.dropTargets;
 
         if (dropTargets.length === 0) {
-          const allIds = getAllFolderIds(folders)
-          let closestFolder: { id: number; element: HTMLElement } | null = null
-          let minDistance = Infinity
+          const allIds = getAllFolderIds(folders);
+          let closestFolder: { id: number; element: HTMLElement } | null = null;
+          let minDistance = Infinity;
 
           for (const id of allIds) {
-            const item = registry.get(id.toString())
-            if (!item?.element) continue
-            const rect = item.element.getBoundingClientRect()
-            const folderCenterY = rect.top + rect.height / 2
-            const distance = Math.abs(mouseYRef.current - folderCenterY)
+            const item = registry.get(id.toString());
+            if (!item?.element) continue;
+            const rect = item.element.getBoundingClientRect();
+            const folderCenterY = rect.top + rect.height / 2;
+            const distance = Math.abs(mouseYRef.current - folderCenterY);
             if (distance < minDistance) {
-              minDistance = distance
-              closestFolder = { id, element: item.element }
+              minDistance = distance;
+              closestFolder = { id, element: item.element };
             }
           }
 
           if (closestFolder && minDistance < 100) {
-            const rect = closestFolder.element.getBoundingClientRect()
+            const rect = closestFolder.element.getBoundingClientRect();
             setDragPosition({
-              type: 'sort',
+              type: "sort",
               targetId: closestFolder.id,
               before: mouseYRef.current < rect.top + rect.height / 2,
-            })
+            });
           } else {
-            setDragPosition({ type: 'none' })
+            setDragPosition({ type: "none" });
           }
-          return
+          return;
         }
 
-        const target = dropTargets[0]
-        const targetData = target.data
-        const closestEdge = extractClosestEdge(targetData)
+        const target = dropTargets[0];
+        const targetData = target.data;
+        const closestEdge = extractClosestEdge(targetData);
 
-        if (closestEdge && source.data.type === 'folder') {
+        if (closestEdge && source.data.type === "folder") {
           setDragPosition({
-            type: 'sort',
+            type: "sort",
             targetId: targetData.folderId as number,
-            before: closestEdge === 'top',
-          })
-          return
+            before: closestEdge === "top",
+          });
+          return;
         }
 
-        if (targetData.type === 'folder') {
-          const targetFolderId = targetData.folderId as number
-          const sourceFolderId = source.data.folderId as number
+        if (targetData.type === "folder") {
+          const targetFolderId = targetData.folderId as number;
+          const sourceFolderId = source.data.folderId as number;
           if (
-            source.data.type === 'folder' &&
+            source.data.type === "folder" &&
             sourceFolderId !== targetFolderId &&
             !isDescendant(folders, sourceFolderId, targetFolderId)
           ) {
-            setDragPosition({ type: 'nest', folderId: targetFolderId })
-            return
+            setDragPosition({ type: "nest", folderId: targetFolderId });
+            return;
           }
         }
 
-        setDragPosition({ type: 'none' })
+        setDragPosition({ type: "none" });
       },
       onDrop: ({ source, location }) => {
-        if (source.data.type !== 'folder') {
-          setDragPosition({ type: 'none' })
-          setActiveId(null)
-          return
+        if (source.data.type !== "folder") {
+          setDragPosition({ type: "none" });
+          setActiveId(null);
+          return;
         }
 
-        const activeFolderId = source.data.folderId as number
-        const savedDragPosition = dragPositionRef.current
-        const dropTargets = location.current.dropTargets
+        const activeFolderId = source.data.folderId as number;
+        const savedDragPosition = dragPositionRef.current;
+        const dropTargets = location.current.dropTargets;
 
         if (dropTargets.length === 0) {
-          if (savedDragPosition.type === 'sort') {
-            applySortDrop(activeFolderId, savedDragPosition.targetId, savedDragPosition.before)
+          if (savedDragPosition.type === "sort") {
+            applySortDrop(activeFolderId, savedDragPosition.targetId, savedDragPosition.before);
           }
-          setDragPosition({ type: 'none' })
-          setActiveId(null)
-          return
+          setDragPosition({ type: "none" });
+          setActiveId(null);
+          return;
         }
 
-        const targetData = dropTargets[0].data
+        const targetData = dropTargets[0].data;
 
-        if (targetData.type === 'folder') {
-          const targetFolderId = targetData.folderId as number
+        if (targetData.type === "folder") {
+          const targetFolderId = targetData.folderId as number;
           if (
             activeFolderId !== targetFolderId &&
             !isDescendant(folders, activeFolderId, targetFolderId)
           ) {
-            moveFolder(activeFolderId, targetFolderId)
+            moveFolder(activeFolderId, targetFolderId);
           }
         }
 
-        const closestEdge = extractClosestEdge(targetData)
+        const closestEdge = extractClosestEdge(targetData);
         if (closestEdge && targetData.folderId !== activeFolderId) {
-          applySortDrop(activeFolderId, targetData.folderId as number, closestEdge === 'top')
+          applySortDrop(activeFolderId, targetData.folderId as number, closestEdge === "top");
         }
 
-        setDragPosition({ type: 'none' })
-        setActiveId(null)
+        setDragPosition({ type: "none" });
+        setActiveId(null);
       },
-    })
-  }, [applySortDrop, folders, registry, uniqueContextId])
+    });
+  }, [applySortDrop, folders, moveFolder, registry, uniqueContextId]);
 
   const selectFolderForKeyboard = async (folderId: number | null) => {
-    focusTree()
-    await selectFolderFromTree(folderId)
-  }
+    focusTree();
+    await selectFolderFromTree(folderId);
+  };
 
   const handleAddFolder = async () => {
-    if (!newFolderName.trim()) return
-    await createFolder(newFolderName.trim(), null)
-    setNewFolderName('')
-    setIsAdding(false)
-  }
+    if (!newFolderName.trim()) return;
+    await createFolder(newFolderName.trim(), null);
+    setNewFolderName("");
+    setIsAdding(false);
+  };
 
   const handleAddSubfolderSubmit = async () => {
-    if (!newFolderName.trim() || !addingSubfolder) return
-    await createFolder(newFolderName.trim(), addingSubfolder.id)
-    setNewFolderName('')
-    setAddingSubfolder(null)
-  }
+    if (!newFolderName.trim() || !addingSubfolder) return;
+    await createFolder(newFolderName.trim(), addingSubfolder.id);
+    setNewFolderName("");
+    setAddingSubfolder(null);
+  };
 
   const handleRenameSubmit = async () => {
-    if (!editingFolder || !newFolderName.trim()) return
-    await useFolderStore.getState().renameFolder(editingFolder.id, newFolderName.trim())
-    setEditingFolder(null)
-    setNewFolderName('')
-  }
+    if (!editingFolder || !newFolderName.trim()) return;
+    await useFolderStore.getState().renameFolder(editingFolder.id, newFolderName.trim());
+    setEditingFolder(null);
+    setNewFolderName("");
+  };
 
   const handleConfirmDelete = async () => {
-    if (!deleteConfirm) return
+    if (!deleteConfirm) return;
 
-    const deletedId = deleteConfirm.id
-    setDeleteConfirm(null)
+    const deletedId = deleteConfirm.id;
+    setDeleteConfirm(null);
 
-    await deleteFolder(deletedId)
-    await loadFolders()
+    await deleteFolder(deletedId);
+    await loadFolders();
 
     if (selectedFolderId !== deletedId) {
-      return
+      return;
     }
 
-    const nextFolders = useFolderStore.getState().folders
+    const nextFolders = useFolderStore.getState().folders;
     if (nextFolders.length > 0) {
-      const firstFolder = nextFolders[0]
-      selectFolder(firstFolder.id)
-      await loadFilesInFolder(firstFolder.id)
-      return
+      const firstFolder = nextFolders[0];
+      selectFolder(firstFolder.id);
+      await loadFilesInFolder(firstFolder.id);
+      return;
     }
 
-    selectFolder(null)
-    await loadFilesInFolder(null)
-  }
+    selectFolder(null);
+    await loadFilesInFolder(null);
+  };
 
   return (
     <div className="flex flex-col">
@@ -419,13 +425,13 @@ export default function FolderTree() {
               ref={(element) => registerKeyboardItem(null, element)}
               className={`${appTreeRowClass} cursor-pointer ${
                 selectedFolderId === null
-                  ? 'bg-primary-100 dark:bg-primary-900/30'
-                  : 'hover:bg-gray-100 dark:hover:bg-dark-border'
+                  ? "bg-primary-100 dark:bg-primary-900/30"
+                  : "hover:bg-gray-100 dark:hover:bg-dark-border"
               }`}
-              style={{ paddingLeft: '8px' }}
+              style={{ paddingLeft: "8px" }}
               onClick={() => {
-                focusTree()
-                void selectFolderForKeyboard(null)
+                focusTree();
+                void selectFolderForKeyboard(null);
               }}
             >
               <span className="w-5" />
@@ -466,5 +472,5 @@ export default function FolderTree() {
         onConfirmDelete={handleConfirmDelete}
       />
     </div>
-  )
+  );
 }

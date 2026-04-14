@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { DEFAULT_SHORTCUTS, resolveShortcuts, type ShortcutActionId, type ShortcutConfig } from "@/lib/shortcuts";
+import {
+  DEFAULT_SHORTCUTS,
+  resolveShortcuts,
+  type ShortcutActionId,
+  type ShortcutConfig,
+} from "@/lib/shortcuts";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import {
@@ -65,17 +70,13 @@ export const DEFAULT_LIBRARY_VIEW_SCALES: Record<LibraryViewMode, number> = {
   adaptive: 1,
 };
 
-const LIBRARY_VIEW_SCALE_LIMITS: Record<
-  LibraryViewMode,
-  { min: number; max: number }
-> = {
+const LIBRARY_VIEW_SCALE_LIMITS: Record<LibraryViewMode, { min: number; max: number }> = {
   grid: { min: SHARED_TILE_VIEW_SCALE_MIN, max: SHARED_TILE_VIEW_SCALE_MAX },
   list: { min: 0.82, max: 1.8 },
   adaptive: { min: SHARED_TILE_VIEW_SCALE_MIN, max: SHARED_TILE_VIEW_SCALE_MAX },
 };
 
-let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null =
-  null;
+let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let panelLayoutPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let aiConfigPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let visualSearchPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -167,10 +168,7 @@ export function clampAiBatchAnalyzeConcurrency(value: number) {
   }
 
   return Math.round(
-    Math.max(
-      MIN_AI_BATCH_ANALYZE_CONCURRENCY,
-      Math.min(MAX_AI_BATCH_ANALYZE_CONCURRENCY, value),
-    ),
+    Math.max(MIN_AI_BATCH_ANALYZE_CONCURRENCY, Math.min(MAX_AI_BATCH_ANALYZE_CONCURRENCY, value)),
   );
 }
 
@@ -196,17 +194,20 @@ function isLibraryViewMode(value: unknown): value is LibraryViewMode {
 }
 
 function isLibraryVisibleField(value: unknown): value is LibraryVisibleField {
-  return value === "name" || value === "ext" || value === "size" || value === "dimensions" || value === "tags";
+  return (
+    value === "name" ||
+    value === "ext" ||
+    value === "size" ||
+    value === "dimensions" ||
+    value === "tags"
+  );
 }
 
 function isSharedTileViewMode(viewMode: LibraryViewMode) {
   return viewMode === "grid" || viewMode === "adaptive";
 }
 
-export function clampLibraryViewScale(
-  viewMode: LibraryViewMode,
-  value: number,
-) {
+export function clampLibraryViewScale(viewMode: LibraryViewMode, value: number) {
   if (!Number.isFinite(value)) {
     return DEFAULT_LIBRARY_VIEW_SCALES[viewMode];
   }
@@ -227,9 +228,7 @@ export function clampSidebarWidth(value: number) {
     return DEFAULT_SIDEBAR_WIDTH;
   }
 
-  return Math.round(
-    Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, value)),
-  );
+  return Math.round(Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, value)));
 }
 
 export function clampDetailPanelWidth(value: number) {
@@ -237,16 +236,11 @@ export function clampDetailPanelWidth(value: number) {
     return DEFAULT_DETAIL_PANEL_WIDTH;
   }
 
-  return Math.round(
-    Math.max(MIN_DETAIL_PANEL_WIDTH, Math.min(MAX_DETAIL_PANEL_WIDTH, value)),
-  );
+  return Math.round(Math.max(MIN_DETAIL_PANEL_WIDTH, Math.min(MAX_DETAIL_PANEL_WIDTH, value)));
 }
 
-function resolveLibraryViewScales(
-  value?: Partial<Record<LibraryViewMode, unknown>>,
-) {
-  const tileScaleSource =
-    value?.grid !== undefined ? Number(value.grid) : Number(value?.adaptive);
+function resolveLibraryViewScales(value?: Partial<Record<LibraryViewMode, unknown>>) {
+  const tileScaleSource = value?.grid !== undefined ? Number(value.grid) : Number(value?.adaptive);
   const tileScale = clampLibraryViewScale("grid", tileScaleSource);
 
   return {
@@ -300,11 +294,7 @@ function scheduleLibraryViewPreferencesPersist(
     const { libraryViewMode, libraryViewScales, libraryVisibleFields } = get();
     void setSetting(
       LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
-      serializeLibraryViewPreferences(
-        libraryViewMode,
-        libraryViewScales,
-        libraryVisibleFields,
-      ),
+      serializeLibraryViewPreferences(libraryViewMode, libraryViewScales, libraryVisibleFields),
     ).catch((error) => {
       console.error("Failed to persist library view preferences:", error);
     });
@@ -345,7 +335,10 @@ function resolveAiConfig(value: unknown): AiConfig {
   }
 
   const config = value as Record<string, unknown>;
-  const resolveServiceConfig = (serviceValue: unknown, legacyModelKey?: string): AiServiceConfig => {
+  const resolveServiceConfig = (
+    serviceValue: unknown,
+    legacyModelKey?: string,
+  ): AiServiceConfig => {
     const serviceConfig =
       serviceValue && typeof serviceValue === "object"
         ? (serviceValue as Partial<Record<keyof AiServiceConfig, unknown>>)
@@ -365,14 +358,8 @@ function resolveAiConfig(value: unknown): AiConfig {
           : legacyBaseUrl.trim()
             ? legacyBaseUrl
             : DEFAULT_AI_SERVICE_CONFIG.baseUrl,
-      apiKey:
-        typeof serviceConfig?.apiKey === "string"
-          ? serviceConfig.apiKey
-          : legacyApiKey,
-      model:
-        typeof serviceConfig?.model === "string"
-          ? serviceConfig.model
-          : legacyModel,
+      apiKey: typeof serviceConfig?.apiKey === "string" ? serviceConfig.apiKey : legacyApiKey,
+      model: typeof serviceConfig?.model === "string" ? serviceConfig.model : legacyModel,
     };
   };
 
@@ -416,11 +403,9 @@ function scheduleAiConfigPersist(
   }
 
   aiConfigPersistTimer = setTimeout(() => {
-    void setSetting(AI_CONFIG_SETTING_KEY, JSON.stringify(get().aiConfig)).catch(
-      (error) => {
-        console.error("Failed to persist AI config:", error);
-      },
-    );
+    void setSetting(AI_CONFIG_SETTING_KEY, JSON.stringify(get().aiConfig)).catch((error) => {
+      console.error("Failed to persist AI config:", error);
+    });
   }, 180);
 }
 
@@ -434,12 +419,11 @@ function scheduleVisualSearchPersist(
   }
 
   visualSearchPersistTimer = setTimeout(() => {
-    void setSetting(
-      VISUAL_SEARCH_SETTING_KEY,
-      JSON.stringify(get().visualSearch),
-    ).catch((error) => {
-      console.error("Failed to persist visual search config:", error);
-    });
+    void setSetting(VISUAL_SEARCH_SETTING_KEY, JSON.stringify(get().visualSearch)).catch(
+      (error) => {
+        console.error("Failed to persist visual search config:", error);
+      },
+    );
   }, 180);
 }
 
@@ -498,9 +482,7 @@ interface SettingsStore extends Settings {
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
   refreshVisualSearchStatus: () => Promise<void>;
-  validateVisualModelPath: (
-    modelPath?: string,
-  ) => Promise<VisualModelValidationResult>;
+  validateVisualModelPath: (modelPath?: string) => Promise<VisualModelValidationResult>;
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
@@ -575,18 +557,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setAiBatchAnalyzeConcurrency: async (value) => {
     const nextConcurrency = clampAiBatchAnalyzeConcurrency(value);
-    await setSetting(
-      AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY,
-      String(nextConcurrency),
-    );
+    await setSetting(AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY, String(nextConcurrency));
     set({ aiBatchAnalyzeConcurrency: nextConcurrency });
   },
 
   setAutoAnalyzeOnImport: async (enabled) => {
-    await setSetting(
-      AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY,
-      enabled ? "true" : "false",
-    );
+    await setSetting(AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY, enabled ? "true" : "false");
     set({ autoAnalyzeOnImport: enabled });
   },
 
@@ -742,9 +718,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
-      const concurrencyValue = await getSetting(
-        AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY,
-      );
+      const concurrencyValue = await getSetting(AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY);
       aiBatchAnalyzeConcurrency = clampAiBatchAnalyzeConcurrency(
         Number.parseInt(concurrencyValue, 10),
       );
@@ -757,8 +731,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
     try {
       const autoAnalyzeValue = await getSetting(AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY);
-      autoAnalyzeOnImport =
-        autoAnalyzeValue === "true" || autoAnalyzeValue === "1";
+      autoAnalyzeOnImport = autoAnalyzeValue === "true" || autoAnalyzeValue === "1";
     } catch (e) {
       const errorMsg = String(e);
       if (!errorMsg.includes("Setting not found")) {
@@ -768,7 +741,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
     try {
       const shortcutsValue = await getSetting(SHORTCUTS_SETTING_KEY);
-      shortcuts = resolveShortcuts(JSON.parse(shortcutsValue) as Partial<Record<ShortcutActionId, string | null>>);
+      shortcuts = resolveShortcuts(
+        JSON.parse(shortcutsValue) as Partial<Record<ShortcutActionId, string | null>>,
+      );
     } catch (e) {
       const errorMsg = String(e);
       if (!errorMsg.includes("Setting not found")) {
@@ -787,9 +762,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
-      const libraryViewPreferencesValue = await getSetting(
-        LIBRARY_VIEW_PREFERENCES_SETTING_KEY,
-      );
+      const libraryViewPreferencesValue = await getSetting(LIBRARY_VIEW_PREFERENCES_SETTING_KEY);
       const parsedPreferences = JSON.parse(libraryViewPreferencesValue) as {
         mode?: unknown;
         scales?: Partial<Record<LibraryViewMode, unknown>>;

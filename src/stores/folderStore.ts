@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from "zustand";
 import {
   createFolder,
   deleteFolder,
@@ -8,175 +8,175 @@ import {
   reorderFolders,
   renameFolder,
   type FolderSummary,
-} from '@/services/tauri/folders'
-import { useLibraryQueryStore } from './libraryQueryStore'
+} from "@/services/tauri/folders";
+import { useLibraryQueryStore } from "./libraryQueryStore";
 
 export interface FolderNode {
-  id: number
-  name: string
-  path: string
-  children: FolderNode[]
-  fileCount: number
-  isSystem?: boolean
-  sortOrder?: number
-  parentId?: number | null
+  id: number;
+  name: string;
+  path: string;
+  children: FolderNode[];
+  fileCount: number;
+  isSystem?: boolean;
+  sortOrder?: number;
+  parentId?: number | null;
 }
 
 const removeHiddenFolders = (folders: FolderNode[]): FolderNode[] =>
   folders
-    .filter((folder) => !folder.name.startsWith('.'))
+    .filter((folder) => !folder.name.startsWith("."))
     .map((folder) => ({
       ...folder,
       children: removeHiddenFolders(folder.children || []),
-    }))
+    }));
 
 interface FolderStore {
-  folders: FolderNode[]
-  selectedFolderId: number | null
-  expandedFolderIds: number[]
-  isLoading: boolean
-  newFolderName: string
-  addingSubfolder: FolderNode | null
-  editingFolder: FolderNode | null
-  deleteConfirm: FolderNode | null
-  dragOverFolderId: number | null
-  uniqueContextId: string
-  loadFolders: () => Promise<void>
-  initDefaultFolder: () => Promise<FolderSummary | null>
-  selectFolder: (folderId: number | null) => void
-  toggleFolder: (folderId: number) => void
-  createFolder: (name: string, parentId: number | null) => Promise<void>
-  deleteFolder: (id: number) => Promise<void>
-  renameFolder: (id: number, name: string) => Promise<void>
-  moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>
-  moveFolder: (folderId: number, newParentId: number | null) => Promise<void>
-  reorderFolders: (folderIds: number[]) => Promise<void>
-  setFolders: (folders: FolderNode[]) => void
-  setNewFolderName: (name: string) => void
-  setAddingSubfolder: (folder: FolderNode | null) => void
-  setEditingFolder: (folder: FolderNode | null) => void
-  setDeleteConfirm: (folder: FolderNode | null) => void
-  setDragOverFolderId: (folderId: number | null) => void
+  folders: FolderNode[];
+  selectedFolderId: number | null;
+  expandedFolderIds: number[];
+  isLoading: boolean;
+  newFolderName: string;
+  addingSubfolder: FolderNode | null;
+  editingFolder: FolderNode | null;
+  deleteConfirm: FolderNode | null;
+  dragOverFolderId: number | null;
+  uniqueContextId: string;
+  loadFolders: () => Promise<void>;
+  initDefaultFolder: () => Promise<FolderSummary | null>;
+  selectFolder: (folderId: number | null) => void;
+  toggleFolder: (folderId: number) => void;
+  createFolder: (name: string, parentId: number | null) => Promise<void>;
+  deleteFolder: (id: number) => Promise<void>;
+  renameFolder: (id: number, name: string) => Promise<void>;
+  moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>;
+  moveFolder: (folderId: number, newParentId: number | null) => Promise<void>;
+  reorderFolders: (folderIds: number[]) => Promise<void>;
+  setFolders: (folders: FolderNode[]) => void;
+  setNewFolderName: (name: string) => void;
+  setAddingSubfolder: (folder: FolderNode | null) => void;
+  setEditingFolder: (folder: FolderNode | null) => void;
+  setDeleteConfirm: (folder: FolderNode | null) => void;
+  setDragOverFolderId: (folderId: number | null) => void;
 }
 
-let loadFoldersRequestId = 0
+let loadFoldersRequestId = 0;
 
 export const useFolderStore = create<FolderStore>((set, get) => ({
   folders: [],
   selectedFolderId: null,
   expandedFolderIds: [],
   isLoading: false,
-  newFolderName: '',
+  newFolderName: "",
   addingSubfolder: null,
   editingFolder: null,
   deleteConfirm: null,
   dragOverFolderId: null,
-  uniqueContextId: 'shiguang-folder-tree-context',
+  uniqueContextId: "shiguang-folder-tree-context",
 
   setDragOverFolderId: (folderId) => set({ dragOverFolderId: folderId }),
 
   setFolders: (folders) => set({ folders }),
 
   loadFolders: async () => {
-    const requestId = ++loadFoldersRequestId
-    set({ isLoading: true })
+    const requestId = ++loadFoldersRequestId;
+    set({ isLoading: true });
     try {
-      const folders = await getFolderTree()
+      const folders = await getFolderTree();
       if (requestId !== loadFoldersRequestId) {
-        return
+        return;
       }
-      set({ folders: removeHiddenFolders(folders), isLoading: false })
+      set({ folders: removeHiddenFolders(folders), isLoading: false });
     } catch (e) {
-      console.error('Failed to load folders:', e)
+      console.error("Failed to load folders:", e);
       if (requestId === loadFoldersRequestId) {
-        set({ isLoading: false })
+        set({ isLoading: false });
       }
     }
   },
 
   initDefaultFolder: async () => {
     try {
-      const folder = await initDefaultFolder()
+      const folder = await initDefaultFolder();
       if (!folder) {
-        return null
+        return null;
       }
-      await get().loadFolders()
-      set({ selectedFolderId: folder.id })
-      return folder
+      await get().loadFolders();
+      set({ selectedFolderId: folder.id });
+      return folder;
     } catch (e) {
-      console.error('Failed to init default folder:', e)
-      return null
+      console.error("Failed to init default folder:", e);
+      return null;
     }
   },
 
   selectFolder: (folderId) => {
-    set({ selectedFolderId: folderId })
+    set({ selectedFolderId: folderId });
   },
 
   toggleFolder: (folderId) => {
-    const { expandedFolderIds } = get()
+    const { expandedFolderIds } = get();
     if (expandedFolderIds.includes(folderId)) {
-      set({ expandedFolderIds: expandedFolderIds.filter(id => id !== folderId) })
+      set({ expandedFolderIds: expandedFolderIds.filter((id) => id !== folderId) });
     } else {
-      set({ expandedFolderIds: [...expandedFolderIds, folderId] })
+      set({ expandedFolderIds: [...expandedFolderIds, folderId] });
     }
   },
 
   createFolder: async (name, parentId) => {
     try {
-      await createFolder({ name, parentId })
-      await get().loadFolders()
+      await createFolder({ name, parentId });
+      await get().loadFolders();
     } catch (e) {
-      console.error('Failed to create folder:', e)
+      console.error("Failed to create folder:", e);
     }
   },
 
   deleteFolder: async (id) => {
     try {
-      await deleteFolder(id)
-      await get().loadFolders()
+      await deleteFolder(id);
+      await get().loadFolders();
     } catch (e) {
-      console.error('Failed to delete folder:', e)
+      console.error("Failed to delete folder:", e);
     }
   },
 
   renameFolder: async (id, name) => {
     try {
-      await renameFolder({ id, name })
-      await get().loadFolders()
+      await renameFolder({ id, name });
+      await get().loadFolders();
     } catch (e) {
-      console.error('Failed to rename folder:', e)
+      console.error("Failed to rename folder:", e);
     }
   },
 
   moveFile: async (fileId, targetFolderId) => {
     try {
-      await useLibraryQueryStore.getState().moveFile(fileId, targetFolderId)
-      await get().loadFolders()
+      await useLibraryQueryStore.getState().moveFile(fileId, targetFolderId);
+      await get().loadFolders();
     } catch (e) {
-      console.error('Failed to move file:', e)
+      console.error("Failed to move file:", e);
     }
   },
 
   moveFolder: async (folderId, newParentId) => {
     try {
-      await moveFolder({ folderId, newParentId, sortOrder: 0 })
-      await get().loadFolders()
+      await moveFolder({ folderId, newParentId, sortOrder: 0 });
+      await get().loadFolders();
       // Reload files to reflect the new paths after folder move
-      const libraryStore = useLibraryQueryStore.getState()
-      await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId)
+      const libraryStore = useLibraryQueryStore.getState();
+      await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId);
     } catch (e) {
-      console.error('Failed to move folder:', e)
+      console.error("Failed to move folder:", e);
     }
   },
 
   reorderFolders: async (folderIds) => {
     try {
-      await reorderFolders(folderIds)
+      await reorderFolders(folderIds);
       // Reload folders to reflect the new order
-      await get().loadFolders()
+      await get().loadFolders();
     } catch (e) {
-      console.error('Failed to reorder folders:', e)
+      console.error("Failed to reorder folders:", e);
     }
   },
 
@@ -184,7 +184,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   setAddingSubfolder: (folder) => set({ addingSubfolder: folder }),
 
-  setEditingFolder: (folder) => set({ editingFolder: folder, newFolderName: folder?.name || '' }),
+  setEditingFolder: (folder) => set({ editingFolder: folder, newFolderName: folder?.name || "" }),
 
   setDeleteConfirm: (folder) => set({ deleteConfirm: folder }),
-}))
+}));

@@ -1,21 +1,23 @@
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
-export interface SwitchProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onChange"> {
-  checked: boolean
-  onCheckedChange?: (checked: boolean) => void
+export interface SwitchProps extends Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  "onChange"
+> {
+  checked: boolean;
+  onCheckedChange?: (checked: boolean) => void;
 }
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
   ({ className, checked, disabled, onCheckedChange, onClick, ...props }, ref) => {
     const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-      onClick?.(event)
+      onClick?.(event);
       if (!event.defaultPrevented && !disabled) {
-        onCheckedChange?.(!checked)
+        onCheckedChange?.(!checked);
       }
-    }
+    };
 
     return (
       <button
@@ -43,10 +45,10 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
           )}
         />
       </button>
-    )
+    );
   },
-)
+);
 
-Switch.displayName = "Switch"
+Switch.displayName = "Switch";
 
-export { Switch }
+export { Switch };
