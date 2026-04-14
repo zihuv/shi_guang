@@ -9,6 +9,10 @@ Use `pnpm` because the repo is checked in with `pnpm-lock.yaml`.
 - `pnpm dev`: start the Vite frontend for UI work.
 - `pnpm tauri dev`: run the full desktop app with the Rust backend.
 - `pnpm build`: type-check and build the frontend into `dist/`.
+- `pnpm lint`: run Oxlint for the frontend.
+- `pnpm lint:fix`: auto-fix frontend issues supported by Oxlint.
+- `pnpm fmt`: format frontend files with oxfmt.
+- `pnpm fmt:check`: check frontend formatting with oxfmt.
 - `pnpm docs:dev`: serve the docs site from `website/`.
 - `pnpm docs:build`: build the docs site for deployment.
 
