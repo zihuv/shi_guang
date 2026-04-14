@@ -28,9 +28,10 @@ import {
   resolveThumbnailRequestMaxEdge,
 } from "@/utils"
 
-const OBSERVER_ROOT_MARGIN = "180px"
-const ADAPTIVE_OBSERVER_ROOT_MARGIN = "120px"
-const IMAGE_SRC_CACHE_LIMIT = 48
+const OBSERVER_ROOT_MARGIN = "96px"
+const ADAPTIVE_OBSERVER_ROOT_MARGIN = "72px"
+const IMAGE_SRC_CACHE_LIMIT = 192
+const MAX_CONCURRENT_CARD_THUMBNAIL_LOADS = 6
 const MAX_VISIBLE_TAGS = 3
 const LIST_MAX_VISIBLE_TAGS = 2
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"]
@@ -65,6 +66,8 @@ type FilePreviewFallbackProps = {
 }
 
 const imageSrcCache = new Map<string, string>()
+const pendingCardThumbnailTasks: Array<() => void> = []
+let activeCardThumbnailTaskCount = 0
 
 function isRevocableBlobSrc(src: string | null | undefined): src is string {
   return typeof src === "string" && src.startsWith("blob:")
@@ -78,6 +81,34 @@ function releaseUnusedImageSrc(src: string | null | undefined) {
 
 function shouldCacheImageSrc(src: string) {
   return Boolean(src) && !src.startsWith("blob:") && !src.startsWith("data:")
+}
+
+function flushCardThumbnailTaskQueue() {
+  while (
+    activeCardThumbnailTaskCount < MAX_CONCURRENT_CARD_THUMBNAIL_LOADS &&
+    pendingCardThumbnailTasks.length > 0
+  ) {
+    const nextTask = pendingCardThumbnailTasks.shift()
+    nextTask?.()
+  }
+}
+
+function scheduleCardThumbnailTask<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const runTask = () => {
+      activeCardThumbnailTaskCount += 1
+      task()
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          activeCardThumbnailTaskCount = Math.max(0, activeCardThumbnailTaskCount - 1)
+          flushCardThumbnailTaskQueue()
+        })
+    }
+
+    pendingCardThumbnailTasks.push(runTask)
+    flushCardThumbnailTaskQueue()
+  })
 }
 
 function getCachedImageSrc(cacheKey: string) {
@@ -117,16 +148,13 @@ function cacheImageSrc(cacheKey: string, src: string) {
   }
 }
 
-function deleteCachedImageSrc(cacheKey: string) {
-  const existing = imageSrcCache.get(cacheKey)
-  if (isRevocableBlobSrc(existing)) {
-    URL.revokeObjectURL(existing)
-  }
-  imageSrcCache.delete(cacheKey)
-}
-
-function resolveCardThumbnailMaxEdge(previewWidth: number, previewHeight: number = previewWidth) {
-  return resolveThumbnailRequestMaxEdge(previewWidth, previewHeight)
+function resolveCardThumbnailMaxEdge(
+  previewWidth: number,
+  previewHeight: number = previewWidth,
+) {
+  return resolveThumbnailRequestMaxEdge(previewWidth, previewHeight, {
+    devicePixelRatioCap: 1,
+  })
 }
 
 function useVisibility(
@@ -164,7 +192,6 @@ function useLazyImageSrc(
   cacheKey: string,
   isVisible: boolean,
   maxEdge: number | undefined,
-  purgeHiddenCache: boolean,
   refreshVersion: number,
 ) {
   const [imageError, setImageError] = useState(false)
@@ -174,9 +201,6 @@ function useLazyImageSrc(
 
   useEffect(() => {
     if (!isVisible) {
-      if (purgeHiddenCache) {
-        deleteCachedImageSrc(cacheKey)
-      }
       setImageSrc(null)
       setImageError(false)
       return
@@ -198,11 +222,11 @@ function useLazyImageSrc(
     let active = true
     setImageError(false)
 
-    const loadSrc = isVideoFile(ext)
-      ? getVideoThumbnailSrc(path, maxEdge)
-      : getThumbnailImageSrc(path, ext, maxEdge)
-
-    loadSrc
+    scheduleCardThumbnailTask(() =>
+      isVideoFile(ext)
+        ? getVideoThumbnailSrc(path, maxEdge)
+        : getThumbnailImageSrc(path, ext, maxEdge),
+    )
       .then((src) => {
         if (!active) {
           releaseUnusedImageSrc(src)
@@ -224,7 +248,7 @@ function useLazyImageSrc(
     return () => {
       active = false
     }
-  }, [cacheKey, ext, isVisible, maxEdge, path, purgeHiddenCache, refreshVersion])
+  }, [cacheKey, ext, isVisible, maxEdge, path, refreshVersion])
 
   return {
     imageSrc,
@@ -256,7 +280,6 @@ export function FileCard({
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
-    true,
     thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
@@ -320,6 +343,7 @@ export function FileCard({
                 draggable={false}
                 onError={() => setImageError(true)}
                 loading="lazy"
+                decoding="async"
               />
             ) : (
               <FilePreviewFallback
@@ -402,7 +426,6 @@ export function AdaptiveFileCard({
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
-    true,
     thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
@@ -471,6 +494,7 @@ export function AdaptiveFileCard({
                 draggable={false}
                 onError={() => setImageError(true)}
                 loading="lazy"
+                decoding="async"
               />
             ) : (
               <FilePreviewFallback
@@ -546,7 +570,6 @@ export function FileRow({
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
-    true,
     thumbnailRefreshVersion,
   )
   const isVideo = isVideoFile(file.ext)
@@ -609,6 +632,7 @@ export function FileRow({
                 draggable={false}
                 onError={() => setImageError(true)}
                 loading="lazy"
+                decoding="async"
               />
             ) : (
               <FilePreviewFallback

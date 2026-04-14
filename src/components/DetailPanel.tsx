@@ -281,7 +281,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const imageLoadVersionRef = useRef(0);
   const previewWidth = Math.max(160, width - 28);
   const previewHeight = Math.round((previewWidth * 9) / 16);
-  const previewThumbnailMaxEdge = resolveThumbnailRequestMaxEdge(previewWidth, previewHeight);
+  const previewThumbnailMaxEdge = resolveThumbnailRequestMaxEdge(previewWidth, previewHeight, {
+    devicePixelRatioCap: 2,
+  });
 
   // Helper to get extension
   const getExt = (name: string) => {

@@ -77,7 +77,7 @@ const THUMBNAIL_VARIANT_MAX_EDGES = [
   448,
   MAX_THUMBNAIL_MAX_EDGE,
 ] as const
-const MAX_THUMBNAIL_DEVICE_PIXEL_RATIO = 2
+const DEFAULT_THUMBNAIL_DEVICE_PIXEL_RATIO_CAP = 1
 const THUMBNAIL_JPEG_QUALITY = 0.88
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>()
 const browserThumbnailPromiseCache = new Map<string, Promise<string>>()
@@ -277,13 +277,18 @@ export function canGenerateThumbnail(ext: string): boolean {
 export function resolveThumbnailRequestMaxEdge(
   renderWidth: number,
   renderHeight: number = renderWidth,
+  options: {
+    devicePixelRatioCap?: number
+  } = {},
 ): number {
   const safeWidth = Number.isFinite(renderWidth) ? Math.max(1, renderWidth) : THUMBNAIL_MAX_EDGE
   const safeHeight = Number.isFinite(renderHeight) ? Math.max(1, renderHeight) : safeWidth
+  const devicePixelRatioCap =
+    options.devicePixelRatioCap ?? DEFAULT_THUMBNAIL_DEVICE_PIXEL_RATIO_CAP
   const dpr =
     typeof window === 'undefined' || !Number.isFinite(window.devicePixelRatio)
       ? 1
-      : Math.min(window.devicePixelRatio, MAX_THUMBNAIL_DEVICE_PIXEL_RATIO)
+      : Math.min(window.devicePixelRatio, Math.max(1, devicePixelRatioCap))
   const targetEdge = Math.ceil(Math.max(safeWidth, safeHeight) * dpr)
 
   for (const edge of THUMBNAIL_VARIANT_MAX_EDGES) {
