@@ -44,6 +44,9 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   )
   const visualSearch = useSettingsStore((state) => state.visualSearch)
   const setVisualSearchField = useSettingsStore((state) => state.setVisualSearchField)
+  const setVisualSearchRuntimeField = useSettingsStore(
+    (state) => state.setVisualSearchRuntimeField,
+  )
   const autoAnalyzeOnImport = useSettingsStore((state) => state.autoAnalyzeOnImport)
   const setAutoAnalyzeOnImport = useSettingsStore((state) => state.setAutoAnalyzeOnImport)
   const refreshVisualSearchStatus = useSettingsStore((state) => state.refreshVisualSearchStatus)
@@ -175,7 +178,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: '选择 fgclip2 ONNX 模型目录',
+        title: '选择视觉搜索模型 Bundle 目录',
       })
 
       if (selected && typeof selected === 'string') {
@@ -256,6 +259,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   void setAiBatchAnalyzeConcurrency(value)
                 }
                 onSetVisualSearchField={setVisualSearchField}
+                onSetVisualSearchRuntimeField={setVisualSearchRuntimeField}
                 onSelectModelDir={() => void handleSelectModelDir()}
                 onValidateModelDir={(modelPath) => void handleValidateModelDir(modelPath)}
                 onStartVisualIndexTask={() =>

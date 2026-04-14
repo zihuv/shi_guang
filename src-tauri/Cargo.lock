@@ -3182,6 +3182,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "memmap2"
+version = "0.9.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "714098028fe011992e1c3962653c96b2d578c4b4bce9036e15ff220319b1e0e3"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3880,6 +3889,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "omni_search"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96e16f1555649314324747ddad64cf5ce52c1ec6def2c765ecb62e19e92270b1"
+dependencies = [
+ "image",
+ "memmap2",
+ "ndarray",
+ "ort",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokenizers",
 ]
 
 [[package]]
@@ -5633,8 +5658,7 @@ dependencies = [
  "http 1.4.0",
  "image",
  "log",
- "ndarray",
- "ort",
+ "omni_search",
  "rayon",
  "reqwest",
  "rusqlite",
@@ -5650,7 +5674,6 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-shell",
- "tokenizers",
  "tokio",
  "tower 0.5.3",
  "tower-service",

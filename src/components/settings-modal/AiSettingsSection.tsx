@@ -1,5 +1,9 @@
-import type { AiEndpointTarget as TauriAiEndpointTarget, VisualIndexStatus, VisualModelValidationResult } from '@/services/tauri/files'
-import { X } from 'lucide-react'
+import type {
+  AiEndpointTarget as TauriAiEndpointTarget,
+  VisualIndexStatus,
+  VisualModelValidationResult,
+} from "@/services/tauri/files";
+import { X } from "lucide-react";
 import {
   MAX_AI_BATCH_ANALYZE_CONCURRENCY,
   MIN_AI_BATCH_ANALYZE_CONCURRENCY,
@@ -7,17 +11,18 @@ import {
   type AiConfigTarget,
   type AiServiceConfig,
   type VisualSearchConfig,
-} from '@/stores/settingsStore'
+  type VisualSearchRuntimeConfig,
+} from "@/stores/settingsStore";
 import {
   TERMINAL_VISUAL_INDEX_TASK_STATUSES,
   type VisualIndexTaskSnapshot,
-} from '@/stores/fileTypes'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Select, SelectContent, SelectItem } from '@/components/ui/Select'
-import { Switch } from '@/components/ui/Switch'
-import { StatusBadge, type StatusTone } from './StatusBadge'
+} from "@/stores/fileTypes";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
+import { StatusBadge, type StatusTone } from "./StatusBadge";
 
 const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
   {
@@ -25,38 +30,54 @@ const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
       MAX_AI_BATCH_ANALYZE_CONCURRENCY - MIN_AI_BATCH_ANALYZE_CONCURRENCY + 1,
   },
   (_, index) => MIN_AI_BATCH_ANALYZE_CONCURRENCY + index,
-)
+);
+
+const RUNTIME_DEFAULT_SELECT_VALUE = "__default__";
+const FGCLIP_MAX_PATCH_OPTIONS = [128, 256, 576, 784, 1024] as const;
+
+function parseOptionalPositiveInteger(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 interface AiSettingsSectionProps {
-  aiConfig: AiConfig
-  testingTargets: Record<AiConfigTarget, boolean>
-  autoAnalyzeOnImport: boolean
-  aiBatchAnalyzeConcurrency: number
-  visualSearch: VisualSearchConfig
-  visualIndexStatus: VisualIndexStatus | null
-  visualIndexTask: VisualIndexTaskSnapshot | null
-  visualModelValidation: VisualModelValidationResult | null
-  isSelectingModelDir: boolean
-  isValidatingModelDir: boolean
+  aiConfig: AiConfig;
+  testingTargets: Record<AiConfigTarget, boolean>;
+  autoAnalyzeOnImport: boolean;
+  aiBatchAnalyzeConcurrency: number;
+  visualSearch: VisualSearchConfig;
+  visualIndexStatus: VisualIndexStatus | null;
+  visualIndexTask: VisualIndexTaskSnapshot | null;
+  visualModelValidation: VisualModelValidationResult | null;
+  isSelectingModelDir: boolean;
+  isValidatingModelDir: boolean;
   onSetAiConfigField: <K extends keyof AiServiceConfig>(
     target: AiConfigTarget,
     field: K,
     value: AiServiceConfig[K],
-  ) => void
+  ) => void;
   onTestAiEndpoint: (
     target: AiConfigTarget,
     endpointTarget: TauriAiEndpointTarget,
-  ) => void
-  onSetAutoAnalyzeOnImport: (enabled: boolean) => void
-  onSetAiBatchAnalyzeConcurrency: (value: number) => void
+  ) => void;
+  onSetAutoAnalyzeOnImport: (enabled: boolean) => void;
+  onSetAiBatchAnalyzeConcurrency: (value: number) => void;
   onSetVisualSearchField: <K extends keyof VisualSearchConfig>(
     field: K,
     value: VisualSearchConfig[K],
-  ) => void
-  onSelectModelDir: () => void
-  onValidateModelDir: (modelPath?: string) => void
-  onStartVisualIndexTask: () => void
-  onCancelVisualIndexTask: () => void
+  ) => void;
+  onSetVisualSearchRuntimeField: <K extends keyof VisualSearchRuntimeConfig>(
+    field: K,
+    value: VisualSearchRuntimeConfig[K],
+  ) => void;
+  onSelectModelDir: () => void;
+  onValidateModelDir: (modelPath?: string) => void;
+  onStartVisualIndexTask: () => void;
+  onCancelVisualIndexTask: () => void;
 }
 
 function AiConfigCard({
@@ -71,24 +92,27 @@ function AiConfigCard({
   onSetField,
   onTest,
 }: {
-  title: string
-  description: string
-  target: AiConfigTarget
-  endpointTarget: TauriAiEndpointTarget
-  modelLabel: string
-  modelPlaceholder: string
-  config: AiConfig[AiConfigTarget]
-  isTesting: boolean
+  title: string;
+  description: string;
+  target: AiConfigTarget;
+  endpointTarget: TauriAiEndpointTarget;
+  modelLabel: string;
+  modelPlaceholder: string;
+  config: AiConfig[AiConfigTarget];
+  isTesting: boolean;
   onSetField: <K extends keyof AiServiceConfig>(
     target: AiConfigTarget,
     field: K,
     value: AiServiceConfig[K],
-  ) => void
-  onTest: (target: AiConfigTarget, endpointTarget: TauriAiEndpointTarget) => void
+  ) => void;
+  onTest: (
+    target: AiConfigTarget,
+    endpointTarget: TauriAiEndpointTarget,
+  ) => void;
 }) {
-  const baseUrlInputId = `ai-${target}-base-url`
-  const apiKeyInputId = `ai-${target}-api-key`
-  const modelInputId = `ai-${target}-model`
+  const baseUrlInputId = `ai-${target}-base-url`;
+  const apiKeyInputId = `ai-${target}-api-key`;
+  const modelInputId = `ai-${target}-model`;
 
   return (
     <div className="space-y-4">
@@ -96,8 +120,12 @@ function AiConfigCard({
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
           模型配置
         </p>
-        <h4 className="mt-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</h4>
-        <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">{description}</p>
+        <h4 className="mt-2 text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {title}
+        </h4>
+        <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
+          {description}
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -111,7 +139,9 @@ function AiConfigCard({
           <Input
             id={baseUrlInputId}
             value={config.baseUrl}
-            onChange={(event) => onSetField(target, 'baseUrl', event.target.value)}
+            onChange={(event) =>
+              onSetField(target, "baseUrl", event.target.value)
+            }
             placeholder="https://api.openai.com/v1"
           />
         </div>
@@ -127,7 +157,9 @@ function AiConfigCard({
             id={apiKeyInputId}
             type="password"
             value={config.apiKey}
-            onChange={(event) => onSetField(target, 'apiKey', event.target.value)}
+            onChange={(event) =>
+              onSetField(target, "apiKey", event.target.value)
+            }
             placeholder="sk-..."
           />
         </div>
@@ -142,7 +174,9 @@ function AiConfigCard({
           <Input
             id={modelInputId}
             value={config.model}
-            onChange={(event) => onSetField(target, 'model', event.target.value)}
+            onChange={(event) =>
+              onSetField(target, "model", event.target.value)
+            }
             placeholder={modelPlaceholder}
           />
         </div>
@@ -152,12 +186,16 @@ function AiConfigCard({
         <p className="text-xs leading-6 text-gray-500 dark:text-gray-400">
           会发送一次最小真实请求，用于验证 Base URL、API Key 和模型是否可用。
         </p>
-        <Button variant="outline" disabled={isTesting} onClick={() => onTest(target, endpointTarget)}>
-          {isTesting ? '测试中...' : '测试接口'}
+        <Button
+          variant="outline"
+          disabled={isTesting}
+          onClick={() => onTest(target, endpointTarget)}
+        >
+          {isTesting ? "测试中..." : "测试接口"}
         </Button>
       </div>
     </div>
-  )
+  );
 }
 
 function FeatureToggle({
@@ -167,38 +205,48 @@ function FeatureToggle({
   onChange,
   hint,
 }: {
-  title: string
-  description: string
-  enabled: boolean
-  onChange: (enabled: boolean) => void
-  hint?: string
+  title: string;
+  description: string;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+  hint?: string;
 }) {
   return (
     <div className="py-3">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{title}</p>
-          <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">{description}</p>
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            {title}
+          </p>
+          <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
+            {description}
+          </p>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <Switch checked={enabled} onCheckedChange={onChange} aria-label={title} />
+          <Switch
+            checked={enabled}
+            onCheckedChange={onChange}
+            aria-label={title}
+          />
           <span
             className={cn(
-              'text-xs font-medium',
+              "text-xs font-medium",
               enabled
-                ? 'text-primary-700 dark:text-primary-300'
-                : 'text-gray-500 dark:text-gray-400',
+                ? "text-primary-700 dark:text-primary-300"
+                : "text-gray-500 dark:text-gray-400",
             )}
           />
         </div>
       </div>
 
       {hint ? (
-        <div className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{hint}</div>
+        <div className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+          {hint}
+        </div>
       ) : null}
     </div>
-  )
+  );
 }
 
 export function AiSettingsSection({
@@ -217,66 +265,71 @@ export function AiSettingsSection({
   onSetAutoAnalyzeOnImport,
   onSetAiBatchAnalyzeConcurrency,
   onSetVisualSearchField,
+  onSetVisualSearchRuntimeField,
   onSelectModelDir,
   onValidateModelDir,
   onStartVisualIndexTask,
   onCancelVisualIndexTask,
 }: AiSettingsSectionProps) {
-  const metadataConfig = aiConfig.metadata
+  const metadataConfig = aiConfig.metadata;
   const metadataDraftExists =
     Boolean(metadataConfig.baseUrl.trim()) ||
     Boolean(metadataConfig.apiKey.trim()) ||
-    Boolean(metadataConfig.model.trim())
+    Boolean(metadataConfig.model.trim());
   const metadataConfigured =
     Boolean(metadataConfig.baseUrl.trim()) &&
     Boolean(metadataConfig.apiKey.trim()) &&
-    Boolean(metadataConfig.model.trim())
+    Boolean(metadataConfig.model.trim());
   const metadataStatusTone: StatusTone = metadataConfigured
-    ? 'success'
+    ? "success"
     : metadataDraftExists
-      ? 'warning'
-      : 'neutral'
+      ? "warning"
+      : "neutral";
   const metadataStatusLabel = metadataConfigured
-    ? '已配置'
+    ? "已配置"
     : metadataDraftExists
-      ? '待补全'
-      : '未配置'
+      ? "待补全"
+      : "未配置";
 
-  const visualModelReady = Boolean(visualModelValidation?.valid)
+  const visualModelReady = Boolean(visualModelValidation?.valid);
   const visualSearchStatusTone: StatusTone = !visualSearch.enabled
-    ? 'neutral'
+    ? "neutral"
     : visualModelReady
-      ? 'success'
-      : 'warning'
+      ? "success"
+      : "warning";
   const visualSearchStatusLabel = !visualSearch.enabled
-    ? '未启用'
+    ? "未启用"
     : visualModelReady
-      ? '模型就绪'
+      ? "模型就绪"
       : visualSearch.modelPath.trim()
-        ? '待校验'
-        : '待配置'
+        ? "待校验"
+        : "待配置";
 
-  const indexedCount = visualIndexStatus?.indexedCount ?? 0
-  const totalImageCount = visualIndexStatus?.totalImageCount ?? 0
-  const pendingCount = visualIndexStatus?.pendingCount ?? 0
-  const failedCount = visualIndexStatus?.failedCount ?? 0
-  const outdatedCount = visualIndexStatus?.outdatedCount ?? 0
-  const unindexedCount = pendingCount + failedCount + outdatedCount
+  const indexedCount = visualIndexStatus?.indexedCount ?? 0;
+  const totalImageCount = visualIndexStatus?.totalImageCount ?? 0;
+  const pendingCount = visualIndexStatus?.pendingCount ?? 0;
+  const failedCount = visualIndexStatus?.failedCount ?? 0;
+  const outdatedCount = visualIndexStatus?.outdatedCount ?? 0;
+  const unindexedCount = pendingCount + failedCount + outdatedCount;
   const isVisualIndexRunning =
-    !!visualIndexTask && !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(visualIndexTask.status)
+    !!visualIndexTask &&
+    !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(visualIndexTask.status);
   const visualIndexProgress = visualIndexTask?.total
-    ? Math.min(100, Math.round((visualIndexTask.processed / visualIndexTask.total) * 100))
-    : 0
-  const visualIndexCountLabel = `${visualIndexTask?.processed ?? 0}/${visualIndexTask?.total ?? 0}`
+    ? Math.min(
+        100,
+        Math.round((visualIndexTask.processed / visualIndexTask.total) * 100),
+      )
+    : 0;
+  const visualIndexCountLabel = `${visualIndexTask?.processed ?? 0}/${visualIndexTask?.total ?? 0}`;
   const visualIndexActionLabel = visualSearch.processUnindexedOnly
-    ? '处理未索引图片'
-    : '重建视觉索引'
+    ? "处理未索引图片"
+    : "重建视觉索引";
   const visualIndexTaskTitle =
-    visualIndexTask?.status === 'queued'
-      ? '正在准备视觉索引任务'
+    visualIndexTask?.status === "queued"
+      ? "正在准备视觉索引任务"
       : visualIndexTask?.processUnindexedOnly
-        ? '正在处理未索引图片'
-        : '正在重建视觉索引'
+        ? "正在处理未索引图片"
+        : "正在重建视觉索引";
 
   return (
     <div className="space-y-6">
@@ -335,7 +388,9 @@ export function AiSettingsSection({
                   <Select
                     value={String(aiBatchAnalyzeConcurrency)}
                     displayValue={`${aiBatchAnalyzeConcurrency} 张`}
-                    onValueChange={(value) => onSetAiBatchAnalyzeConcurrency(Number(value))}
+                    onValueChange={(value) =>
+                      onSetAiBatchAnalyzeConcurrency(Number(value))
+                    }
                     className="w-24 shrink-0"
                     triggerClassName="h-9 rounded-lg border-gray-200 bg-white text-sm text-gray-700 dark:border-dark-border dark:bg-dark-bg dark:text-gray-200"
                   >
@@ -361,10 +416,13 @@ export function AiSettingsSection({
               本地自然语言搜索
             </h3>
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              使用特调 fgclip2 模型，实现自然语言搜索，将额外占用~800MB内存。
+              使用本地多模态 embedding 模型 bundle，实现自然语言搜索。
             </p>
           </div>
-          <StatusBadge label={visualSearchStatusLabel} tone={visualSearchStatusTone} />
+          <StatusBadge
+            label={visualSearchStatusLabel}
+            tone={visualSearchStatusTone}
+          />
         </div>
 
         <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
@@ -378,14 +436,16 @@ export function AiSettingsSection({
                   title="启用自然语言搜索"
                   description="打开后，顶部搜索框支持自然语言搜索。"
                   enabled={visualSearch.enabled}
-                  onChange={(enabled) => onSetVisualSearchField('enabled', enabled)}
+                  onChange={(enabled) =>
+                    onSetVisualSearchField("enabled", enabled)
+                  }
                 />
                 <FeatureToggle
                   title="导入后自动建立视觉索引"
                   description="新导入图片会在后台自动建立视觉索引，便于后续直接搜索。"
                   enabled={visualSearch.autoVectorizeOnImport}
                   onChange={(enabled) =>
-                    onSetVisualSearchField('autoVectorizeOnImport', enabled)
+                    onSetVisualSearchField("autoVectorizeOnImport", enabled)
                   }
                 />
               </div>
@@ -395,12 +455,14 @@ export function AiSettingsSection({
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                    模型目录
+                    模型 Bundle 目录
                   </p>
                 </div>
                 <StatusBadge
-                  label={visualSearch.modelPath.trim() ? '已填写路径' : '未填写路径'}
-                  tone={visualSearch.modelPath.trim() ? 'neutral' : 'warning'}
+                  label={
+                    visualSearch.modelPath.trim() ? "已填写路径" : "未填写路径"
+                  }
+                  tone={visualSearch.modelPath.trim() ? "neutral" : "warning"}
                 />
               </div>
 
@@ -409,9 +471,11 @@ export function AiSettingsSection({
                   <Input
                     id="visual-search-model-path"
                     value={visualSearch.modelPath}
-                    onChange={(event) => onSetVisualSearchField('modelPath', event.target.value)}
+                    onChange={(event) =>
+                      onSetVisualSearchField("modelPath", event.target.value)
+                    }
                     onBlur={() => onValidateModelDir()}
-                    placeholder=""
+                    placeholder="选择包含 manifest.json 的模型 bundle 目录"
                   />
                   <div className="flex gap-2">
                     <Button
@@ -419,14 +483,14 @@ export function AiSettingsSection({
                       onClick={onSelectModelDir}
                       disabled={isSelectingModelDir}
                     >
-                      {isSelectingModelDir ? '选择中...' : '选择目录'}
+                      {isSelectingModelDir ? "选择中..." : "选择目录"}
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => onValidateModelDir()}
                       disabled={isValidatingModelDir}
                     >
-                      {isValidatingModelDir ? '校验中...' : '校验目录'}
+                      {isValidatingModelDir ? "校验中..." : "校验目录"}
                     </Button>
                   </div>
                 </div>
@@ -445,6 +509,90 @@ export function AiSettingsSection({
                 </div>
               </div>
             </div>
+
+            <div className="border-t border-gray-200 pt-4 dark:border-dark-border">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
+                    运行时配置
+                  </p>
+                </div>
+                <StatusBadge label="可选覆盖" tone="neutral" />
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="visual-search-intra-threads"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200"
+                  >
+                    Intra Threads
+                  </label>
+                  <Input
+                    id="visual-search-intra-threads"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={visualSearch.runtime.intraThreads ?? ""}
+                    onChange={(event) =>
+                      onSetVisualSearchRuntimeField(
+                        "intraThreads",
+                        parseOptionalPositiveInteger(event.target.value),
+                      )
+                    }
+                    placeholder="默认"
+                  />
+                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    单次处理一张图片时，底层并行计算所使用的线程数量。注意：这不是任务队列中同时处理的图片数。适当增加该值可加速单张图片的处理，但也会占用更多
+                    CPU 资源。
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="visual-search-fgclip-max-patches"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200"
+                  >
+                    FG-CLIP Max Patches
+                  </label>
+                  <Select
+                    value={String(
+                      visualSearch.runtime.fgclipMaxPatches ??
+                        RUNTIME_DEFAULT_SELECT_VALUE,
+                    )}
+                    displayValue={
+                      visualSearch.runtime.fgclipMaxPatches
+                        ? String(visualSearch.runtime.fgclipMaxPatches)
+                        : "默认"
+                    }
+                    onValueChange={(value) =>
+                      onSetVisualSearchRuntimeField(
+                        "fgclipMaxPatches",
+                        value === RUNTIME_DEFAULT_SELECT_VALUE
+                          ? null
+                          : Number(value),
+                      )
+                    }
+                    triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
+                  >
+                    <SelectContent>
+                      <SelectItem value={RUNTIME_DEFAULT_SELECT_VALUE}>
+                        默认
+                      </SelectItem>
+                      {FGCLIP_MAX_PATCH_OPTIONS.map((value) => (
+                        <SelectItem key={value} value={String(value)}>
+                          {value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    值越高，处理的 Patch
+                    数量越多，匹配文字描述的精度通常也越高，但计算开销会相应增大。请根据性能与精度的需求调整。修改后需要重新建立视觉索引才能生效。
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-5 border-t border-gray-200 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0 dark:border-dark-border">
@@ -456,29 +604,29 @@ export function AiSettingsSection({
                 <StatusBadge
                   label={
                     visualModelValidation?.valid
-                      ? '模型可用'
+                      ? "模型可用"
                       : visualSearch.modelPath.trim()
-                        ? '待校验'
-                        : '未配置'
+                        ? "待校验"
+                        : "未配置"
                   }
                   tone={
                     visualModelValidation?.valid
-                      ? 'success'
+                      ? "success"
                       : visualSearch.modelPath.trim()
-                        ? 'warning'
-                        : 'neutral'
+                        ? "warning"
+                        : "neutral"
                   }
                 />
               </div>
               <p
                 className={cn(
-                  'mt-2 text-sm leading-6',
+                  "mt-2 text-sm leading-6",
                   visualModelValidation?.valid
-                    ? 'text-emerald-700 dark:text-emerald-300'
-                    : 'text-gray-600 dark:text-gray-300',
+                    ? "text-emerald-700 dark:text-emerald-300"
+                    : "text-gray-600 dark:text-gray-300",
                 )}
               >
-                {visualModelValidation?.message ?? '尚未校验模型目录'}
+                {visualModelValidation?.message ?? "尚未校验模型 bundle 目录"}
               </p>
               {visualModelValidation?.valid ? (
                 <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
@@ -486,14 +634,15 @@ export function AiSettingsSection({
                   <p>版本：{visualModelValidation.version}</p>
                   <p>
                     向量维度：{visualModelValidation.embeddingDim}
-                    {' · '}上下文长度：
+                    {" · "}上下文长度：
                     {visualModelValidation.contextLength}
                   </p>
                 </div>
               ) : null}
-              {!visualModelValidation?.valid && visualModelValidation?.missingFiles.length ? (
+              {!visualModelValidation?.valid &&
+              visualModelValidation?.missingFiles.length ? (
                 <p className="mt-2 text-xs leading-6 text-amber-700 dark:text-amber-300">
-                  缺少文件：{visualModelValidation.missingFiles.join('、')}
+                  缺少文件：{visualModelValidation.missingFiles.join("、")}
                 </p>
               ) : null}
             </div>
@@ -505,7 +654,7 @@ export function AiSettingsSection({
                     索引状态
                   </p>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    当前模型：{visualIndexStatus?.modelId ?? '未就绪'}
+                    当前模型：{visualIndexStatus?.modelId ?? "未就绪"}
                   </p>
                 </div>
                 <Button
@@ -513,18 +662,18 @@ export function AiSettingsSection({
                   disabled={isVisualIndexRunning}
                   onClick={onStartVisualIndexTask}
                 >
-                  {isVisualIndexRunning ? '处理中...' : visualIndexActionLabel}
+                  {isVisualIndexRunning ? "处理中..." : visualIndexActionLabel}
                 </Button>
               </div>
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                {visualIndexStatus?.message ?? '未读取索引状态'}
+                {visualIndexStatus?.message ?? "未读取索引状态"}
               </p>
               <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
                 <p>
                   总图片数 {totalImageCount} · 已索引 {indexedCount}
                 </p>
                 <p>
-                  待处理 {pendingCount} · 失败 {failedCount} · 已过期{' '}
+                  待处理 {pendingCount} · 失败 {failedCount} · 已过期{" "}
                   {outdatedCount}
                 </p>
                 <p>当前未就绪 {unindexedCount}</p>
@@ -544,7 +693,7 @@ export function AiSettingsSection({
                     <Switch
                       checked={visualSearch.processUnindexedOnly}
                       onCheckedChange={(enabled) =>
-                        onSetVisualSearchField('processUnindexedOnly', enabled)
+                        onSetVisualSearchField("processUnindexedOnly", enabled)
                       }
                       disabled={isVisualIndexRunning}
                       aria-label="处理未索引图片"
@@ -576,8 +725,8 @@ export function AiSettingsSection({
                         </p>
                       ) : null}
                       <p className="mt-1 text-xs leading-6 text-amber-700/80 dark:text-amber-200/80">
-                        成功 {visualIndexTask?.indexedCount ?? 0} · 失败{' '}
-                        {visualIndexTask?.failureCount ?? 0} · 跳过{' '}
+                        成功 {visualIndexTask?.indexedCount ?? 0} · 失败{" "}
+                        {visualIndexTask?.failureCount ?? 0} · 跳过{" "}
                         {visualIndexTask?.skippedCount ?? 0}
                       </p>
                     </div>
@@ -604,5 +753,5 @@ export function AiSettingsSection({
         </div>
       </section>
     </div>
-  )
+  );
 }

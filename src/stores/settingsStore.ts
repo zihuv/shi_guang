@@ -92,11 +92,17 @@ export interface AiConfig {
   metadata: AiServiceConfig;
 }
 
+export interface VisualSearchRuntimeConfig {
+  intraThreads: number | null;
+  fgclipMaxPatches: number | null;
+}
+
 export interface VisualSearchConfig {
   enabled: boolean;
   modelPath: string;
   autoVectorizeOnImport: boolean;
   processUnindexedOnly: boolean;
+  runtime: VisualSearchRuntimeConfig;
 }
 
 export const DEFAULT_AI_SERVICE_CONFIG: AiServiceConfig = {
@@ -114,6 +120,10 @@ export const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
   modelPath: "",
   autoVectorizeOnImport: false,
   processUnindexedOnly: true,
+  runtime: {
+    intraThreads: null,
+    fgclipMaxPatches: null,
+  },
 };
 
 function cloneAiConfig(config: AiConfig): AiConfig {
@@ -128,6 +138,10 @@ function cloneVisualSearchConfig(config: VisualSearchConfig): VisualSearchConfig
     modelPath: config.modelPath,
     autoVectorizeOnImport: config.autoVectorizeOnImport,
     processUnindexedOnly: config.processUnindexedOnly,
+    runtime: {
+      intraThreads: config.runtime.intraThreads,
+      fgclipMaxPatches: config.runtime.fgclipMaxPatches,
+    },
   };
 }
 
@@ -158,6 +172,23 @@ export function clampAiBatchAnalyzeConcurrency(value: number) {
       Math.min(MAX_AI_BATCH_ANALYZE_CONCURRENCY, value),
     ),
   );
+}
+
+function resolveOptionalPositiveInteger(value: unknown): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  const normalized = Math.round(parsed);
+  return normalized > 0 ? normalized : null;
+}
+
+function resolveOptionalFgclipMaxPatches(value: unknown): number | null {
+  const normalized = resolveOptionalPositiveInteger(value);
+  if (normalized == null) {
+    return null;
+  }
+  return [128, 256, 576, 784, 1024].includes(normalized) ? normalized : null;
 }
 
 function isLibraryViewMode(value: unknown): value is LibraryViewMode {
@@ -356,6 +387,10 @@ function resolveVisualSearchConfig(value: unknown): VisualSearchConfig {
   }
 
   const config = value as Partial<Record<keyof VisualSearchConfig, unknown>>;
+  const runtimeValue =
+    config.runtime && typeof config.runtime === "object"
+      ? (config.runtime as Partial<Record<keyof VisualSearchRuntimeConfig, unknown>>)
+      : null;
   return {
     enabled: Boolean(config.enabled),
     modelPath: typeof config.modelPath === "string" ? config.modelPath : "",
@@ -364,6 +399,10 @@ function resolveVisualSearchConfig(value: unknown): VisualSearchConfig {
       typeof config.processUnindexedOnly === "boolean"
         ? config.processUnindexedOnly
         : DEFAULT_VISUAL_SEARCH_CONFIG.processUnindexedOnly,
+    runtime: {
+      intraThreads: resolveOptionalPositiveInteger(runtimeValue?.intraThreads),
+      fgclipMaxPatches: resolveOptionalFgclipMaxPatches(runtimeValue?.fgclipMaxPatches),
+    },
   };
 }
 
@@ -441,6 +480,10 @@ interface SettingsStore extends Settings {
     key: K,
     value: VisualSearchConfig[K],
   ) => void;
+  setVisualSearchRuntimeField: <K extends keyof VisualSearchRuntimeConfig>(
+    key: K,
+    value: VisualSearchRuntimeConfig[K],
+  ) => void;
   setAiBatchAnalyzeConcurrency: (value: number) => Promise<void>;
   setAutoAnalyzeOnImport: (enabled: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
@@ -513,6 +556,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
             visualIndexStatus: null,
           }
         : {}),
+    }));
+    scheduleVisualSearchPersist(get);
+  },
+
+  setVisualSearchRuntimeField: (key, value) => {
+    set((state) => ({
+      visualSearch: {
+        ...state.visualSearch,
+        runtime: {
+          ...state.visualSearch.runtime,
+          [key]: value,
+        },
+      },
     }));
     scheduleVisualSearchPersist(get);
   },

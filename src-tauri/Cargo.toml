@@ -44,16 +44,14 @@ bytes = "1"
 http = "1.4"
 arboard = "3"
 drag = "2.1.0"
-ort = "2.0.0-rc.12"
-ndarray = "0.17"
 rayon = "1.11"
 sha2 = "0.10"
-tokenizers = { version = "0.22", default-features = false, features = ["onig"] }
 tauri-plugin-log = "2"
 sysinfo = { version = "0.38.4", default-features = false, features = ["system"], optional = true }
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "std"], optional = true }
 dhat = { version = "0.3.3", optional = true }
+omni_search = "0.1.1"
 
 [profile.release]
 panic = "abort"

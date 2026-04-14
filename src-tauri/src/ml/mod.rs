@@ -1,17 +1,14 @@
-pub mod fgclip2;
-pub mod image_preprocess;
 pub mod model_manager;
 
-use self::fgclip2::FgClip2Model;
-use self::model_manager::ResolvedModelPaths;
-use std::path::PathBuf;
+use self::model_manager::{ResolvedModelPaths, VisualSearchConfig};
+use omni_search::OmniSearch;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct VisualModelRuntime {
-    loaded_root: Option<PathBuf>,
-    model: Option<FgClip2Model>,
+    loaded_key: Option<String>,
+    model: Option<OmniSearch>,
     last_used_at: Option<Instant>,
     active_visual_tasks: usize,
 }
@@ -20,51 +17,82 @@ impl VisualModelRuntime {
     pub fn get_or_load(
         &mut self,
         resolved_model: &ResolvedModelPaths,
-    ) -> Result<&mut FgClip2Model, String> {
+        visual_search_config: &VisualSearchConfig,
+    ) -> Result<&OmniSearch, String> {
+        let runtime_config = visual_search_config.runtime.resolve_runtime_config()?;
+        let model_key = format!(
+            "{}::{}::{}::intra={}::inter={:?}::fgclip_max_patches={:?}::session_policy={:?}::graph_optimization_level={:?}",
+            resolved_model.root.display(),
+            resolved_model.manifest.model_id,
+            resolved_model.manifest.version,
+            runtime_config.intra_threads,
+            runtime_config.inter_threads,
+            runtime_config.fgclip_max_patches,
+            runtime_config.session_policy,
+            runtime_config.graph_optimization_level,
+        );
         let needs_reload = self
-            .loaded_root
+            .loaded_key
             .as_ref()
-            .map(|loaded_root| loaded_root != &resolved_model.root)
+            .map(|loaded_key| loaded_key != &model_key)
             .unwrap_or(true);
 
         if needs_reload {
-            self.model = Some(FgClip2Model::load(resolved_model)?);
-            self.loaded_root = Some(resolved_model.root.clone());
+            self.model = Some(
+                OmniSearch::builder()
+                    .from_local_model_dir(resolved_model.root.clone())
+                    .runtime_config(runtime_config)
+                    .build()
+                    .map_err(|e| e.to_string())?,
+            );
+            self.loaded_key = Some(model_key);
         }
 
         self.model
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| "无法初始化本地视觉搜索模型".to_string())
     }
 
     pub fn encode_text(
         &mut self,
         resolved_model: &ResolvedModelPaths,
+        visual_search_config: &VisualSearchConfig,
         text: &str,
     ) -> Result<Vec<f32>, String> {
-        let embedding = self.get_or_load(resolved_model)?.encode_text(text)?;
+        let embedding = self
+            .get_or_load(resolved_model, visual_search_config)?
+            .embed_text(text)
+            .map_err(|e| e.to_string())?;
         self.last_used_at = Some(Instant::now());
-        Ok(embedding)
+        Ok(embedding.as_slice().to_vec())
     }
 
     pub fn encode_image_path(
         &mut self,
         resolved_model: &ResolvedModelPaths,
+        visual_search_config: &VisualSearchConfig,
         path: &std::path::Path,
     ) -> Result<Vec<f32>, String> {
-        let embedding = self.get_or_load(resolved_model)?.encode_image_path(path)?;
+        let embedding = self
+            .get_or_load(resolved_model, visual_search_config)?
+            .embed_image_path(path)
+            .map_err(|e| e.to_string())?;
         self.last_used_at = Some(Instant::now());
-        Ok(embedding)
+        Ok(embedding.as_slice().to_vec())
     }
 
     pub fn encode_image_bytes(
         &mut self,
         resolved_model: &ResolvedModelPaths,
+        visual_search_config: &VisualSearchConfig,
         bytes: &[u8],
     ) -> Result<Vec<f32>, String> {
-        let embedding = self.get_or_load(resolved_model)?.encode_image_bytes(bytes)?;
+        let embedding = self
+            .get_or_load(resolved_model, visual_search_config)?
+            .embed_image_bytes(bytes)
+            .map_err(|e| e.to_string())?;
         self.last_used_at = Some(Instant::now());
-        Ok(embedding)
+        Ok(embedding.as_slice().to_vec())
     }
 
     pub fn begin_visual_task(&mut self) {
@@ -93,7 +121,7 @@ impl VisualModelRuntime {
     }
 
     pub fn clear(&mut self) {
-        self.loaded_root = None;
+        self.loaded_key = None;
         self.model = None;
         self.last_used_at = None;
     }

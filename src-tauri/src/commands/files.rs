@@ -301,14 +301,14 @@ pub async fn filter_files(
 
     let (files, total, debug_scores) = if let Some(natural_language_query) = natural_language_query
     {
-        let resolved_model = {
+        let (visual_search_config, resolved_model) = {
             let db = state.db.lock().map_err(|e| e.to_string())?;
-            let config = load_visual_search_config(&db)?;
-            if !config.enabled {
+            let visual_search_config = load_visual_search_config(&db)?;
+            if !visual_search_config.enabled {
                 return Err("请先在设置 > AI 中启用本地自然语言搜图".to_string());
             }
 
-            let resolved_model = resolve_model_paths(&config.model_path)?;
+            let resolved_model = resolve_model_paths(&visual_search_config.model_path)?;
             let ready_count = db
                 .get_visual_index_counts(&resolved_model.manifest.model_id)
                 .map_err(|e| e.to_string())?;
@@ -318,7 +318,7 @@ pub async fn filter_files(
                 );
             }
 
-            resolved_model
+            (visual_search_config, resolved_model)
         };
 
         let query_embedding = {
@@ -326,7 +326,11 @@ pub async fn filter_files(
                 .visual_model_runtime
                 .lock()
                 .map_err(|e| e.to_string())?;
-            runtime.encode_text(&resolved_model, &natural_language_query)?
+            runtime.encode_text(
+                &resolved_model,
+                &visual_search_config,
+                &natural_language_query,
+            )?
         };
 
         let db = state.db.lock().map_err(|e| e.to_string())?;

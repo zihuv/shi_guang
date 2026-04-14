@@ -4,6 +4,7 @@ use crate::ml::model_manager::{
     find_recommended_visual_model_path as find_recommended_visual_model_path_impl,
     load_visual_search_config, resolve_model_paths,
     validate_visual_model_path as validate_visual_model_path_impl, VisualModelValidationResult,
+    VisualSearchConfig,
 };
 use crate::openai::{
     load_ai_config, request_image_metadata, test_metadata_endpoint, AiEndpointConfig,
@@ -688,6 +689,7 @@ fn spawn_ai_metadata_task(
 
 fn reindex_visual_candidate(
     state: &AppState,
+    visual_search_config: &VisualSearchConfig,
     resolved_model: &crate::ml::model_manager::ResolvedModelPaths,
     candidate: &crate::db::VisualIndexCandidate,
     image_data_url: Option<&str>,
@@ -700,9 +702,13 @@ fn reindex_visual_candidate(
             .map_err(|e| e.to_string())?;
         if let Some(image_data_url) = image_data_url {
             let image_bytes = decode_image_data_url(image_data_url)?;
-            runtime.encode_image_bytes(resolved_model, &image_bytes)?
+            runtime.encode_image_bytes(resolved_model, visual_search_config, &image_bytes)?
         } else {
-            runtime.encode_image_path(resolved_model, Path::new(&candidate.file.path))?
+            runtime.encode_image_path(
+                resolved_model,
+                visual_search_config,
+                Path::new(&candidate.file.path),
+            )?
         }
     };
 
@@ -726,15 +732,15 @@ pub(crate) fn reindex_file_visual_embedding_impl(
     image_data_url: Option<String>,
 ) -> Result<(), String> {
     let _visual_model_task = crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime)?;
-    let (resolved_model, candidate) = {
+    let (visual_search_config, resolved_model, candidate) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let config = load_visual_search_config(&db)?;
-        let resolved_model = resolve_model_paths(&config.model_path)?;
+        let visual_search_config = load_visual_search_config(&db)?;
+        let resolved_model = resolve_model_paths(&visual_search_config.model_path)?;
         let candidate = db
             .get_visual_index_candidate(file_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "当前文件不是可建立视觉索引的图片，或文件不存在".to_string())?;
-        (resolved_model, candidate)
+        (visual_search_config, resolved_model, candidate)
     };
 
     let source_content_hash =
@@ -758,6 +764,7 @@ pub(crate) fn reindex_file_visual_embedding_impl(
 
     match reindex_visual_candidate(
         state,
+        &visual_search_config,
         &resolved_model,
         &candidate,
         image_data_url.as_deref(),
@@ -814,6 +821,19 @@ pub fn get_visual_index_status(state: State<'_, AppState>) -> Result<VisualIndex
             total_image_count: 0,
         });
     }
+    if let Err(error) = config.runtime.resolve_runtime_config() {
+        return Ok(VisualIndexStatus {
+            model_valid: false,
+            message: format!("视觉搜索运行时配置无效: {error}"),
+            model_id: None,
+            version: None,
+            indexed_count: 0,
+            failed_count: 0,
+            pending_count: 0,
+            outdated_count: 0,
+            total_image_count: 0,
+        });
+    }
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let resolved_model = resolve_model_paths(&config.model_path)?;
@@ -848,6 +868,9 @@ pub fn get_visual_index_retry_candidates(
     if !validation.valid {
         return Ok(Vec::new());
     }
+    if config.runtime.resolve_runtime_config().is_err() {
+        return Ok(Vec::new());
+    }
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let resolved_model = resolve_model_paths(&config.model_path)?;
@@ -871,15 +894,16 @@ fn load_visual_index_candidates(
     process_unindexed_only: bool,
 ) -> Result<
     (
+        VisualSearchConfig,
         crate::ml::model_manager::ResolvedModelPaths,
         Vec<crate::db::VisualIndexCandidate>,
     ),
     String,
 > {
-    let (resolved_model, candidates) = {
+    let (visual_search_config, resolved_model, candidates) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let config = load_visual_search_config(&db)?;
-        let resolved_model = resolve_model_paths(&config.model_path)?;
+        let visual_search_config = load_visual_search_config(&db)?;
+        let resolved_model = resolve_model_paths(&visual_search_config.model_path)?;
         let candidates = if process_unindexed_only {
             db.get_unindexed_visual_index_candidates(&resolved_model.manifest.model_id)
                 .map_err(|e| e.to_string())?
@@ -887,10 +911,10 @@ fn load_visual_index_candidates(
             db.get_visual_index_candidates()
                 .map_err(|e| e.to_string())?
         };
-        (resolved_model, candidates)
+        (visual_search_config, resolved_model, candidates)
     };
 
-    Ok((resolved_model, candidates))
+    Ok((visual_search_config, resolved_model, candidates))
 }
 
 fn rebuild_visual_index_impl(
@@ -899,7 +923,8 @@ fn rebuild_visual_index_impl(
     process_unindexed_only: bool,
 ) -> Result<VisualIndexRebuildResult, String> {
     let _visual_model_task = crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime)?;
-    let (resolved_model, candidates) = load_visual_index_candidates(state, process_unindexed_only)?;
+    let (visual_search_config, resolved_model, candidates) =
+        load_visual_index_candidates(state, process_unindexed_only)?;
 
     let mut result = VisualIndexRebuildResult {
         total: candidates.len(),
@@ -959,6 +984,7 @@ fn rebuild_visual_index_impl(
 
         match reindex_visual_candidate(
             &state,
+            &visual_search_config,
             &resolved_model,
             &candidate,
             None,
@@ -1027,7 +1053,8 @@ fn spawn_visual_index_task(
         }
     }
 
-    let (resolved_model, candidates) = load_visual_index_candidates(state, process_unindexed_only)?;
+    let (visual_search_config, resolved_model, candidates) =
+        load_visual_index_candidates(state, process_unindexed_only)?;
     if candidates.is_empty() {
         return Err(if process_unindexed_only {
             "当前没有未索引图片需要处理".to_string()
@@ -1075,8 +1102,7 @@ fn spawn_visual_index_task(
         });
         emit_visual_index_task_update(&app_handle, &task_id_for_worker);
         let state = app_handle.state::<AppState>();
-        let visual_model_task =
-            crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime);
+        let visual_model_task = crate::ml::VisualModelTaskGuard::start(&state.visual_model_runtime);
 
         let run_result: Result<(), String> = (|| {
             let _visual_model_task = visual_model_task?;
@@ -1120,6 +1146,7 @@ fn spawn_visual_index_task(
 
                 match reindex_visual_candidate(
                     &state,
+                    &visual_search_config,
                     &resolved_model,
                     &candidate,
                     None,
