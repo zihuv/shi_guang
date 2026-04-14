@@ -502,8 +502,15 @@ function App() {
           onMouseDown={handleResizeStart("sidebar")}
         />
 
-        <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
-          <Suspense fallback={null}>{previewMode ? <ImagePreview /> : <FileGrid />}</Suspense>
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          <FileGrid />
+          <Suspense fallback={null}>
+            {previewMode ? (
+              <div className="absolute inset-0 z-20">
+                <ImagePreview />
+              </div>
+            ) : null}
+          </Suspense>
         </main>
 
         <PanelResizeHandle
