@@ -22,6 +22,7 @@ import {
 import {
   canGenerateThumbnail,
   formatSize,
+  getFileSrc,
   getThumbnailImageSrc,
   getVideoThumbnailSrc,
   isVideoFile,
@@ -222,11 +223,14 @@ function useLazyImageSrc(
     let active = true
     setImageError(false)
 
-    scheduleCardThumbnailTask(() =>
-      isVideoFile(ext)
-        ? getVideoThumbnailSrc(path, maxEdge)
-        : getThumbnailImageSrc(path, ext, maxEdge),
-    )
+    scheduleCardThumbnailTask(async () => {
+      if (isVideoFile(ext)) {
+        return getVideoThumbnailSrc(path, maxEdge)
+      }
+
+      const thumbnailSrc = await getThumbnailImageSrc(path, ext, maxEdge)
+      return thumbnailSrc || getFileSrc(path)
+    })
       .then((src) => {
         if (!active) {
           releaseUnusedImageSrc(src)
@@ -269,11 +273,12 @@ export function FileCard({
   onDoubleClick,
 }: FileCardBaseProps & { footerHeight: number; previewWidth: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const isVideo = isVideoFile(file.ext)
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
-  const thumbnailMaxEdge = resolveCardThumbnailMaxEdge(previewWidth)
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
+  const thumbnailMaxEdge = isVideo ? resolveCardThumbnailMaxEdge(previewWidth) : undefined
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? thumbnailMaxEdge ?? 'video' : 'image-preview'}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
@@ -282,7 +287,6 @@ export function FileCard({
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
   )
-  const isVideo = isVideoFile(file.ext)
   const showName = visibleFields.includes("name")
   const metaTokens = getFileInfoTokens(file, visibleFields)
   const showTags = shouldShowTags(file, visibleFields)
@@ -411,6 +415,7 @@ export function AdaptiveFileCard({
     scrollRootRef,
     ADAPTIVE_OBSERVER_ROOT_MARGIN,
   )
+  const isVideo = isVideoFile(file.ext)
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
@@ -418,8 +423,10 @@ export function AdaptiveFileCard({
     !file.width || !file.height || file.width <= 0 || file.height <= 0
       ? previewWidth
       : Math.max(80, Math.round((file.height / file.width) * previewWidth))
-  const thumbnailMaxEdge = resolveCardThumbnailMaxEdge(previewWidth, previewHeight)
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
+  const thumbnailMaxEdge = isVideo
+    ? resolveCardThumbnailMaxEdge(previewWidth, previewHeight)
+    : undefined
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? thumbnailMaxEdge ?? 'video' : 'image-preview'}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
@@ -428,7 +435,6 @@ export function AdaptiveFileCard({
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
   )
-  const isVideo = isVideoFile(file.ext)
   const footerHeight = getAdaptiveFooterHeight(file, visibleFields)
   const showName = visibleFields.includes("name")
   const metaTokens = getFileInfoTokens(file, visibleFields)
@@ -559,11 +565,12 @@ export function FileRow({
   onDoubleClick,
 }: FileCardBaseProps & { thumbnailSize: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef)
+  const isVideo = isVideoFile(file.ext)
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
     (state) => state.fileVersions[file.id] ?? 0,
   )
-  const thumbnailMaxEdge = resolveThumbnailRequestMaxEdge(thumbnailSize)
-  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${thumbnailMaxEdge}`
+  const thumbnailMaxEdge = isVideo ? resolveThumbnailRequestMaxEdge(thumbnailSize) : undefined
+  const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? thumbnailMaxEdge ?? 'video' : 'image-preview'}`
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
     file.path,
     file.ext,
@@ -572,7 +579,6 @@ export function FileRow({
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
   )
-  const isVideo = isVideoFile(file.ext)
   const showTags = shouldShowTags(file, visibleFields)
   const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : []
   const showName = visibleFields.includes("name")

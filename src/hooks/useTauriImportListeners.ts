@@ -7,11 +7,7 @@ import { useSelectionStore } from "@/stores/selectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { completeVisualIndexBrowserDecodeRequest } from "@/services/tauri/files";
-import {
-  buildBrowserDecodedImageDataUrl,
-  generateBrowserThumbnailCache,
-  normalizeExt,
-} from "@/utils";
+import { buildBrowserDecodedImageDataUrl } from "@/utils";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -51,27 +47,6 @@ type VisualIndexBrowserDecodeRequestPayload = {
   outputMimeType?: string;
   output_mime_type?: string;
 };
-
-function getPathExtension(path: string): string {
-  const ext = path.split(".").pop();
-  return ext ? normalizeExt(ext) : "";
-}
-
-async function maybeGenerateImportedAvifThumbnail(payload?: FileImportedPayload) {
-  const path = payload?.path?.trim();
-  if (!path || getPathExtension(path) !== "avif") {
-    return;
-  }
-
-  const thumbnailSrc = await generateBrowserThumbnailCache(path);
-  if (!thumbnailSrc) {
-    return;
-  }
-
-  if (typeof payload?.file_id === "number") {
-    useThumbnailRefreshStore.getState().bumpFileVersion(payload.file_id);
-  }
-}
 
 async function handleVisualIndexBrowserDecodeRequest(
   payload?: VisualIndexBrowserDecodeRequestPayload,
@@ -208,16 +183,12 @@ export function useTauriImportListeners({
         },
       );
 
-      unlistenFileImported = await listen<FileImportedPayload>("file-imported", async (event) => {
+      unlistenFileImported = await listen<FileImportedPayload>("file-imported", async () => {
         const libraryStore = useLibraryQueryStore.getState();
         await Promise.all([
           libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
           useFolderStore.getState().loadFolders(),
         ]);
-
-        void maybeGenerateImportedAvifThumbnail(event.payload).catch((error) => {
-          console.error("Failed to generate imported AVIF thumbnail:", error);
-        });
       });
 
       unlistenFileImportError = await listen<{ error: string }>(

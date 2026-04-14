@@ -78,11 +78,23 @@ pub fn get_thumbnail_path(
     max_edge: Option<u32>,
 ) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let source_dimensions = db
+        .get_file_by_path(&file_path)
+        .map_err(|e| e.to_string())?
+        .and_then(|file| {
+            let width = u32::try_from(file.width).ok()?;
+            let height = u32::try_from(file.height).ok()?;
+            (width > 0 && height > 0).then_some((width, height))
+        });
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
     drop(db);
 
-    let thumbnail =
-        storage::get_or_create_thumbnail(&index_paths, Path::new(&file_path), max_edge)?;
+    let thumbnail = storage::get_or_create_thumbnail(
+        &index_paths,
+        Path::new(&file_path),
+        max_edge,
+        source_dimensions,
+    )?;
     Ok(thumbnail.map(|path| path.to_string_lossy().to_string()))
 }
 
@@ -93,10 +105,23 @@ pub fn get_thumbnail_data_base64(
     max_edge: Option<u32>,
 ) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let source_dimensions = db
+        .get_file_by_path(&file_path)
+        .map_err(|e| e.to_string())?
+        .and_then(|file| {
+            let width = u32::try_from(file.width).ok()?;
+            let height = u32::try_from(file.height).ok()?;
+            (width > 0 && height > 0).then_some((width, height))
+        });
     let index_paths = db.get_index_paths().map_err(|e| e.to_string())?;
     drop(db);
 
-    storage::get_or_create_thumbnail_base64(&index_paths, Path::new(&file_path), max_edge)
+    storage::get_or_create_thumbnail_base64(
+        &index_paths,
+        Path::new(&file_path),
+        max_edge,
+        source_dimensions,
+    )
 }
 
 #[tauri::command]

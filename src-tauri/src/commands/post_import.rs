@@ -30,7 +30,13 @@ fn generate_import_thumbnail_if_missing(
         return Ok(false);
     }
 
-    match crate::storage::get_or_create_thumbnail(index_paths, file_path, None)? {
+    let source_dimensions = match (u32::try_from(file.width), u32::try_from(file.height)) {
+        (Ok(width), Ok(height)) if width > 0 && height > 0 => Some((width, height)),
+        _ => None,
+    };
+
+    match crate::storage::get_or_create_thumbnail(index_paths, file_path, None, source_dimensions)?
+    {
         Some(_) => Ok(true),
         None => Ok(false),
     }

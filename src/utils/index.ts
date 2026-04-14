@@ -66,7 +66,7 @@ const CODE_EXTENSIONS = [
 const TEXT_EXTENSIONS = ['txt', 'log', 'ini', 'conf']
 const TEXT_PREVIEW_EXTENSIONS = ['txt', 'log', 'md', 'csv', 'ini', 'conf']
 const MAX_TEXT_PREVIEW_SIZE = 512 * 1024
-const THUMBNAIL_CACHE_VERSION = 'v2'
+const THUMBNAIL_CACHE_VERSION = 'v3'
 const THUMBNAIL_MAX_EDGE = 320
 export const LIST_THUMBNAIL_MAX_EDGE = 160
 export const MAX_THUMBNAIL_MAX_EDGE = 640
@@ -78,7 +78,8 @@ const THUMBNAIL_VARIANT_MAX_EDGES = [
   MAX_THUMBNAIL_MAX_EDGE,
 ] as const
 const DEFAULT_THUMBNAIL_DEVICE_PIXEL_RATIO_CAP = 1
-const THUMBNAIL_JPEG_QUALITY = 0.88
+const THUMBNAIL_BROWSER_OUTPUT_QUALITY = 1
+const THUMBNAIL_BROWSER_OUTPUT_MIME = 'image/webp'
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>()
 const browserThumbnailPromiseCache = new Map<string, Promise<string>>()
 const missingFileSyncs = new Set<string>()
@@ -91,6 +92,18 @@ const MISSING_FILE_ERROR_MARKERS = [
 
 function getThumbnailVariantCacheKey(path: string, maxEdge: number) {
   return `${THUMBNAIL_CACHE_VERSION}:${path}::${maxEdge}`
+}
+
+function resolveShortEdgeScale(
+  width: number,
+  height: number,
+  targetShortEdge: number = THUMBNAIL_MAX_EDGE,
+) {
+  const shortEdge = Math.min(width, height)
+  if (!shortEdge || shortEdge <= targetShortEdge) {
+    return 1
+  }
+  return targetShortEdge / shortEdge
 }
 
 function normalizeFsPath(path: string): string {
@@ -366,6 +379,7 @@ export async function getFileSrc(path: string): Promise<string> {
 
 export interface BrowserDecodedImageOptions {
   maxEdge?: number | null
+  targetShortEdge?: number | null
   quality?: number
   outputMimeType?: string
 }
@@ -389,7 +403,7 @@ export async function getTextPreviewContent(path: string, size?: number): Promis
 
 async function renderVideoThumbnailDataUrl(
   path: string,
-  maxEdge: number = THUMBNAIL_MAX_EDGE,
+  _maxEdge: number = THUMBNAIL_MAX_EDGE,
 ): Promise<string> {
   const fileSrc = await getFileSrc(path)
   if (!fileSrc) {
@@ -428,7 +442,7 @@ async function renderVideoThumbnailDataUrl(
         return
       }
 
-      const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight))
+      const scale = resolveShortEdgeScale(video.videoWidth, video.videoHeight)
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
       canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
@@ -442,7 +456,7 @@ async function renderVideoThumbnailDataUrl(
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      finish(canvas.toDataURL('image/jpeg', THUMBNAIL_JPEG_QUALITY))
+      finish(canvas.toDataURL(THUMBNAIL_BROWSER_OUTPUT_MIME, THUMBNAIL_BROWSER_OUTPUT_QUALITY))
     }
 
     const seekToCapturePoint = () => {
@@ -511,9 +525,9 @@ async function getBrowserThumbnailSrc(
   }
 
   const nextThumbnailPromise = buildBrowserDecodedImageDataUrl(path, {
-    maxEdge,
-    quality: THUMBNAIL_JPEG_QUALITY,
-    outputMimeType: 'image/jpeg',
+    targetShortEdge: THUMBNAIL_MAX_EDGE,
+    quality: THUMBNAIL_BROWSER_OUTPUT_QUALITY,
+    outputMimeType: THUMBNAIL_BROWSER_OUTPUT_MIME,
   })
     .then(async (thumbnailDataUrl) => {
       if (!thumbnailDataUrl) {
@@ -625,10 +639,15 @@ export async function buildBrowserDecodedImageDataUrl(
       }
 
       const maxEdge = options.maxEdge
+      const targetShortEdge = options.targetShortEdge
       const scale =
-        typeof maxEdge === "number" && Number.isFinite(maxEdge) && maxEdge > 0
-          ? Math.min(1, maxEdge / Math.max(width, height))
-          : 1
+        typeof targetShortEdge === "number" &&
+        Number.isFinite(targetShortEdge) &&
+        targetShortEdge > 0
+          ? resolveShortEdgeScale(width, height, targetShortEdge)
+          : typeof maxEdge === "number" && Number.isFinite(maxEdge) && maxEdge > 0
+            ? Math.min(1, maxEdge / Math.max(width, height))
+            : 1
       const canvas = document.createElement("canvas")
       canvas.width = Math.max(1, Math.round(width * scale))
       canvas.height = Math.max(1, Math.round(height * scale))
@@ -696,10 +715,6 @@ export async function getThumbnailImageSrc(
     console.error('Failed to get thumbnail path:', e)
   }
 
-  if (ext && isImageFile(ext)) {
-    return getBrowserThumbnailSrc(path, maxEdge)
-  }
-
   return ''
 }
 
@@ -724,26 +739,11 @@ export async function getThumbnailBlobSrc(
     }
     console.error('Failed to get thumbnail blob source:', e)
   }
-
-  const generatedSrc = await getBrowserThumbnailSrc(path, maxEdge)
-  if (!generatedSrc) {
-    return ''
+  if (ext && isImageFile(ext)) {
+    return getCanvasSafeImageSrc(path)
   }
 
-  try {
-    const persistedThumbnailPath = await getThumbnailPath(path, maxEdge)
-    if (persistedThumbnailPath) {
-      return await getCanvasSafeImageSrc(persistedThumbnailPath)
-    }
-  } catch (e) {
-    if (isMissingFileError(e)) {
-      scheduleMissingFileCleanup(path)
-      return ''
-    }
-    console.error('Failed to re-read persisted thumbnail as blob:', e)
-  }
-
-  return generatedSrc
+  return ''
 }
 
 // Format file size to human readable string
