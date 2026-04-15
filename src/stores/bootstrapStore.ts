@@ -54,7 +54,7 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
       const initialFolderId =
         persistedFolderId !== null && hasFolderId(folderStore.folders, persistedFolderId)
           ? persistedFolderId
-          : (await folderStore.initDefaultFolder())?.id ?? null;
+          : ((await folderStore.initDefaultFolder())?.id ?? null);
 
       if (initialFolderId !== null) {
         folderStore.selectFolder(initialFolderId);

@@ -120,7 +120,7 @@ export function FileGridToolbar({
   };
 
   return (
-    <div className="relative z-20 border-b border-gray-200/80 bg-white/78 backdrop-blur-xl dark:border-dark-border dark:bg-dark-surface/78">
+    <div className="relative z-20 bg-white/38 backdrop-blur-xl shadow-[inset_0_-1px_0_rgba(15,23,42,0.05)] dark:bg-white/[0.02] dark:shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
       <div className="flex h-11 items-center justify-between gap-3 px-4">
         <div className="min-w-0">
           <span className="truncate text-[13px] text-gray-500 dark:text-gray-400">
@@ -346,7 +346,7 @@ export function FileGridToolbar({
       {isFilterPanelOpen && (
         <div
           ref={filterMenuRef}
-          className="border-t border-gray-200/80 px-4 py-3 dark:border-dark-border/80"
+          className="px-4 py-3 shadow-[inset_0_1px_0_rgba(15,23,42,0.05)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
         >
           <FilterPanel />
         </div>
@@ -375,7 +375,7 @@ export function FileGridPagination({
   }
 
   return (
-    <div className="flex items-center justify-center gap-2 border-t border-gray-200 py-2 dark:border-dark-border">
+    <div className="flex items-center justify-center gap-2 py-2 shadow-[inset_0_1px_0_rgba(15,23,42,0.05)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
       <button
         onClick={() => setPage(1)}
         disabled={page <= 1}

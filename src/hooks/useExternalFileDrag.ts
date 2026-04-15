@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { toast } from "sonner";
 import { startExternalFileDrag } from "@/lib/externalDrag";
 import { useSelectionStore } from "@/stores/selectionStore";
@@ -28,16 +22,29 @@ export function isExternalDragRegionTarget(target: EventTarget | null) {
 }
 
 export function useExternalFileDrag(fileId: number) {
-  const [isTrackingExternalDrag, setIsTrackingExternalDrag] = useState(false);
   const pendingExternalDragRef = useRef<PendingExternalDrag | null>(null);
+  const moveListenerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const mouseUpListenerRef = useRef<(() => void) | null>(null);
+  const blurListenerRef = useRef<(() => void) | null>(null);
 
   const clearPendingExternalDrag = useCallback(() => {
     pendingExternalDragRef.current = null;
-    setIsTrackingExternalDrag(false);
+    if (moveListenerRef.current) {
+      window.removeEventListener("mousemove", moveListenerRef.current);
+      moveListenerRef.current = null;
+    }
+    if (mouseUpListenerRef.current) {
+      window.removeEventListener("mouseup", mouseUpListenerRef.current);
+      mouseUpListenerRef.current = null;
+    }
+    if (blurListenerRef.current) {
+      window.removeEventListener("blur", blurListenerRef.current);
+      blurListenerRef.current = null;
+    }
   }, []);
 
-  useEffect(() => {
-    if (!isTrackingExternalDrag) {
+  const beginTrackingExternalDrag = useCallback(() => {
+    if (moveListenerRef.current || mouseUpListenerRef.current || blurListenerRef.current) {
       return;
     }
 
@@ -82,32 +89,35 @@ export function useExternalFileDrag(fileId: number) {
       clearPendingExternalDrag();
     };
 
+    moveListenerRef.current = handleWindowMouseMove;
+    mouseUpListenerRef.current = handleWindowMouseUp;
+    blurListenerRef.current = handleWindowBlur;
+
     window.addEventListener("mousemove", handleWindowMouseMove);
     window.addEventListener("mouseup", handleWindowMouseUp);
     window.addEventListener("blur", handleWindowBlur);
+  }, [clearPendingExternalDrag, fileId]);
 
-    return () => {
-      window.removeEventListener("mousemove", handleWindowMouseMove);
-      window.removeEventListener("mouseup", handleWindowMouseUp);
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, [clearPendingExternalDrag, fileId, isTrackingExternalDrag]);
+  useEffect(() => clearPendingExternalDrag, [clearPendingExternalDrag]);
 
-  const handleMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    if (event.button !== 0) {
-      return;
-    }
+  const handleMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
 
-    event.preventDefault();
-    event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
 
-    pendingExternalDragRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      started: false,
-    };
-    setIsTrackingExternalDrag(true);
-  }, []);
+      pendingExternalDragRef.current = {
+        startX: event.clientX,
+        startY: event.clientY,
+        started: false,
+      };
+      beginTrackingExternalDrag();
+    },
+    [beginTrackingExternalDrag],
+  );
 
   return {
     dragHandleProps: {

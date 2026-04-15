@@ -4,7 +4,7 @@ import { type LibraryVisibleField } from "@/stores/settingsStore";
 export const TILE_CARD_BASE_WIDTH = 180;
 export const TILE_CARD_MIN_WIDTH = 90;
 export const TILE_CARD_MAX_WIDTH = 420;
-export const GRID_GAP = 16;
+export const GRID_GAP = 14;
 export const GRID_PREVIEW_HEIGHT_RATIO = 0.6;
 export const LIST_BASE_ROW_HEIGHT = 56;
 export const LIST_BASE_THUMBNAIL_SIZE = 40;
@@ -14,10 +14,14 @@ export const SELECTION_DRAG_THRESHOLD = 10;
 export const VIEW_SCALE_KEYBOARD_STEP = 0.1;
 export const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012;
 
-const GRID_METADATA_HEIGHT = 56;
-const GRID_METADATA_HEIGHT_WITH_TAGS = 72;
-const ADAPTIVE_CARD_FOOTER_HEIGHT = 44;
-const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 62;
+const GRID_METADATA_HEIGHT = 68;
+const GRID_METADATA_HEIGHT_WITH_TAGS = 86;
+const GRID_METADATA_HEIGHT_COMPACT = 42;
+const GRID_METADATA_HEIGHT_COMPACT_WITH_TAGS = 58;
+const ADAPTIVE_CARD_FOOTER_HEIGHT = 64;
+const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 82;
+const ADAPTIVE_CARD_FOOTER_HEIGHT_COMPACT = 38;
+const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT_COMPACT = 56;
 
 export type SelectionBox = {
   startX: number;
@@ -112,8 +116,15 @@ export function isDialogTarget(target: EventTarget | null) {
 
 export function getGridMetadataHeight(scale: number, visibleFields: LibraryVisibleField[]) {
   const showsTags = visibleFields.includes("tags");
-  const baseHeight = showsTags ? GRID_METADATA_HEIGHT_WITH_TAGS : GRID_METADATA_HEIGHT;
-  const minHeight = showsTags ? 62 : 48;
+  const showsName = visibleFields.includes("name");
+  const baseHeight = showsName
+    ? showsTags
+      ? GRID_METADATA_HEIGHT_WITH_TAGS
+      : GRID_METADATA_HEIGHT
+    : showsTags
+      ? GRID_METADATA_HEIGHT_COMPACT_WITH_TAGS
+      : GRID_METADATA_HEIGHT_COMPACT;
+  const minHeight = showsName ? (showsTags ? 78 : 60) : showsTags ? 52 : 36;
   return Math.max(minHeight, Math.round(baseHeight * (0.88 + scale * 0.1)));
 }
 
@@ -398,10 +409,17 @@ function getAdaptiveImageHeight(file: FileItem, width: number) {
   return Math.max(80, Math.round((file.height / file.width) * width));
 }
 
-function getAdaptiveFooterHeight(file: FileItem, visibleFields: LibraryVisibleField[]) {
-  return shouldShowTags(file, visibleFields)
-    ? ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT
-    : ADAPTIVE_CARD_FOOTER_HEIGHT;
+export function getAdaptiveFooterHeight(file: FileItem, visibleFields: LibraryVisibleField[]) {
+  const showsTags = shouldShowTags(file, visibleFields);
+  const showsName = visibleFields.includes("name");
+
+  if (showsName) {
+    return showsTags ? ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT : ADAPTIVE_CARD_FOOTER_HEIGHT;
+  }
+
+  return showsTags
+    ? ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT_COMPACT
+    : ADAPTIVE_CARD_FOOTER_HEIGHT_COMPACT;
 }
 
 function shouldShowTags(file: FileItem, visibleFields: LibraryVisibleField[]) {

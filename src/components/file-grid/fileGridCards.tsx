@@ -13,7 +13,10 @@ import { cn } from "@/lib/utils";
 import { useExternalFileDrag } from "@/hooks/useExternalFileDrag";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileContextMenu from "@/components/FileContextMenu";
-import { GRID_PREVIEW_HEIGHT_RATIO } from "@/components/file-grid/fileGridLayout";
+import {
+  getAdaptiveFooterHeight,
+  GRID_PREVIEW_HEIGHT_RATIO,
+} from "@/components/file-grid/fileGridLayout";
 import {
   canGenerateThumbnail,
   formatSize,
@@ -32,11 +35,13 @@ const MAX_CONCURRENT_CARD_THUMBNAIL_LOADS = 6;
 const MAX_VISIBLE_TAGS = 3;
 const LIST_MAX_VISIBLE_TAGS = 2;
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"];
-const CARD_BOTTOM_HIGHLIGHT_CLASS =
-  "after:pointer-events-none after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-95 after:rounded-full after:bg-primary-400/70 after:opacity-0 after:content-[''] after:transition-[opacity,transform] after:duration-150 dark:after:bg-primary-500/80";
-const CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS = "active:after:scale-x-100 active:after:opacity-70";
-const CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-90";
-const CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS = "after:scale-x-100 after:opacity-100";
+const FILE_CARD_BASE_CLASS =
+  "file-card group relative flex cursor-pointer flex-col overflow-hidden rounded-[14px] px-1 pb-1 transition-colors duration-75";
+const FILE_CARD_PREVIEW_CLASS =
+  "relative overflow-hidden rounded-[12px] bg-gray-100 shadow-[0_12px_28px_rgba(15,23,42,0.09)] dark:bg-dark-bg dark:shadow-[0_14px_28px_rgba(0,0,0,0.26)]";
+const FILE_CARD_NAME_CLASS =
+  "app-text-clamp-2 break-all text-[12px] font-medium leading-[1.35] text-gray-800 dark:text-gray-100";
+const FILE_CARD_META_CLASS = "truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400";
 type FileCardBaseProps = {
   file: FileItem;
   visibleFields: LibraryVisibleField[];
@@ -293,29 +298,20 @@ export function FileCard({
         <div
           data-file-id={file.id}
           {...externalDragProps}
-          onClick={onClick}
+          onMouseDownCapture={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
-            "file-card app-card-surface group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,ring-color]",
-            CARD_BOTTOM_HIGHLIGHT_CLASS,
+            FILE_CARD_BASE_CLASS,
+            "h-full",
             isMultiSelected
-              ? cn(
-                  "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20",
-                  CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
-                )
+              ? "bg-primary-500/[0.08] ring-2 ring-primary-500/70 shadow-[0_14px_32px_rgba(59,130,246,0.14)] dark:bg-primary-500/12 dark:shadow-[0_18px_34px_rgba(0,0,0,0.3)]"
               : isSelected
-                ? cn(
-                    "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30",
-                    CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
-                  )
-                : cn(
-                    "hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600",
-                    CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS,
-                  ),
+                ? "bg-white/35 ring-2 ring-primary-400/70 shadow-[0_12px_28px_rgba(59,130,246,0.1)] dark:bg-white/[0.04] dark:ring-primary-700 dark:shadow-[0_16px_32px_rgba(0,0,0,0.28)]"
+                : "hover:bg-white/20 active:bg-white/24 dark:hover:bg-white/[0.03] dark:active:bg-white/[0.05]",
           )}
         >
           <div
-            className="relative bg-gray-100 dark:bg-dark-bg"
+            className={FILE_CARD_PREVIEW_CLASS}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
           >
             {!isVisible || imageSrc === null ? (
@@ -350,23 +346,17 @@ export function FileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col bg-white px-2.5 py-2 dark:bg-dark-surface"
+            className="flex min-h-0 flex-1 flex-col px-1.5 pb-0.5 pt-2"
             style={{ minHeight: `${footerHeight}px` }}
           >
-            {showName && (
-              <p className="truncate text-[12px] font-medium leading-4 text-gray-700 dark:text-gray-200">
-                {getNameWithoutExt(file.name)}
-              </p>
-            )}
+            {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
             {metaTokens.length > 0 && (
-              <p
-                className={cn("truncate text-[11px] leading-4 text-gray-400", showName && "mt-0.5")}
-              >
+              <p className={cn(FILE_CARD_META_CLASS, showName && "mt-1")}>
                 {metaTokens.join(" · ")}
               </p>
             )}
             {showTags && (
-              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1">
+              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1.5">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
@@ -440,31 +430,18 @@ export function AdaptiveFileCard({
         <div
           data-file-id={file.id}
           {...externalDragProps}
-          onClick={onClick}
+          onMouseDownCapture={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
-            "file-card app-card-surface group relative flex cursor-pointer flex-col overflow-hidden rounded-[16px] transition-[box-shadow,ring-color]",
-            CARD_BOTTOM_HIGHLIGHT_CLASS,
+            FILE_CARD_BASE_CLASS,
             isMultiSelected
-              ? cn(
-                  "ring-2 ring-primary-500 shadow-lg shadow-primary-200/40 dark:shadow-primary-950/20",
-                  CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
-                )
+              ? "bg-primary-500/[0.08] ring-2 ring-primary-500/70 shadow-[0_14px_32px_rgba(59,130,246,0.14)] dark:bg-primary-500/12 dark:shadow-[0_18px_34px_rgba(0,0,0,0.3)]"
               : isSelected
-                ? cn(
-                    "ring-2 ring-primary-300 shadow-md shadow-primary-100/70 dark:ring-primary-700 dark:shadow-primary-950/30",
-                    CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
-                  )
-                : cn(
-                    "hover:ring-1 hover:ring-gray-300 dark:hover:ring-gray-600",
-                    CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS,
-                  ),
+                ? "bg-white/35 ring-2 ring-primary-400/70 shadow-[0_12px_28px_rgba(59,130,246,0.1)] dark:bg-white/[0.04] dark:ring-primary-700 dark:shadow-[0_16px_32px_rgba(0,0,0,0.28)]"
+                : "hover:bg-white/20 active:bg-white/24 dark:hover:bg-white/[0.03] dark:active:bg-white/[0.05]",
           )}
         >
-          <div
-            className="relative bg-gray-100 dark:bg-dark-bg"
-            style={{ paddingBottom: aspectRatio }}
-          >
+          <div className={FILE_CARD_PREVIEW_CLASS} style={{ paddingBottom: aspectRatio }}>
             {!isVisible || imageSrc === null ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
@@ -497,23 +474,17 @@ export function AdaptiveFileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col bg-white px-2.5 py-2 dark:bg-dark-surface"
+            className="flex min-h-0 flex-1 flex-col px-1.5 pb-0.5 pt-2"
             style={{ minHeight: `${footerHeight}px` }}
           >
-            {showName && (
-              <p className="truncate text-[12px] font-medium leading-4 text-gray-700 dark:text-gray-200">
-                {getNameWithoutExt(file.name)}
-              </p>
-            )}
+            {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
             {metaTokens.length > 0 && (
-              <p
-                className={cn("truncate text-[11px] leading-4 text-gray-400", showName && "mt-0.5")}
-              >
+              <p className={cn(FILE_CARD_META_CLASS, showName && "mt-1")}>
                 {metaTokens.join(" · ")}
               </p>
             )}
             {showTags && (
-              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1">
+              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1.5">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
@@ -574,25 +545,15 @@ export function FileRow({
         <div
           data-file-id={file.id}
           {...externalDragProps}
-          onClick={onClick}
+          onMouseDownCapture={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
-            "file-card relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-[14px] p-2.5 transition-colors",
-            CARD_BOTTOM_HIGHLIGHT_CLASS,
+            "file-card relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-[14px] p-2.5 transition-colors duration-75",
             isMultiSelected
-              ? cn(
-                  "bg-primary-50 dark:bg-primary-900/20",
-                  CARD_MULTI_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
-                )
+              ? "bg-primary-50 dark:bg-primary-900/20"
               : isSelected
-                ? cn(
-                    "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700",
-                    CARD_SELECTED_BOTTOM_HIGHLIGHT_CLASS,
-                  )
-                : cn(
-                    "hover:bg-gray-100 dark:hover:bg-dark-border",
-                    CARD_ACTIVE_BOTTOM_HIGHLIGHT_CLASS,
-                  ),
+                ? "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700"
+                : "hover:bg-gray-100 active:bg-gray-100/90 dark:hover:bg-dark-border dark:active:bg-dark-border/90",
           )}
         >
           <div
@@ -658,7 +619,7 @@ export function FileRow({
               {visibleTags.map((tag) => (
                 <span
                   key={tag.id}
-                  className="inline-flex min-w-0 max-w-[84px] items-center gap-1 rounded-full border border-gray-200/80 px-1.5 py-0 text-[10px] text-gray-500 dark:border-gray-700 dark:text-gray-400"
+                  className="inline-flex min-w-0 max-w-[84px] items-center gap-1 rounded-full bg-black/[0.04] px-1.5 py-0 text-[10px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400"
                 >
                   <span
                     className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
@@ -755,10 +716,6 @@ export function ViewModeIcon({ mode, className }: { mode: LibraryViewMode; class
       <rect x="14" y="13" width="6" height="6" rx="1.5" strokeWidth={1.8} />
     </svg>
   );
-}
-
-function getAdaptiveFooterHeight(file: FileItem, visibleFields: LibraryVisibleField[]) {
-  return shouldShowTags(file, visibleFields) ? 62 : 44;
 }
 
 function getFileDimensionsText(file: FileItem) {

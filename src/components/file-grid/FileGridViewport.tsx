@@ -146,8 +146,11 @@ export function FileGridViewport({
                 }}
               >
                 <div
-                  className="grid gap-4"
-                  style={{ gridTemplateColumns: `repeat(${gridColumns}, ${gridItemWidth}px)` }}
+                  className="grid"
+                  style={{
+                    gap: `${GRID_GAP}px`,
+                    gridTemplateColumns: `repeat(${gridColumns}, ${gridItemWidth}px)`,
+                  }}
                 >
                   {rowFiles.map((file, offset) => (
                     <FileCard

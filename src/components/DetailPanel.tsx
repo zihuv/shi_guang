@@ -70,9 +70,9 @@ function PanelActionButton({
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3">
+    <div className="flex items-start justify-between gap-3 py-1">
       <span className={appPanelMetaClass}>{label}</span>
-      <span className="text-right text-[12px] font-medium text-gray-800 dark:text-gray-200">
+      <span className="max-w-[60%] text-right text-[12px] font-medium leading-5 text-gray-800 dark:text-gray-200">
         {value}
       </span>
     </div>
@@ -174,32 +174,33 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4">
-        {/* Folder icon */}
-        <div className="flex justify-center">
-          <div className="flex size-20 items-center justify-center rounded-2xl bg-yellow-100 dark:bg-yellow-900/30">
-            <svg className="h-10 w-10 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+      <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto px-4 pb-5 pt-5">
+        <div className="mb-6 flex flex-col items-center gap-4 text-center">
+          <div className="flex size-24 items-center justify-center rounded-[28px] bg-yellow-400/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] dark:bg-yellow-500/14 dark:shadow-none">
+            <svg className="h-11 w-11 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
             </svg>
           </div>
+          <div className="space-y-1.5">
+            <h4 className={appSectionLabelClass}>文件夹名称</h4>
+            <p className="break-all text-[18px] font-semibold leading-7 text-gray-800 dark:text-gray-100">
+              {folder.name}
+            </p>
+          </div>
         </div>
 
-        {/* Folder name */}
-        <div>
-          <h4 className={appSectionLabelClass}>文件夹名称</h4>
-          <p className={`${appPanelValueClass} break-all`}>{folder.name}</p>
-        </div>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <h4 className={appSectionLabelClass}>文件数量</h4>
+            <p className={appPanelValueClass}>{folder.fileCount} 个文件</p>
+          </div>
 
-        {/* File count */}
-        <div>
-          <h4 className={appSectionLabelClass}>文件数量</h4>
-          <p className={appPanelValueClass}>{folder.fileCount} 个文件</p>
-        </div>
-
-        {/* Path */}
-        <div>
-          <h4 className={appSectionLabelClass}>路径</h4>
-          <p className={`${appPanelMetaClass} break-all`}>{folder.path}</p>
+          <div className="space-y-1.5">
+            <h4 className={appSectionLabelClass}>路径</h4>
+            <p className="break-all text-[12px] leading-5 text-gray-500 dark:text-gray-400">
+              {folder.path}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -547,14 +548,14 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
       </div>
 
       {showExportSuccess && (
-        <div className="bg-green-100 px-3 py-2 text-[12px] text-green-700 dark:bg-green-900/30 dark:text-green-300">
+        <div className="bg-emerald-500/10 px-3.5 py-2 text-[12px] text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300">
           导出成功
         </div>
       )}
 
-      <div className="flex flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3.5">
+      <div className="flex flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 pb-5 pt-4">
         {/* Preview image */}
-        <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-dark-bg">
+        <div className="relative aspect-video overflow-hidden rounded-[18px] bg-gray-100 shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:bg-dark-bg dark:shadow-[0_16px_30px_rgba(0,0,0,0.24)]">
           {previewType === "image" ? (
             <div
               onDoubleClick={() => void handleOpenOriginalImage()}
@@ -722,7 +723,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
         </div>
 
         {/* Rating and File info list */}
-        <div className="flex flex-col gap-2 rounded-xl bg-gray-50/80 p-3 dark:bg-dark-bg/40">
+        <div className="flex flex-col gap-1.5 pt-1">
           <span className={appSectionHeadingClass}>素材信息</span>
 
           {/* Rating */}

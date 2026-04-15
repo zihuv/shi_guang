@@ -418,6 +418,10 @@ export default function FileGrid() {
   };
 
   const handleFileClick = (file: FileItem, event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
     scrollParentRef.current?.focus({ preventScroll: true });
 
     if (event.ctrlKey || event.metaKey) {

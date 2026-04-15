@@ -210,9 +210,12 @@ async function decodePreviewImageSrc(src: string): Promise<{ width: number; heig
     }
 
     if (typeof image.decode === "function") {
-      void image.decode().then(finish).catch(() => {
-        // Fallback to onload/onerror for browsers that reject decode() before load settles.
-      });
+      void image
+        .decode()
+        .then(finish)
+        .catch(() => {
+          // Fallback to onload/onerror for browsers that reject decode() before load settles.
+        });
     }
   });
 
