@@ -19,7 +19,13 @@
         { "path": "$HOME/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$DOCUMENT/**" },
-        { "path": "$DESKTOP/**" }
+        { "path": "$DESKTOP/**" },
+        { "path": "$PICTURE/**/.shiguang/thumbnails/**/*" },
+        { "path": "$APPDATA/**/.shiguang/thumbnails/**/*" },
+        { "path": "$HOME/**/.shiguang/thumbnails/**/*" },
+        { "path": "$DOWNLOAD/**/.shiguang/thumbnails/**/*" },
+        { "path": "$DOCUMENT/**/.shiguang/thumbnails/**/*" },
+        { "path": "$DESKTOP/**/.shiguang/thumbnails/**/*" }
       ]
     }
   ]

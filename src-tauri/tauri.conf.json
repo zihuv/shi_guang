@@ -33,7 +33,13 @@
           "$HOME/**",
           "$DOWNLOAD/**",
           "$DOCUMENT/**",
-          "$DESKTOP/**"
+          "$DESKTOP/**",
+          "$PICTURE/**/.shiguang/thumbnails/**/*",
+          "$APPDATA/**/.shiguang/thumbnails/**/*",
+          "$HOME/**/.shiguang/thumbnails/**/*",
+          "$DOWNLOAD/**/.shiguang/thumbnails/**/*",
+          "$DOCUMENT/**/.shiguang/thumbnails/**/*",
+          "$DESKTOP/**/.shiguang/thumbnails/**/*"
         ]
       }
     }
