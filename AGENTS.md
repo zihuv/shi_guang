@@ -32,6 +32,10 @@ pnpm tauri dev
 
 Keep the dev server on `127.0.0.1`; do not switch it back to `localhost`.
 
+Before launching Tauri MCP on Windows, check for existing listeners on `127.0.0.1:1420` and `:9223`. The main causes of slow or failed startup here were duplicate Vite launches (`1420` already in use) and stale `shiguang.exe` / `cargo` processes locking `src-tauri/target/debug/shiguang.exe` (`os error 5`).
+
+If `1420` is already owned by this repo's Vite process, reuse it and do not start `pnpm dev` again. If `9223` is already listening, try connecting MCP first before restarting the app. If a restart is required, stop stale repo-scoped `shiguang.exe`, `cargo`, `rustc`, and Vite processes first, then start frontend once and start Tauri without spawning a second dev server.
+
 ## Coding Style & Naming Conventions
 Follow the existing code style in each layer: TypeScript files generally use 2-space indentation and double quotes in newer files; Rust uses `rustfmt` defaults with 4 spaces. Keep React components and Zustand stores in PascalCase file names such as `FileGrid.tsx` and `fileStore.ts`. Prefer descriptive function names and keep Tauri command logic in `src-tauri/src/commands.rs` or adjacent backend modules. Use Tailwind utility classes in JSX and keep shared class composition in helpers like `src/lib/utils.ts`. If a file grows too large, refactor it into smaller modules where appropriate.
 
