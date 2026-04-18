@@ -3,6 +3,7 @@ import type {
   VisualIndexStatus,
   VisualModelValidationResult,
 } from "@/services/tauri/files";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
   MAX_AI_BATCH_ANALYZE_CONCURRENCY,
@@ -11,7 +12,9 @@ import {
   type AiConfigTarget,
   type AiServiceConfig,
   type VisualSearchConfig,
+  type VisualSearchProviderPolicy,
   type VisualSearchRuntimeConfig,
+  type VisualSearchRuntimeDevice,
 } from "@/stores/settingsStore";
 import {
   TERMINAL_VISUAL_INDEX_TASK_STATUSES,
@@ -33,6 +36,25 @@ const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
 
 const RUNTIME_DEFAULT_SELECT_VALUE = "__default__";
 const FGCLIP_MAX_PATCH_OPTIONS = [128, 256, 576, 784, 1024] as const;
+const DEFAULT_CUSTOM_INTRA_THREADS = 4;
+const THREAD_MODE_AUTO = "auto";
+const THREAD_MODE_CUSTOM = "custom";
+const VISUAL_SEARCH_DEVICE_OPTIONS: Array<{
+  value: VisualSearchRuntimeDevice;
+  label: string;
+}> = [
+  { value: "auto", label: "自动" },
+  { value: "gpu", label: "GPU" },
+  { value: "cpu", label: "CPU" },
+];
+const VISUAL_SEARCH_PROVIDER_POLICY_OPTIONS: Array<{
+  value: VisualSearchProviderPolicy;
+  label: string;
+}> = [
+  { value: "interactive", label: "Interactive" },
+  { value: "service", label: "Service" },
+  { value: "auto", label: "Auto" },
+];
 
 function parseOptionalPositiveInteger(value: string): number | null {
   const trimmed = value.trim();
@@ -41,6 +63,69 @@ function parseOptionalPositiveInteger(value: string): number | null {
   }
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatRequestedDeviceLabel(value: VisualIndexStatus["requestedDevice"]) {
+  switch (value) {
+    case "gpu":
+      return "GPU";
+    case "cpu":
+      return "CPU";
+    case "auto":
+      return "自动";
+    default:
+      return "未设置";
+  }
+}
+
+function formatProviderPolicyLabel(value: VisualIndexStatus["providerPolicy"]) {
+  switch (value) {
+    case "interactive":
+      return "Interactive";
+    case "service":
+      return "Service";
+    case "auto":
+      return "Auto";
+    default:
+      return "未设置";
+  }
+}
+
+function formatRuntimeModeLabel(value: VisualIndexStatus["runtimeMode"], runtimeLoaded: boolean) {
+  switch (value) {
+    case "gpu_enabled":
+      return "GPU 已启用";
+    case "cpu_only":
+      return "仅 CPU";
+    case "mixed":
+      return "混合";
+    case "unknown":
+      return "未知";
+    case "uninitialized":
+      return "未初始化";
+    default:
+      return runtimeLoaded ? "未知" : "未初始化";
+  }
+}
+
+function formatEffectiveProviderLabel(
+  value: VisualIndexStatus["effectiveProvider"],
+  runtimeLoaded: boolean,
+) {
+  switch (value) {
+    case "tensorrt":
+      return "TensorRT";
+    case "cuda":
+      return "CUDA";
+    case "direct_ml":
+      return "DirectML";
+    case "core_ml":
+      return "CoreML";
+    case "cpu":
+      return "CPU";
+    default:
+      return runtimeLoaded ? "未确定" : "未初始化";
+  }
 }
 
 interface AiSettingsSectionProps {
@@ -244,6 +329,18 @@ export function AiSettingsSection({
   onStartVisualIndexTask,
   onCancelVisualIndexTask,
 }: AiSettingsSectionProps) {
+  const [customIntraThreadsInput, setCustomIntraThreadsInput] = useState(() =>
+    typeof visualSearch.runtime.intraThreads === "number"
+      ? String(visualSearch.runtime.intraThreads)
+      : String(DEFAULT_CUSTOM_INTRA_THREADS),
+  );
+
+  useEffect(() => {
+    if (typeof visualSearch.runtime.intraThreads === "number") {
+      setCustomIntraThreadsInput(String(visualSearch.runtime.intraThreads));
+    }
+  }, [visualSearch.runtime.intraThreads]);
+
   const metadataConfig = aiConfig.metadata;
   const metadataDraftExists =
     Boolean(metadataConfig.baseUrl.trim()) ||
@@ -299,6 +396,48 @@ export function AiSettingsSection({
       : visualIndexTask?.processUnindexedOnly
         ? "正在处理未索引图片"
         : "正在重建视觉索引";
+  const intraThreadsMode =
+    typeof visualSearch.runtime.intraThreads === "number" ? THREAD_MODE_CUSTOM : THREAD_MODE_AUTO;
+
+  const handleIntraThreadsModeChange = (value: string) => {
+    if (value === THREAD_MODE_AUTO) {
+      onSetVisualSearchRuntimeField("intraThreads", "auto");
+      return;
+    }
+
+    const fallback =
+      parseOptionalPositiveInteger(customIntraThreadsInput) ??
+      (typeof visualSearch.runtime.intraThreads === "number"
+        ? visualSearch.runtime.intraThreads
+        : DEFAULT_CUSTOM_INTRA_THREADS);
+
+    setCustomIntraThreadsInput(String(fallback));
+    onSetVisualSearchRuntimeField("intraThreads", fallback);
+  };
+
+  const handleCustomIntraThreadsChange = (value: string) => {
+    setCustomIntraThreadsInput(value);
+
+    const parsed = parseOptionalPositiveInteger(value);
+    if (parsed != null) {
+      onSetVisualSearchRuntimeField("intraThreads", parsed);
+    }
+  };
+
+  const handleCustomIntraThreadsBlur = () => {
+    if (intraThreadsMode !== THREAD_MODE_CUSTOM) {
+      return;
+    }
+
+    const nextValue =
+      parseOptionalPositiveInteger(customIntraThreadsInput) ??
+      (typeof visualSearch.runtime.intraThreads === "number"
+        ? visualSearch.runtime.intraThreads
+        : DEFAULT_CUSTOM_INTRA_THREADS);
+
+    setCustomIntraThreadsInput(String(nextValue));
+    onSetVisualSearchRuntimeField("intraThreads", nextValue);
+  };
 
   return (
     <div className="space-y-6">
@@ -383,7 +522,7 @@ export function AiSettingsSection({
               本地自然语言搜索
             </h3>
             <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              使用本地多模态 embedding 模型 bundle，实现自然语言搜索。
+              使用本地多模态 embedding 模型目录，实现自然语言搜索。
             </p>
           </div>
           <StatusBadge label={visualSearchStatusLabel} tone={visualSearchStatusTone} />
@@ -415,7 +554,7 @@ export function AiSettingsSection({
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                    模型 Bundle 目录
+                    模型目录
                   </p>
                 </div>
                 <StatusBadge
@@ -431,7 +570,7 @@ export function AiSettingsSection({
                     value={visualSearch.modelPath}
                     onChange={(event) => onSetVisualSearchField("modelPath", event.target.value)}
                     onBlur={() => onValidateModelDir()}
-                    placeholder="选择包含 manifest.json 的模型 bundle 目录"
+                    placeholder="选择包含 model_config.json 的模型目录"
                   />
                   <div className="flex gap-2">
                     <Button
@@ -453,6 +592,7 @@ export function AiSettingsSection({
               </div>
 
               <div className="mt-3 text-xs leading-6 text-gray-500 dark:text-gray-400">
+                <p>目录内应包含 `model_config.json` 以及模型引用的 ONNX、tokenizer 等文件。</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <a
                     href="https://github.com/zihuv/vl-embedding-test/releases"
@@ -479,28 +619,111 @@ export function AiSettingsSection({
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <label
+                    htmlFor="visual-search-device"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200"
+                  >
+                    Device
+                  </label>
+                  <Select
+                    value={visualSearch.runtime.device}
+                    displayValue={
+                      VISUAL_SEARCH_DEVICE_OPTIONS.find(
+                        (option) => option.value === visualSearch.runtime.device,
+                      )?.label ?? "自动"
+                    }
+                    onValueChange={(value) =>
+                      onSetVisualSearchRuntimeField("device", value as VisualSearchRuntimeDevice)
+                    }
+                    className="w-full"
+                    triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
+                  >
+                    <SelectContent>
+                      {VISUAL_SEARCH_DEVICE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    自动会优先尝试 GPU 加速，不可用时回落到 CPU；GPU 会强制启用加速提供者，CPU
+                    则固定走纯 CPU。
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="visual-search-intra-threads"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200"
+                  >
+                    Provider Policy
+                  </label>
+                  <Select
+                    value={visualSearch.runtime.providerPolicy}
+                    displayValue={
+                      VISUAL_SEARCH_PROVIDER_POLICY_OPTIONS.find(
+                        (option) => option.value === visualSearch.runtime.providerPolicy,
+                      )?.label ?? "Interactive"
+                    }
+                    onValueChange={(value) =>
+                      onSetVisualSearchRuntimeField(
+                        "providerPolicy",
+                        value as VisualSearchProviderPolicy,
+                      )
+                    }
+                    className="w-full"
+                    triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
+                  >
+                    <SelectContent>
+                      {VISUAL_SEARCH_PROVIDER_POLICY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    `Interactive` 优先兼顾冷启动和兼容性，适合桌面交互；`Service`
+                    偏向长时间运行下的吞吐；`Auto` 则回到 SDK 默认顺序。
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label
                     htmlFor="visual-search-intra-threads"
                     className="text-sm font-medium text-gray-700 dark:text-gray-200"
                   >
                     Intra Threads
                   </label>
-                  <Input
-                    id="visual-search-intra-threads"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={visualSearch.runtime.intraThreads ?? ""}
-                    onChange={(event) =>
-                      onSetVisualSearchRuntimeField(
-                        "intraThreads",
-                        parseOptionalPositiveInteger(event.target.value),
-                      )
-                    }
-                    placeholder="默认"
-                  />
+                  <div className="grid gap-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+                    <Select
+                      value={intraThreadsMode}
+                      displayValue={intraThreadsMode === THREAD_MODE_AUTO ? "自动" : "自定义"}
+                      onValueChange={handleIntraThreadsModeChange}
+                      className="w-full"
+                      triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
+                    >
+                      <SelectContent>
+                        <SelectItem value={THREAD_MODE_AUTO}>自动</SelectItem>
+                        <SelectItem value={THREAD_MODE_CUSTOM}>自定义</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      id="visual-search-intra-threads"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={customIntraThreadsInput}
+                      onChange={(event) => handleCustomIntraThreadsChange(event.target.value)}
+                      onBlur={handleCustomIntraThreadsBlur}
+                      disabled={intraThreadsMode !== THREAD_MODE_CUSTOM}
+                      placeholder={String(DEFAULT_CUSTOM_INTRA_THREADS)}
+                    />
+                  </div>
                   <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    单次处理一张图片时，底层并行计算所使用的线程数量。注意：这不是任务队列中同时处理的图片数。适当增加该值可加速单张图片的处理，但也会占用更多
-                    CPU 资源。
+                    自动会使用 SDK
+                    默认线程数，通常等于当前机器的物理核心数。自定义用于控制单张图片编码时底层并行计算占用的
+                    CPU 线程数。
                   </p>
                 </div>
 
@@ -539,7 +762,8 @@ export function AiSettingsSection({
                   </Select>
                   <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
                     值越高，处理的 Patch
-                    数量越多，匹配文字描述的精度通常也越高，但计算开销会相应增大。请根据性能与精度的需求调整。修改后需要重新建立视觉索引才能生效。
+                    数量越多，匹配文字描述的精度通常也越高，但计算开销会相应增大。FG-CLIP2
+                    一般推荐从 `576` 开始平衡速度和效果。修改后需要重新建立视觉索引才能生效。
                   </p>
                 </div>
               </div>
@@ -577,7 +801,7 @@ export function AiSettingsSection({
                     : "text-gray-600 dark:text-gray-300",
                 )}
               >
-                {visualModelValidation?.message ?? "尚未校验模型 bundle 目录"}
+                {visualModelValidation?.message ?? "尚未校验模型目录"}
               </p>
               {visualModelValidation?.valid ? (
                 <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
@@ -626,7 +850,29 @@ export function AiSettingsSection({
                   待处理 {pendingCount} · 失败 {failedCount} · 已过期 {outdatedCount}
                 </p>
                 <p>当前未就绪 {unindexedCount}</p>
+                <p>
+                  请求设备 {formatRequestedDeviceLabel(visualIndexStatus?.requestedDevice ?? null)}
+                  {" · "}策略{" "}
+                  {formatProviderPolicyLabel(visualIndexStatus?.providerPolicy ?? null)}
+                </p>
+                <p>
+                  当前 Provider{" "}
+                  {formatEffectiveProviderLabel(
+                    visualIndexStatus?.effectiveProvider ?? null,
+                    visualIndexStatus?.runtimeLoaded ?? false,
+                  )}
+                  {" · "}模式{" "}
+                  {formatRuntimeModeLabel(
+                    visualIndexStatus?.runtimeMode ?? null,
+                    visualIndexStatus?.runtimeLoaded ?? false,
+                  )}
+                </p>
               </div>
+              {visualIndexStatus?.runtimeReason ? (
+                <p className="mt-2 text-xs leading-6 text-amber-700 dark:text-amber-300">
+                  运行时提示：{visualIndexStatus.runtimeReason}
+                </p>
+              ) : null}
 
               <div className="mt-4 rounded-2xl border border-gray-200 bg-white/70 p-4 dark:border-dark-border dark:bg-dark-surface/30">
                 <div className="flex items-start justify-between gap-4">

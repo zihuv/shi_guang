@@ -1001,3 +1001,51 @@ Interpretation:
 - this confirms the remaining retained memory was still sensitive to how many adaptive cards stayed mounted ahead of the viewport
 - shrinking adaptive-only prefetch windows reduced WebView2 native image pressure without reintroducing `blob:` or `data:` display paths
 - live screenshot validation showed thumbnails still rendered correctly after the tighter adaptive prefetch settings
+
+## Visual Index Rebuild Freeze Note On 2026-04-18
+
+This round focused on the user-reported freeze when clicking the full-image CLIP rebuild action in settings.
+
+### Reproduction path
+
+1. open `设置`
+2. switch to `AI`
+3. turn off `处理未索引图片`
+4. click `重建视觉索引`
+5. observe that the whole app appears to hang before meaningful progress is shown
+
+### Measured numbers
+
+- no new live memory or CPU samples were captured in this round
+- this note is based on code-path inspection plus the user-reported symptom
+
+### Owner layer
+
+- primary owner: Rust/model-side visual-index startup path
+- secondary owner: Rust/model-side background image-encoding thread usage
+
+### Proven findings
+
+- `start_visual_index_task` previously loaded the entire visual-index candidate list before returning the initial Tauri invoke response
+- that startup path eagerly materialized a full `Vec<VisualIndexCandidate>` for the entire library, so the UI could look frozen before the background worker even started
+- the old candidate shape carried much more data than the indexing loop actually used; full rebuild only needs `id`, `path`, `name`, `ext`, source size, and source mtime
+- background visual indexing on `intraThreads = auto` previously delegated to the SDK default thread count, which is aggressive enough to make the desktop UI feel unresponsive on some machines during full-library rebuilds
+
+### Implemented change
+
+- moved heavy candidate loading fully into the spawned visual-index worker so the button click returns quickly with a queued task
+- task startup now uses a cheap count-based preflight for `total` instead of building the full candidate list on the invoke path
+- slimmed visual-index candidates so rebuild no longer fetches `FileWithTags` plus tags for every image
+- background visual indexing now applies a conservative default `intraThreads` cap only when the user did not set a custom value, leaving explicit overrides unchanged
+- visual-index image data no longer falls back through the frontend for ordinary formats; only `avif` keeps the browser-decode exception path, while other formats stay fully in the backend task flow
+
+### What is still inferred
+
+- the exact reduction in click-to-progress latency on the affected machine
+- the exact CPU and private-memory improvement during a full-library rebuild
+
+### Next actions
+
+1. run a live Tauri verification on the affected library and record click-to-progress latency
+2. capture process CPU and private memory during a full rebuild with `intraThreads = auto` versus an explicit custom value
+3. if rebuild still feels sticky on large libraries, move from full candidate materialization to paged or streaming candidate fetch

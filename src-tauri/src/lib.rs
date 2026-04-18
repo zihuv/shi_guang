@@ -133,6 +133,8 @@ pub fn run() {
                 .app_data_dir()
                 .expect("Failed to get app data dir");
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
+            #[cfg(windows)]
+            ml::preload_windows_directml(&app.handle());
             logging::cleanup_expired_logs(app);
             logging::start_retention_task(app);
 
@@ -215,9 +217,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::ai::analyze_file_metadata,
             commands::ai::rebuild_visual_index,
-            commands::ai::reindex_file_visual_embedding,
             commands::ai::get_visual_index_status,
-            commands::ai::get_visual_index_retry_candidates,
             commands::ai::complete_visual_index_browser_decode_request,
             commands::ai::get_recommended_visual_model_path,
             commands::ai::validate_visual_model_path,

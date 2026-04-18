@@ -1,9 +1,11 @@
 pub mod model_manager;
 
 use self::model_manager::{ResolvedModelPaths, VisualSearchConfig};
-use omni_search::OmniSearch;
+use omni_search::{OmniSearch, RuntimeConfig, RuntimeSnapshot};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+#[cfg(windows)]
+use tauri::Manager;
 
 #[derive(Default)]
 pub struct VisualModelRuntime {
@@ -20,17 +22,7 @@ impl VisualModelRuntime {
         visual_search_config: &VisualSearchConfig,
     ) -> Result<&OmniSearch, String> {
         let runtime_config = visual_search_config.runtime.resolve_runtime_config()?;
-        let model_key = format!(
-            "{}::{}::{}::intra={}::inter={:?}::fgclip_max_patches={:?}::session_policy={:?}::graph_optimization_level={:?}",
-            resolved_model.root.display(),
-            resolved_model.manifest.model_id,
-            resolved_model.manifest.version,
-            runtime_config.intra_threads,
-            runtime_config.inter_threads,
-            runtime_config.fgclip_max_patches,
-            runtime_config.session_policy,
-            runtime_config.graph_optimization_level,
-        );
+        let model_key = build_model_key(resolved_model, &runtime_config);
         let needs_reload = self
             .loaded_key
             .as_ref()
@@ -51,6 +43,21 @@ impl VisualModelRuntime {
         self.model
             .as_ref()
             .ok_or_else(|| "无法初始化本地视觉搜索模型".to_string())
+    }
+
+    pub fn runtime_snapshot_if_loaded(
+        &self,
+        resolved_model: &ResolvedModelPaths,
+        visual_search_config: &VisualSearchConfig,
+    ) -> Result<Option<RuntimeSnapshot>, String> {
+        let runtime_config = visual_search_config.runtime.resolve_runtime_config()?;
+        let model_key = build_model_key(resolved_model, &runtime_config);
+
+        if self.loaded_key.as_deref() != Some(model_key.as_str()) {
+            return Ok(None);
+        }
+
+        Ok(self.model.as_ref().map(OmniSearch::runtime_snapshot))
     }
 
     pub fn encode_text(
@@ -125,6 +132,61 @@ impl VisualModelRuntime {
         self.model = None;
         self.last_used_at = None;
     }
+}
+
+fn build_model_key(resolved_model: &ResolvedModelPaths, runtime_config: &RuntimeConfig) -> String {
+    format!(
+        "{}::{}::{}::device={}::provider_policy={}::intra={}::inter={:?}::fgclip_max_patches={:?}::session_policy={:?}::graph_optimization_level={:?}",
+        resolved_model.root.display(),
+        resolved_model.manifest.model_id,
+        resolved_model.manifest.version,
+        runtime_config.device,
+        runtime_config.provider_policy,
+        runtime_config.intra_threads,
+        runtime_config.inter_threads,
+        runtime_config.fgclip_max_patches,
+        runtime_config.session_policy,
+        runtime_config.graph_optimization_level,
+    )
+}
+
+#[cfg(windows)]
+pub fn preload_windows_directml(app_handle: &tauri::AppHandle) {
+    let mut candidates = Vec::new();
+
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        candidates.push(resource_dir.join("DirectML.dll"));
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            candidates.push(parent.join("DirectML.dll"));
+        }
+    }
+
+    candidates.dedup();
+
+    for candidate in candidates {
+        if !candidate.is_file() {
+            continue;
+        }
+
+        match ort::util::preload_dylib(&candidate) {
+            Ok(()) => {
+                log::info!("Preloaded DirectML runtime from {}", candidate.display());
+                return;
+            }
+            Err(error) => {
+                log::warn!(
+                    "Failed to preload bundled DirectML runtime {}: {}",
+                    candidate.display(),
+                    error
+                );
+            }
+        }
+    }
+
+    log::warn!("No bundled DirectML.dll found; falling back to default Windows DLL resolution");
 }
 
 pub struct VisualModelTaskGuard<'a> {

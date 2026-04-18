@@ -1,5 +1,5 @@
 use crate::db::Database;
-use omni_search::{probe_local_model_dir, RuntimeConfig};
+use omni_search::{probe_local_model_dir, ProviderPolicy, RuntimeConfig, RuntimeDevice};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -8,19 +8,82 @@ use std::path::{Path, PathBuf};
 pub const VISUAL_SEARCH_SETTING_KEY: &str = "visualSearch";
 pub const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY: &str = "aiAutoAnalyzeOnImport";
 
-const DEBUG_VISUAL_MODEL_RELATIVE_DIRS: [&str; 4] = [
-    ".debug-models/fgclip2_bundle",
-    ".debug-models/chinese_clip_bundle",
-    "omni_search/models/fgclip2_bundle",
-    "omni_search/models/chinese_clip_bundle",
-];
+const VISUAL_MODEL_SEARCH_ROOTS: [&str; 2] = [".debug-models", "omni_search/models"];
 const VISUAL_MODEL_DIR_ENV: &str = "SHIGUANG_VISUAL_MODEL_DIR";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualSearchRuntimeDevice {
+    #[default]
+    #[serde(alias = "Auto")]
+    Auto,
+    #[serde(alias = "Cpu")]
+    Cpu,
+    #[serde(alias = "Gpu")]
+    Gpu,
+}
+
+impl From<VisualSearchRuntimeDevice> for RuntimeDevice {
+    fn from(value: VisualSearchRuntimeDevice) -> Self {
+        match value {
+            VisualSearchRuntimeDevice::Auto => RuntimeDevice::Auto,
+            VisualSearchRuntimeDevice::Cpu => RuntimeDevice::Cpu,
+            VisualSearchRuntimeDevice::Gpu => RuntimeDevice::Gpu,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualSearchProviderPolicy {
+    #[serde(alias = "Auto")]
+    Auto,
+    #[default]
+    #[serde(alias = "Interactive")]
+    Interactive,
+    #[serde(alias = "Service")]
+    Service,
+}
+
+impl From<VisualSearchProviderPolicy> for ProviderPolicy {
+    fn from(value: VisualSearchProviderPolicy) -> Self {
+        match value {
+            VisualSearchProviderPolicy::Auto => ProviderPolicy::Auto,
+            VisualSearchProviderPolicy::Interactive => ProviderPolicy::Interactive,
+            VisualSearchProviderPolicy::Service => ProviderPolicy::Service,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualSearchThreadPreset {
+    #[serde(alias = "Auto")]
+    Auto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum VisualSearchThreadConfig {
+    Preset(VisualSearchThreadPreset),
+    Fixed(usize),
+}
+
+impl Default for VisualSearchThreadConfig {
+    fn default() -> Self {
+        Self::Preset(VisualSearchThreadPreset::Auto)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualSearchRuntimeConfig {
     #[serde(default)]
-    pub intra_threads: Option<usize>,
+    pub device: VisualSearchRuntimeDevice,
+    #[serde(default)]
+    pub provider_policy: VisualSearchProviderPolicy,
+    #[serde(default)]
+    pub intra_threads: Option<VisualSearchThreadConfig>,
     #[serde(default)]
     pub fgclip_max_patches: Option<usize>,
 }
@@ -28,7 +91,9 @@ pub struct VisualSearchRuntimeConfig {
 impl Default for VisualSearchRuntimeConfig {
     fn default() -> Self {
         Self {
-            intra_threads: None,
+            device: VisualSearchRuntimeDevice::Auto,
+            provider_policy: VisualSearchProviderPolicy::Interactive,
+            intra_threads: Some(VisualSearchThreadConfig::default()),
             fgclip_max_patches: None,
         }
     }
@@ -37,12 +102,16 @@ impl Default for VisualSearchRuntimeConfig {
 impl VisualSearchRuntimeConfig {
     pub fn resolve_runtime_config(&self) -> Result<RuntimeConfig, String> {
         let mut builder = RuntimeConfig::builder();
-        if let Some(intra_threads) = self.intra_threads {
-            builder.intra_threads(intra_threads);
+        builder.device(self.device.into());
+        builder.provider_policy(self.provider_policy.into());
+
+        if let Some(VisualSearchThreadConfig::Fixed(intra_threads)) = self.intra_threads.as_ref() {
+            builder.intra_threads(*intra_threads);
         }
         if let Some(fgclip_max_patches) = self.fgclip_max_patches {
             builder.fgclip_max_patches(fgclip_max_patches);
         }
+
         builder.build().map_err(|error| error.to_string())
     }
 }
@@ -112,7 +181,16 @@ pub fn load_visual_search_config(db: &Database) -> Result<VisualSearchConfig, St
         None => return Ok(VisualSearchConfig::default()),
     };
 
-    serde_json::from_str(&raw_value).map_err(|e| format!("解析本地视觉搜索配置失败: {}", e))
+    let mut config: VisualSearchConfig =
+        serde_json::from_str(&raw_value).map_err(|e| format!("解析本地视觉搜索配置失败: {}", e))?;
+
+    if config.model_path.trim().is_empty() {
+        if let Some(recommended_path) = find_recommended_visual_model_path() {
+            config.model_path = recommended_path;
+        }
+    }
+
+    Ok(config)
 }
 
 pub fn load_auto_analyze_on_import(db: &Database) -> Result<bool, String> {
@@ -150,15 +228,14 @@ pub fn find_recommended_visual_model_path() -> Option<String> {
             continue;
         }
 
-        for relative_dir in DEBUG_VISUAL_MODEL_RELATIVE_DIRS {
-            let candidate = root.join(relative_dir);
-            if !candidate.is_dir() {
+        for relative_dir in VISUAL_MODEL_SEARCH_ROOTS {
+            let candidate_root = root.join(relative_dir);
+            if !candidate_root.is_dir() {
                 continue;
             }
 
-            let candidate_string = candidate.to_string_lossy().to_string();
-            if resolve_model_paths(&candidate_string).is_ok() {
-                return Some(canonical_string(&candidate));
+            if let Some(path) = find_first_valid_model_dir(&candidate_root) {
+                return Some(path);
             }
         }
     }
@@ -171,7 +248,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
     if normalized_model_path.is_empty() {
         return VisualModelValidationResult {
             valid: false,
-            message: "请先选择视觉搜索模型 bundle 目录".to_string(),
+            message: "请先选择视觉搜索模型目录".to_string(),
             normalized_model_path,
             model_id: None,
             version: None,
@@ -187,7 +264,7 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
         valid: probe.ok,
         message: probe
             .error
-            .unwrap_or_else(|| "视觉搜索模型 bundle 目录可用".to_string()),
+            .unwrap_or_else(|| "视觉搜索模型目录可用".to_string()),
         normalized_model_path: resolved_path.to_string_lossy().to_string(),
         model_id: probe.model_id,
         version: probe.model_revision,
@@ -204,32 +281,32 @@ pub fn validate_visual_model_path(model_path: &str) -> VisualModelValidationResu
 pub fn resolve_model_paths(model_path: &str) -> Result<ResolvedModelPaths, String> {
     let trimmed = model_path.trim();
     if trimmed.is_empty() {
-        return Err("请先选择视觉搜索模型 bundle 目录".to_string());
+        return Err("请先选择视觉搜索模型目录".to_string());
     }
 
     let probe = probe_local_model_dir(Path::new(trimmed));
     if !probe.ok {
         return Err(probe
             .error
-            .unwrap_or_else(|| "视觉搜索模型 bundle 目录不可用".to_string()));
+            .unwrap_or_else(|| "视觉搜索模型目录不可用".to_string()));
     }
 
     let model_id = probe
         .model_id
-        .ok_or_else(|| "模型 bundle 缺少 model_id".to_string())?;
+        .ok_or_else(|| "模型目录缺少 model_id".to_string())?;
     let version = probe
         .model_revision
-        .ok_or_else(|| "模型 bundle 缺少 model_revision".to_string())?;
+        .ok_or_else(|| "模型目录缺少 model_revision".to_string())?;
     let embedding_dim = probe
         .embedding_dim
-        .ok_or_else(|| "模型 bundle 缺少 embedding_dim".to_string())?;
+        .ok_or_else(|| "模型目录缺少 embedding_dim".to_string())?;
     let context_length = probe
         .context_length
-        .ok_or_else(|| "模型 bundle 缺少 context_length".to_string())?;
+        .ok_or_else(|| "模型目录缺少 context_length".to_string())?;
     let model_type = probe
         .family
         .map(|family| family.to_string())
-        .ok_or_else(|| "模型 bundle 缺少 family".to_string())?;
+        .ok_or_else(|| "模型目录缺少 family".to_string())?;
 
     Ok(ResolvedModelPaths {
         root: canonical_path(&probe.normalized_path),
@@ -249,12 +326,51 @@ fn canonical_string(path: &Path) -> String {
 }
 
 fn canonical_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    normalize_path_for_display(fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+}
+
+#[cfg(windows)]
+fn normalize_path_for_display(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+    if let Some(stripped) = value.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{stripped}"));
+    }
+    if let Some(stripped) = value.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+    path
+}
+
+#[cfg(not(windows))]
+fn normalize_path_for_display(path: PathBuf) -> PathBuf {
+    path
+}
+
+fn find_first_valid_model_dir(search_root: &Path) -> Option<String> {
+    if resolve_model_paths(search_root.to_string_lossy().as_ref()).is_ok() {
+        return Some(canonical_string(search_root));
+    }
+
+    let mut children = fs::read_dir(search_root)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    children.sort();
+
+    children.into_iter().find_map(|candidate| {
+        if resolve_model_paths(candidate.to_string_lossy().as_ref()).is_ok() {
+            Some(canonical_string(&candidate))
+        } else {
+            None
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omni_search::{ProviderPolicy, RuntimeDevice};
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -267,17 +383,16 @@ mod tests {
         ))
     }
 
-    fn write_minimal_omni_fgclip_bundle(root: &Path) {
-        std::fs::create_dir_all(root.join("onnx")).unwrap();
-        std::fs::create_dir_all(root.join("assets")).unwrap();
-        std::fs::write(root.join("onnx/text.onnx"), b"text").unwrap();
-        std::fs::write(root.join("onnx/image.onnx"), b"image").unwrap();
-        std::fs::write(root.join("assets/tokenizer.json"), b"{}").unwrap();
-        std::fs::write(root.join("assets/text_token_embedding.bin"), b"embed").unwrap();
-        std::fs::write(root.join("assets/vision_pos_embedding.bin"), b"pos").unwrap();
+    fn write_minimal_omni_fgclip_model_dir(root: &Path) {
+        std::fs::write(root.join("text.onnx"), b"text").unwrap();
+        std::fs::write(root.join("visual.onnx"), b"image").unwrap();
+        std::fs::write(root.join("tokenizer.json"), b"{}").unwrap();
+        std::fs::write(root.join("text_token_embedding.bin"), b"embed").unwrap();
+        std::fs::write(root.join("vision_pos_embedding.bin"), b"pos").unwrap();
         std::fs::write(
-            root.join("manifest.json"),
+            root.join("model_config.json"),
             r#"{
+                "format": "omni_flat_v1",
                 "schema_version": 1,
                 "family": "fg_clip",
                 "model_id": "fgclip2-base",
@@ -285,25 +400,25 @@ mod tests {
                 "embedding_dim": 768,
                 "normalize_output": true,
                 "text": {
-                  "onnx": "onnx/text.onnx",
+                  "onnx": "text.onnx",
                   "output_name": "text_features",
-                  "tokenizer": "assets/tokenizer.json",
+                  "tokenizer": "tokenizer.json",
                   "context_length": 64,
                   "input": { "kind": "token_embeds" },
                   "token_embedding": {
-                    "file": "assets/text_token_embedding.bin",
+                    "file": "text_token_embedding.bin",
                     "dtype": "f16",
                     "embedding_dim": 768
                   }
                 },
                 "image": {
-                  "onnx": "onnx/image.onnx",
+                  "onnx": "visual.onnx",
                   "output_name": "image_features",
                   "preprocess": {
                     "kind": "fgclip_patch_tokens",
                     "patch_size": 16,
                     "default_max_patches": 1024,
-                    "vision_pos_embedding": "assets/vision_pos_embedding.bin"
+                    "vision_pos_embedding": "vision_pos_embedding.bin"
                   }
                 }
             }"#,
@@ -312,13 +427,16 @@ mod tests {
     }
 
     #[test]
-    fn resolves_omni_bundle_layout() {
-        let root = unique_temp_dir("omni-bundle");
+    fn resolves_omni_model_dir_layout() {
+        let root = unique_temp_dir("omni-model-dir");
         std::fs::create_dir_all(&root).unwrap();
-        write_minimal_omni_fgclip_bundle(&root);
+        write_minimal_omni_fgclip_model_dir(&root);
 
         let resolved = resolve_model_paths(root.to_string_lossy().as_ref()).unwrap();
-        assert_eq!(resolved.root, std::fs::canonicalize(&root).unwrap());
+        assert_eq!(
+            resolved.root,
+            normalize_path_for_display(std::fs::canonicalize(&root).unwrap())
+        );
         assert_eq!(resolved.manifest.model_id, "fgclip2-base");
         assert_eq!(resolved.manifest.version, "2026-04-13");
         assert_eq!(resolved.manifest.model_type, "fgclip");
@@ -334,7 +452,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
 
         let error = resolve_model_paths(root.to_string_lossy().as_ref()).unwrap_err();
-        assert!(error.contains("missing manifest.json"));
+        assert!(error.contains("missing model_config.json"));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -345,62 +463,108 @@ mod tests {
             .resolve_runtime_config()
             .unwrap();
 
-        assert_eq!(runtime, RuntimeConfig::default());
+        let mut expected = RuntimeConfig::default();
+        expected.provider_policy = ProviderPolicy::Interactive;
+
+        assert_eq!(runtime, expected);
     }
 
     #[test]
     fn visual_runtime_config_applies_overrides() {
         let runtime = VisualSearchRuntimeConfig {
-            intra_threads: Some(2),
+            device: VisualSearchRuntimeDevice::Gpu,
+            provider_policy: VisualSearchProviderPolicy::Service,
+            intra_threads: Some(VisualSearchThreadConfig::Fixed(2)),
             fgclip_max_patches: Some(256),
         }
         .resolve_runtime_config()
         .unwrap();
 
+        assert_eq!(runtime.device, RuntimeDevice::Gpu);
+        assert_eq!(runtime.provider_policy, ProviderPolicy::Service);
         assert_eq!(runtime.intra_threads, 2);
         assert_eq!(runtime.fgclip_max_patches, Some(256));
     }
 
     #[test]
-    fn visual_runtime_config_ignores_legacy_override_fields() {
+    fn visual_runtime_config_accepts_explicit_auto_values() {
         let runtime: VisualSearchRuntimeConfig = serde_json::from_str(
             r#"{
-                "intraThreads": 3,
-                "interThreads": 2,
+                "device": "auto",
+                "providerPolicy": "interactive",
+                "intraThreads": "auto",
                 "fgclipMaxPatches": 576,
-                "sessionPolicy": "keep_both_loaded",
-                "graphOptimizationLevel": "all"
+                "sessionPolicy": "keep_both_loaded"
             }"#,
         )
         .unwrap();
 
         let resolved = runtime.resolve_runtime_config().unwrap();
 
-        assert_eq!(resolved.intra_threads, 3);
+        assert_eq!(resolved.device, RuntimeDevice::Auto);
+        assert_eq!(resolved.provider_policy, ProviderPolicy::Interactive);
+        assert_eq!(
+            resolved.intra_threads,
+            RuntimeConfig::default().intra_threads
+        );
         assert_eq!(resolved.fgclip_max_patches, Some(576));
+    }
+
+    #[test]
+    fn visual_runtime_config_treats_null_threads_as_auto() {
+        let runtime: VisualSearchRuntimeConfig = serde_json::from_str(
+            r#"{
+                "device": "cpu",
+                "providerPolicy": "service",
+                "intraThreads": null
+            }"#,
+        )
+        .unwrap();
+
+        let resolved = runtime.resolve_runtime_config().unwrap();
+
+        assert_eq!(resolved.device, RuntimeDevice::Cpu);
+        assert_eq!(resolved.provider_policy, ProviderPolicy::Service);
         assert_eq!(
-            resolved.inter_threads,
-            RuntimeConfig::default().inter_threads
+            resolved.intra_threads,
+            RuntimeConfig::default().intra_threads
         );
+    }
+
+    #[test]
+    fn visual_runtime_config_defaults_provider_policy_to_interactive() {
+        let runtime: VisualSearchRuntimeConfig = serde_json::from_str(r#"{}"#).unwrap();
+
         assert_eq!(
-            resolved.session_policy,
-            RuntimeConfig::default().session_policy
-        );
-        assert_eq!(
-            resolved.graph_optimization_level,
-            RuntimeConfig::default().graph_optimization_level
+            runtime.provider_policy,
+            VisualSearchProviderPolicy::Interactive
         );
     }
 
     #[test]
     fn visual_runtime_config_rejects_invalid_thread_counts() {
         let error = VisualSearchRuntimeConfig {
-            intra_threads: Some(0),
+            intra_threads: Some(VisualSearchThreadConfig::Fixed(0)),
             ..Default::default()
         }
         .resolve_runtime_config()
         .unwrap_err();
 
         assert!(error.contains("runtime.intra_threads must be greater than 0"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strips_windows_verbatim_prefix_from_display_path() {
+        assert_eq!(
+            normalize_path_for_display(PathBuf::from(
+                r"\\?\D:\code\omni_search\models\fgclip2_flat"
+            )),
+            PathBuf::from(r"D:\code\omni_search\models\fgclip2_flat")
+        );
+        assert_eq!(
+            normalize_path_for_display(PathBuf::from(r"\\?\UNC\server\share\models")),
+            PathBuf::from(r"\\server\share\models")
+        );
     }
 }

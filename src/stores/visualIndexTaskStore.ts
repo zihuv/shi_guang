@@ -3,9 +3,7 @@ import { create } from "zustand";
 import { toast } from "sonner";
 import {
   cancelVisualIndexTask as cancelVisualIndexTaskCommand,
-  getVisualIndexRetryCandidates as getVisualIndexRetryCandidatesCommand,
   getVisualIndexTask,
-  reindexFileVisualEmbedding as reindexFileVisualEmbeddingCommand,
   startVisualIndexTask as startVisualIndexTaskCommand,
 } from "@/services/tauri/files";
 import { getErrorMessage } from "@/services/tauri/core";
@@ -14,7 +12,6 @@ import {
   type VisualIndexTaskSnapshot,
 } from "@/stores/fileTypes";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { buildBrowserDecodedImageDataUrl } from "@/utils";
 
 const VISUAL_INDEX_TASK_EVENT = "visual-index-task-updated";
 
@@ -23,32 +20,6 @@ interface VisualIndexTaskStore {
   setVisualIndexTask: (task: VisualIndexTaskSnapshot | null) => void;
   startVisualIndexTask: (processUnindexedOnly: boolean) => Promise<VisualIndexTaskSnapshot | null>;
   cancelVisualIndexTask: () => Promise<void>;
-}
-
-async function retryVisualIndexWithBrowserDecode() {
-  let recovered = 0;
-  const candidates = await getVisualIndexRetryCandidatesCommand();
-
-  for (const candidate of candidates) {
-    try {
-      const isAvif = candidate.ext.toLowerCase() === "avif";
-      const imageDataUrl = await buildBrowserDecodedImageDataUrl(candidate.path, {
-        maxEdge: isAvif ? null : 1280,
-        quality: isAvif ? undefined : 0.9,
-        outputMimeType: isAvif ? "image/png" : "image/jpeg",
-      });
-      await reindexFileVisualEmbeddingCommand(candidate.fileId, imageDataUrl);
-      recovered += 1;
-    } catch (error) {
-      console.warn("Failed to rebuild visual index via browser decode:", {
-        fileId: candidate.fileId,
-        path: candidate.path,
-        error,
-      });
-    }
-  }
-
-  return recovered;
 }
 
 async function waitForVisualIndexTask(
@@ -139,24 +110,14 @@ async function finalizeVisualIndexTask(
   task: VisualIndexTaskSnapshot,
   setVisualIndexTask: (task: VisualIndexTaskSnapshot | null) => void,
 ) {
-  let recoveredByBrowserDecode = 0;
-
-  if (task.failureCount > 0 && task.status === "completed_with_errors") {
-    recoveredByBrowserDecode = await retryVisualIndexWithBrowserDecode();
-  }
-
   await useSettingsStore.getState().refreshVisualSearchStatus();
 
-  const indexedCount = task.indexedCount + recoveredByBrowserDecode;
-  const failedCount = Math.max(0, task.failureCount - recoveredByBrowserDecode);
   const taskLabel = task.processUnindexedOnly ? "未索引图片处理" : "视觉索引";
 
   if (task.status === "completed") {
-    toast.success(`${taskLabel}完成：成功 ${indexedCount} 张`);
-  } else if (task.status === "completed_with_errors" && failedCount === 0) {
-    toast.success(`${taskLabel}完成：成功 ${indexedCount} 张`);
+    toast.success(`${taskLabel}完成：成功 ${task.indexedCount} 张`);
   } else if (task.status === "completed_with_errors") {
-    toast.error(`${taskLabel}完成：成功 ${indexedCount} 张，失败 ${failedCount} 张`);
+    toast.error(`${taskLabel}完成：成功 ${task.indexedCount} 张，失败 ${task.failureCount} 张`);
   } else if (task.status === "cancelled") {
     toast.error(`${taskLabel}已取消：已完成 ${task.processed}/${task.total}`);
   } else if (task.status === "failed") {

@@ -1,15 +1,23 @@
 use super::*;
 use crate::media::VISUAL_SEARCH_SUPPORTED_EXTENSIONS;
 use rayon::prelude::*;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
 const EMBEDDING_FETCH_CHUNK_SIZE: usize = 500;
 
 #[derive(Debug, Clone)]
+pub struct VisualIndexSourceFile {
+    pub id: i64,
+    pub path: String,
+    pub name: String,
+    pub ext: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct VisualIndexCandidate {
-    pub file: FileWithTags,
+    pub file: VisualIndexSourceFile,
     pub source_size: i64,
     pub source_modified_at: String,
 }
@@ -131,33 +139,49 @@ impl Database {
     }
 
     pub fn get_visual_index_candidate(&self, file_id: i64) -> Result<Option<VisualIndexCandidate>> {
-        let file = self.get_file_by_id(file_id)?;
-        let Some(file) = file else {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT id, path, name, ext, size, fs_modified_at
+                 FROM files
+                 WHERE id = ?1
+                   AND deleted_at IS NULL",
+                [file_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((id, path, name, ext, source_size, source_modified_at)) = row else {
             return Ok(None);
         };
-
-        let source_modified_at = self.conn.query_row(
-            "SELECT fs_modified_at FROM files WHERE id = ?1",
-            [file_id],
-            |row| row.get::<_, String>(0),
-        )?;
-
-        if !is_supported_image_ext(&file.ext) {
+        if !is_supported_image_ext(&ext) {
             return Ok(None);
         }
 
         Ok(Some(VisualIndexCandidate {
-            source_size: file.size,
+            source_size,
             source_modified_at,
-            file,
+            file: VisualIndexSourceFile {
+                id,
+                path,
+                name,
+                ext,
+            },
         }))
     }
 
     pub fn get_visual_index_candidates(&self) -> Result<Vec<VisualIndexCandidate>> {
         let ext_list = supported_image_extension_list();
         let sql = format!(
-            "SELECT id, path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
-                    rating, description, source_url, dominant_color, color_distribution, deleted_at, fs_modified_at
+            "SELECT id, path, name, ext, size, fs_modified_at
              FROM files
              WHERE deleted_at IS NULL
                AND LOWER(ext) IN ({ext_list})
@@ -167,64 +191,21 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
             .query_map([], |row| {
-                Ok((
-                    FileRecord {
+                Ok(VisualIndexCandidate {
+                    file: VisualIndexSourceFile {
                         id: row.get(0)?,
                         path: row.get(1)?,
                         name: row.get(2)?,
                         ext: row.get(3)?,
-                        size: row.get(4)?,
-                        width: row.get(5)?,
-                        height: row.get(6)?,
-                        folder_id: row.get(7)?,
-                        created_at: row.get(8)?,
-                        modified_at: row.get(9)?,
-                        imported_at: row.get(10)?,
-                        rating: row.get(11)?,
-                        description: row.get(12)?,
-                        source_url: row.get(13)?,
-                        dominant_color: row.get(14)?,
-                        color_distribution: row.get(15)?,
                     },
-                    row.get::<_, Option<String>>(16)?,
-                    row.get::<_, String>(17)?,
-                ))
+                    source_size: row.get(4)?,
+                    source_modified_at: row.get(5)?,
+                })
             })?
-            .filter_map(|row| row.ok())
+            .flatten()
             .collect::<Vec<_>>();
 
-        let file_ids = rows.iter().map(|(file, _, _)| file.id).collect::<Vec<_>>();
-        let tags_map = self.get_tags_for_files(&file_ids)?;
-
-        Ok(rows
-            .into_iter()
-            .map(
-                |(file, deleted_at, source_modified_at)| VisualIndexCandidate {
-                    source_size: file.size,
-                    source_modified_at,
-                    file: FileWithTags {
-                        id: file.id,
-                        path: file.path,
-                        name: file.name,
-                        ext: file.ext,
-                        size: file.size,
-                        width: file.width,
-                        height: file.height,
-                        folder_id: file.folder_id,
-                        created_at: file.created_at,
-                        modified_at: file.modified_at,
-                        imported_at: file.imported_at,
-                        rating: file.rating,
-                        description: file.description,
-                        source_url: file.source_url,
-                        dominant_color: file.dominant_color,
-                        color_distribution: file.color_distribution,
-                        tags: tags_map.get(&file.id).cloned().unwrap_or_default(),
-                        deleted_at,
-                    },
-                },
-            )
-            .collect())
+        Ok(rows)
     }
 
     pub fn get_unindexed_visual_index_candidates(
@@ -233,8 +214,7 @@ impl Database {
     ) -> Result<Vec<VisualIndexCandidate>> {
         let ext_list = supported_image_extension_list();
         let sql = format!(
-            "SELECT f.id, f.path, f.name, f.ext, f.size, f.width, f.height, f.folder_id, f.created_at, f.modified_at, f.imported_at,
-                    f.rating, f.description, f.source_url, f.dominant_color, f.color_distribution, f.deleted_at, f.fs_modified_at
+            "SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at
              FROM files f
              LEFT JOIN file_visual_embeddings fve
                ON fve.file_id = f.id
@@ -254,64 +234,21 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
             .query_map([model_id], |row| {
-                Ok((
-                    FileRecord {
+                Ok(VisualIndexCandidate {
+                    file: VisualIndexSourceFile {
                         id: row.get(0)?,
                         path: row.get(1)?,
                         name: row.get(2)?,
                         ext: row.get(3)?,
-                        size: row.get(4)?,
-                        width: row.get(5)?,
-                        height: row.get(6)?,
-                        folder_id: row.get(7)?,
-                        created_at: row.get(8)?,
-                        modified_at: row.get(9)?,
-                        imported_at: row.get(10)?,
-                        rating: row.get(11)?,
-                        description: row.get(12)?,
-                        source_url: row.get(13)?,
-                        dominant_color: row.get(14)?,
-                        color_distribution: row.get(15)?,
                     },
-                    row.get::<_, Option<String>>(16)?,
-                    row.get::<_, String>(17)?,
-                ))
+                    source_size: row.get(4)?,
+                    source_modified_at: row.get(5)?,
+                })
             })?
-            .filter_map(|row| row.ok())
+            .flatten()
             .collect::<Vec<_>>();
 
-        let file_ids = rows.iter().map(|(file, _, _)| file.id).collect::<Vec<_>>();
-        let tags_map = self.get_tags_for_files(&file_ids)?;
-
-        Ok(rows
-            .into_iter()
-            .map(
-                |(file, deleted_at, source_modified_at)| VisualIndexCandidate {
-                    source_size: file.size,
-                    source_modified_at,
-                    file: FileWithTags {
-                        id: file.id,
-                        path: file.path,
-                        name: file.name,
-                        ext: file.ext,
-                        size: file.size,
-                        width: file.width,
-                        height: file.height,
-                        folder_id: file.folder_id,
-                        created_at: file.created_at,
-                        modified_at: file.modified_at,
-                        imported_at: file.imported_at,
-                        rating: file.rating,
-                        description: file.description,
-                        source_url: file.source_url,
-                        dominant_color: file.dominant_color,
-                        color_distribution: file.color_distribution,
-                        tags: tags_map.get(&file.id).cloned().unwrap_or_default(),
-                        deleted_at,
-                    },
-                },
-            )
-            .collect())
+        Ok(rows)
     }
 
     pub fn get_visual_index_counts(&self, model_id: &str) -> Result<VisualIndexCounts> {

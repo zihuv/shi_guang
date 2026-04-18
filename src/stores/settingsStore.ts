@@ -93,8 +93,14 @@ export interface AiConfig {
   metadata: AiServiceConfig;
 }
 
+export type VisualSearchRuntimeDevice = "auto" | "cpu" | "gpu";
+export type VisualSearchProviderPolicy = "auto" | "interactive" | "service";
+export type VisualSearchRuntimeThreadConfig = "auto" | number;
+
 export interface VisualSearchRuntimeConfig {
-  intraThreads: number | null;
+  device: VisualSearchRuntimeDevice;
+  providerPolicy: VisualSearchProviderPolicy;
+  intraThreads: VisualSearchRuntimeThreadConfig;
   fgclipMaxPatches: number | null;
 }
 
@@ -122,7 +128,9 @@ export const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
   autoVectorizeOnImport: false,
   processUnindexedOnly: true,
   runtime: {
-    intraThreads: null,
+    device: "auto",
+    providerPolicy: "interactive",
+    intraThreads: "auto",
     fgclipMaxPatches: null,
   },
 };
@@ -140,6 +148,8 @@ function cloneVisualSearchConfig(config: VisualSearchConfig): VisualSearchConfig
     autoVectorizeOnImport: config.autoVectorizeOnImport,
     processUnindexedOnly: config.processUnindexedOnly,
     runtime: {
+      device: config.runtime.device,
+      providerPolicy: config.runtime.providerPolicy,
       intraThreads: config.runtime.intraThreads,
       fgclipMaxPatches: config.runtime.fgclipMaxPatches,
     },
@@ -187,6 +197,33 @@ function resolveOptionalFgclipMaxPatches(value: unknown): number | null {
     return null;
   }
   return [128, 256, 576, 784, 1024].includes(normalized) ? normalized : null;
+}
+
+function resolveVisualSearchRuntimeDevice(value: unknown): VisualSearchRuntimeDevice {
+  if (value === "cpu" || value === "gpu" || value === "auto") {
+    return value;
+  }
+  return DEFAULT_VISUAL_SEARCH_CONFIG.runtime.device;
+}
+
+function resolveVisualSearchProviderPolicy(value: unknown): VisualSearchProviderPolicy {
+  if (value === "auto" || value === "interactive" || value === "service") {
+    return value;
+  }
+  return DEFAULT_VISUAL_SEARCH_CONFIG.runtime.providerPolicy;
+}
+
+function resolveVisualSearchRuntimeThreads(value: unknown): VisualSearchRuntimeThreadConfig {
+  if (typeof value === "string" && value.trim().toLowerCase() === "auto") {
+    return "auto";
+  }
+
+  const normalized = resolveOptionalPositiveInteger(value);
+  if (normalized != null) {
+    return normalized;
+  }
+
+  return DEFAULT_VISUAL_SEARCH_CONFIG.runtime.intraThreads;
 }
 
 function isLibraryViewMode(value: unknown): value is LibraryViewMode {
@@ -387,7 +424,9 @@ function resolveVisualSearchConfig(value: unknown): VisualSearchConfig {
         ? config.processUnindexedOnly
         : DEFAULT_VISUAL_SEARCH_CONFIG.processUnindexedOnly,
     runtime: {
-      intraThreads: resolveOptionalPositiveInteger(runtimeValue?.intraThreads),
+      device: resolveVisualSearchRuntimeDevice(runtimeValue?.device),
+      providerPolicy: resolveVisualSearchProviderPolicy(runtimeValue?.providerPolicy),
+      intraThreads: resolveVisualSearchRuntimeThreads(runtimeValue?.intraThreads),
       fgclipMaxPatches: resolveOptionalFgclipMaxPatches(runtimeValue?.fgclipMaxPatches),
     },
   };
@@ -702,19 +741,30 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
     }
 
-    if (!visualSearch.modelPath.trim()) {
-      try {
+    try {
+      const currentModelPath = visualSearch.modelPath.trim();
+      let nextModelPath = "";
+      if (currentModelPath) {
+        const validation = await validateVisualModelPathCommand(currentModelPath);
+        if (validation.valid) {
+          nextModelPath = validation.normalizedModelPath || currentModelPath;
+        }
+      } else {
         const recommendedModelPath = await getRecommendedVisualModelPathCommand();
         if (recommendedModelPath) {
-          visualSearch = {
-            ...visualSearch,
-            modelPath: recommendedModelPath,
-          };
-          await setSetting(VISUAL_SEARCH_SETTING_KEY, JSON.stringify(visualSearch));
+          nextModelPath = recommendedModelPath;
         }
-      } catch (e) {
-        console.error("Failed to detect recommended visual model path:", e);
       }
+
+      if (nextModelPath && nextModelPath !== currentModelPath) {
+        visualSearch = {
+          ...visualSearch,
+          modelPath: nextModelPath,
+        };
+        await setSetting(VISUAL_SEARCH_SETTING_KEY, JSON.stringify(visualSearch));
+      }
+    } catch (e) {
+      console.error("Failed to detect recommended visual model path:", e);
     }
 
     try {

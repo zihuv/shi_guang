@@ -51,7 +51,8 @@ sysinfo = { version = "0.38.4", default-features = false, features = ["system"],
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "std"], optional = true }
 dhat = { version = "0.3.3", optional = true }
-omni_search = "0.1.1"
+omni_search = "0.2.3"
+ort = { version = "2.0.0-rc.12", features = ["preload-dylibs"] }
 
 [profile.release]
 panic = "abort"

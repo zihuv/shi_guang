@@ -303,15 +303,12 @@ pub(super) fn request_browser_decoded_image_data_url(
 pub(super) fn resolve_visual_index_image_data_url(
     state: &AppState,
     candidate: &VisualIndexCandidate,
-    image_data_url: Option<String>,
 ) -> Result<Option<String>, String> {
-    match image_data_url {
-        Some(image_data_url) if !image_data_url.trim().is_empty() => Ok(Some(image_data_url)),
-        _ if requires_browser_decoded_visual_index(&candidate.file.ext) => {
-            request_browser_decoded_image_data_url(state, candidate, "image/png").map(Some)
-        }
-        _ => Ok(None),
+    if requires_browser_decoded_visual_index(&candidate.file.ext) {
+        return request_browser_decoded_image_data_url(state, candidate, "image/png").map(Some);
     }
+
+    Ok(None)
 }
 
 pub(super) fn sync_visual_content_hash(

@@ -36,6 +36,12 @@ export interface VisualIndexStatus {
   message: string;
   modelId: string | null;
   version: string | null;
+  requestedDevice: "auto" | "cpu" | "gpu" | null;
+  providerPolicy: "auto" | "interactive" | "service" | null;
+  runtimeLoaded: boolean;
+  runtimeMode: "uninitialized" | "cpu_only" | "gpu_enabled" | "mixed" | "unknown" | null;
+  effectiveProvider: "tensorrt" | "cuda" | "direct_ml" | "core_ml" | "cpu" | null;
+  runtimeReason: string | null;
   indexedCount: number;
   failedCount: number;
   pendingCount: number;
@@ -52,13 +58,6 @@ export interface VisualModelValidationResult {
   embeddingDim: number | null;
   contextLength: number | null;
   missingFiles: string[];
-}
-
-export interface VisualIndexRetryCandidate {
-  fileId: number;
-  path: string;
-  ext: string;
-  lastError: string;
 }
 
 export type AiEndpointTarget = "metadata";
@@ -164,19 +163,8 @@ export function cancelVisualIndexTask(taskId: string) {
   return invokeTauri<void>("cancel_visual_index_task", { taskId });
 }
 
-export function reindexFileVisualEmbedding(fileId: number, imageDataUrl?: string) {
-  return invokeTauri<void>("reindex_file_visual_embedding", {
-    fileId,
-    imageDataUrl,
-  });
-}
-
 export function getVisualIndexStatus() {
   return invokeTauri<VisualIndexStatus>("get_visual_index_status");
-}
-
-export function getVisualIndexRetryCandidates() {
-  return invokeTauri<VisualIndexRetryCandidate[]>("get_visual_index_retry_candidates");
 }
 
 export function completeVisualIndexBrowserDecodeRequest(args: {

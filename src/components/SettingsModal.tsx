@@ -174,7 +174,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: "选择视觉搜索模型 Bundle 目录",
+        title: "选择视觉搜索模型目录",
       });
 
       if (selected && typeof selected === "string") {

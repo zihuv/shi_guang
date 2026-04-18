@@ -3,6 +3,7 @@ use crate::ml::model_manager::{
     find_recommended_visual_model_path as find_recommended_visual_model_path_impl,
     validate_visual_model_path as validate_visual_model_path_impl, VisualModelValidationResult,
 };
+use omni_search::{ExecutionProviderKind, ProviderPolicy, RuntimeDevice, RuntimeMode};
 use serde::Serialize;
 use tauri::{Manager, State};
 
@@ -34,15 +35,6 @@ pub struct VisualIndexProgressPayload {
     pub current_file_name: String,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VisualIndexRetryCandidatePayload {
-    pub file_id: i64,
-    pub path: String,
-    pub ext: String,
-    pub last_error: String,
-}
-
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualIndexBrowserDecodeRequestPayload {
@@ -59,6 +51,12 @@ pub struct VisualIndexStatus {
     pub message: String,
     pub model_id: Option<String>,
     pub version: Option<String>,
+    pub requested_device: Option<RuntimeDevice>,
+    pub provider_policy: Option<ProviderPolicy>,
+    pub runtime_loaded: bool,
+    pub runtime_mode: Option<RuntimeMode>,
+    pub effective_provider: Option<ExecutionProviderKind>,
+    pub runtime_reason: Option<String>,
     pub indexed_count: i64,
     pub failed_count: i64,
     pub pending_count: i64,
@@ -87,13 +85,6 @@ pub fn get_recommended_visual_model_path() -> Result<Option<String>, String> {
 #[tauri::command]
 pub fn get_visual_index_status(state: State<'_, AppState>) -> Result<VisualIndexStatus, String> {
     visual_index::get_visual_index_status_impl(&state)
-}
-
-#[tauri::command]
-pub fn get_visual_index_retry_candidates(
-    state: State<'_, AppState>,
-) -> Result<Vec<VisualIndexRetryCandidatePayload>, String> {
-    visual_index::get_visual_index_retry_candidates_impl(&state)
 }
 
 #[tauri::command]
@@ -142,20 +133,6 @@ pub fn get_visual_index_task(
 #[tauri::command]
 pub fn cancel_visual_index_task(state: State<'_, AppState>, task_id: String) -> Result<(), String> {
     visual_index::cancel_visual_index_task_impl(&state, &task_id)
-}
-
-#[tauri::command]
-pub async fn reindex_file_visual_embedding(
-    app_handle: tauri::AppHandle,
-    file_id: i64,
-    image_data_url: Option<String>,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app_handle.state::<AppState>();
-        visual_index::reindex_file_visual_embedding_impl(&state, file_id, image_data_url)
-    })
-    .await
-    .map_err(|e| format!("视觉索引后台任务失败: {}", e))?
 }
 
 #[tauri::command]

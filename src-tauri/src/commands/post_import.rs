@@ -159,9 +159,7 @@ pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i
 
             if auto_vectorize {
                 let state = app_handle.state::<AppState>();
-                if let Err(error) =
-                    super::ai::reindex_file_visual_embedding_impl(&state, file_id, None)
-                {
+                if let Err(error) = super::ai::reindex_file_visual_embedding_impl(&state, file_id) {
                     log::warn!(
                         "Auto vectorize on import failed for file {}: {}",
                         file_id,
