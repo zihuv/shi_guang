@@ -104,10 +104,34 @@ pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i
         };
 
         let mut should_emit_file_updated = false;
+        let browser_decoded_color_data_url = if file.ext.eq_ignore_ascii_case("avif") {
+            let state = app_handle.state::<AppState>();
+            match super::ai::request_browser_decoded_image_data_url_for_file(
+                &state,
+                &file,
+                "image/png",
+            ) {
+                Ok(image_data_url) => Some(image_data_url),
+                Err(error) => {
+                    log::warn!(
+                        "Failed to browser-decode AVIF for import color extraction {}: {}",
+                        file_id,
+                        error
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         {
             let state = app_handle.state::<AppState>();
-            match super::files::refresh_file_color_data_impl(&state, file_id) {
+            match super::files::refresh_file_color_data_impl(
+                &state,
+                file_id,
+                browser_decoded_color_data_url.as_deref(),
+            ) {
                 Ok(Some(_)) => {
                     should_emit_file_updated = true;
                 }

@@ -372,53 +372,60 @@ pub fn extract_color_distribution(path: &Path) -> Result<Vec<ColorInfo>, String>
     }
 
     match crate::media::load_dynamic_image_from_path(path) {
-        Ok(img) => {
-            // Resize image to small size for faster processing
-            let img = img.resize(50, 50, image::imageops::FilterType::Nearest);
-            let pixels: Vec<_> = img.pixels().collect();
-
-            // Collect RGB values
-            let mut rgb_values: Vec<[f64; 3]> = Vec::new();
-            for pixel in &pixels {
-                let rgb = pixel.2.to_rgb();
-                rgb_values.push([rgb[0] as f64, rgb[1] as f64, rgb[2] as f64]);
-            }
-
-            if rgb_values.is_empty() {
-                return Ok(Vec::new());
-            }
-
-            // Run K-means clustering
-            let num_clusters = 7;
-            let clusters = kmeans_clustering(&rgb_values, num_clusters, 20);
-
-            // Calculate percentages
-            let total = rgb_values.len() as f64;
-            let mut color_infos: Vec<ColorInfo> = clusters
-                .iter()
-                .map(|c| {
-                    let r = c[0] as u8;
-                    let g = c[1] as u8;
-                    let b = c[2] as u8;
-                    let hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
-                    ColorInfo {
-                        color: hex,
-                        percentage: (c[3] / total) * 100.0,
-                    }
-                })
-                .collect();
-
-            // Sort by percentage descending
-            color_infos.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap());
-
-            // Merge similar colors (distance threshold 30)
-            let merged = merge_similar_colors(color_infos, 30.0);
-
-            // Return top 7 colors
-            Ok(merged.into_iter().take(7).collect())
-        }
+        Ok(img) => Ok(extract_color_distribution_from_image(img)),
         Err(_) => Ok(Vec::new()),
     }
+}
+
+pub fn extract_color_distribution_from_bytes(bytes: &[u8]) -> Result<Vec<ColorInfo>, String> {
+    let image = crate::media::load_dynamic_image_from_bytes(bytes)?;
+    Ok(extract_color_distribution_from_image(image))
+}
+
+fn extract_color_distribution_from_image(img: image::DynamicImage) -> Vec<ColorInfo> {
+    // Resize image to small size for faster processing
+    let img = img.resize(50, 50, image::imageops::FilterType::Nearest);
+    let pixels: Vec<_> = img.pixels().collect();
+
+    // Collect RGB values
+    let mut rgb_values: Vec<[f64; 3]> = Vec::new();
+    for pixel in &pixels {
+        let rgb = pixel.2.to_rgb();
+        rgb_values.push([rgb[0] as f64, rgb[1] as f64, rgb[2] as f64]);
+    }
+
+    if rgb_values.is_empty() {
+        return Vec::new();
+    }
+
+    // Run K-means clustering
+    let num_clusters = 7;
+    let clusters = kmeans_clustering(&rgb_values, num_clusters, 20);
+
+    // Calculate percentages
+    let total = rgb_values.len() as f64;
+    let mut color_infos: Vec<ColorInfo> = clusters
+        .iter()
+        .map(|c| {
+            let r = c[0] as u8;
+            let g = c[1] as u8;
+            let b = c[2] as u8;
+            let hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
+            ColorInfo {
+                color: hex,
+                percentage: (c[3] / total) * 100.0,
+            }
+        })
+        .collect();
+
+    // Sort by percentage descending
+    color_infos.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap());
+
+    // Merge similar colors (distance threshold 30)
+    let merged = merge_similar_colors(color_infos, 30.0);
+
+    // Return top 7 colors
+    merged.into_iter().take(7).collect()
 }
 
 /// Simple K-means clustering implementation
@@ -586,5 +593,34 @@ fn color_distance_hex(hex1: &str, hex2: &str) -> f64 {
     match (parse_hex(hex1), parse_hex(hex2)) {
         (Some(c1), Some(c2)) => color_distance(&c1, &c2),
         _ => f64::MAX,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::codecs::png::PngEncoder;
+    use image::{ColorType, ImageBuffer, ImageEncoder, Rgb};
+
+    #[test]
+    fn extract_color_distribution_from_png_bytes_returns_primary_color() {
+        let image = ImageBuffer::from_pixel(4, 4, Rgb([12, 34, 56]));
+        let mut bytes = Vec::new();
+        let encoder = PngEncoder::new(&mut bytes);
+
+        encoder
+            .write_image(
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                ColorType::Rgb8.into(),
+            )
+            .unwrap();
+
+        let colors = extract_color_distribution_from_bytes(&bytes).unwrap();
+
+        assert_eq!(colors.len(), 1);
+        assert_eq!(colors[0].color, "#0C2238");
+        assert!((colors[0].percentage - 100.0).abs() < f64::EPSILON);
     }
 }

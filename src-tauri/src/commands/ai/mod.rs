@@ -13,6 +13,7 @@ mod visual_index;
 
 pub(crate) use metadata::analyze_file_metadata_impl;
 pub(crate) use shared::is_backend_decodable_image;
+pub(crate) use shared::{decode_image_data_url, request_browser_decoded_image_data_url_for_file};
 pub(crate) use visual_index::reindex_file_visual_embedding_impl;
 
 #[derive(Debug, Serialize)]

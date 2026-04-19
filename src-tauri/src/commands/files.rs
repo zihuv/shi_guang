@@ -4,6 +4,7 @@ use crate::ml::model_manager::{load_visual_search_config, resolve_model_paths};
 pub(crate) fn refresh_file_color_data_impl(
     state: &AppState,
     file_id: i64,
+    image_data_url: Option<&str>,
 ) -> Result<Option<FileWithTags>, String> {
     let file = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -12,7 +13,13 @@ pub(crate) fn refresh_file_color_data_impl(
             .ok_or_else(|| "File not found".to_string())?
     };
 
-    let color_distribution = indexer::extract_color_distribution(Path::new(&file.path))?;
+    let color_distribution = match image_data_url.filter(|value| !value.trim().is_empty()) {
+        Some(image_data_url) => {
+            let image_bytes = super::ai::decode_image_data_url(image_data_url)?;
+            indexer::extract_color_distribution_from_bytes(&image_bytes)?
+        }
+        None => indexer::extract_color_distribution(Path::new(&file.path))?,
+    };
     let dominant_color = color_distribution
         .first()
         .map(|item| item.color.clone())
@@ -176,7 +183,7 @@ pub fn update_file_dimensions(
 
 #[tauri::command]
 pub fn extract_color(state: State<AppState>, file_id: i64) -> Result<String, String> {
-    if let Some(file) = refresh_file_color_data_impl(&state, file_id)? {
+    if let Some(file) = refresh_file_color_data_impl(&state, file_id, None)? {
         return Ok(file.dominant_color);
     }
 

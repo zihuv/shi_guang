@@ -227,7 +227,7 @@ pub(super) fn embedding_to_blob(embedding: &[f32]) -> Vec<u8> {
     bytes
 }
 
-pub(super) fn decode_image_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn decode_image_data_url(data_url: &str) -> Result<Vec<u8>, String> {
     let trimmed = data_url.trim();
     let Some(payload) = trimmed.strip_prefix("data:") else {
         return Err("图片数据必须是 data URL".to_string());
@@ -245,9 +245,10 @@ pub(super) fn decode_image_data_url(data_url: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("无法解析图片 data URL: {}", e))
 }
 
-pub(super) fn request_browser_decoded_image_data_url(
+fn request_browser_decoded_image_data_url_for_source(
     state: &AppState,
-    candidate: &VisualIndexCandidate,
+    file_id: i64,
+    path: &str,
     output_mime_type: &str,
 ) -> Result<String, String> {
     let request_id = format!(
@@ -268,8 +269,8 @@ pub(super) fn request_browser_decoded_image_data_url(
         VISUAL_INDEX_BROWSER_DECODE_REQUEST_EVENT,
         VisualIndexBrowserDecodeRequestPayload {
             request_id: request_id.clone(),
-            file_id: candidate.file.id,
-            path: candidate.file.path.clone(),
+            file_id,
+            path: path.to_string(),
             output_mime_type: output_mime_type.to_string(),
         },
     ) {
@@ -288,16 +289,37 @@ pub(super) fn request_browser_decoded_image_data_url(
             Err(format!(
                 "等待前端解码图片超时（>{} 秒）: {}",
                 VISUAL_INDEX_BROWSER_DECODE_TIMEOUT.as_secs(),
-                candidate.file.path
+                path
             ))
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
             if let Ok(mut requests) = state.visual_index_browser_decode_requests.lock() {
                 requests.remove(&request_id);
             }
-            Err(format!("前端解码图片通道已断开: {}", candidate.file.path))
+            Err(format!("前端解码图片通道已断开: {}", path))
         }
     }
+}
+
+pub(crate) fn request_browser_decoded_image_data_url_for_file(
+    state: &AppState,
+    file: &FileWithTags,
+    output_mime_type: &str,
+) -> Result<String, String> {
+    request_browser_decoded_image_data_url_for_source(state, file.id, &file.path, output_mime_type)
+}
+
+pub(super) fn request_browser_decoded_image_data_url(
+    state: &AppState,
+    candidate: &VisualIndexCandidate,
+    output_mime_type: &str,
+) -> Result<String, String> {
+    request_browser_decoded_image_data_url_for_source(
+        state,
+        candidate.file.id,
+        &candidate.file.path,
+        output_mime_type,
+    )
 }
 
 pub(super) fn resolve_visual_index_image_data_url(
