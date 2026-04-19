@@ -174,7 +174,7 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto px-4 pb-5 pt-5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-4 pb-5 pt-5 [&>*]:shrink-0">
         <div className="mb-6 flex flex-col items-center gap-4 text-center">
           <div className="flex size-24 items-center justify-center rounded-[28px] bg-yellow-400/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] dark:bg-yellow-500/14 dark:shadow-none">
             <svg className="h-11 w-11 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
@@ -553,9 +553,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
         </div>
       )}
 
-      <div className="flex flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 pb-5 pt-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 pb-5 pt-4 [&>*]:shrink-0">
         {/* Preview image */}
-        <div className="relative aspect-video overflow-hidden rounded-[18px] bg-gray-100 shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:bg-dark-bg dark:shadow-[0_16px_30px_rgba(0,0,0,0.24)]">
+        <div className="relative w-full shrink-0 aspect-video overflow-hidden rounded-[18px] bg-gray-100 shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:bg-dark-bg dark:shadow-[0_16px_30px_rgba(0,0,0,0.24)]">
           {previewType === "image" ? (
             <div
               onDoubleClick={() => void handleOpenOriginalImage()}
