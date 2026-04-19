@@ -70,9 +70,14 @@ function PanelActionButton({
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 py-1">
-      <span className={appPanelMetaClass}>{label}</span>
-      <span className="max-w-[60%] text-right text-[12px] font-medium leading-5 text-gray-800 dark:text-gray-200">
+    <div className="flex min-h-7 items-center justify-between gap-3 py-0.5">
+      <span className={cn(appPanelMetaClass, "leading-5")}>{label}</span>
+      <span
+        className={cn(
+          appPanelValueClass,
+          "max-w-[60%] text-right text-[12px] font-medium leading-5",
+        )}
+      >
         {value}
       </span>
     </div>
@@ -723,35 +728,36 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
         </div>
 
         {/* Rating and File info list */}
-        <div className="flex flex-col gap-1.5 pt-1">
+        <div className="flex flex-col gap-0.5 pt-1">
           <span className={appSectionHeadingClass}>素材信息</span>
 
-          {/* Rating */}
-          <div className="flex items-center justify-between gap-3">
-            <span className={appPanelMetaClass}>评级</span>
-            <div className="flex items-center gap-0.5">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  onClick={() => handleRatingChange(star === rating ? 0 : star)}
-                  className="p-0.5 hover:scale-110 transition-transform"
-                >
-                  <svg
-                    className={`w-3 h-3 ${
-                      star <= rating
-                        ? "text-yellow-400 fill-yellow-400"
-                        : "text-gray-300 dark:text-gray-600"
-                    }`}
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
+          <InfoRow
+            label="评级"
+            value={
+              <div className="flex items-center justify-end gap-0.5">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => handleRatingChange(star === rating ? 0 : star)}
+                    className="rounded-sm p-0.5 transition-transform hover:scale-110"
                   >
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
-                </button>
-              ))}
-            </div>
-          </div>
+                    <svg
+                      className={`h-3 w-3 ${
+                        star <= rating
+                          ? "fill-yellow-400 text-yellow-400"
+                          : "text-gray-300 dark:text-gray-600"
+                      }`}
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            }
+          />
           {folder && <InfoRow label="文件夹" value={folder.name} />}
           {/* File info list - left label, right value */}
           <InfoRow label="尺寸" value={`${file.width} x ${file.height}`} />
