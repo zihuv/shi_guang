@@ -51,7 +51,6 @@
         <tr>
             <th>Browser</th>
             <th>Download</th>
-            <th>Install</th>
         </tr>
     </thead>
     <tbody align=left>
@@ -59,9 +58,6 @@
             <td>Chrome / Edge</td>
             <td>
                 <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang-collector_VERSION.zip"><img src="https://img.shields.io/badge/Extension-ZIP-4285F4.svg?logo=googlechrome&logoColor=white"></a>
-            </td>
-            <td>
-                解压后打开 `chrome://extensions/` 或 `edge://extensions/`，开启“开发者模式”，选择“加载已解压的扩展程序”，再选解压后的目录
             </td>
         </tr>
     </tbody>
