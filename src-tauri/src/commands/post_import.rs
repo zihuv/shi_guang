@@ -15,11 +15,12 @@ fn generate_import_thumbnail_if_missing(
     index_paths: &[String],
     file: &FileWithTags,
 ) -> Result<bool, String> {
-    if !crate::media::is_backend_decodable_image_extension(&file.ext) {
+    let file_path = std::path::Path::new(&file.path);
+    let probe = crate::media::probe_media_path(file_path)?;
+    if !probe.is_backend_decodable_image() {
         return Ok(false);
     }
 
-    let file_path = std::path::Path::new(&file.path);
     let Some(thumbnail_path) =
         crate::storage::get_thumbnail_cache_path(index_paths, file_path, None)?
     else {
@@ -62,7 +63,7 @@ pub(crate) fn handle_import_success(
 
 pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i64) {
     tauri::async_runtime::spawn(async move {
-        let (file, index_paths, is_image, auto_analyze, auto_vectorize) = {
+        let (file, index_paths, auto_analyze, auto_vectorize) = {
             let state = app_handle.state::<AppState>();
             let db = match state.db.lock() {
                 Ok(db) => db,
@@ -97,14 +98,26 @@ pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i
             (
                 file.clone(),
                 index_paths,
-                super::ai::is_backend_decodable_image(&file),
                 auto_analyze,
                 visual_search_config.enabled && visual_search_config.auto_vectorize_on_import,
             )
         };
+        let media_probe = crate::media::probe_media_path(std::path::Path::new(&file.path)).ok();
+        let can_generate_thumbnail = media_probe
+            .map(|probe| probe.is_backend_decodable_image())
+            .unwrap_or(false);
+        let can_analyze_with_ai = media_probe
+            .map(|probe| probe.is_ai_supported_image())
+            .unwrap_or(false);
+        let can_build_visual_index = media_probe
+            .map(|probe| probe.is_visual_search_supported())
+            .unwrap_or(false);
+        let should_browser_decode_colors = media_probe
+            .map(|probe| probe.requires_browser_decode_for_color_extraction())
+            .unwrap_or(false);
 
         let mut should_emit_file_updated = false;
-        let browser_decoded_color_data_url = if file.ext.eq_ignore_ascii_case("avif") {
+        let browser_decoded_color_data_url = if should_browser_decode_colors {
             let state = app_handle.state::<AppState>();
             match super::ai::request_browser_decoded_image_data_url_for_file(
                 &state,
@@ -114,7 +127,7 @@ pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i
                 Ok(image_data_url) => Some(image_data_url),
                 Err(error) => {
                     log::warn!(
-                        "Failed to browser-decode AVIF for import color extraction {}: {}",
+                        "Failed to browser-decode image for import color extraction {}: {}",
                         file_id,
                         error
                     );
@@ -146,7 +159,7 @@ pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i
             }
         }
 
-        if is_image {
+        if can_generate_thumbnail {
             match generate_import_thumbnail_if_missing(&index_paths, &file) {
                 Ok(true) => {
                     should_emit_file_updated = true;
@@ -160,39 +173,37 @@ pub(crate) fn enqueue_post_import_tasks(app_handle: tauri::AppHandle, file_id: i
                     );
                 }
             }
+        }
 
-            if auto_analyze {
-                let state = app_handle.state::<AppState>();
-                match super::ai::analyze_file_metadata_impl(&state, file_id, None).await {
-                    Ok(_) => {
-                        should_emit_file_updated = true;
-                    }
-                    Err(error) => {
-                        log::warn!(
-                            "Auto analyze on import failed for file {}: {}",
-                            file_id,
-                            error
-                        );
-                    }
+        if auto_analyze && can_analyze_with_ai {
+            let state = app_handle.state::<AppState>();
+            match super::ai::analyze_file_metadata_impl(&state, file_id, None).await {
+                Ok(_) => {
+                    should_emit_file_updated = true;
                 }
-            }
-
-            if should_emit_file_updated {
-                emit_file_updated(&app_handle, file_id);
-            }
-
-            if auto_vectorize {
-                let state = app_handle.state::<AppState>();
-                if let Err(error) = super::ai::reindex_file_visual_embedding_impl(&state, file_id) {
+                Err(error) => {
                     log::warn!(
-                        "Auto vectorize on import failed for file {}: {}",
+                        "Auto analyze on import failed for file {}: {}",
                         file_id,
                         error
                     );
                 }
             }
-        } else if should_emit_file_updated {
+        }
+
+        if should_emit_file_updated {
             emit_file_updated(&app_handle, file_id);
+        }
+
+        if auto_vectorize && can_build_visual_index {
+            let state = app_handle.state::<AppState>();
+            if let Err(error) = super::ai::reindex_file_visual_embedding_impl(&state, file_id) {
+                log::warn!(
+                    "Auto vectorize on import failed for file {}: {}",
+                    file_id,
+                    error
+                );
+            }
         }
     });
 }

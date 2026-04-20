@@ -360,16 +360,26 @@ impl Database {
     }
 
     /// Check if file is unchanged (by size and filesystem modified time)
-    pub fn is_file_unchanged(&self, path: &str, size: i64, modified_at: &str) -> Result<bool> {
+    pub fn is_file_unchanged(
+        &self,
+        path: &str,
+        ext: &str,
+        size: i64,
+        modified_at: &str,
+    ) -> Result<bool> {
         let mut stmt = self
             .conn
-            .prepare("SELECT size, fs_modified_at FROM files WHERE path = ?1")?;
+            .prepare("SELECT ext, size, fs_modified_at FROM files WHERE path = ?1")?;
         let mut rows = stmt.query([path])?;
         if let Some(row) = rows.next()? {
-            let db_size: i64 = row.get(0)?;
-            let db_modified_at: String = row.get(1)?;
-            // Compare size and filesystem modified time
-            Ok(db_size == size && db_modified_at == modified_at)
+            let db_ext: String = row.get(0)?;
+            let db_size: i64 = row.get(1)?;
+            let db_modified_at: String = row.get(2)?;
+            Ok(
+                db_ext.eq_ignore_ascii_case(ext)
+                    && db_size == size
+                    && db_modified_at == modified_at,
+            )
         } else {
             Ok(false)
         }

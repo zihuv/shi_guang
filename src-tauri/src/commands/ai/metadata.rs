@@ -70,7 +70,7 @@ pub(crate) async fn analyze_file_metadata_impl(
 
     let image_data_url = match image_data_url {
         Some(value) if !value.trim().is_empty() => value,
-        _ => shared::prepare_image_data_url(&old_path)?,
+        _ => shared::prepare_file_image_data_url(state, &file)?,
     };
     let mut suggestion =
         request_image_metadata(&config, &file, &existing_tags, &image_data_url).await?;

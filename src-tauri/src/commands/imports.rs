@@ -49,15 +49,15 @@ fn uuid_simple() -> String {
     format!("{:x}{:x}", duration.as_secs(), duration.subsec_nanos())
 }
 
-fn resolve_import_extension(fallback_ext: Option<&str>, file_data: &[u8]) -> String {
-    crate::media::detect_extension_from_content(None, file_data)
+fn normalize_extension_hint(ext: Option<&str>) -> Option<String> {
+    ext.map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_import_extension(file_data: &[u8]) -> Option<String> {
+    crate::media::probe_media_from_bytes(None, file_data)
+        .detected_extension()
         .map(str::to_string)
-        .or_else(|| {
-            fallback_ext
-                .map(|ext| ext.trim().trim_start_matches('.').to_ascii_lowercase())
-                .filter(|ext| !ext.is_empty())
-        })
-        .unwrap_or_else(|| "png".to_string())
 }
 
 fn format_file_timestamp(system_time: Option<std::time::SystemTime>) -> String {
@@ -110,15 +110,18 @@ pub(crate) fn import_bytes_with_database(
     db: &Database,
     request: ImportRequest,
 ) -> Result<FileWithTags, String> {
-    let ext = request
+    let detected_ext = resolve_import_extension(&request.bytes);
+    let fallback_ext = request
         .target_path
         .as_ref()
         .and_then(|path| path.extension().and_then(|value| value.to_str()))
-        .map(|value| value.to_ascii_lowercase())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| {
-            resolve_import_extension(request.fallback_ext.as_deref(), &request.bytes)
-        });
+        .and_then(|value| normalize_extension_hint(Some(value)))
+        .or_else(|| normalize_extension_hint(request.fallback_ext.as_deref()));
+    let storage_ext = detected_ext
+        .clone()
+        .or(fallback_ext)
+        .unwrap_or_else(|| "bin".to_string());
+    let record_ext = detected_ext.as_deref().unwrap_or("bin");
 
     let dest_path = match request.target_path {
         Some(path) => path,
@@ -126,7 +129,7 @@ pub(crate) fn import_bytes_with_database(
             let target_dir = get_target_dir(db, request.folder_id)?;
             target_dir.join(build_generated_import_name(
                 request.generated_name_prefix.as_deref(),
-                &ext,
+                &storage_ext,
             ))
         }
     };
@@ -140,6 +143,7 @@ pub(crate) fn import_bytes_with_database(
     let mut file_record = crate::db::save_and_prepare_imported_file(
         &request.bytes,
         &dest_path,
+        record_ext,
         request.folder_id,
         request.created_at,
         request.modified_at,
@@ -155,7 +159,7 @@ pub(crate) fn import_bytes_with_database(
             return Err(error.to_string());
         }
     };
-    let visual_content_hash = compute_visual_content_hash_for_import(&request.bytes, &ext);
+    let visual_content_hash = compute_visual_content_hash_for_import(&request.bytes, record_ext);
     if let Err(error) = db.update_file_content_hash(file_id, visual_content_hash.as_deref()) {
         log::warn!(
             "Failed to persist visual content hash for imported file {}: {}",
@@ -314,14 +318,14 @@ mod tests {
             0x00, 0x00,
         ];
 
-        assert_eq!(resolve_import_extension(Some("png"), &bytes), "avif");
+        assert_eq!(resolve_import_extension(&bytes), Some("avif".to_string()));
     }
 
     #[test]
-    fn resolve_import_extension_falls_back_to_source_ext() {
+    fn resolve_import_extension_returns_none_for_unknown_content() {
         let bytes = b"not-an-image";
 
-        assert_eq!(resolve_import_extension(Some("pdf"), bytes), "pdf");
+        assert_eq!(resolve_import_extension(bytes), None);
     }
 }
 

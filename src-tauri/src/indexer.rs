@@ -1,4 +1,5 @@
 use crate::db::{Database, FileRecord};
+use crate::media::MediaProbe;
 use chrono::{DateTime, Local};
 use image::GenericImageView;
 use image::Pixel;
@@ -14,12 +15,6 @@ pub struct ColorInfo {
     pub color: String,
     pub percentage: f64,
 }
-
-const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "tif", "avif", "psd", "ai",
-    "eps", "raw", "cr2", "nef", "arw", "dng", "heic", "heif", "pdf", "mp4", "avi", "mov", "mkv",
-    "wmv", "flv", "webm", "m4v", "3gp",
-];
 
 pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
     let mut count = 0;
@@ -54,15 +49,18 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             continue;
         }
 
-        let ext = file_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-            .unwrap_or_default();
+        let probe = match crate::media::probe_media_path(file_path) {
+            Ok(probe) if probe.is_scan_supported() => probe,
+            Ok(_) => continue,
+            Err(error) => {
+                log::debug!("Failed to probe media {}: {}", file_path.display(), error);
+                continue;
+            }
+        };
 
-        if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+        let Some(detected_ext) = probe.detected_extension() else {
             continue;
-        }
+        };
 
         let file_path_str = file_path.to_string_lossy().to_string();
         processed_paths.insert(file_path_str.clone());
@@ -79,12 +77,13 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
         // Check if file already exists and is unchanged (incremental scan)
         if existing_paths.contains(&file_path_str) {
             // File exists, check if it needs update
-            match process_file(file_path, &ext, folder_id) {
+            match process_file(file_path, probe, folder_id) {
                 Ok(file_record) => {
                     // Check if file is unchanged
                     if db
                         .is_file_unchanged(
                             &file_path_str,
+                            detected_ext,
                             file_record.size,
                             &file_record.modified_at,
                         )
@@ -117,7 +116,7 @@ pub fn scan_directory(db: &Database, dir_path: &str) -> Result<usize, String> {
             }
         } else {
             // New file, insert it
-            match process_file(file_path, &ext, folder_id) {
+            match process_file(file_path, probe, folder_id) {
                 Ok(file_record) => {
                     let visual_content_hash =
                         compute_visual_content_hash_for_scan(file_path, &file_record.ext);
@@ -197,8 +196,13 @@ pub fn scan_folders(db: &Database, dir_path: &str) -> Result<usize, String> {
     Ok(count)
 }
 
-fn process_file(path: &Path, ext: &str, folder_id: Option<i64>) -> Result<FileRecord, String> {
+fn process_file(
+    path: &Path,
+    probe: MediaProbe,
+    folder_id: Option<i64>,
+) -> Result<FileRecord, String> {
     let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+    let ext = probe.detected_extension().unwrap_or("bin");
 
     let name = path
         .file_name()
@@ -285,9 +289,8 @@ fn should_skip_path(path: &Path) -> bool {
 }
 
 fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
-    // For SVG files, we can't get dimensions from the image crate
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if ext.eq_ignore_ascii_case("svg") {
+    let probe = crate::media::probe_media_path(path)?;
+    if probe.is_svg() || !probe.is_backend_decodable_image() {
         return Ok((0, 0));
     }
 
@@ -297,36 +300,9 @@ fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
     }
 }
 
-/// 检查是否为不支持颜色提取的图像格式
-fn is_color_extraction_unsupported_format(ext: &str) -> bool {
-    ext.eq_ignore_ascii_case("svg")
-        || ext.eq_ignore_ascii_case("pdf")
-        || ext.eq_ignore_ascii_case("mp4")
-        || ext.eq_ignore_ascii_case("avi")
-        || ext.eq_ignore_ascii_case("mov")
-        || ext.eq_ignore_ascii_case("mkv")
-        || ext.eq_ignore_ascii_case("wmv")
-        || ext.eq_ignore_ascii_case("flv")
-        || ext.eq_ignore_ascii_case("webm")
-        || ext.eq_ignore_ascii_case("m4v")
-        || ext.eq_ignore_ascii_case("3gp")
-        || ext.eq_ignore_ascii_case("psd")
-        || ext.eq_ignore_ascii_case("ai")
-        || ext.eq_ignore_ascii_case("eps")
-        || ext.eq_ignore_ascii_case("raw")
-        || ext.eq_ignore_ascii_case("cr2")
-        || ext.eq_ignore_ascii_case("nef")
-        || ext.eq_ignore_ascii_case("arw")
-        || ext.eq_ignore_ascii_case("dng")
-        || ext.eq_ignore_ascii_case("heic")
-        || ext.eq_ignore_ascii_case("heif")
-}
-
 pub fn extract_dominant_color(path: &Path) -> Result<String, String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    // Skip non-image formats
-    if is_color_extraction_unsupported_format(ext) {
+    let probe = crate::media::probe_media_path(path)?;
+    if !probe.can_extract_colors() {
         return Ok(String::new());
     }
 
@@ -364,10 +340,8 @@ pub fn extract_dominant_color(path: &Path) -> Result<String, String> {
 
 /// Extract color distribution using K-means clustering
 pub fn extract_color_distribution(path: &Path) -> Result<Vec<ColorInfo>, String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    // Skip non-image formats
-    if is_color_extraction_unsupported_format(ext) {
+    let probe = crate::media::probe_media_path(path)?;
+    if !probe.can_extract_colors() {
         return Ok(Vec::new());
     }
 

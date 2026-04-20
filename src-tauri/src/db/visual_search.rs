@@ -1,9 +1,9 @@
 use super::*;
-use crate::media::VISUAL_SEARCH_SUPPORTED_EXTENSIONS;
 use rayon::prelude::*;
 use rusqlite::{params, OptionalExtension};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::path::Path;
 
 const EMBEDDING_FETCH_CHUNK_SIZE: usize = 500;
 
@@ -162,7 +162,7 @@ impl Database {
         let Some((id, path, name, ext, source_size, source_modified_at)) = row else {
             return Ok(None);
         };
-        if !is_supported_image_ext(&ext) {
+        if !is_supported_visual_index_path(&path) {
             return Ok(None);
         }
 
@@ -179,16 +179,12 @@ impl Database {
     }
 
     pub fn get_visual_index_candidates(&self) -> Result<Vec<VisualIndexCandidate>> {
-        let ext_list = supported_image_extension_list();
-        let sql = format!(
-            "SELECT id, path, name, ext, size, fs_modified_at
+        let sql = "SELECT id, path, name, ext, size, fs_modified_at
              FROM files
              WHERE deleted_at IS NULL
-               AND LOWER(ext) IN ({ext_list})
-             ORDER BY imported_at DESC, id ASC"
-        );
+             ORDER BY imported_at DESC, id ASC";
 
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(VisualIndexCandidate {
@@ -203,6 +199,7 @@ impl Database {
                 })
             })?
             .flatten()
+            .filter(|candidate| is_supported_visual_index_path(&candidate.file.path))
             .collect::<Vec<_>>();
 
         Ok(rows)
@@ -212,16 +209,14 @@ impl Database {
         &self,
         model_id: &str,
     ) -> Result<Vec<VisualIndexCandidate>> {
-        let ext_list = supported_image_extension_list();
         let sql = format!(
             "SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at
              FROM files f
              LEFT JOIN file_visual_embeddings fve
                ON fve.file_id = f.id
               AND fve.model_id = ?1
-             WHERE f.deleted_at IS NULL
-               AND LOWER(f.ext) IN ({ext_list})
-               AND (
+              WHERE f.deleted_at IS NULL
+                AND (
                     fve.file_id IS NULL
                     OR fve.status != 'ready'
                     OR fve.embedding IS NULL
@@ -246,72 +241,62 @@ impl Database {
                 })
             })?
             .flatten()
+            .filter(|candidate| is_supported_visual_index_path(&candidate.file.path))
             .collect::<Vec<_>>();
 
         Ok(rows)
     }
 
     pub fn get_visual_index_counts(&self, model_id: &str) -> Result<VisualIndexCounts> {
-        let ext_list = supported_image_extension_list();
+        let sql = format!(
+            "SELECT
+                f.path,
+                fve.status,
+                CASE WHEN fve.embedding IS NOT NULL THEN 1 ELSE 0 END,
+                CASE WHEN {} THEN 1 ELSE 0 END,
+                CASE WHEN {} THEN 1 ELSE 0 END
+             FROM files f
+             LEFT JOIN file_visual_embeddings fve
+               ON fve.file_id = f.id
+              AND fve.model_id = ?1
+             WHERE f.deleted_at IS NULL",
+            current_visual_source_match_sql(),
+            outdated_visual_source_match_sql()
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([model_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, i64>(2)? != 0,
+                row.get::<_, i64>(3)? != 0,
+                row.get::<_, i64>(4)? != 0,
+            ))
+        })?;
 
-        let total_images: i64 = self.conn.query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM files
-                 WHERE deleted_at IS NULL
-                   AND LOWER(ext) IN ({ext_list})"
-            ),
-            [],
-            |row| row.get(0),
-        )?;
+        let mut total_images = 0i64;
+        let mut ready = 0i64;
+        let mut error = 0i64;
+        let mut outdated = 0i64;
 
-        let ready: i64 = self.conn.query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM file_visual_embeddings fve
-                 JOIN files f ON f.id = fve.file_id
-                 WHERE fve.model_id = ?1
-                   AND fve.status = 'ready'
-                   AND fve.embedding IS NOT NULL
-                   AND f.deleted_at IS NULL
-                   AND LOWER(f.ext) IN ({ext_list})
-                   AND {}",
-                current_visual_source_match_sql()
-            ),
-            [model_id],
-            |row| row.get(0),
-        )?;
-
-        let error: i64 = self.conn.query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM file_visual_embeddings fve
-                 JOIN files f ON f.id = fve.file_id
-                 WHERE fve.model_id = ?1
-                   AND fve.status = 'error'
-                   AND f.deleted_at IS NULL
-                   AND LOWER(f.ext) IN ({ext_list})
-                   AND {}",
-                current_visual_source_match_sql()
-            ),
-            [model_id],
-            |row| row.get(0),
-        )?;
-
-        let outdated: i64 = self.conn.query_row(
-            &format!(
-                "SELECT COUNT(*)
-                 FROM file_visual_embeddings fve
-                 JOIN files f ON f.id = fve.file_id
-                 WHERE fve.model_id = ?1
-                   AND f.deleted_at IS NULL
-                   AND LOWER(f.ext) IN ({ext_list})
-                   AND {}",
-                outdated_visual_source_match_sql()
-            ),
-            [model_id],
-            |row| row.get(0),
-        )?;
+        for row in rows.flatten() {
+            let (path, status, has_embedding, is_current, is_outdated) = row;
+            if !is_supported_visual_index_path(&path) {
+                continue;
+            }
+            total_images += 1;
+            if is_outdated {
+                outdated += 1;
+                continue;
+            }
+            if is_current {
+                match status.as_deref() {
+                    Some("ready") if has_embedding => ready += 1,
+                    Some("error") => error += 1,
+                    _ => {}
+                }
+            }
+        }
 
         let pending = (total_images - ready - error - outdated).max(0i64);
 
@@ -328,7 +313,6 @@ impl Database {
         &self,
         model_id: &str,
     ) -> Result<Vec<VisualIndexRetryCandidate>> {
-        let ext_list = supported_image_extension_list();
         let mut stmt = self.conn.prepare(&format!(
             "SELECT f.id, f.path, f.ext, fve.last_error
              FROM file_visual_embeddings fve
@@ -336,9 +320,8 @@ impl Database {
              WHERE fve.model_id = ?1
                AND fve.status = 'error'
                AND f.deleted_at IS NULL
-               AND LOWER(f.ext) IN ({ext_list})
-               AND {}
-              ORDER BY f.id ASC",
+                AND {}
+               ORDER BY f.id ASC",
             current_visual_source_match_sql()
         ))?;
 
@@ -351,7 +334,10 @@ impl Database {
             })
         })?;
 
-        Ok(rows.flatten().collect())
+        Ok(rows
+            .flatten()
+            .filter(|candidate| is_supported_visual_index_path(&candidate.path))
+            .collect())
     }
 
     pub fn search_files_by_visual_embedding(
@@ -490,18 +476,10 @@ impl Database {
     }
 }
 
-fn supported_image_extension_list() -> String {
-    VISUAL_SEARCH_SUPPORTED_EXTENSIONS
-        .iter()
-        .map(|ext| format!("'{ext}'"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn is_supported_image_ext(ext: &str) -> bool {
-    VISUAL_SEARCH_SUPPORTED_EXTENSIONS
-        .iter()
-        .any(|supported| supported.eq_ignore_ascii_case(ext))
+fn is_supported_visual_index_path(path: &str) -> bool {
+    crate::media::probe_media_path(Path::new(path))
+        .map(|probe| probe.is_visual_search_supported())
+        .unwrap_or(false)
 }
 
 fn current_visual_source_match_sql() -> &'static str {
@@ -563,6 +541,8 @@ fn cosine_similarity_from_blob(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{ImageBuffer, Rgb};
+    use std::path::{Path, PathBuf};
 
     fn embedding_blob(values: &[f32]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
@@ -616,6 +596,27 @@ mod tests {
     fn set_file_content_hash(db: &Database, file_id: i64, content_hash: &str) {
         db.update_file_content_hash(file_id, Some(content_hash))
             .unwrap();
+    }
+
+    fn create_temp_visual_file(file_name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-visual-search-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            file_name
+        ));
+        let image = ImageBuffer::from_pixel(2, 2, Rgb([12u8, 34u8, 56u8]));
+        image.save(&path).unwrap();
+        path
+    }
+
+    fn remove_temp_visual_files(paths: &[&Path]) {
+        for path in paths {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     #[test]
@@ -712,8 +713,12 @@ mod tests {
         ));
 
         let db = Database::new(&path).unwrap();
+        let source_path = create_temp_visual_file("stale.png");
         let file_id = db
-            .insert_file(&make_file_record("D:\\visual\\stale.png", "stale.png"))
+            .insert_file(&make_file_record(
+                &source_path.to_string_lossy(),
+                "stale.png",
+            ))
             .unwrap();
         let source_modified_at = db
             .conn
@@ -738,6 +743,7 @@ mod tests {
 
         let counts = db.get_visual_index_counts("fgclip2-test").unwrap();
         let _ = std::fs::remove_file(&path);
+        remove_temp_visual_files(&[source_path.as_path()]);
 
         assert_eq!(counts.total_images, 1);
         assert_eq!(counts.ready, 0);
@@ -756,9 +762,10 @@ mod tests {
         ));
 
         let db = Database::new(&path).unwrap();
+        let source_path = create_temp_visual_file("same-content.png");
         let file_id = db
             .insert_file(&make_file_record(
-                "D:\\visual\\same-content.png",
+                &source_path.to_string_lossy(),
                 "same-content.png",
             ))
             .unwrap();
@@ -791,6 +798,7 @@ mod tests {
 
         let counts = db.get_visual_index_counts("fgclip2-test").unwrap();
         let _ = std::fs::remove_file(&path);
+        remove_temp_visual_files(&[source_path.as_path()]);
 
         assert_eq!(counts.total_images, 1);
         assert_eq!(counts.ready, 1);
@@ -809,24 +817,38 @@ mod tests {
         ));
 
         let db = Database::new(&path).unwrap();
+        let ready_path = create_temp_visual_file("ready.png");
+        let error_path = create_temp_visual_file("error.png");
+        let outdated_path = create_temp_visual_file("outdated.png");
+        let pending_path = create_temp_visual_file("pending.png");
+        let other_model_path = create_temp_visual_file("other-model.png");
         let ready_id = db
-            .insert_file(&make_file_record("D:\\visual\\ready.png", "ready.png"))
+            .insert_file(&make_file_record(
+                &ready_path.to_string_lossy(),
+                "ready.png",
+            ))
             .unwrap();
         let error_id = db
-            .insert_file(&make_file_record("D:\\visual\\error.png", "error.png"))
+            .insert_file(&make_file_record(
+                &error_path.to_string_lossy(),
+                "error.png",
+            ))
             .unwrap();
         let outdated_id = db
             .insert_file(&make_file_record(
-                "D:\\visual\\outdated.png",
+                &outdated_path.to_string_lossy(),
                 "outdated.png",
             ))
             .unwrap();
         let pending_id = db
-            .insert_file(&make_file_record("D:\\visual\\pending.png", "pending.png"))
+            .insert_file(&make_file_record(
+                &pending_path.to_string_lossy(),
+                "pending.png",
+            ))
             .unwrap();
         let other_model_id = db
             .insert_file(&make_file_record(
-                "D:\\visual\\other-model.png",
+                &other_model_path.to_string_lossy(),
                 "other-model.png",
             ))
             .unwrap();
@@ -920,6 +942,13 @@ mod tests {
             .collect::<Vec<_>>();
 
         let _ = std::fs::remove_file(&path);
+        remove_temp_visual_files(&[
+            ready_path.as_path(),
+            error_path.as_path(),
+            outdated_path.as_path(),
+            pending_path.as_path(),
+            other_model_path.as_path(),
+        ]);
 
         assert!(!candidate_ids.contains(&ready_id));
         assert!(candidate_ids.contains(&error_id));

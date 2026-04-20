@@ -1,7 +1,7 @@
-use image::{DynamicImage, ImageReader};
+use image::{DynamicImage, ImageFormat, ImageReader};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{BufReader, Cursor};
+use std::io::{BufReader, Cursor, Read};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,12 +92,120 @@ const TIFF_MEDIA_TYPE_MAPPINGS: [MediaTypeMapping; 2] = [
     },
 ];
 
+const OTHER_MEDIA_TYPE_MAPPINGS: [MediaTypeMapping; 10] = [
+    MediaTypeMapping {
+        mime_type: "application/pdf",
+        extension: "pdf",
+    },
+    MediaTypeMapping {
+        mime_type: "video/mp4",
+        extension: "mp4",
+    },
+    MediaTypeMapping {
+        mime_type: "video/quicktime",
+        extension: "mov",
+    },
+    MediaTypeMapping {
+        mime_type: "video/webm",
+        extension: "webm",
+    },
+    MediaTypeMapping {
+        mime_type: "video/x-matroska",
+        extension: "mkv",
+    },
+    MediaTypeMapping {
+        mime_type: "video/x-msvideo",
+        extension: "avi",
+    },
+    MediaTypeMapping {
+        mime_type: "video/x-ms-wmv",
+        extension: "wmv",
+    },
+    MediaTypeMapping {
+        mime_type: "video/x-flv",
+        extension: "flv",
+    },
+    MediaTypeMapping {
+        mime_type: "video/3gpp",
+        extension: "3gp",
+    },
+    MediaTypeMapping {
+        mime_type: "image/vnd.adobe.photoshop",
+        extension: "psd",
+    },
+];
+
 pub(crate) const VISUAL_SEARCH_SUPPORTED_EXTENSIONS: [&str; 12] = [
     "jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff", "ico", "avif", "heic", "heif",
 ];
 pub(crate) const BACKEND_DECODABLE_IMAGE_EXTENSIONS: [&str; 10] = [
     "jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff", "ico", "avif",
 ];
+pub(crate) const SCAN_SUPPORTED_EXTENSIONS: [&str; 29] = [
+    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "avif", "psd", "ai", "eps",
+    "cr2", "nef", "arw", "dng", "heic", "heif", "pdf", "mp4", "avi", "mov", "mkv", "wmv", "flv",
+    "webm", "m4v", "3gp",
+];
+pub(crate) const AI_SUPPORTED_IMAGE_EXTENSIONS: [&str; 12] = [
+    "jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff", "ico", "avif", "heic", "heif",
+];
+const PROBE_READ_LIMIT: usize = 4096;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MediaProbe {
+    detected_extension: Option<&'static str>,
+}
+
+impl MediaProbe {
+    pub(crate) fn detected_extension(self) -> Option<&'static str> {
+        self.detected_extension
+    }
+
+    pub(crate) fn is_scan_supported(self) -> bool {
+        self.detected_extension
+            .map(is_scan_supported_extension)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn is_svg(self) -> bool {
+        self.detected_extension == Some("svg")
+    }
+
+    pub(crate) fn is_backend_decodable_image(self) -> bool {
+        self.detected_extension
+            .map(is_backend_decodable_image_extension)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn is_visual_search_supported(self) -> bool {
+        self.detected_extension
+            .map(is_visual_search_supported_extension)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn is_ai_supported_image(self) -> bool {
+        self.detected_extension
+            .map(is_ai_supported_image_extension)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn can_extract_colors(self) -> bool {
+        self.is_backend_decodable_image()
+    }
+
+    pub(crate) fn requires_browser_decode_for_color_extraction(self) -> bool {
+        self.is_ai_supported_image() && !self.is_backend_decodable_image()
+    }
+
+    pub(crate) fn requires_browser_decode_for_ai(self) -> bool {
+        self.is_ai_supported_image() && !self.is_backend_decodable_image()
+    }
+
+    pub(crate) fn requires_browser_decode_for_visual_index(self) -> bool {
+        self.detected_extension == Some("avif")
+            || (self.is_visual_search_supported() && !self.is_backend_decodable_image())
+    }
+}
 
 fn normalize_content_type(content_type: &str) -> String {
     content_type
@@ -125,12 +233,54 @@ fn ascii_slice(bytes: &[u8], start: usize, end: usize) -> Option<String> {
     )
 }
 
+fn extension_from_guessed_image_format(data: &[u8]) -> Option<&'static str> {
+    match image::guess_format(data).ok()? {
+        ImageFormat::Png => Some("png"),
+        ImageFormat::Jpeg => Some("jpg"),
+        ImageFormat::Gif => Some("gif"),
+        ImageFormat::WebP => Some("webp"),
+        ImageFormat::Bmp => Some("bmp"),
+        ImageFormat::Tiff => Some("tiff"),
+        ImageFormat::Ico => Some("ico"),
+        ImageFormat::Avif => Some("avif"),
+        _ => None,
+    }
+}
+
+fn head_ascii_lowercase(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(&bytes[..bytes.len().min(PROBE_READ_LIMIT)])
+        .trim_start_matches('\u{feff}')
+        .to_ascii_lowercase()
+}
+
+fn is_tiff_family(bytes: &[u8]) -> bool {
+    has_signature(bytes, &[0x49, 0x49, 0x2A, 0x00], 0)
+        || has_signature(bytes, &[0x4D, 0x4D, 0x00, 0x2A], 0)
+}
+
+fn is_bmff(bytes: &[u8]) -> bool {
+    ascii_slice(bytes, 4, 8).as_deref() == Some("ftyp")
+}
+
+fn bmff_brands(bytes: &[u8]) -> Option<String> {
+    if !is_bmff(bytes) {
+        return None;
+    }
+
+    Some(
+        String::from_utf8_lossy(&bytes[8..bytes.len().min(64)])
+            .to_ascii_lowercase()
+            .to_string(),
+    )
+}
+
 pub(crate) fn extension_from_content_type(content_type: Option<&str>) -> Option<&'static str> {
     let normalized = normalize_content_type(content_type?);
 
     IMAGE_MEDIA_TYPE_MAPPINGS
         .iter()
         .chain(TIFF_MEDIA_TYPE_MAPPINGS.iter())
+        .chain(OTHER_MEDIA_TYPE_MAPPINGS.iter())
         .find(|mapping| mapping.mime_type == normalized)
         .map(|mapping| mapping.extension)
 }
@@ -150,20 +300,35 @@ pub(crate) fn extension_from_magic_bytes(data: &[u8]) -> Option<&'static str> {
     {
         return Some("webp");
     }
+    if ascii_slice(data, 0, 4).as_deref() == Some("RIFF")
+        && ascii_slice(data, 8, 12).as_deref() == Some("AVI ")
+    {
+        return Some("avi");
+    }
     if has_signature(data, &[0x42, 0x4D], 0) {
         return Some("bmp");
     }
-    if has_signature(data, &[0x49, 0x49, 0x2A, 0x00], 0)
-        || has_signature(data, &[0x4D, 0x4D, 0x00, 0x2A], 0)
-    {
+    if is_tiff_family(data) {
+        let ascii_head = head_ascii_lowercase(data);
+        if ascii_slice(data, 8, 10).as_deref() == Some("CR") {
+            return Some("cr2");
+        }
+        if ascii_head.contains("nikon") {
+            return Some("nef");
+        }
+        if ascii_head.contains("sony") {
+            return Some("arw");
+        }
+        if ascii_head.contains("adobe dng") || ascii_head.contains(" dng") {
+            return Some("dng");
+        }
         return Some("tiff");
     }
     if has_signature(data, &[0x00, 0x00, 0x01, 0x00], 0) {
         return Some("ico");
     }
 
-    if ascii_slice(data, 4, 8).as_deref() == Some("ftyp") {
-        let brands = ascii_slice(data, 8, data.len().min(32)).unwrap_or_default();
+    if let Some(brands) = bmff_brands(data) {
         if brands.contains("avif") || brands.contains("avis") {
             return Some("avif");
         }
@@ -179,12 +344,74 @@ pub(crate) fn extension_from_magic_bytes(data: &[u8]) -> Option<&'static str> {
         {
             return Some("heif");
         }
+        if brands.contains("qt  ") {
+            return Some("mov");
+        }
+        if brands.contains("m4v") {
+            return Some("m4v");
+        }
+        if ["3gp", "3g2", "3gr", "3gs"]
+            .iter()
+            .any(|brand| brands.contains(brand))
+        {
+            return Some("3gp");
+        }
+        if ["mp4", "isom", "iso2", "iso5", "iso6", "avc1", "dash"]
+            .iter()
+            .any(|brand| brands.contains(brand))
+        {
+            return Some("mp4");
+        }
     }
 
-    let head = String::from_utf8_lossy(&data[..data.len().min(256)])
-        .trim_start()
-        .to_string();
-    if head.starts_with("<svg") || head.starts_with("<?xml") {
+    if has_signature(
+        data,
+        &[
+            0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62,
+            0xCE, 0x6C,
+        ],
+        0,
+    ) {
+        return Some("wmv");
+    }
+
+    if ascii_slice(data, 0, 3).as_deref() == Some("FLV") {
+        return Some("flv");
+    }
+
+    if has_signature(data, &[0x1A, 0x45, 0xDF, 0xA3], 0) {
+        let ascii_head = head_ascii_lowercase(data);
+        if ascii_head.contains("webm") {
+            return Some("webm");
+        }
+        if ascii_head.contains("matroska") {
+            return Some("mkv");
+        }
+    }
+
+    if ascii_slice(data, 0, 4).as_deref() == Some("8BPS") {
+        return Some("psd");
+    }
+
+    let ascii_head = head_ascii_lowercase(data);
+    if ascii_head.starts_with("%pdf-") {
+        if ascii_head.contains("illustrator") {
+            return Some("ai");
+        }
+        return Some("pdf");
+    }
+
+    if ascii_head.starts_with("%!ps-adobe-") {
+        if ascii_head.contains("illustrator") {
+            return Some("ai");
+        }
+        if ascii_head.contains("epsf-") {
+            return Some("eps");
+        }
+        return Some("eps");
+    }
+
+    if ascii_head.starts_with("<svg") || ascii_head.starts_with("<?xml") {
         return Some("svg");
     }
 
@@ -195,7 +422,15 @@ pub(crate) fn detect_extension_from_content(
     content_type: Option<&str>,
     data: &[u8],
 ) -> Option<&'static str> {
-    extension_from_content_type(content_type).or_else(|| extension_from_magic_bytes(data))
+    extension_from_magic_bytes(data)
+        .or_else(|| extension_from_guessed_image_format(data))
+        .or_else(|| extension_from_content_type(content_type))
+}
+
+pub(crate) fn is_scan_supported_extension(ext: &str) -> bool {
+    SCAN_SUPPORTED_EXTENSIONS
+        .iter()
+        .any(|item| item.eq_ignore_ascii_case(ext))
 }
 
 pub(crate) fn is_backend_decodable_image_extension(ext: &str) -> bool {
@@ -208,6 +443,29 @@ pub(crate) fn is_visual_search_supported_extension(ext: &str) -> bool {
     VISUAL_SEARCH_SUPPORTED_EXTENSIONS
         .iter()
         .any(|item| item.eq_ignore_ascii_case(ext))
+}
+
+pub(crate) fn is_ai_supported_image_extension(ext: &str) -> bool {
+    AI_SUPPORTED_IMAGE_EXTENSIONS
+        .iter()
+        .any(|item| item.eq_ignore_ascii_case(ext))
+}
+
+pub(crate) fn probe_media_from_bytes(content_type: Option<&str>, bytes: &[u8]) -> MediaProbe {
+    MediaProbe {
+        detected_extension: detect_extension_from_content(content_type, bytes),
+    }
+}
+
+pub(crate) fn probe_media_path(path: &Path) -> Result<MediaProbe, String> {
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("无法读取媒体文件 '{}': {}", path.display(), e))?;
+    let mut bytes = vec![0; PROBE_READ_LIMIT];
+    let read = file
+        .read(&mut bytes)
+        .map_err(|e| format!("无法读取媒体文件 '{}': {}", path.display(), e))?;
+    bytes.truncate(read);
+    Ok(probe_media_from_bytes(None, &bytes))
 }
 
 pub(crate) fn load_dynamic_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage, String> {
@@ -305,6 +563,58 @@ mod tests {
             detect_extension_from_content(Some("application/octet-stream"), &bytes),
             Some("heic")
         );
+    }
+
+    #[test]
+    fn detect_extension_prefers_magic_bytes_over_content_type() {
+        let bytes = [0xFF, 0xD8, 0xFF, 0xDB];
+        assert_eq!(
+            detect_extension_from_content(Some("image/png"), &bytes),
+            Some("jpg")
+        );
+    }
+
+    #[test]
+    fn magic_byte_detection_supports_pdf_and_video_formats() {
+        let pdf = b"%PDF-1.7\n";
+        assert_eq!(extension_from_magic_bytes(pdf), Some("pdf"));
+
+        let mp4 = [
+            0x00, 0x00, 0x00, 0x18, b'f', b't', b'y', b'p', b'i', b's', b'o', b'm', 0x00, 0x00,
+            0x02, 0x00,
+        ];
+        assert_eq!(extension_from_magic_bytes(&mp4), Some("mp4"));
+
+        let avi = [
+            b'R', b'I', b'F', b'F', 0x24, 0x00, 0x00, 0x00, b'A', b'V', b'I', b' ',
+        ];
+        assert_eq!(extension_from_magic_bytes(&avi), Some("avi"));
+    }
+
+    #[test]
+    fn magic_byte_detection_supports_design_formats() {
+        assert_eq!(
+            extension_from_magic_bytes(&[b'8', b'B', b'P', b'S', 0x00, 0x01]),
+            Some("psd")
+        );
+        assert_eq!(
+            extension_from_magic_bytes(b"%!PS-Adobe-3.0 EPSF-3.0\n%%Creator: Adobe Illustrator"),
+            Some("ai")
+        );
+    }
+
+    #[test]
+    fn probe_reports_visual_search_and_ai_capabilities_from_content() {
+        let avif = [
+            0x00, 0x00, 0x00, 0x1C, b'f', b't', b'y', b'p', b'a', b'v', b'i', b'f', 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let probe = probe_media_from_bytes(None, &avif);
+        assert_eq!(probe.detected_extension(), Some("avif"));
+        assert!(probe.is_visual_search_supported());
+        assert!(probe.is_ai_supported_image());
+        assert!(probe.requires_browser_decode_for_visual_index());
+        assert!(!probe.requires_browser_decode_for_ai());
     }
 
     #[test]

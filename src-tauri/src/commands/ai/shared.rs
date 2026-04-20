@@ -27,34 +27,20 @@ pub(super) const AI_METADATA_TASK_MAX_CONCURRENCY: usize = 5;
 pub(super) const AI_METADATA_TASK_MAX_ATTEMPTS: usize = 3;
 pub(super) const AI_METADATA_TASK_RETRY_DELAY_MS: u64 = 400;
 
-pub(crate) fn is_backend_decodable_image(file: &FileWithTags) -> bool {
-    media::is_backend_decodable_image_extension(&file.ext)
+fn probe_file_media(file: &FileWithTags) -> Result<media::MediaProbe, String> {
+    media::probe_media_path(Path::new(&file.path))
 }
 
-pub(super) fn requires_browser_decoded_visual_index(ext: &str) -> bool {
-    ext.eq_ignore_ascii_case("avif")
+pub(super) fn requires_browser_decoded_visual_index(path: &Path) -> Result<bool, String> {
+    Ok(media::probe_media_path(path)?.requires_browser_decode_for_visual_index())
 }
 
-pub(super) fn is_supported_image_for_ai(file: &FileWithTags, has_image_data_url: bool) -> bool {
-    if has_image_data_url {
-        matches!(
-            file.ext.to_ascii_lowercase().as_str(),
-            "jpg"
-                | "jpeg"
-                | "png"
-                | "webp"
-                | "bmp"
-                | "gif"
-                | "tif"
-                | "tiff"
-                | "ico"
-                | "avif"
-                | "heic"
-                | "heif"
-        )
-    } else {
-        is_backend_decodable_image(file)
-    }
+pub(super) fn is_supported_image_for_ai(file: &FileWithTags, _has_image_data_url: bool) -> bool {
+    let Ok(probe) = probe_file_media(file) else {
+        return false;
+    };
+
+    probe.is_ai_supported_image()
 }
 
 pub(super) fn prepare_image_data_url(path: &Path) -> Result<String, String> {
@@ -78,6 +64,20 @@ pub(super) fn prepare_image_data_url(path: &Path) -> Result<String, String> {
         "data:image/jpeg;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(encoded)
     ))
+}
+
+pub(super) fn prepare_file_image_data_url(
+    state: &AppState,
+    file: &FileWithTags,
+) -> Result<String, String> {
+    let probe = probe_file_media(file)?;
+    if probe.requires_browser_decode_for_ai() {
+        return request_browser_decoded_image_data_url_for_file(state, file, "image/png");
+    }
+    if probe.is_backend_decodable_image() {
+        return prepare_image_data_url(Path::new(&file.path));
+    }
+    Err("当前仅支持对图片文件执行 AI 分析".to_string())
 }
 
 pub(super) fn trim_to_char_limit(input: &str, max_chars: usize) -> String {
@@ -326,7 +326,7 @@ pub(super) fn resolve_visual_index_image_data_url(
     state: &AppState,
     candidate: &VisualIndexCandidate,
 ) -> Result<Option<String>, String> {
-    if requires_browser_decoded_visual_index(&candidate.file.ext) {
+    if requires_browser_decoded_visual_index(Path::new(&candidate.file.path))? {
         return request_browser_decoded_image_data_url(state, candidate, "image/png").map(Some);
     }
 
@@ -436,10 +436,24 @@ mod tests {
     use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
 
     #[test]
-    fn visual_index_browser_decode_requirement_is_avif_only() {
-        assert!(requires_browser_decoded_visual_index("avif"));
-        assert!(requires_browser_decoded_visual_index("AVIF"));
-        assert!(!requires_browser_decoded_visual_index("png"));
+    fn visual_index_browser_decode_requirement_uses_content_probe() {
+        let temp_dir = std::env::temp_dir();
+        let avif_path = temp_dir.join("shiguang-visual-index-avif-probe.avif");
+        let png_path = temp_dir.join("shiguang-visual-index-png-probe.png");
+        std::fs::write(
+            &avif_path,
+            [
+                0x00, 0x00, 0x00, 0x1C, b'f', b't', b'y', b'p', b'a', b'v', b'i', b'f',
+            ],
+        )
+        .unwrap();
+        std::fs::write(&png_path, [0x89, 0x50, 0x4E, 0x47]).unwrap();
+
+        assert!(requires_browser_decoded_visual_index(&avif_path).unwrap());
+        assert!(!requires_browser_decoded_visual_index(&png_path).unwrap());
+
+        let _ = std::fs::remove_file(avif_path);
+        let _ = std::fs::remove_file(png_path);
     }
 
     #[test]

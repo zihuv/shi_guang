@@ -43,8 +43,8 @@ pub fn generate_sync_id(prefix: &str) -> String {
 
 /// Get image dimensions
 pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if ext.eq_ignore_ascii_case("svg") {
+    let probe = crate::media::probe_media_path(path)?;
+    if probe.is_svg() || !probe.is_backend_decodable_image() {
         return Ok((0, 0));
     }
 
@@ -60,6 +60,7 @@ pub fn get_image_dimensions(path: &Path) -> Result<(u32, u32), String> {
 pub fn save_and_prepare_imported_file(
     file_data: &[u8],
     dest_path: &Path,
+    detected_ext: &str,
     folder_id: Option<i64>,
     created_at: String,
     modified_at: String,
@@ -81,11 +82,7 @@ pub fn save_and_prepare_imported_file(
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string(),
-        ext: dest_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("png")
-            .to_lowercase(),
+        ext: detected_ext.to_ascii_lowercase(),
         size: metadata.len() as i64,
         width: width as i32,
         height: height as i32,
