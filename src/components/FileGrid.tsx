@@ -27,6 +27,7 @@ import { REQUEST_FOCUS_FIRST_FILE_EVENT } from "@/lib/libraryNavigation";
 import {
   buildAdaptiveLayout,
   findAdaptiveNeighborIndex,
+  getAdaptiveFooterHeight,
   getGridMetadataHeight,
   getPointerPositionInScrollContainer,
   getSelectionBounds,
@@ -44,6 +45,8 @@ import {
   TILE_CARD_BASE_WIDTH,
   TILE_CARD_MAX_WIDTH,
   TILE_CARD_MIN_WIDTH,
+  SINGLE_TILE_CARD_MAX_WIDTH,
+  SINGLE_TILE_CARD_SCALE_MULTIPLIER,
   VIEW_SCALE_KEYBOARD_STEP,
   VIEW_SCALE_WHEEL_SENSITIVITY,
 } from "@/components/file-grid/fileGridLayout";
@@ -288,15 +291,55 @@ export default function FileGrid() {
   const listThumbnailSize = Math.max(28, Math.round(LIST_BASE_THUMBNAIL_SIZE * listViewScale));
   const adaptiveTargetWidth = tileTargetWidth;
   const contentWidth = Math.max(0, containerWidth);
+  const singleVisibleFile = filteredFiles.length === 1 ? filteredFiles[0] : null;
+  const singleBaseWidth = Math.round(tileTargetWidth * SINGLE_TILE_CARD_SCALE_MULTIPLIER);
+  const singleGridWidth = singleVisibleFile
+    ? Math.max(
+        TILE_CARD_MIN_WIDTH,
+        Math.min(contentWidth, SINGLE_TILE_CARD_MAX_WIDTH, singleBaseWidth),
+      )
+    : null;
+  const singleAdaptiveWidthCap = useMemo(() => {
+    if (!singleVisibleFile) {
+      return null;
+    }
+
+    const baseCap = Math.min(contentWidth, SINGLE_TILE_CARD_MAX_WIDTH);
+    if (
+      !singleVisibleFile.width ||
+      !singleVisibleFile.height ||
+      singleVisibleFile.width <= 0 ||
+      singleVisibleFile.height <= 0 ||
+      viewportHeight <= 0
+    ) {
+      return Math.max(TILE_CARD_MIN_WIDTH, Math.min(baseCap, singleBaseWidth));
+    }
+
+    const footerHeight = getAdaptiveFooterHeight(singleVisibleFile, libraryVisibleFields);
+    const maxCardHeight = Math.max(360, viewportHeight - 48);
+    const maxImageHeight = Math.max(240, maxCardHeight - footerHeight);
+    const widthByHeight = Math.floor((maxImageHeight * singleVisibleFile.width) / singleVisibleFile.height);
+
+    return Math.max(TILE_CARD_MIN_WIDTH, Math.min(baseCap, singleBaseWidth, widthByHeight));
+  }, [contentWidth, libraryVisibleFields, singleBaseWidth, singleVisibleFile, viewportHeight]);
   const gridLayout = useMemo(
-    () =>
-      resolvePackedTileColumns({
+    () => {
+      if (singleGridWidth != null) {
+        return {
+          columns: 1,
+          itemWidth: singleGridWidth,
+          trackWidth: singleGridWidth,
+        };
+      }
+
+      return resolvePackedTileColumns({
         containerWidth: contentWidth,
         preferredWidth: gridMinWidth,
         minWidth: TILE_CARD_MIN_WIDTH,
         itemCount: filteredFiles.length,
-      }),
-    [contentWidth, filteredFiles.length, gridMinWidth],
+      });
+    },
+    [contentWidth, filteredFiles.length, gridMinWidth, singleGridWidth],
   );
   const gridColumns = gridLayout.columns;
   const gridItemWidth = gridLayout.itemWidth;
@@ -324,14 +367,23 @@ export default function FileGrid() {
     [gridRowCount, gridVisibleEndRow, gridVisibleStartRow],
   );
   const adaptiveLayoutColumns = useMemo(
-    () =>
-      resolvePackedTileColumns({
+    () => {
+      if (singleAdaptiveWidthCap != null) {
+        return {
+          columns: 1,
+          itemWidth: singleAdaptiveWidthCap,
+          trackWidth: singleAdaptiveWidthCap,
+        };
+      }
+
+      return resolvePackedTileColumns({
         containerWidth: contentWidth,
         preferredWidth: adaptiveTargetWidth,
         minWidth: TILE_CARD_MIN_WIDTH,
         itemCount: filteredFiles.length,
-      }),
-    [adaptiveTargetWidth, contentWidth, filteredFiles.length],
+      });
+    },
+    [adaptiveTargetWidth, contentWidth, filteredFiles.length, singleAdaptiveWidthCap],
   );
   const adaptiveColumns = adaptiveLayoutColumns.columns;
   const adaptiveColumnWidth = adaptiveLayoutColumns.itemWidth;

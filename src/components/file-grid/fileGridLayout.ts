@@ -4,6 +4,8 @@ import { type LibraryVisibleField } from "@/stores/settingsStore";
 export const TILE_CARD_BASE_WIDTH = 180;
 export const TILE_CARD_MIN_WIDTH = 90;
 export const TILE_CARD_MAX_WIDTH = 420;
+export const SINGLE_TILE_CARD_MAX_WIDTH = 680;
+export const SINGLE_TILE_CARD_SCALE_MULTIPLIER = 4;
 export const GRID_GAP = 14;
 export const GRID_PREVIEW_HEIGHT_RATIO = 0.6;
 export const LIST_BASE_ROW_HEIGHT = 56;
