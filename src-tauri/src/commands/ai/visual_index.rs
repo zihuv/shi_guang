@@ -7,18 +7,20 @@ use crate::ml::model_manager::{
     VisualSearchConfig, VisualSearchThreadConfig,
 };
 use crate::{AppState, VisualIndexTaskEntry};
+use omni_search::ExecutionProviderKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Manager;
 
 const MAX_BACKGROUND_VISUAL_INDEX_INTRA_THREADS: usize = 2;
+const DIRECTML_VISUAL_RUNTIME_RECYCLE_INTERVAL: usize = 24;
 
 fn reindex_visual_candidate(
     state: &AppState,
     visual_search_config: &VisualSearchConfig,
     resolved_model: &ResolvedModelPaths,
     candidate: &VisualIndexCandidate,
-    image_data_url: Option<&str>,
+    image_bytes: Option<&[u8]>,
     source_content_hash: &str,
 ) -> Result<(), String> {
     let embedding = {
@@ -26,9 +28,8 @@ fn reindex_visual_candidate(
             .visual_model_runtime
             .lock()
             .map_err(|e| e.to_string())?;
-        if let Some(image_data_url) = image_data_url {
-            let image_bytes = shared::decode_image_data_url(image_data_url)?;
-            runtime.encode_image_bytes(resolved_model, visual_search_config, &image_bytes)?
+        if let Some(image_bytes) = image_bytes {
+            runtime.encode_image_bytes(resolved_model, visual_search_config, image_bytes)?
         } else {
             runtime.encode_image_path(
                 resolved_model,
@@ -77,27 +78,56 @@ fn process_visual_index_candidate(
     resolved_model: &ResolvedModelPaths,
     candidate: &VisualIndexCandidate,
 ) -> Result<(), String> {
-    let image_data_url =
-        shared::resolve_visual_index_image_data_url(state, candidate).or_else(|error| {
-            mark_visual_index_error(state, resolved_model, candidate, None, &error)?;
-            Err(error)
-        })?;
-
-    let source_content_hash =
-        shared::sync_visual_content_hash(state, candidate, image_data_url.as_deref()).or_else(
+    let browser_decoded_image_data_url =
+        shared::resolve_visual_index_browser_decoded_image_data_url(state, candidate).or_else(
             |error| {
-                shared::clear_visual_content_hash(state, candidate)?;
                 mark_visual_index_error(state, resolved_model, candidate, None, &error)?;
                 Err(error)
             },
         )?;
+
+    let source_content_hash = shared::sync_visual_content_hash(
+        state,
+        candidate,
+        browser_decoded_image_data_url.as_deref(),
+    )
+    .or_else(|error| {
+        shared::clear_visual_content_hash(state, candidate)?;
+        mark_visual_index_error(state, resolved_model, candidate, None, &error)?;
+        Err(error)
+    })?;
+
+    let prepared_image_bytes = if let Some(image_data_url) = browser_decoded_image_data_url.as_deref()
+    {
+        Some(shared::decode_image_data_url(image_data_url).or_else(|error| {
+            mark_visual_index_error(
+                state,
+                resolved_model,
+                candidate,
+                Some(&source_content_hash),
+                &error,
+            )?;
+            Err(error)
+        })?)
+    } else {
+        shared::resolve_visual_index_backend_prepared_image_bytes(candidate).or_else(|error| {
+            mark_visual_index_error(
+                state,
+                resolved_model,
+                candidate,
+                Some(&source_content_hash),
+                &error,
+            )?;
+            Err(error)
+        })?
+    };
 
     reindex_visual_candidate(
         state,
         visual_search_config,
         resolved_model,
         candidate,
-        image_data_url.as_deref(),
+        prepared_image_bytes.as_deref(),
         &source_content_hash,
     )
     .or_else(|error| {
@@ -192,6 +222,41 @@ fn effective_visual_index_config(visual_search_config: &VisualSearchConfig) -> V
     )
 }
 
+fn should_recycle_visual_runtime_after_candidate(
+    processed_count: usize,
+    effective_provider: Option<ExecutionProviderKind>,
+) -> bool {
+    processed_count > 0
+        && processed_count % DIRECTML_VISUAL_RUNTIME_RECYCLE_INTERVAL == 0
+        && matches!(effective_provider, Some(ExecutionProviderKind::DirectMl))
+}
+
+fn maybe_recycle_visual_runtime_after_candidate(
+    state: &AppState,
+    resolved_model: &ResolvedModelPaths,
+    visual_search_config: &VisualSearchConfig,
+    processed_count: usize,
+) -> Result<(), String> {
+    let mut runtime = state
+        .visual_model_runtime
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let effective_provider = runtime
+        .runtime_snapshot_if_loaded(resolved_model, visual_search_config)?
+        .and_then(|snapshot| snapshot.image_session.effective_provider);
+
+    if !should_recycle_visual_runtime_after_candidate(processed_count, effective_provider) {
+        return Ok(());
+    }
+
+    runtime.clear();
+    log::info!(
+        "Recycled visual model runtime after {} images to avoid long-lived DirectML session stalls",
+        processed_count
+    );
+    Ok(())
+}
+
 pub(super) fn get_visual_index_status_impl(state: &AppState) -> Result<VisualIndexStatus, String> {
     let (config, validation) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -254,7 +319,7 @@ pub(super) fn get_visual_index_status_impl(state: &AppState) -> Result<VisualInd
             .visual_model_runtime
             .lock()
             .map_err(|e| e.to_string())?;
-        runtime.runtime_snapshot_if_loaded(&resolved_model, &config)?
+        runtime.runtime_snapshot_if_loaded(&resolved_model, &effective_visual_index_config(&config))?
     };
 
     let (runtime_loaded, runtime_mode, effective_provider, runtime_reason) =
@@ -468,6 +533,7 @@ pub(super) fn spawn_visual_index_task(
             });
             shared::emit_visual_index_task_update(&app_handle, &task_id_for_worker);
 
+            let mut processed_count = 0usize;
             for candidate in candidates {
                 if cancel_flag.load(Ordering::Relaxed) {
                     break;
@@ -503,6 +569,20 @@ pub(super) fn spawn_visual_index_task(
                     },
                 );
                 shared::emit_visual_index_task_update(&app_handle, &task_id_for_worker);
+
+                processed_count += 1;
+                if let Err(error) = maybe_recycle_visual_runtime_after_candidate(
+                    &state,
+                    &resolved_model,
+                    &effective_visual_search_config,
+                    processed_count,
+                ) {
+                    log::warn!(
+                        "Failed to recycle visual model runtime after {} images: {}",
+                        processed_count,
+                        error
+                    );
+                }
             }
 
             Ok(())
@@ -586,6 +666,7 @@ mod tests {
     use crate::ml::model_manager::{
         VisualSearchProviderPolicy, VisualSearchRuntimeConfig, VisualSearchRuntimeDevice,
     };
+    use omni_search::ExecutionProviderKind;
 
     fn make_visual_search_config(
         intra_threads: Option<VisualSearchThreadConfig>,
@@ -634,6 +715,23 @@ mod tests {
     }
 
     #[test]
+    fn background_visual_index_preserves_explicit_device_override() {
+        let mut config = make_visual_search_config(None);
+        config.runtime.device = VisualSearchRuntimeDevice::Gpu;
+
+        let effective = apply_background_visual_index_runtime_defaults(&config, 2);
+
+        assert_eq!(effective.runtime.device, VisualSearchRuntimeDevice::Gpu);
+    }
+
+    #[test]
+    fn background_visual_index_keeps_auto_device_by_default() {
+        let config = apply_background_visual_index_runtime_defaults(&make_visual_search_config(None), 2);
+
+        assert_eq!(config.runtime.device, VisualSearchRuntimeDevice::Auto);
+    }
+
+    #[test]
     fn background_visual_index_threads_cap_auto_mode() {
         let config = apply_background_visual_index_runtime_defaults(
             &make_visual_search_config(Some(VisualSearchThreadConfig::Preset(
@@ -646,5 +744,30 @@ mod tests {
             config.runtime.intra_threads,
             Some(VisualSearchThreadConfig::Fixed(2))
         );
+    }
+
+    #[test]
+    fn directml_runtime_recycle_only_triggers_on_interval_boundary() {
+        assert!(!should_recycle_visual_runtime_after_candidate(
+            23,
+            Some(ExecutionProviderKind::DirectMl)
+        ));
+        assert!(should_recycle_visual_runtime_after_candidate(
+            24,
+            Some(ExecutionProviderKind::DirectMl)
+        ));
+        assert!(should_recycle_visual_runtime_after_candidate(
+            48,
+            Some(ExecutionProviderKind::DirectMl)
+        ));
+    }
+
+    #[test]
+    fn directml_runtime_recycle_skips_non_directml_providers() {
+        assert!(!should_recycle_visual_runtime_after_candidate(
+            24,
+            Some(ExecutionProviderKind::Cpu)
+        ));
+        assert!(!should_recycle_visual_runtime_after_candidate(24, None));
     }
 }

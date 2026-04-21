@@ -20,6 +20,11 @@ pub(super) const VISUAL_INDEX_BROWSER_DECODE_REQUEST_EVENT: &str =
     "visual-index-browser-decode-request";
 pub(super) const VISUAL_INDEX_BROWSER_DECODE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(1800);
+pub(super) const VISUAL_INDEX_BROWSER_DECODE_MAX_EDGE: u32 = 1280;
+pub(super) const VISUAL_INDEX_BROWSER_DECODE_OUTPUT_MIME_TYPE: &str = "image/jpeg";
+pub(super) const VISUAL_INDEX_BACKEND_TRANSCODE_MAX_EDGE: u32 = 1280;
+pub(super) const VISUAL_INDEX_BACKEND_TRANSCODE_JPEG_QUALITY: u8 = 85;
+pub(super) const AI_BROWSER_DECODE_OUTPUT_MIME_TYPE: &str = "image/jpeg";
 pub(super) const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY: &str = "aiBatchAnalyzeConcurrency";
 pub(super) const AI_METADATA_TASK_DEFAULT_CONCURRENCY: usize = 5;
 pub(super) const AI_METADATA_TASK_MIN_CONCURRENCY: usize = 1;
@@ -44,10 +49,23 @@ pub(super) fn is_supported_image_for_ai(file: &FileWithTags, _has_image_data_url
 }
 
 pub(super) fn prepare_image_data_url(path: &Path) -> Result<String, String> {
+    let encoded = prepare_resized_jpeg_bytes(
+        path,
+        VISUAL_INDEX_BACKEND_TRANSCODE_MAX_EDGE,
+        VISUAL_INDEX_BACKEND_TRANSCODE_JPEG_QUALITY,
+    )?;
+
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(encoded)
+    ))
+}
+
+fn prepare_resized_jpeg_bytes(path: &Path, max_edge: u32, quality: u8) -> Result<Vec<u8>, String> {
     let image = media::load_dynamic_image_from_path(path)?;
     let (width, height) = image.dimensions();
-    let resized = if width.max(height) > 1280 {
-        image.resize(1280, 1280, FilterType::Lanczos3)
+    let resized = if width.max(height) > max_edge {
+        image.resize(max_edge, max_edge, FilterType::Lanczos3)
     } else {
         image
     };
@@ -55,15 +73,12 @@ pub(super) fn prepare_image_data_url(path: &Path) -> Result<String, String> {
     let (resized_width, resized_height) = rgb.dimensions();
 
     let mut encoded = Vec::new();
-    let mut encoder = JpegEncoder::new_with_quality(&mut encoded, 85);
+    let mut encoder = JpegEncoder::new_with_quality(&mut encoded, quality);
     encoder
         .encode(&rgb, resized_width, resized_height, ColorType::Rgb8.into())
         .map_err(|e| format!("无法编码图片: {}", e))?;
 
-    Ok(format!(
-        "data:image/jpeg;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(encoded)
-    ))
+    Ok(encoded)
 }
 
 pub(super) fn prepare_file_image_data_url(
@@ -72,7 +87,11 @@ pub(super) fn prepare_file_image_data_url(
 ) -> Result<String, String> {
     let probe = probe_file_media(file)?;
     if probe.requires_browser_decode_for_ai() {
-        return request_browser_decoded_image_data_url_for_file(state, file, "image/png");
+        return request_browser_decoded_image_data_url_for_file(
+            state,
+            file,
+            AI_BROWSER_DECODE_OUTPUT_MIME_TYPE,
+        );
     }
     if probe.is_backend_decodable_image() {
         return prepare_image_data_url(Path::new(&file.path));
@@ -271,6 +290,7 @@ fn request_browser_decoded_image_data_url_for_source(
             request_id: request_id.clone(),
             file_id,
             path: path.to_string(),
+            max_edge: VISUAL_INDEX_BROWSER_DECODE_MAX_EDGE,
             output_mime_type: output_mime_type.to_string(),
         },
     ) {
@@ -322,15 +342,41 @@ pub(super) fn request_browser_decoded_image_data_url(
     )
 }
 
-pub(super) fn resolve_visual_index_image_data_url(
+pub(super) fn resolve_visual_index_browser_decoded_image_data_url(
     state: &AppState,
     candidate: &VisualIndexCandidate,
 ) -> Result<Option<String>, String> {
     if requires_browser_decoded_visual_index(Path::new(&candidate.file.path))? {
-        return request_browser_decoded_image_data_url(state, candidate, "image/png").map(Some);
+        return request_browser_decoded_image_data_url(
+            state,
+            candidate,
+            VISUAL_INDEX_BROWSER_DECODE_OUTPUT_MIME_TYPE,
+        )
+        .map(Some);
     }
 
     Ok(None)
+}
+
+fn should_prepare_visual_index_backend_image_bytes(path: &Path) -> Result<bool, String> {
+    let probe = media::probe_media_path(path)?;
+    Ok(matches!(probe.detected_extension(), Some("avif")))
+}
+
+pub(super) fn resolve_visual_index_backend_prepared_image_bytes(
+    candidate: &VisualIndexCandidate,
+) -> Result<Option<Vec<u8>>, String> {
+    let path = Path::new(&candidate.file.path);
+    if !should_prepare_visual_index_backend_image_bytes(path)? {
+        return Ok(None);
+    }
+
+    prepare_resized_jpeg_bytes(
+        path,
+        VISUAL_INDEX_BACKEND_TRANSCODE_MAX_EDGE,
+        VISUAL_INDEX_BACKEND_TRANSCODE_JPEG_QUALITY,
+    )
+    .map(Some)
 }
 
 pub(super) fn sync_visual_content_hash(
@@ -338,6 +384,15 @@ pub(super) fn sync_visual_content_hash(
     candidate: &VisualIndexCandidate,
     image_data_url: Option<&str>,
 ) -> Result<String, String> {
+    if let Some(existing_hash) = candidate
+        .content_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(existing_hash.to_string());
+    }
+
     let content_hash_result = match image_data_url {
         Some(image_data_url) => {
             let image_bytes = decode_image_data_url(image_data_url)?;
@@ -449,7 +504,7 @@ mod tests {
         .unwrap();
         std::fs::write(&png_path, [0x89, 0x50, 0x4E, 0x47]).unwrap();
 
-        assert!(requires_browser_decoded_visual_index(&avif_path).unwrap());
+        assert!(!requires_browser_decoded_visual_index(&avif_path).unwrap());
         assert!(!requires_browser_decoded_visual_index(&png_path).unwrap());
 
         let _ = std::fs::remove_file(avif_path);
@@ -475,5 +530,50 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(result.unwrap().starts_with("data:image/jpeg;base64,"));
+    }
+
+    #[test]
+    fn resolve_visual_index_backend_prepared_image_bytes_transcodes_avif_to_jpeg() {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-visual-index-avif-{}-{}.avif",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(2, 2, Rgb([12, 34, 56])));
+        image.save_with_format(&path, ImageFormat::Avif).unwrap();
+
+        assert!(should_prepare_visual_index_backend_image_bytes(&path).unwrap());
+        let bytes = prepare_resized_jpeg_bytes(
+            &path,
+            VISUAL_INDEX_BACKEND_TRANSCODE_MAX_EDGE,
+            VISUAL_INDEX_BACKEND_TRANSCODE_JPEG_QUALITY,
+        )
+        .unwrap();
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(image::guess_format(&bytes).unwrap(), ImageFormat::Jpeg);
+    }
+
+    #[test]
+    fn resolve_visual_index_backend_prepared_image_bytes_skips_non_avif() {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-visual-index-jpg-{}-{}.jpg",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(2, 2, Rgb([12, 34, 56])));
+        image.save_with_format(&path, ImageFormat::Jpeg).unwrap();
+
+        assert!(
+            !should_prepare_visual_index_backend_image_bytes(&path)
+                .unwrap()
+        );
+        let _ = fs::remove_file(&path);
     }
 }

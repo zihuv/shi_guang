@@ -18,23 +18,36 @@ Use `pnpm` because the repo is checked in with `pnpm-lock.yaml`.
 
 For Rust-only validation, run `cargo test` or `cargo check` from `src-tauri/`.
 
-If Codex is launching Tauri on Windows, use this startup command to avoid missing shell env vars breaking `pnpm` or local socket binding:
+If Codex is launching Tauri on Windows, set these env vars first and prefer running `pnpm tauri dev` in the current shell:
 
 ```powershell
 $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\\Roaming'
 $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\\Local'
 $env:HOME = $env:USERPROFILE
-$env:SystemRoot = 'C:\\Windows'
-$env:windir = 'C:\\Windows'
-$env:ComSpec = 'C:\\Windows\\System32\\cmd.exe'
+$windowsDir = if ($env:windir) { $env:windir } elseif ($env:SystemRoot) { $env:SystemRoot } else { Join-Path $env:SystemDrive 'Windows' }
+$env:SystemRoot = $windowsDir
+$env:windir = $windowsDir
+$env:ComSpec = Join-Path $windowsDir 'System32\\cmd.exe'
 pnpm tauri dev
 ```
 
 Keep the dev server on `127.0.0.1`; do not switch it back to `localhost`.
 
-Before launching Tauri MCP on Windows, check for existing listeners on `127.0.0.1:1420` and `:9223`. The main causes of slow or failed startup here were duplicate Vite launches (`1420` already in use) and stale `shiguang.exe` / `cargo` processes locking `src-tauri/target/debug/shiguang.exe` (`os error 5`).
+Before restarting anything, check `127.0.0.1:1420` and `:9223`:
 
-If `1420` is already owned by this repo's Vite process, reuse it and do not start `pnpm dev` again. If `9223` is already listening, try connecting MCP first before restarting the app. If a restart is required, stop stale repo-scoped `shiguang.exe`, `cargo`, `rustc`, and Vite processes first, then start frontend once and start Tauri without spawning a second dev server.
+- If `1420` is already owned by this repo's Vite process, reuse it and do not start `pnpm dev` again.
+- If `9223` is already listening, try connecting MCP first.
+- Restart only when needed, and stop stale repo-scoped `shiguang.exe`, `cargo`, `rustc`, and Vite processes before relaunching.
+
+If a background launch is unavoidable, reuse the same env setup in the current shell and launch `pnpm.cmd` directly:
+
+```powershell
+Start-Process -FilePath (Get-Command 'pnpm.cmd').Source -ArgumentList 'tauri','dev' -WorkingDirectory (Get-Location).Path
+```
+
+Do not wrap the env setup inside another `powershell -Command "..."` string; that can break the `$env:` assignments before the child shell runs.
+
+Treat startup as successful only when `127.0.0.1:1420` is listening, `shiguang.exe` is running for this repo, `9223` is listening, and Tauri MCP can report the `main` window.
 
 ## Coding Style & Naming Conventions
 Follow the existing code style in each layer: TypeScript files generally use 2-space indentation and double quotes in newer files; Rust uses `rustfmt` defaults with 4 spaces. Keep React components and Zustand stores in PascalCase file names such as `FileGrid.tsx` and `fileStore.ts`. Prefer descriptive function names and keep Tauri command logic in `src-tauri/src/commands.rs` or adjacent backend modules. Use Tailwind utility classes in JSX and keep shared class composition in helpers like `src/lib/utils.ts`. If a file grows too large, refactor it into smaller modules where appropriate.

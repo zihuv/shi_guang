@@ -202,8 +202,7 @@ impl MediaProbe {
     }
 
     pub(crate) fn requires_browser_decode_for_visual_index(self) -> bool {
-        self.detected_extension == Some("avif")
-            || (self.is_visual_search_supported() && !self.is_backend_decodable_image())
+        self.is_visual_search_supported() && !self.is_backend_decodable_image()
     }
 }
 
@@ -613,7 +612,7 @@ mod tests {
         assert_eq!(probe.detected_extension(), Some("avif"));
         assert!(probe.is_visual_search_supported());
         assert!(probe.is_ai_supported_image());
-        assert!(probe.requires_browser_decode_for_visual_index());
+        assert!(!probe.requires_browser_decode_for_visual_index());
         assert!(!probe.requires_browser_decode_for_ai());
     }
 
@@ -636,6 +635,26 @@ mod tests {
 
         let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(2, 3, Rgb([12, 34, 56])));
         image.save_with_format(&path, ImageFormat::Jpeg).unwrap();
+
+        let decoded = load_dynamic_image_from_path(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(decoded.dimensions(), (2, 3));
+    }
+
+    #[test]
+    fn load_dynamic_image_from_path_reads_avif_content() {
+        let path = std::env::temp_dir().join(format!(
+            "shiguang-media-test-{}-{}.avif",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(2, 3, Rgb([12, 34, 56])));
+        image.save_with_format(&path, ImageFormat::Avif).unwrap();
 
         let decoded = load_dynamic_image_from_path(&path).unwrap();
         let _ = std::fs::remove_file(&path);

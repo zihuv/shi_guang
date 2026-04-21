@@ -41,6 +41,7 @@ pub struct VisualIndexBrowserDecodeRequestPayload {
     pub request_id: String,
     pub file_id: i64,
     pub path: String,
+    pub max_edge: u32,
     pub output_mime_type: String,
 }
 

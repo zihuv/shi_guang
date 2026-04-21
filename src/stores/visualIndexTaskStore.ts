@@ -142,9 +142,14 @@ export const useVisualIndexTaskStore = create<VisualIndexTaskStore>((set, get) =
     try {
       const task = await startVisualIndexTaskCommand(processUnindexedOnly);
       set({ visualIndexTask: task });
+      let runtimeStatusRefreshed = false;
 
       void waitForVisualIndexTask(task.id, (nextTask) => {
         set({ visualIndexTask: nextTask });
+        if (!runtimeStatusRefreshed && nextTask.processed > 0) {
+          runtimeStatusRefreshed = true;
+          void useSettingsStore.getState().refreshVisualSearchStatus();
+        }
       })
         .then((finalTask) =>
           finalizeVisualIndexTask(finalTask, (nextTask) => set({ visualIndexTask: nextTask })),

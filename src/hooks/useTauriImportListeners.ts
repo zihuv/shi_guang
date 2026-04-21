@@ -41,6 +41,8 @@ type VisualIndexBrowserDecodeRequestPayload = {
   fileId?: number;
   file_id?: number;
   path?: string;
+  maxEdge?: number;
+  max_edge?: number;
   outputMimeType?: string;
   output_mime_type?: string;
 };
@@ -60,8 +62,10 @@ async function handleVisualIndexBrowserDecodeRequest(
 
   try {
     imageDataUrl = await buildBrowserDecodedImageDataUrl(path, {
-      maxEdge: null,
-      outputMimeType: payload?.outputMimeType ?? payload?.output_mime_type ?? "image/png",
+      maxEdge: payload?.maxEdge ?? payload?.max_edge ?? 1280,
+      outputMimeType: payload?.outputMimeType ?? payload?.output_mime_type ?? "image/jpeg",
+      preferWorker: true,
+      allowImageElementFallback: false,
     });
   } catch (error) {
     errorMessage = error instanceof Error ? error.message : String(error);

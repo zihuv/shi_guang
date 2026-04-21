@@ -20,6 +20,7 @@ pub struct VisualIndexCandidate {
     pub file: VisualIndexSourceFile,
     pub source_size: i64,
     pub source_modified_at: String,
+    pub content_hash: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,7 +143,7 @@ impl Database {
         let row = self
             .conn
             .query_row(
-                "SELECT id, path, name, ext, size, fs_modified_at
+                "SELECT id, path, name, ext, size, fs_modified_at, content_hash
                  FROM files
                  WHERE id = ?1
                    AND deleted_at IS NULL",
@@ -155,11 +156,12 @@ impl Database {
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
                         row.get::<_, String>(5)?,
+                        row.get::<_, Option<String>>(6)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((id, path, name, ext, source_size, source_modified_at)) = row else {
+        let Some((id, path, name, ext, source_size, source_modified_at, content_hash)) = row else {
             return Ok(None);
         };
         if !is_supported_visual_index_path(&path) {
@@ -169,6 +171,7 @@ impl Database {
         Ok(Some(VisualIndexCandidate {
             source_size,
             source_modified_at,
+            content_hash,
             file: VisualIndexSourceFile {
                 id,
                 path,
@@ -179,7 +182,7 @@ impl Database {
     }
 
     pub fn get_visual_index_candidates(&self) -> Result<Vec<VisualIndexCandidate>> {
-        let sql = "SELECT id, path, name, ext, size, fs_modified_at
+        let sql = "SELECT id, path, name, ext, size, fs_modified_at, content_hash
              FROM files
              WHERE deleted_at IS NULL
              ORDER BY imported_at DESC, id ASC";
@@ -196,6 +199,7 @@ impl Database {
                     },
                     source_size: row.get(4)?,
                     source_modified_at: row.get(5)?,
+                    content_hash: row.get(6)?,
                 })
             })?
             .flatten()
@@ -210,7 +214,7 @@ impl Database {
         model_id: &str,
     ) -> Result<Vec<VisualIndexCandidate>> {
         let sql = format!(
-            "SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at
+            "SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at, f.content_hash
              FROM files f
              LEFT JOIN file_visual_embeddings fve
                ON fve.file_id = f.id
@@ -238,6 +242,7 @@ impl Database {
                     },
                     source_size: row.get(4)?,
                     source_modified_at: row.get(5)?,
+                    content_hash: row.get(6)?,
                 })
             })?
             .flatten()

@@ -114,15 +114,15 @@ function formatEffectiveProviderLabel(
 ) {
   switch (value) {
     case "tensorrt":
-      return "TensorRT";
+      return "gpu/tensorrt";
     case "cuda":
-      return "CUDA";
+      return "gpu/cuda";
     case "direct_ml":
-      return "DirectML";
+      return "gpu/directml";
     case "core_ml":
-      return "CoreML";
+      return "apple/coreml";
     case "cpu":
-      return "CPU";
+      return "cpu";
     default:
       return runtimeLoaded ? "未确定" : "未初始化";
   }

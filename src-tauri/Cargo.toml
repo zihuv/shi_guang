@@ -26,7 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.39", features = ["bundled"] }
 walkdir = "2"
-image = "0.25"
+image = { version = "0.25", features = ["avif", "avif-native"] }
 chrono = "0.4"
 log = "0.4"
 base64 = "0.22"
@@ -51,8 +51,8 @@ sysinfo = { version = "0.38.4", default-features = false, features = ["system"],
 tracing = { version = "0.1.44", optional = true }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "std"], optional = true }
 dhat = { version = "0.3.3", optional = true }
-omni_search = "0.2.4"
-ort = { version = "2.0.0-rc.12", features = ["preload-dylibs"] }
+omni_search = { version = "0.2.6", default-features = false, features = ["runtime-bundled", "directml", "avif"] }
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "preload-dylibs"] }
 
 [profile.release]
 panic = "abort"

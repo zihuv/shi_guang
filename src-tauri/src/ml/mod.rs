@@ -210,3 +210,65 @@ impl Drop for VisualModelTaskGuard<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ml::model_manager::{
+        find_recommended_visual_model_path, resolve_model_paths, VisualSearchConfig,
+        VisualSearchProviderPolicy, VisualSearchRuntimeConfig, VisualSearchRuntimeDevice,
+        VisualSearchThreadConfig,
+    };
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
+
+    fn unique_temp_file(extension: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "shiguang-ml-avif-test-{}-{}.{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            extension
+        ))
+    }
+
+    #[test]
+    #[ignore = "requires local visual model assets"]
+    fn encode_image_path_supports_avif_with_local_model() {
+        let model_path = std::env::var("SHIGUANG_VISUAL_MODEL_DIR")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(find_recommended_visual_model_path)
+            .expect("set SHIGUANG_VISUAL_MODEL_DIR to a local visual model directory");
+        let resolved_model = resolve_model_paths(&model_path).unwrap();
+        let visual_search_config = VisualSearchConfig {
+            enabled: true,
+            model_path: model_path.clone(),
+            auto_vectorize_on_import: false,
+            process_unindexed_only: true,
+            runtime: VisualSearchRuntimeConfig {
+                device: VisualSearchRuntimeDevice::Auto,
+                provider_policy: VisualSearchProviderPolicy::Interactive,
+                intra_threads: Some(VisualSearchThreadConfig::Fixed(1)),
+                fgclip_max_patches: Some(128),
+            },
+        };
+
+        let image_path = unique_temp_file("avif");
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(8, 8, Rgb([12, 34, 56])));
+        image
+            .save_with_format(&image_path, ImageFormat::Avif)
+            .unwrap();
+
+        let mut runtime = VisualModelRuntime::default();
+        let embedding = runtime
+            .encode_image_path(&resolved_model, &visual_search_config, &image_path)
+            .unwrap();
+
+        assert_eq!(embedding.len(), resolved_model.manifest.embedding_dim);
+        assert!(embedding.iter().all(|value| value.is_finite()));
+
+        let _ = std::fs::remove_file(image_path);
+    }
+}
