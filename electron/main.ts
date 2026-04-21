@@ -38,6 +38,30 @@ function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
 
+function isDevToolsToggleShortcut(input: {
+  key: string;
+  type: string;
+  control: boolean;
+  meta: boolean;
+  shift: boolean;
+  alt: boolean;
+}): boolean {
+  if (input.type !== "keyDown") {
+    return false;
+  }
+
+  const key = input.key.toLowerCase();
+  if (key === "f12") {
+    return true;
+  }
+
+  if (process.platform === "darwin") {
+    return key === "i" && input.meta && input.alt;
+  }
+
+  return key === "i" && input.control && input.shift;
+}
+
 function getAppIconPath(): string {
   const candidates = app.isPackaged
     ? [path.join(process.resourcesPath, "assets", "app-icon.png")]
@@ -150,6 +174,17 @@ async function createMainWindow(): Promise<void> {
     await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     await mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+  }
+
+  if (!app.isPackaged) {
+    mainWindow.webContents.on("before-input-event", (event, input) => {
+      if (!isDevToolsToggleShortcut(input)) {
+        return;
+      }
+
+      event.preventDefault();
+      mainWindow?.webContents.toggleDevTools();
+    });
   }
 
   mainWindow.removeMenu();
