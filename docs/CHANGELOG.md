@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 修复发布脚本更新版本号时遗漏 `package-lock.json`，避免发布提交中的 npm 锁文件版本不同步。
+
 ## [0.3.1] - 2026-04-21
 
 ### Added

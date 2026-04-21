@@ -5,9 +5,13 @@ const { moveUnreleasedToVersion } = require("./changelog.cjs");
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
 const CHANGELOG_FILE = "docs/CHANGELOG.md";
+const PACKAGE_JSON_FILE = "package.json";
+const PACKAGE_LOCK_FILE = "package-lock.json";
+const EXTENSION_MANIFEST_FILE = "extensions/shiguang-collector/manifest.json";
 const VERSION_FILES = [
-  "package.json",
-  "extensions/shiguang-collector/manifest.json",
+  PACKAGE_JSON_FILE,
+  PACKAGE_LOCK_FILE,
+  EXTENSION_MANIFEST_FILE,
 ];
 
 function parseArgs(argv) {
@@ -48,6 +52,10 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
 }
 
+function npmCommand() {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || process.cwd(),
@@ -85,7 +93,7 @@ function ensureValidVersion(version) {
 function ensureVersionsAligned(versionFiles) {
   const versions = versionFiles.map((file) => ({
     file,
-    version: readJson(file).version,
+    version: readVersion(file),
   }));
 
   const firstVersion = versions[0]?.version;
@@ -102,12 +110,40 @@ function ensureVersionsAligned(versionFiles) {
   return firstVersion;
 }
 
-function updateVersions(versionFiles, version) {
-  for (const file of versionFiles) {
-    const filePath = path.resolve(file);
-    const parsed = readJson(filePath);
-    parsed.version = version;
-    fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
+function readVersion(file) {
+  const parsed = readJson(file);
+
+  if (file === PACKAGE_LOCK_FILE) {
+    const rootVersion = parsed.packages?.[""]?.version;
+    if (rootVersion && rootVersion !== parsed.version) {
+      throw new Error(
+        `${PACKAGE_LOCK_FILE} version mismatch: root package is ${rootVersion}, top-level version is ${parsed.version}`,
+      );
+    }
+  }
+
+  return parsed.version;
+}
+
+function updateJsonVersion(file, version) {
+  const filePath = path.resolve(file);
+  const parsed = readJson(filePath);
+  parsed.version = version;
+
+  if (file === PACKAGE_LOCK_FILE && parsed.packages?.[""]) {
+    parsed.packages[""].version = version;
+  }
+
+  fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
+}
+
+function updateVersions(version) {
+  run(npmCommand(), ["version", version, "--no-git-tag-version"], {
+    stdio: "pipe",
+  });
+
+  for (const file of [EXTENSION_MANIFEST_FILE]) {
+    updateJsonVersion(file, version);
   }
 }
 
@@ -170,7 +206,10 @@ function printPlan(version, noPush) {
   const commitMessage = `${version}`;
 
   console.log("Release plan:");
-  console.log(`- update ${VERSION_FILES.join(", ")} to ${version}`);
+  console.log(
+    `- npm version ${version} --no-git-tag-version to update ${PACKAGE_JSON_FILE} and ${PACKAGE_LOCK_FILE}`,
+  );
+  console.log(`- update ${EXTENSION_MANIFEST_FILE} to ${version}`);
   console.log(`- move ${CHANGELOG_FILE} Unreleased notes to ${version}`);
   console.log(`- node scripts/prepare-release.cjs ${version}`);
   console.log(`- git add ${VERSION_FILES.join(" ")} ${CHANGELOG_FILE}`);
@@ -214,7 +253,7 @@ function main() {
 
   const commitMessage = `${version}`;
 
-  updateVersions(VERSION_FILES, version);
+  updateVersions(version);
   updateChangelog(version);
 
   run(process.execPath, [path.join("scripts", "prepare-release.cjs"), version]);
