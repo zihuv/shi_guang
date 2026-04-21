@@ -1,4 +1,0 @@
-interface:
-  display_name: "Tauri Memory Analysis"
-  short_description: "Diagnose Tauri memory hotspots"
-  default_prompt: "Use $tauri-memory-analysis to investigate memory growth in this Tauri app and separate WebView, Rust, and model-side retention."
