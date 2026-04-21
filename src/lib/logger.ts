@@ -1,12 +1,3 @@
-import { isTauri } from "@tauri-apps/api/core";
-import {
-  debug as tauriDebug,
-  error as tauriError,
-  info as tauriInfo,
-  trace as tauriTrace,
-  warn as tauriWarn,
-} from "@tauri-apps/plugin-log";
-
 type ConsoleMethod = "debug" | "error" | "info" | "log" | "warn";
 
 type LogWriter = (message: string) => Promise<void>;
@@ -23,29 +14,37 @@ let initialized = false;
 let loggingAvailable = true;
 
 export function initAppLogging(): void {
-  if (initialized || !isTauri()) {
+  if (initialized || !window.shiguang) {
     return;
   }
 
   initialized = true;
 
-  forwardConsole("log", tauriInfo);
-  forwardConsole("info", tauriInfo);
-  forwardConsole("warn", tauriWarn);
-  forwardConsole("error", tauriError);
-  forwardConsole("debug", import.meta.env.DEV ? tauriDebug : tauriTrace);
+  forwardConsole("log", (message) => window.shiguang!.log("info", message));
+  forwardConsole("info", (message) => window.shiguang!.log("info", message));
+  forwardConsole("warn", (message) => window.shiguang!.log("warn", message));
+  forwardConsole("error", (message) => window.shiguang!.log("error", message));
+  forwardConsole("debug", (message) =>
+    window.shiguang!.log(import.meta.env.DEV ? "debug" : "trace", message),
+  );
 
   window.addEventListener("error", (event) => {
-    void emitLog(tauriError, [
-      "[window.error]",
-      event.message,
-      event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined,
-      event.error,
-    ]);
+    void emitLog(
+      (message) => window.shiguang!.log("error", message),
+      [
+        "[window.error]",
+        event.message,
+        event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined,
+        event.error,
+      ],
+    );
   });
 
   window.addEventListener("unhandledrejection", (event) => {
-    void emitLog(tauriError, ["[unhandledrejection]", event.reason]);
+    void emitLog(
+      (message) => window.shiguang!.log("error", message),
+      ["[unhandledrejection]", event.reason],
+    );
   });
 }
 
@@ -65,7 +64,10 @@ async function emitLog(writer: LogWriter, args: unknown[]): Promise<void> {
     await writer(formatLogArgs(args));
   } catch (error) {
     loggingAvailable = false;
-    originalConsole.warn("Failed to forward logs to tauri-plugin-log; disabling bridge.", error);
+    originalConsole.warn(
+      "Failed to forward logs to Electron main process; disabling bridge.",
+      error,
+    );
   }
 }
 

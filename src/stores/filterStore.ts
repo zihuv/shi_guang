@@ -6,7 +6,7 @@ import {
   initialFilterCriteria,
 } from "@/features/filters/types";
 import { getActiveFilterCount as getSchemaActiveFilterCount } from "@/features/filters/schema";
-import { getSetting, setSetting } from "@/services/tauri/indexing";
+import { getSetting, setSetting } from "@/services/desktop/indexing";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 
 export type { FileSortField, FilterCriteria, SortDirection } from "@/features/filters/types";
@@ -318,13 +318,12 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
 
     try {
       const rawValue = await getSetting(FILTER_PREFERENCES_SETTING_KEY);
-      const parsed = JSON.parse(rawValue) as PersistedFilterPreferences;
-      nextCriteria = restoreFilterPreferences(nextCriteria, parsed);
-    } catch (error) {
-      const errorMsg = String(error);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load filter preferences:", error);
+      if (rawValue) {
+        const parsed = JSON.parse(rawValue) as PersistedFilterPreferences;
+        nextCriteria = restoreFilterPreferences(nextCriteria, parsed);
       }
+    } catch (error) {
+      console.error("Failed to load filter preferences:", error);
     }
 
     set((state) => ({

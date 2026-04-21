@@ -36,9 +36,7 @@ function resolveTargetSize(
 ) {
   const { maxEdge, targetShortEdge } = options;
   const scale =
-    typeof targetShortEdge === "number" &&
-    Number.isFinite(targetShortEdge) &&
-    targetShortEdge > 0
+    typeof targetShortEdge === "number" && Number.isFinite(targetShortEdge) && targetShortEdge > 0
       ? resolveShortEdgeScale(width, height, targetShortEdge)
       : typeof maxEdge === "number" && Number.isFinite(maxEdge) && maxEdge > 0
         ? Math.min(1, maxEdge / Math.max(width, height))

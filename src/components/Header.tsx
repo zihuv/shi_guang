@@ -2,7 +2,7 @@ import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
 import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { open } from "@tauri-apps/plugin-dialog";
+import { getDesktopBridge } from "@/services/desktop/core";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Search, Sun, Moon, Settings, Download, Sparkles, X } from "lucide-react";
@@ -41,8 +41,8 @@ export default function Header({ onOpenSettings }: HeaderProps) {
 
   const handleImport = async () => {
     try {
-      const selected = await open({
-        multiple: true,
+      const selected = await getDesktopBridge().dialog.open({
+        properties: ["openFile", "multiSelections"],
         filters: [
           {
             name: "Images",

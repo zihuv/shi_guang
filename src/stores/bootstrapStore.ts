@@ -5,7 +5,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { useFilterStore } from "@/stores/filterStore";
-import { getLastSelectedFolderId } from "@/services/tauri/indexing";
+import { getLastSelectedFolderId } from "@/services/desktop/indexing";
 import type { FolderNode } from "@/stores/folderStore";
 
 interface BootstrapStore {

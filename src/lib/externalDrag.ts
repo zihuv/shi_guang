@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { startDragFiles } from "@/services/desktop/system";
 
 let activeDragPromise: Promise<void> | null = null;
 let activeDragFallbackTimer: number | null = null;
@@ -24,9 +24,7 @@ export function startExternalFileDrag(fileIds: number[]) {
     return activeDragPromise;
   }
 
-  activeDragPromise = invoke<void>("start_drag_files", {
-    fileIds: uniqueFileIds,
-  }).finally(clearActiveDragLock);
+  activeDragPromise = startDragFiles(uniqueFileIds).finally(clearActiveDragLock);
 
   activeDragFallbackTimer = window.setTimeout(() => {
     clearActiveDragLock();

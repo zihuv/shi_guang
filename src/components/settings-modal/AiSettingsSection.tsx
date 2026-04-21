@@ -1,8 +1,8 @@
 import type {
-  AiEndpointTarget as TauriAiEndpointTarget,
+  AiEndpointTarget,
   VisualIndexStatus,
   VisualModelValidationResult,
-} from "@/services/tauri/files";
+} from "@/services/desktop/files";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -144,7 +144,7 @@ interface AiSettingsSectionProps {
     field: K,
     value: AiServiceConfig[K],
   ) => void;
-  onTestAiEndpoint: (target: AiConfigTarget, endpointTarget: TauriAiEndpointTarget) => void;
+  onTestAiEndpoint: (target: AiConfigTarget, endpointTarget: AiEndpointTarget) => void;
   onSetAutoAnalyzeOnImport: (enabled: boolean) => void;
   onSetAiBatchAnalyzeConcurrency: (value: number) => void;
   onSetVisualSearchField: <K extends keyof VisualSearchConfig>(
@@ -176,7 +176,7 @@ function AiConfigCard({
   title: string;
   description: string;
   target: AiConfigTarget;
-  endpointTarget: TauriAiEndpointTarget;
+  endpointTarget: AiEndpointTarget;
   modelLabel: string;
   modelPlaceholder: string;
   config: AiConfig[AiConfigTarget];
@@ -186,7 +186,7 @@ function AiConfigCard({
     field: K,
     value: AiServiceConfig[K],
   ) => void;
-  onTest: (target: AiConfigTarget, endpointTarget: TauriAiEndpointTarget) => void;
+  onTest: (target: AiConfigTarget, endpointTarget: AiEndpointTarget) => void;
 }) {
   const baseUrlInputId = `ai-${target}-base-url`;
   const apiKeyInputId = `ai-${target}-api-key`;
@@ -852,8 +852,7 @@ export function AiSettingsSection({
                 <p>当前未就绪 {unindexedCount}</p>
                 <p>
                   请求设备 {formatRequestedDeviceLabel(visualIndexStatus?.requestedDevice ?? null)}
-                  {" · "}策略{" "}
-                  {formatProviderPolicyLabel(visualIndexStatus?.providerPolicy ?? null)}
+                  {" · "}策略 {formatProviderPolicyLabel(visualIndexStatus?.providerPolicy ?? null)}
                 </p>
                 <p>
                   当前 Provider{" "}

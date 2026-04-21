@@ -15,15 +15,15 @@ import {
   getFilesInFolder,
   updateFileMetadata,
   updateFileName,
-} from "@/services/tauri/files";
-import { setLastSelectedFolderId } from "@/services/tauri/indexing";
-import { copyFiles, moveFile, moveFiles } from "@/services/tauri/system";
+} from "@/services/desktop/files";
+import { setLastSelectedFolderId } from "@/services/desktop/indexing";
+import { copyFiles, moveFile, moveFiles } from "@/services/desktop/system";
 import {
   addTagToFile as addTagToFileCommand,
   removeTagFromFile as removeTagFromFileCommand,
-} from "@/services/tauri/tags";
+} from "@/services/desktop/tags";
 import { buildFileFilterPayload, hasStructuredFilters } from "@/features/filters/schema";
-import { getErrorMessage } from "@/services/tauri/core";
+import { getErrorMessage } from "@/services/desktop/core";
 import {
   parseFile,
   parseFileList,

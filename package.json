@@ -3,20 +3,25 @@
   "private": true,
   "version": "0.2.1",
   "type": "module",
+  "main": "out/main/main.cjs",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "oxlint --react-plugin src vite.config.ts tailwind.config.js postcss.config.js",
-    "lint:fix": "oxlint --react-plugin --fix src vite.config.ts tailwind.config.js postcss.config.js",
-    "fmt": "oxfmt src index.html vite.config.ts tailwind.config.js postcss.config.js",
-    "fmt:check": "oxfmt --check src index.html vite.config.ts tailwind.config.js postcss.config.js",
+    "dev": "electron-vite dev",
+    "renderer:dev": "vite --host 127.0.0.1",
+    "electron:dev": "electron-vite dev",
+    "build": "tsc && electron-vite build",
+    "postinstall": "electron-builder install-app-deps",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "lint": "oxlint --react-plugin src electron electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
+    "lint:fix": "oxlint --react-plugin --fix src electron electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
+    "fmt": "oxfmt src electron index.html electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
+    "fmt:check": "oxfmt --check src electron index.html electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev:mem": "tauri dev --features memory-diagnostics",
-    "tauri:dev:heap": "tauri dev --features memory-heap",
     "release": "node scripts/release.cjs",
     "docs:dev": "cd website && rspress dev",
     "docs:build": "cd website && rspress build",
@@ -24,34 +29,44 @@
   },
   "dependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "^1.7.10",
+    "@fastify/cors": "^11.1.0",
+    "@huggingface/tokenizers": "^0.1.3",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-virtual": "^3.13.23",
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-dialog": "^2.7.0",
-    "@tauri-apps/plugin-fs": "^2.5.0",
-    "@tauri-apps/plugin-log": "^2.8.0",
-    "@tauri-apps/plugin-shell": "^2.3.5",
+    "better-sqlite3": "^12.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "fastify": "^5.6.2",
+    "file-type": "^21.1.1",
+    "fs-extra": "^11.3.2",
     "lucide-react": "^1.7.0",
+    "onnxruntime-node": "^1.24.3",
+    "p-queue": "^9.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "sharp": "^0.34.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
+    "zod": "^4.2.1",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
     "@tailwindcss/postcss": "^4.2.2",
-    "@tauri-apps/cli": "^2.10.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.4.27",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "6.0.0-beta.0",
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0",
     "postcss": "^8.5.8",
@@ -59,5 +74,55 @@
     "tailwindcss": "^4.2.2",
     "typescript": "~6.0.2",
     "vite": "^8.0.4"
+  },
+  "build": {
+    "appId": "com.zihuv.shiguang",
+    "productName": "拾光",
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "artifactName": "${name}_${version}_${arch}.${ext}",
+    "files": [
+      "out/**",
+      "src/assets/app-icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/app-icon.png",
+        "to": "assets/app-icon.png"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*",
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/onnxruntime-node/**/*"
+    ],
+    "npmRebuild": true,
+    "nativeRebuilder": "sequential",
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/image.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/image.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/image.png"
+    }
   }
 }

@@ -1,11 +1,10 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { exists, readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import {
   getIndexPaths,
   getThumbnailPath,
   saveThumbnailCache,
   syncIndexPath,
-} from "@/services/tauri/indexing";
+} from "@/services/desktop/indexing";
+import { getDesktopBridge } from "@/services/desktop/core";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { FolderNode, useFolderStore } from "@/stores/folderStore";
 
@@ -113,8 +112,7 @@ const MISSING_FILE_ERROR_MARKERS = [
   "系统找不到指定的文件",
   "(os error 2)",
 ];
-const BROWSER_IMAGE_DECODE_WORKER_UNAVAILABLE_ERROR =
-  "__browser_image_decode_worker_unavailable__";
+const BROWSER_IMAGE_DECODE_WORKER_UNAVAILABLE_ERROR = "__browser_image_decode_worker_unavailable__";
 const BROWSER_IMAGE_DECODE_TIMEOUT_MS = 15000;
 
 type BrowserImageDecodeWorkerRequest = {
@@ -329,8 +327,26 @@ function scheduleMissingFileCleanup(path: string) {
   })();
 }
 
-function toAssetSrc(path: string): string {
-  return convertFileSrc(path);
+function exists(path: string) {
+  return getDesktopBridge().fs.exists(path);
+}
+
+function readFile(path: string) {
+  return getDesktopBridge().fs.readFile(path);
+}
+
+function readTextFile(path: string) {
+  return getDesktopBridge().fs.readTextFile(path);
+}
+
+function toAssetSrc(path: string): Promise<string> {
+  return getDesktopBridge().asset.toUrl(path);
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 export type FilePreviewMode = "image" | "video" | "pdf" | "text" | "none";
@@ -545,7 +561,7 @@ export async function getFileSrc(path: string): Promise<string> {
       return "";
     }
 
-    return toAssetSrc(path);
+    return await toAssetSrc(path);
   } catch (e: any) {
     if (isMissingFileError(e)) {
       scheduleMissingFileCleanup(path);
@@ -553,7 +569,9 @@ export async function getFileSrc(path: string): Promise<string> {
     }
     try {
       const contents = await readFile(path);
-      const blob = new Blob([contents], { type: detectMimeTypeFromContents(contents, path) });
+      const blob = new Blob([toArrayBuffer(contents)], {
+        type: detectMimeTypeFromContents(contents, path),
+      });
       return URL.createObjectURL(blob);
     } catch (readError: any) {
       if (isMissingFileError(readError)) {
@@ -715,7 +733,7 @@ async function persistThumbnailDataUrl(
       dataBase64,
       maxEdge,
     });
-    return thumbnailPath ? toAssetSrc(thumbnailPath) : "";
+    return thumbnailPath ? await toAssetSrc(thumbnailPath) : "";
   } catch (e) {
     console.error("Failed to persist thumbnail:", e);
     return "";
@@ -804,7 +822,9 @@ export async function getImageSrc(path: string): Promise<string> {
 async function getCanvasSafeImageSrc(path: string): Promise<string> {
   try {
     const contents = await readFile(path);
-    const blob = new Blob([contents], { type: detectMimeTypeFromContents(contents, path) });
+    const blob = new Blob([toArrayBuffer(contents)], {
+      type: detectMimeTypeFromContents(contents, path),
+    });
     return URL.createObjectURL(blob);
   } catch (e: any) {
     if (isMissingFileError(e)) {
@@ -816,12 +836,10 @@ async function getCanvasSafeImageSrc(path: string): Promise<string> {
   }
 }
 
-async function getCanvasSafeImageBlob(
-  path: string,
-): Promise<{ blob: Blob; mimeType: string }> {
+async function getCanvasSafeImageBlob(path: string): Promise<{ blob: Blob; mimeType: string }> {
   const contents = await readFile(path);
   const mimeType = detectMimeTypeFromContents(contents, path);
-  const blob = new Blob([contents], { type: mimeType });
+  const blob = new Blob([toArrayBuffer(contents)], { type: mimeType });
   return {
     blob,
     mimeType,
@@ -999,9 +1017,7 @@ export async function buildBrowserDecodedImageDataUrl(
   const sourceUrl = URL.createObjectURL(blob);
   const resolveTargetSize = (width: number, height: number) => {
     const scale =
-      typeof targetShortEdge === "number" &&
-      Number.isFinite(targetShortEdge) &&
-      targetShortEdge > 0
+      typeof targetShortEdge === "number" && Number.isFinite(targetShortEdge) && targetShortEdge > 0
         ? resolveShortEdgeScale(width, height, targetShortEdge)
         : typeof maxEdge === "number" && Number.isFinite(maxEdge) && maxEdge > 0
           ? Math.min(1, maxEdge / Math.max(width, height))
@@ -1159,7 +1175,7 @@ export async function getThumbnailImageSrc(
   try {
     const thumbnailPath = await getThumbnailPath(path, maxEdge);
     if (thumbnailPath) {
-      return toAssetSrc(thumbnailPath);
+      return await toAssetSrc(thumbnailPath);
     }
   } catch (e) {
     if (isMissingFileError(e)) {

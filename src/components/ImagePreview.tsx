@@ -31,8 +31,8 @@ import {
   FullscreenPreviewShell,
   StandardPreviewShell,
 } from "@/components/image-preview/PreviewShells";
-import { updateFileDimensions } from "@/services/tauri/files";
-import { openFile, showInExplorer } from "@/services/tauri/system";
+import { updateFileDimensions } from "@/services/desktop/files";
+import { openFile, showInExplorer } from "@/services/desktop/system";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { usePreviewStore } from "@/stores/previewStore";

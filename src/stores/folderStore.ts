@@ -8,7 +8,7 @@ import {
   reorderFolders,
   renameFolder,
   type FolderSummary,
-} from "@/services/tauri/folders";
+} from "@/services/desktop/folders";
 import { useLibraryQueryStore } from "./libraryQueryStore";
 
 export interface FolderNode {

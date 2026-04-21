@@ -1,17 +1,17 @@
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { toast } from "sonner";
 import {
   cancelVisualIndexTask as cancelVisualIndexTaskCommand,
   getVisualIndexTask,
   startVisualIndexTask as startVisualIndexTaskCommand,
-} from "@/services/tauri/files";
-import { getErrorMessage } from "@/services/tauri/core";
+} from "@/services/desktop/files";
+import { getErrorMessage } from "@/services/desktop/core";
 import {
   TERMINAL_VISUAL_INDEX_TASK_STATUSES,
   type VisualIndexTaskSnapshot,
 } from "@/stores/fileTypes";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { listenDesktop } from "@/services/desktop/core";
 
 const VISUAL_INDEX_TASK_EVENT = "visual-index-task-updated";
 
@@ -87,7 +87,7 @@ async function waitForVisualIndexTask(
       void refreshSnapshot();
     }, 1000);
 
-    void listen<string>(VISUAL_INDEX_TASK_EVENT, (event) => {
+    void listenDesktop<string>(VISUAL_INDEX_TASK_EVENT, (event) => {
       if (event.payload !== taskId || isSettled) return;
       void refreshSnapshot();
     })

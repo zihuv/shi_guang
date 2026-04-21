@@ -16,7 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { appPanelMetaClass, appTreeRowClass } from "@/lib/ui";
-import { showFolderInExplorer } from "@/services/tauri/system";
+import { showFolderInExplorer } from "@/services/desktop/system";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";

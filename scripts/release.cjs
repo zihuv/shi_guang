@@ -5,7 +5,6 @@ const { spawnSync } = require("child_process");
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
 const VERSION_FILES = [
   "package.json",
-  "src-tauri/tauri.conf.json",
   "extensions/shiguang-collector/manifest.json",
 ];
 
@@ -35,12 +34,12 @@ function parseArgs(argv) {
 }
 
 function showHelp() {
-  console.log(`Usage: pnpm release <version> [--dry-run] [--no-push]
+  console.log(`Usage: npm run release -- <version> [--dry-run] [--no-push]
 
 Examples:
-  pnpm release 0.1.2
-  pnpm release 0.1.2 --dry-run
-  pnpm release 0.1.2 --no-push`);
+  npm run release -- 0.1.2
+  npm run release -- 0.1.2 --dry-run
+  npm run release -- 0.1.2 --no-push`);
 }
 
 function readJson(file) {

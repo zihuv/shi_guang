@@ -16,16 +16,16 @@ import {
   setSetting,
   switchIndexPathAndRestart,
   syncIndexPath,
-} from "@/services/tauri/indexing";
-import { scanFolders } from "@/services/tauri/folders";
+} from "@/services/desktop/indexing";
+import { scanFolders } from "@/services/desktop/folders";
 import {
   getRecommendedVisualModelPath as getRecommendedVisualModelPathCommand,
   getVisualIndexStatus as getVisualIndexStatusCommand,
   validateVisualModelPath as validateVisualModelPathCommand,
   type VisualIndexStatus,
   type VisualModelValidationResult,
-} from "@/services/tauri/files";
-import { getDeleteMode, setDeleteMode as setDeleteModeCommand } from "@/services/tauri/trash";
+} from "@/services/desktop/files";
+import { getDeleteMode, setDeleteMode as setDeleteModeCommand } from "@/services/desktop/trash";
 
 const SHORTCUTS_SETTING_KEY = "shortcuts";
 const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
@@ -698,13 +698,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     // Get theme
     try {
       const themeValue = await getSetting("theme");
-      theme = (themeValue as "light" | "dark") || "light";
-    } catch (e) {
-      // Silently handle "Setting not found" - first run has no settings
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load theme:", e);
+      if (themeValue === "light" || themeValue === "dark") {
+        theme = themeValue;
       }
+    } catch (e) {
+      console.error("Failed to load theme:", e);
     }
 
     // Get delete mode
@@ -723,22 +721,20 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
     try {
       const aiConfigValue = await getSetting(AI_CONFIG_SETTING_KEY);
-      aiConfig = resolveAiConfig(JSON.parse(aiConfigValue));
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load AI config:", e);
+      if (aiConfigValue) {
+        aiConfig = resolveAiConfig(JSON.parse(aiConfigValue));
       }
+    } catch (e) {
+      console.error("Failed to load AI config:", e);
     }
 
     try {
       const visualSearchValue = await getSetting(VISUAL_SEARCH_SETTING_KEY);
-      visualSearch = resolveVisualSearchConfig(JSON.parse(visualSearchValue));
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load visual search config:", e);
+      if (visualSearchValue) {
+        visualSearch = resolveVisualSearchConfig(JSON.parse(visualSearchValue));
       }
+    } catch (e) {
+      console.error("Failed to load visual search config:", e);
     }
 
     try {
@@ -769,86 +765,80 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
     try {
       const concurrencyValue = await getSetting(AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY);
-      aiBatchAnalyzeConcurrency = clampAiBatchAnalyzeConcurrency(
-        Number.parseInt(concurrencyValue, 10),
-      );
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load AI batch analyze concurrency:", e);
+      if (concurrencyValue !== null) {
+        aiBatchAnalyzeConcurrency = clampAiBatchAnalyzeConcurrency(
+          Number.parseInt(concurrencyValue, 10),
+        );
       }
+    } catch (e) {
+      console.error("Failed to load AI batch analyze concurrency:", e);
     }
 
     try {
       const autoAnalyzeValue = await getSetting(AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY);
-      autoAnalyzeOnImport = autoAnalyzeValue === "true" || autoAnalyzeValue === "1";
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load auto analyze setting:", e);
+      if (autoAnalyzeValue !== null) {
+        autoAnalyzeOnImport = autoAnalyzeValue === "true" || autoAnalyzeValue === "1";
       }
+    } catch (e) {
+      console.error("Failed to load auto analyze setting:", e);
     }
 
     try {
       const shortcutsValue = await getSetting(SHORTCUTS_SETTING_KEY);
-      shortcuts = resolveShortcuts(
-        JSON.parse(shortcutsValue) as Partial<Record<ShortcutActionId, string | null>>,
-      );
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load shortcuts:", e);
+      if (shortcutsValue) {
+        shortcuts = resolveShortcuts(
+          JSON.parse(shortcutsValue) as Partial<Record<ShortcutActionId, string | null>>,
+        );
       }
+    } catch (e) {
+      console.error("Failed to load shortcuts:", e);
     }
 
     try {
       const speedValue = await getSetting(PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY);
-      previewTrackpadZoomSpeed = clampPreviewTrackpadZoomSpeed(Number.parseFloat(speedValue));
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load preview trackpad zoom speed:", e);
+      if (speedValue !== null) {
+        previewTrackpadZoomSpeed = clampPreviewTrackpadZoomSpeed(Number.parseFloat(speedValue));
       }
+    } catch (e) {
+      console.error("Failed to load preview trackpad zoom speed:", e);
     }
 
     try {
       const libraryViewPreferencesValue = await getSetting(LIBRARY_VIEW_PREFERENCES_SETTING_KEY);
-      const parsedPreferences = JSON.parse(libraryViewPreferencesValue) as {
-        mode?: unknown;
-        scales?: Partial<Record<LibraryViewMode, unknown>>;
-        visibleFields?: unknown;
-        visibleFieldsVersion?: unknown;
-      };
+      if (libraryViewPreferencesValue) {
+        const parsedPreferences = JSON.parse(libraryViewPreferencesValue) as {
+          mode?: unknown;
+          scales?: Partial<Record<LibraryViewMode, unknown>>;
+          visibleFields?: unknown;
+          visibleFieldsVersion?: unknown;
+        };
 
-      if (isLibraryViewMode(parsedPreferences.mode)) {
-        libraryViewMode = parsedPreferences.mode;
+        if (isLibraryViewMode(parsedPreferences.mode)) {
+          libraryViewMode = parsedPreferences.mode;
+        }
+        libraryViewScales = resolveLibraryViewScales(parsedPreferences.scales);
+        libraryVisibleFields = resolveLibraryVisibleFields(
+          parsedPreferences.visibleFields,
+          parsedPreferences.visibleFieldsVersion,
+        );
       }
-      libraryViewScales = resolveLibraryViewScales(parsedPreferences.scales);
-      libraryVisibleFields = resolveLibraryVisibleFields(
-        parsedPreferences.visibleFields,
-        parsedPreferences.visibleFieldsVersion,
-      );
     } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load library view preferences:", e);
-      }
+      console.error("Failed to load library view preferences:", e);
     }
 
     try {
       const panelLayoutValue = await getSetting(PANEL_LAYOUT_SETTING_KEY);
-      const parsedLayout = JSON.parse(panelLayoutValue) as {
-        sidebarWidth?: unknown;
-        detailPanelWidth?: unknown;
-      };
+      if (panelLayoutValue) {
+        const parsedLayout = JSON.parse(panelLayoutValue) as {
+          sidebarWidth?: unknown;
+          detailPanelWidth?: unknown;
+        };
 
-      sidebarWidth = clampSidebarWidth(Number(parsedLayout.sidebarWidth));
-      detailPanelWidth = clampDetailPanelWidth(Number(parsedLayout.detailPanelWidth));
-    } catch (e) {
-      const errorMsg = String(e);
-      if (!errorMsg.includes("Setting not found")) {
-        console.error("Failed to load panel layout:", e);
+        sidebarWidth = clampSidebarWidth(Number(parsedLayout.sidebarWidth));
+        detailPanelWidth = clampDetailPanelWidth(Number(parsedLayout.detailPanelWidth));
       }
+    } catch (e) {
+      console.error("Failed to load panel layout:", e);
     }
 
     // If no index paths configured, add default path (user's Pictures/shiguang folder)

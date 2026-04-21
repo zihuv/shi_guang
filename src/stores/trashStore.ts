@@ -9,7 +9,7 @@ import {
   permanentDeleteFiles,
   restoreFile,
   restoreFiles,
-} from "@/services/tauri/trash";
+} from "@/services/desktop/trash";
 import { parseFileList, type FileItem } from "@/stores/fileTypes";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";

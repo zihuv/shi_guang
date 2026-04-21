@@ -8,7 +8,7 @@ import {
 } from "@/hooks/useTreeKeyboardNavigation";
 import { requestFocusFirstFile } from "@/lib/libraryNavigation";
 import { appPanelHeaderClass, appPanelTitleClass, appTreeRowClass } from "@/lib/ui";
-import { deleteFolder } from "@/services/tauri/folders";
+import { deleteFolder } from "@/services/desktop/folders";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { Button } from "@/components/ui/Button";

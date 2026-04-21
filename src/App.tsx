@@ -25,7 +25,7 @@ import { useClipboardImport } from "@/hooks/useClipboardImport";
 import { useDocumentTheme } from "@/hooks/useDocumentTheme";
 import { useInternalFileDrag } from "@/hooks/useInternalFileDrag";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useTauriImportListeners } from "@/hooks/useTauriImportListeners";
+import { useDesktopImportListeners } from "@/hooks/useDesktopImportListeners";
 
 const PANEL_RESIZER_WIDTH = 11;
 const PANEL_RESIZER_LAYOUT_WIDTH = 1;
@@ -161,7 +161,7 @@ function App() {
 
   useAppInitialization();
   useInternalFileDrag(setDraggingFileId);
-  useTauriImportListeners({
+  useDesktopImportListeners({
     dragOverFolderId,
     setDragOverFolderId,
     setIsDragging,

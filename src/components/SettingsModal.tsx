@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import {
-  testAiEndpoint,
-  type AiEndpointTarget as TauriAiEndpointTarget,
-} from "@/services/tauri/files";
+import { testAiEndpoint, type AiEndpointTarget } from "@/services/desktop/files";
+import { getDesktopBridge } from "@/services/desktop/core";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
@@ -86,9 +83,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const handleAddPath = async () => {
     setIsAdding(true);
     try {
-      const selected = await openDialog({
-        directory: true,
-        multiple: false,
+      const selected = await getDesktopBridge().dialog.open({
+        properties: ["openDirectory"],
         title: "选择素材目录",
       });
 
@@ -151,10 +147,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     await resetShortcut(actionId);
   };
 
-  const handleTestAiEndpoint = async (
-    target: AiConfigTarget,
-    endpointTarget: TauriAiEndpointTarget,
-  ) => {
+  const handleTestAiEndpoint = async (target: AiConfigTarget, endpointTarget: AiEndpointTarget) => {
     setTestingTargets((state) => ({ ...state, [target]: true }));
     const loadingToast = toast.loading("正在测试接口...");
 
@@ -171,9 +164,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const handleSelectModelDir = async () => {
     setIsSelectingModelDir(true);
     try {
-      const selected = await openDialog({
-        directory: true,
-        multiple: false,
+      const selected = await getDesktopBridge().dialog.open({
+        properties: ["openDirectory"],
         title: "选择视觉搜索模型目录",
       });
 

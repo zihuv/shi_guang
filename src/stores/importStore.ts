@@ -1,10 +1,9 @@
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import {
   cancelImportTask as cancelImportTaskCommand,
   getImportTask,
   startImportTask,
-} from "@/services/tauri/files";
+} from "@/services/desktop/files";
 import {
   parseFileList,
   TERMINAL_IMPORT_TASK_STATUSES,
@@ -13,6 +12,7 @@ import {
 } from "@/stores/fileTypes";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { listenDesktop } from "@/services/desktop/core";
 
 interface ImportStore {
   importTask: ImportTaskSnapshot | null;
@@ -100,7 +100,7 @@ async function waitForImportTask(taskId: string, onUpdate: (task: ImportTaskSnap
       void refreshSnapshot();
     }, 1000);
 
-    void listen<string>("import-task-updated", (event) => {
+    void listenDesktop<string>("import-task-updated", (event) => {
       if (event.payload !== taskId || isSettled) return;
       void refreshSnapshot();
     })

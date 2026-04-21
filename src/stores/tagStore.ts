@@ -6,7 +6,7 @@ import {
   moveTag,
   reorderTags,
   updateTag,
-} from "@/services/tauri/tags";
+} from "@/services/desktop/tags";
 
 export interface Tag {
   id: number;

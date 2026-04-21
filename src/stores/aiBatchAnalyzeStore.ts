@@ -1,17 +1,17 @@
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { toast } from "sonner";
 import {
   cancelAiMetadataTask as cancelAiMetadataTaskCommand,
   getAiMetadataTask,
   startAiMetadataTask,
-} from "@/services/tauri/files";
+} from "@/services/desktop/files";
 import {
   TERMINAL_AI_METADATA_TASK_STATUSES,
   type AiMetadataTaskSnapshot,
 } from "@/stores/fileTypes";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useTagStore } from "@/stores/tagStore";
+import { listenDesktop } from "@/services/desktop/core";
 
 interface AiBatchAnalyzeStore {
   aiMetadataTask: AiMetadataTaskSnapshot | null;
@@ -85,7 +85,7 @@ async function waitForAiMetadataTask(
       void refreshSnapshot();
     }, 1000);
 
-    void listen<string>("ai-metadata-task-updated", (event) => {
+    void listenDesktop<string>("ai-metadata-task-updated", (event) => {
       if (event.payload !== taskId || isSettled) return;
       void refreshSnapshot();
     })

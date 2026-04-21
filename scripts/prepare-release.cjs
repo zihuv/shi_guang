@@ -10,7 +10,6 @@ if (!version) {
 
 const filesToValidate = [
   "package.json",
-  "src-tauri/tauri.conf.json",
   "extensions/shiguang-collector/manifest.json",
 ];
 

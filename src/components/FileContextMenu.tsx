@@ -7,7 +7,7 @@ import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { copyFilesToClipboard } from "@/lib/clipboard";
-import { openFile, showInExplorer } from "@/services/tauri/system";
+import { openFile, showInExplorer } from "@/services/desktop/system";
 import { buildAiImageDataUrl } from "@/utils";
 import { Button } from "@/components/ui/Button";
 import {
@@ -147,7 +147,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
 
   const flatFolders = flattenFolders(folders);
 
-  // Open file with default application (using Rust backend)
+  // Open file with default application
   const handleOpenFile = async () => {
     try {
       await openFile(file.id);
@@ -156,7 +156,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     }
   };
 
-  // Open file in file explorer (using Rust backend)
+  // Open file in file explorer
   const handleShowInExplorer = async () => {
     try {
       await showInExplorer(file.id);
