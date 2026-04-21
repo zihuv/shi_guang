@@ -1,8 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { moveUnreleasedToVersion } = require("./changelog.cjs");
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
+const CHANGELOG_FILE = "docs/CHANGELOG.md";
 const VERSION_FILES = [
   "package.json",
   "extensions/shiguang-collector/manifest.json",
@@ -109,6 +111,33 @@ function updateVersions(versionFiles, version) {
   }
 }
 
+function releaseDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(new Date())
+    .reduce((result, part) => {
+      if (part.type !== "literal") {
+        result[part.type] = part.value;
+      }
+      return result;
+    }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function updateChangelog(version) {
+  const changelogPath = path.resolve(CHANGELOG_FILE);
+  const changelog = fs.readFileSync(changelogPath, "utf8");
+  fs.writeFileSync(
+    changelogPath,
+    moveUnreleasedToVersion(changelog, version, releaseDate()),
+  );
+}
+
 function ensureCleanWorktree(runGit) {
   const status = runGit(["status", "--short"]);
 
@@ -142,8 +171,9 @@ function printPlan(version, noPush) {
 
   console.log("Release plan:");
   console.log(`- update ${VERSION_FILES.join(", ")} to ${version}`);
+  console.log(`- move ${CHANGELOG_FILE} Unreleased notes to ${version}`);
   console.log(`- node scripts/prepare-release.cjs ${version}`);
-  console.log(`- git add ${VERSION_FILES.join(" ")}`);
+  console.log(`- git add ${VERSION_FILES.join(" ")} ${CHANGELOG_FILE}`);
   console.log(`- git commit -m "${commitMessage}"`);
   console.log(`- git tag -a ${version} -m "${commitMessage}"`);
 
@@ -185,10 +215,11 @@ function main() {
   const commitMessage = `${version}`;
 
   updateVersions(VERSION_FILES, version);
+  updateChangelog(version);
 
   run(process.execPath, [path.join("scripts", "prepare-release.cjs"), version]);
 
-  runGit(["add", ...VERSION_FILES]);
+  runGit(["add", ...VERSION_FILES, CHANGELOG_FILE]);
   runGit(["commit", "-m", commitMessage]);
 
   runGit(["tag", "-a", version, "-m", commitMessage]);

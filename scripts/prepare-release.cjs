@@ -1,5 +1,10 @@
 const fs = require("fs");
 const path = require("path");
+const {
+  getUnreleasedNotes,
+  getVersionNotes,
+  isMeaningfulReleaseNotes,
+} = require("./changelog.cjs");
 
 const version = process.argv[2]?.trim();
 
@@ -35,14 +40,45 @@ const templatePath = path.join(
   process.env.GITHUB_WORKSPACE || ".",
   ".github/release_template.md",
 );
+const changelogPath = path.join(
+  process.env.GITHUB_WORKSPACE || ".",
+  "docs/CHANGELOG.md",
+);
 const outputFile = process.env.GITHUB_OUTPUT;
 
 let body = `See the assets to download version ${version}.`;
+let releaseNotes = "";
+
+if (fs.existsSync(changelogPath)) {
+  const changelog = fs.readFileSync(changelogPath, "utf8");
+  releaseNotes = getVersionNotes(changelog, version);
+
+  if (!releaseNotes) {
+    releaseNotes = getUnreleasedNotes(changelog);
+  }
+
+  if (!isMeaningfulReleaseNotes(releaseNotes)) {
+    releaseNotes = "";
+    console.warn(`No changelog release notes found for ${version}.`);
+  }
+} else {
+  console.warn("CHANGELOG not found, using release template without release notes.");
+}
 
 if (fs.existsSync(templatePath)) {
   body = fs.readFileSync(templatePath, "utf8").replace(/VERSION/g, version);
+  if (releaseNotes) {
+    const nextBody = body.replace(
+      /^- 更新内容待补充（@zihuv）\r?\n?/,
+      `${releaseNotes}\n\n`,
+    );
+    body = nextBody === body ? `${releaseNotes}\n\n${body}` : nextBody;
+  }
 } else {
   console.warn("Release template not found, using default release body.");
+  if (releaseNotes) {
+    body = `${releaseNotes}\n\n${body}`;
+  }
 }
 
 if (outputFile) {

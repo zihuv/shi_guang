@@ -17,6 +17,7 @@
 
 - 桌面端构建发布链路切换为 npm、electron-vite、Vite 8、Electron 和 electron-builder。
 - 本地自然语言搜图状态页现在会显示模型校验、运行时加载状态，以及已索引、失败、待处理、过期图片数量。
+- 发布脚本现在会把 `Unreleased` 变更整理为新版本 changelog，并写入 GitHub Release 说明。
 
 ### Fixed
 
