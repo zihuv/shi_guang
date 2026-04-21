@@ -1,4 +1,4 @@
-import type { HTMLAttributes, PointerEventHandler, ReactNode, RefObject } from "react";
+import type { PointerEventHandler, ReactNode, RefObject } from "react";
 import type { FileItem } from "@/stores/fileTypes";
 import { formatSize } from "@/utils";
 import FileTypeIcon from "@/components/FileTypeIcon";
@@ -43,7 +43,6 @@ interface StandardPreviewShellProps extends PreviewViewportProps {
   previewType: string;
   isFullscreen: boolean;
   isFitMode: boolean;
-  externalDragProps: HTMLAttributes<HTMLElement> & { draggable?: boolean };
   currentFile: FileItem;
   previewMeta: string;
   previewFiles: FileItem[];
@@ -226,7 +225,6 @@ export function StandardPreviewShell({
   previewType,
   isFullscreen,
   isFitMode,
-  externalDragProps,
   currentFile,
   previewMeta,
   previewFiles,
@@ -357,17 +355,13 @@ export function StandardPreviewShell({
       <PreviewViewport {...viewportProps} />
 
       <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-1 text-xs dark:border-dark-border dark:bg-dark-surface">
-        <button
-          type="button"
-          className="flex min-w-0 cursor-grab items-center gap-2 border-0 bg-transparent p-0 text-left active:cursor-grabbing"
-          {...externalDragProps}
-        >
+        <div className="flex min-w-0 items-center gap-2">
           <FileTypeIcon
             ext={currentFile.ext}
             className="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-gray-400"
           />
           <span className="truncate text-gray-600 dark:text-gray-400">{currentFile.name}</span>
-        </button>
+        </div>
         <span className="text-gray-500 dark:text-gray-500">
           {previewMeta} · {formatSize(currentFile.size)}
         </span>

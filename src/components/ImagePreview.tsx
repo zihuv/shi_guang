@@ -4,19 +4,16 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
   type SyntheticEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { copyFilesToClipboard } from "@/lib/clipboard";
-import { startExternalFileDrag } from "@/lib/externalDrag";
 import {
   AI_IMAGE_EXTENSIONS,
   BASE_WHEEL_ZOOM_SENSITIVITY,
   BUTTON_ZOOM_FACTOR,
   FIT_MODE_SNAP_EPSILON,
-  IS_MACOS,
   clampValue,
   clampZoom,
   flattenFolders,
@@ -408,48 +405,6 @@ export default function ImagePreview() {
     }
   };
 
-  const handleExternalDragStart = (event: React.DragEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    void startExternalFileDrag([currentFile.id]).catch((error) => {
-      console.error("Failed to start external drag:", error);
-      toast.error("拖拽到外部应用失败");
-    });
-  };
-
-  const suppressExternalDragEvent = (event: ReactMouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleExternalDragMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
-    if (!IS_MACOS || event.button !== 0) return;
-
-    suppressExternalDragEvent(event);
-
-    void startExternalFileDrag([currentFile.id]).catch((error) => {
-      console.error("Failed to start external drag:", error);
-      toast.error("拖拽到外部应用失败");
-    });
-  };
-
-  const getExternalDragProps = () => {
-    if (IS_MACOS) {
-      return {
-        onMouseDown: handleExternalDragMouseDown,
-        onClick: suppressExternalDragEvent,
-      };
-    }
-
-    return {
-      draggable: true,
-      onDragStart: handleExternalDragStart,
-    };
-  };
-
-  const externalDragProps = getExternalDragProps();
-
   const triggerMenuAction = (key: string, action: () => void | Promise<void>) => {
     const now = Date.now();
     const lastAction = lastMenuActionRef.current;
@@ -834,7 +789,7 @@ export default function ImagePreview() {
             alt={currentFile.name}
             className="max-h-full max-w-full cursor-grab select-none object-contain active:cursor-grabbing"
             onLoad={handleImageLoad}
-            {...externalDragProps}
+            draggable={false}
           />
         </div>
       ) : (
@@ -922,7 +877,6 @@ export default function ImagePreview() {
       viewportRef={viewportRef}
       renderedPreviewContent={renderedPreviewContent}
       previewContextMenu={previewContextMenu}
-      externalDragProps={externalDragProps}
       currentFile={currentFile}
       previewMeta={previewMeta}
       previewFiles={previewFiles}

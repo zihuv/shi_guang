@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from "electron";
 import log from "electron-log/main";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
@@ -113,7 +113,7 @@ import type {
 
 type GetWindow = () => BrowserWindow | null;
 
-function getDragIconPath(): string {
+function getDragIcon() {
   const candidates = app.isPackaged
     ? [path.join(process.resourcesPath, "assets", "app-icon.png")]
     : [
@@ -122,7 +122,19 @@ function getDragIconPath(): string {
       ];
 
   const iconPath = candidates.find((candidate) => fssync.existsSync(candidate));
-  return iconPath ?? path.join(process.cwd(), "assets", "image.png");
+  const fallbackIconPath = path.join(process.cwd(), "assets", "image.png");
+  const sourceIconPath = iconPath ?? fallbackIconPath;
+  const dragIcon = nativeImage.createFromPath(sourceIconPath);
+
+  if (!dragIcon.isEmpty()) {
+    return dragIcon.resize({
+      width: 48,
+      height: 48,
+      quality: "best",
+    });
+  }
+
+  return sourceIconPath;
 }
 type CommandHandler = (
   args: Record<string, unknown>,
@@ -1534,7 +1546,7 @@ export function registerIpcHandlers(
       if (!paths.length || !window) throw new Error("No files selected");
       window.webContents.startDrag({
         file: paths[0],
-        icon: getDragIconPath(),
+        icon: getDragIcon(),
       });
     },
     open_file: async (args) => {

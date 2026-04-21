@@ -25,6 +25,10 @@ protocol.registerSchemesAsPrivileged([
 
 log.initialize();
 
+if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+}
+
 let mainWindow: BrowserWindow | null = null;
 let appState: AppState | null = null;
 const tokenToPath = new Map<string, string>();
