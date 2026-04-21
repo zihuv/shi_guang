@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { toast } from "sonner";
+import { INTERNAL_FILE_DRAG_MIME } from "@/components/folder-tree/utils";
 import { startExternalFileDrag } from "@/lib/externalDrag";
 import { useSelectionStore } from "@/stores/selectionStore";
 
@@ -15,6 +22,10 @@ type PendingExternalDrag = {
 function getExternalDragFileIds(fileId: number) {
   const { selectedFiles } = useSelectionStore.getState();
   return selectedFiles.includes(fileId) ? selectedFiles : [fileId];
+}
+
+function getInternalDragFileIds(fileId: number) {
+  return useSelectionStore.getState().beginInternalFileDrag(fileId);
 }
 
 export function isExternalDragRegionTarget(target: EventTarget | null) {
@@ -64,6 +75,11 @@ export function useExternalFileDrag(fileId: number) {
         return;
       }
 
+      if (useSelectionStore.getState().isDraggingInternal) {
+        clearPendingExternalDrag();
+        return;
+      }
+
       if (
         Math.hypot(event.clientX - current.startX, event.clientY - current.startY) <
         EXTERNAL_DRAG_THRESHOLD
@@ -106,9 +122,6 @@ export function useExternalFileDrag(fileId: number) {
         return;
       }
 
-      event.preventDefault();
-      event.stopPropagation();
-
       pendingExternalDragRef.current = {
         startX: event.clientX,
         startY: event.clientY,
@@ -119,10 +132,31 @@ export function useExternalFileDrag(fileId: number) {
     [beginTrackingExternalDrag],
   );
 
+  const handleDragStart = useCallback(
+    (event: ReactDragEvent<HTMLElement>) => {
+      const draggedFileIds = getInternalDragFileIds(fileId);
+      const payload = JSON.stringify(draggedFileIds);
+
+      clearPendingExternalDrag();
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData(INTERNAL_FILE_DRAG_MIME, payload);
+      event.dataTransfer.setData("text/plain", payload);
+    },
+    [clearPendingExternalDrag, fileId],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    clearPendingExternalDrag();
+    useSelectionStore.getState().clearInternalFileDrag();
+  }, [clearPendingExternalDrag]);
+
   return {
     dragHandleProps: {
+      draggable: true,
       "data-external-drag-region": "true",
       onMouseDown: handleMouseDown,
+      onDragStart: handleDragStart,
+      onDragEnd: handleDragEnd,
     } as const,
   };
 }
