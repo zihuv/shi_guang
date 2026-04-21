@@ -34,8 +34,8 @@
         <tr>
             <td>Linux</td>
             <td>
-                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_x64.AppImage"><img src="https://img.shields.io/badge/AppImage-x64-f84e29.svg?logo=linux"> </a><br>
-                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_x64.deb"><img src="https://img.shields.io/badge/DebPackage-x64-FF9966.svg?logo=debian"> </a>
+                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_x86_64.AppImage"><img src="https://img.shields.io/badge/AppImage-x64-f84e29.svg?logo=linux"> </a><br>
+                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_amd64.deb"><img src="https://img.shields.io/badge/DebPackage-x64-FF9966.svg?logo=debian"> </a>
             </td>
         </tr>
     </tbody>

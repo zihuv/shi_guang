@@ -122,7 +122,9 @@
         "AppImage",
         "deb"
       ],
-      "icon": "assets/image.png"
+      "icon": "assets/image.png",
+      "category": "Utility",
+      "maintainer": "zihuv <zihuv@users.noreply.github.com>"
     }
   }
 }
