@@ -20,12 +20,15 @@ import FileGrid from "@/components/FileGrid";
 import DetailPanel from "@/components/DetailPanel";
 import DragPreview from "@/components/DragPreview";
 import AppStartupScreen from "@/components/AppStartupScreen";
+import TagPanel from "@/components/TagPanel";
+import TrashPanel from "@/components/TrashPanel";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useClipboardImport } from "@/hooks/useClipboardImport";
 import { useDocumentTheme } from "@/hooks/useDocumentTheme";
 import { useInternalFileDrag } from "@/hooks/useInternalFileDrag";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDesktopImportListeners } from "@/hooks/useDesktopImportListeners";
+import { useNavigationStore } from "@/stores/navigationStore";
 
 const PANEL_RESIZER_WIDTH = 11;
 const PANEL_RESIZER_LAYOUT_WIDTH = 1;
@@ -54,7 +57,8 @@ function constrainPanelWidths(
   requestedDetailPanelWidth: number,
 ) {
   let sidebarWidth = clampSidebarWidth(requestedSidebarWidth);
-  let detailPanelWidth = clampDetailPanelWidth(requestedDetailPanelWidth);
+  let detailPanelWidth =
+    requestedDetailPanelWidth <= 0 ? 0 : clampDetailPanelWidth(requestedDetailPanelWidth);
 
   if (containerWidth <= 0) {
     return { sidebarWidth, detailPanelWidth };
@@ -81,12 +85,12 @@ function constrainPanelWidths(
   overflow -= sidebarReduction;
 
   if (overflow > 0) {
-    detailPanelWidth = Math.max(48, detailPanelWidth - overflow);
+    detailPanelWidth = Math.max(detailPanelWidth > 0 ? 48 : 0, detailPanelWidth - overflow);
   }
 
   return {
     sidebarWidth: Math.max(48, Math.round(sidebarWidth)),
-    detailPanelWidth: Math.max(48, Math.round(detailPanelWidth)),
+    detailPanelWidth: detailPanelWidth > 0 ? Math.max(48, Math.round(detailPanelWidth)) : 0,
   };
 }
 
@@ -134,9 +138,13 @@ function App() {
 
   const { importImagesFromBase64, importFiles } = useImportStore();
   const previewMode = usePreviewStore((state) => state.previewMode);
+  const closePreview = usePreviewStore((state) => state.closePreview);
   const files = useLibraryQueryStore((state) => state.files);
   const { dragOverFolderId, setDragOverFolderId } = useFolderStore();
   const isDraggingInternal = useSelectionStore((state) => state.isDraggingInternal);
+  const clearSelection = useSelectionStore((state) => state.clearSelection);
+  const setSelectedFile = useSelectionStore((state) => state.setSelectedFile);
+  const currentView = useNavigationStore((state) => state.currentView);
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
@@ -150,7 +158,7 @@ function App() {
   const { sidebarWidth, detailPanelWidth } = constrainPanelWidths(
     contentWidth,
     sidebarWidthPreference,
-    detailPanelWidthPreference,
+    currentView === "library" ? detailPanelWidthPreference : 0,
   );
   const sidebarWidthRef = useRef(sidebarWidth);
   const detailPanelWidthRef = useRef(detailPanelWidth);
@@ -218,6 +226,16 @@ function App() {
       },
     );
   }, []);
+
+  useEffect(() => {
+    if (currentView === "library") {
+      return;
+    }
+
+    closePreview();
+    clearSelection();
+    setSelectedFile(null);
+  }, [clearSelection, closePreview, currentView, setSelectedFile]);
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -460,6 +478,9 @@ function App() {
     );
   }
 
+  const showsLibraryView = currentView === "library";
+  const showsDetailPanel = showsLibraryView;
+
   return (
     <div
       className="app-shell flex h-screen flex-col"
@@ -503,9 +524,11 @@ function App() {
         />
 
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          <FileGrid />
+          {currentView === "library" ? <FileGrid /> : null}
+          {currentView === "tags" ? <TagPanel /> : null}
+          {currentView === "trash" ? <TrashPanel /> : null}
           <Suspense fallback={null}>
-            {previewMode ? (
+            {showsLibraryView && previewMode ? (
               <div className="absolute inset-0 z-20">
                 <ImagePreview />
               </div>
@@ -513,13 +536,17 @@ function App() {
           </Suspense>
         </main>
 
-        <PanelResizeHandle
-          ariaLabel="调整右侧面板宽度"
-          isActive={activeResizeHandle === "detail"}
-          onMouseDown={handleResizeStart("detail")}
-        />
+        {showsDetailPanel ? (
+          <>
+            <PanelResizeHandle
+              ariaLabel="调整右侧面板宽度"
+              isActive={activeResizeHandle === "detail"}
+              onMouseDown={handleResizeStart("detail")}
+            />
 
-        <DetailPanel width={detailPanelWidth} />
+            <DetailPanel width={detailPanelWidth} />
+          </>
+        ) : null}
       </div>
 
       {/* Drag overlay for internal file dragging */}

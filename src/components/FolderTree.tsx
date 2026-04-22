@@ -7,12 +7,12 @@ import {
   useTreeKeyboardNavigation,
 } from "@/hooks/useTreeKeyboardNavigation";
 import { requestFocusFirstFile } from "@/lib/libraryNavigation";
-import { appPanelHeaderClass, appPanelTitleClass, appTreeRowClass } from "@/lib/ui";
+import { appPanelTitleClass, appTreeRowClass } from "@/lib/ui";
 import { deleteFolder } from "@/services/desktop/folders";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { Button } from "@/components/ui/Button";
-import TrashPanel from "@/components/TrashPanel";
 import { FolderDialogs } from "@/components/folder-tree/FolderDialogs";
 import { FolderItem } from "@/components/folder-tree/FolderItem";
 import { createTreeItemRegistry, type DragPosition } from "@/components/folder-tree/types";
@@ -76,7 +76,15 @@ function getPersistedFolderIds(folders: FolderNode[]) {
     .map((folder) => folder.id);
 }
 
-export default function FolderTree() {
+interface FolderTreeProps {
+  showHeader?: boolean;
+  showAllFilesRow?: boolean;
+}
+
+export default function FolderTree({
+  showHeader = true,
+  showAllFilesRow = true,
+}: FolderTreeProps) {
   const {
     folders,
     selectedFolderId,
@@ -99,6 +107,7 @@ export default function FolderTree() {
   const setEditingFolder = useFolderStore((state) => state.setEditingFolder);
   const setDeleteConfirm = useFolderStore((state) => state.setDeleteConfirm);
   const loadFilesInFolder = useLibraryQueryStore((state) => state.loadFilesInFolder);
+  const currentView = useNavigationStore((state) => state.currentView);
 
   const [isAdding, setIsAdding] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -379,10 +388,11 @@ export default function FolderTree() {
 
   return (
     <div className="flex flex-col">
-      <div className={appPanelHeaderClass}>
-        <h2 className={appPanelTitleClass}>文件夹</h2>
-        <div className="flex items-center gap-1">
-          <TrashPanel variant="header" />
+      {showHeader && (
+        <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
+          <h2 className={`${appPanelTitleClass} text-[12px] text-gray-500 dark:text-gray-400`}>
+            文件夹
+          </h2>
           <Button
             variant="ghost"
             size="icon"
@@ -392,7 +402,7 @@ export default function FolderTree() {
             <Plus className="h-4 w-4" />
           </Button>
         </div>
-      </div>
+      )}
 
       <div
         id="folder-tree-container"
@@ -421,23 +431,25 @@ export default function FolderTree() {
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            <div
-              ref={(element) => registerKeyboardItem(null, element)}
-              className={`${appTreeRowClass} cursor-pointer ${
-                selectedFolderId === null
-                  ? "bg-primary-100 dark:bg-primary-900/30"
-                  : "hover:bg-gray-100 dark:hover:bg-dark-border"
-              }`}
-              style={{ paddingLeft: "8px" }}
-              onClick={() => {
-                focusTree();
-                void selectFolderForKeyboard(null);
-              }}
-            >
-              <span className="w-5" />
-              <Files className="h-4 w-4 flex-shrink-0 text-gray-500" />
-              <span className="flex-1 truncate text-gray-700 dark:text-gray-300">全部文件</span>
-            </div>
+            {showAllFilesRow && (
+              <div
+                ref={(element) => registerKeyboardItem(null, element)}
+                className={`${appTreeRowClass} cursor-pointer ${
+                  currentView === "library" && selectedFolderId === null
+                    ? "bg-primary-100 dark:bg-primary-900/30"
+                    : "hover:bg-gray-100 dark:hover:bg-dark-border"
+                }`}
+                style={{ paddingLeft: "8px" }}
+                onClick={() => {
+                  focusTree();
+                  void selectFolderForKeyboard(null);
+                }}
+              >
+                <span className="w-5" />
+                <Files className="h-4 w-4 flex-shrink-0 text-gray-500" />
+                <span className="flex-1 truncate text-gray-700 dark:text-gray-300">全部文件</span>
+              </div>
+            )}
 
             {folders.map((folder) => (
               <FolderItem

@@ -1,20 +1,10 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTrashStore } from "@/stores/trashStore";
 import { Button } from "@/components/ui/Button";
 import FileTypeIcon from "@/components/FileTypeIcon";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/Dialog";
-import { Trash2, RotateCcw, X, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import { AlertTriangle, RotateCcw, Trash2, X } from "lucide-react";
 import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
-
-type TrashPanelProps = {
-  variant?: "sidebar" | "header";
-};
 
 interface TrashFileItemProps {
   file: {
@@ -59,8 +49,11 @@ function TrashFileItem({
         : getFileSrc(file.path);
 
     loader.then((src) => {
-      if (mounted) setImageSrc(src);
+      if (mounted) {
+        setImageSrc(src);
+      }
     });
+
     return () => {
       mounted = false;
     };
@@ -75,20 +68,21 @@ function TrashFileItem({
   }, [imageSrc]);
 
   return (
-    <div
-      className={`relative group cursor-pointer rounded-lg border-2 transition-colors ${
+    <button
+      type="button"
+      className={`relative overflow-hidden rounded-2xl border text-left transition-colors ${
         isSelected
           ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
-          : "border-transparent hover:border-gray-200 dark:hover:border-dark-border"
+          : "border-gray-200 bg-white hover:border-gray-300 dark:border-dark-border dark:bg-dark-surface"
       }`}
       onClick={onToggleSelect}
     >
-      <div className="aspect-square bg-gray-100 dark:bg-dark-bg rounded-lg overflow-hidden">
+      <div className="aspect-square overflow-hidden bg-gray-100 dark:bg-dark-bg">
         {imageSrc && !imageError ? (
           <img
             src={imageSrc}
             alt={file.name}
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
             loading="lazy"
             onError={() => setImageError(true)}
           />
@@ -99,87 +93,76 @@ function TrashFileItem({
           </div>
         )}
       </div>
-      <div className="p-2">
-        <p className="text-sm text-gray-700 dark:text-gray-300 truncate" title={file.name}>
+
+      <div className="space-y-1 px-3 py-3">
+        <p className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100" title={file.name}>
           {file.name}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{formatFileSize(file.size)}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+        <p className="text-[12px] text-gray-500 dark:text-gray-400">{formatFileSize(file.size)}</p>
+        <p className="text-[12px] text-gray-400 dark:text-gray-500">
           删除于 {formatDate(file.deletedAt)}
         </p>
       </div>
+
       {isSelected && (
-        <div className="absolute top-2 right-2 w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center">
-          <span className="text-white text-xs">✓</span>
+        <div className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-xs text-white">
+          ✓
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
-export default function TrashPanel({ variant = "sidebar" }: TrashPanelProps) {
-  const {
-    trashFiles,
-    trashCount,
-    loadTrashFiles,
-    loadTrashCount,
-    restoreFiles,
-    permanentDeleteFiles,
-    emptyTrash,
-  } = useTrashStore();
+export default function TrashPanel() {
+  const trashFiles = useTrashStore((state) => state.trashFiles);
+  const trashCount = useTrashStore((state) => state.trashCount);
+  const loadTrashFiles = useTrashStore((state) => state.loadTrashFiles);
+  const loadTrashCount = useTrashStore((state) => state.loadTrashCount);
+  const restoreFiles = useTrashStore((state) => state.restoreFiles);
+  const permanentDeleteFiles = useTrashStore((state) => state.permanentDeleteFiles);
+  const emptyTrash = useTrashStore((state) => state.emptyTrash);
 
   const [selectedTrashFiles, setSelectedTrashFiles] = useState<number[]>([]);
-  const [showTrashView, setShowTrashView] = useState(false);
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
 
-  // Load trash count on mount
   useEffect(() => {
-    loadTrashCount();
-  }, [loadTrashCount]);
-
-  const handleOpenTrash = async () => {
-    await loadTrashFiles();
-    setShowTrashView(true);
-    setSelectedTrashFiles([]);
-  };
-
-  const handleCloseTrash = () => {
-    setShowTrashView(false);
-    setSelectedTrashFiles([]);
-  };
+    void loadTrashFiles();
+    void loadTrashCount();
+  }, [loadTrashCount, loadTrashFiles]);
 
   const handleToggleSelect = (fileId: number) => {
-    if (selectedTrashFiles.includes(fileId)) {
-      setSelectedTrashFiles(selectedTrashFiles.filter((id) => id !== fileId));
-    } else {
-      setSelectedTrashFiles([...selectedTrashFiles, fileId]);
-    }
+    setSelectedTrashFiles((current) =>
+      current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId],
+    );
   };
 
   const handleSelectAll = () => {
     if (selectedTrashFiles.length === trashFiles.length) {
       setSelectedTrashFiles([]);
-    } else {
-      setSelectedTrashFiles(trashFiles.map((f) => f.id));
+      return;
     }
+    setSelectedTrashFiles(trashFiles.map((file) => file.id));
   };
 
   const handleRestoreSelected = async () => {
-    if (selectedTrashFiles.length > 0) {
-      await restoreFiles(selectedTrashFiles);
-      setSelectedTrashFiles([]);
+    if (selectedTrashFiles.length === 0) {
+      return;
     }
+    await restoreFiles(selectedTrashFiles);
+    setSelectedTrashFiles([]);
   };
 
   const handlePermanentDeleteSelected = async () => {
-    if (selectedTrashFiles.length > 0) {
-      await permanentDeleteFiles(selectedTrashFiles);
-      setSelectedTrashFiles([]);
+    if (selectedTrashFiles.length === 0) {
+      return;
     }
+    await permanentDeleteFiles(selectedTrashFiles);
+    setSelectedTrashFiles([]);
   };
 
   const handleEmptyTrash = async () => {
     await emptyTrash();
+    setSelectedTrashFiles([]);
     setShowEmptyConfirm(false);
   };
 
@@ -196,126 +179,97 @@ export default function TrashPanel({ variant = "sidebar" }: TrashPanelProps) {
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
     <>
-      {variant === "header" ? (
-        <button
-          type="button"
-          className="relative inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-border"
-          onClick={handleOpenTrash}
-          title={trashCount > 0 ? `回收站（${trashCount}）` : "回收站"}
-          aria-label={trashCount > 0 ? `回收站，${trashCount} 个文件` : "回收站"}
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      ) : (
-        <div
-          className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-gray-100 dark:hover:bg-dark-border"
-          onClick={handleOpenTrash}
-        >
-          <Trash2 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">回收站</span>
-          {trashCount > 0 && (
-            <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-400">
-              {trashCount}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Trash view dialog */}
-      <Dialog open={showTrashView} onOpenChange={(isOpen) => !isOpen && handleCloseTrash()}>
-        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="w-5 h-5" />
-              回收站
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-auto">
-            {trashFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
-                <Trash2 className="w-16 h-16 mb-4 opacity-50" />
-                <p className="text-lg">回收站为空</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {/* Toolbar */}
-                <div className="flex items-center gap-2 pb-3 border-b border-gray-200 dark:border-dark-border">
-                  <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                    {selectedTrashFiles.length === trashFiles.length ? "取消全选" : "全选"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRestoreSelected}
-                    disabled={selectedTrashFiles.length === 0}
-                  >
-                    <RotateCcw className="w-4 h-4 mr-1" />
-                    恢复
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePermanentDeleteSelected}
-                    disabled={selectedTrashFiles.length === 0}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <X className="w-4 h-4 mr-1" />
-                    永久删除
-                  </Button>
-                  <div className="flex-1" />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowEmptyConfirm(true)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    清空回收站
-                  </Button>
-                </div>
-
-                {/* File list */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 py-3">
-                  {trashFiles.map((file) => (
-                    <TrashFileItem
-                      key={file.id}
-                      file={file}
-                      isSelected={selectedTrashFiles.includes(file.id)}
-                      onToggleSelect={() => handleToggleSelect(file.id)}
-                      formatFileSize={formatFileSize}
-                      formatDate={formatDate}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-dark-bg">
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-border">
+          <div className="min-w-0">
+            <h2 className="text-[16px] font-semibold text-gray-900 dark:text-gray-100">回收站</h2>
+            <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
+              共 {trashCount} 个文件，可恢复或永久删除。
+            </p>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-dark-border">
-            <Button variant="outline" onClick={handleCloseTrash}>
-              关闭
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={handleSelectAll} disabled={trashFiles.length === 0}>
+              {selectedTrashFiles.length === trashFiles.length && trashFiles.length > 0
+                ? "取消全选"
+                : "全选"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void handleRestoreSelected()}
+              disabled={selectedTrashFiles.length === 0}
+            >
+              <RotateCcw className="mr-1 h-4 w-4" />
+              恢复
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void handlePermanentDeleteSelected()}
+              disabled={selectedTrashFiles.length === 0}
+              className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+            >
+              <X className="mr-1 h-4 w-4" />
+              永久删除
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowEmptyConfirm(true)}
+              disabled={trashFiles.length === 0}
+              className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              清空回收站
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
 
-      {/* Empty trash confirmation dialog */}
+        <div className="flex-1 overflow-auto px-5 py-5">
+          {trashFiles.length === 0 ? (
+            <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-3xl border border-dashed border-gray-200 text-center dark:border-dark-border">
+              <Trash2 className="h-14 w-14 text-gray-300 dark:text-gray-600" />
+              <h3 className="mt-5 text-[18px] font-semibold text-gray-900 dark:text-gray-100">
+                回收站为空
+              </h3>
+              <p className="mt-2 text-[13px] text-gray-500 dark:text-gray-400">
+                删除的素材会先进入这里，方便你恢复。
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+              {trashFiles.map((file) => (
+                <TrashFileItem
+                  key={file.id}
+                  file={file}
+                  isSelected={selectedTrashFiles.includes(file.id)}
+                  onToggleSelect={() => handleToggleSelect(file.id)}
+                  formatFileSize={formatFileSize}
+                  formatDate={formatDate}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <Dialog
         open={showEmptyConfirm}
-        onOpenChange={(isOpen) => !isOpen && setShowEmptyConfirm(false)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setShowEmptyConfirm(false);
+          }
+        }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle className="w-5 h-5" />
+              <AlertTriangle className="h-5 w-5" />
               确认清空回收站
             </DialogTitle>
           </DialogHeader>
@@ -323,16 +277,16 @@ export default function TrashPanel({ variant = "sidebar" }: TrashPanelProps) {
             <p className="text-gray-700 dark:text-gray-300">
               确定要清空回收站吗？此操作不可恢复，所有文件将被永久删除。
             </p>
-            <p className="text-sm text-gray-500 mt-2">回收站中共有 {trashFiles.length} 个文件</p>
+            <p className="mt-2 text-sm text-gray-500">回收站中共有 {trashFiles.length} 个文件</p>
           </div>
-          <DialogFooter>
+          <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowEmptyConfirm(false)}>
               取消
             </Button>
-            <Button variant="destructive" onClick={handleEmptyTrash}>
+            <Button variant="destructive" onClick={() => void handleEmptyTrash()}>
               确认清空
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </>

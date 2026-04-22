@@ -32,17 +32,24 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/ContextMenu";
-import {
-  appPanelHeaderClass,
-  appPanelMetaClass,
-  appPanelTitleClass,
-  appTreeRowClass,
-} from "@/lib/ui";
 import { requestFocusFirstFile } from "@/lib/libraryNavigation";
+import { appPanelMetaClass, appTreeRowClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/stores/filterStore";
+import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
-import { collectTagIds, flattenTagTree, Tag, useTagStore } from "@/stores/tagStore";
-import { ChevronRight, Move, Pencil, Plus, Tag as TagIcon, Tags, Trash2, X } from "lucide-react";
+import { useNavigationStore } from "@/stores/navigationStore";
+import { collectTagIds, flattenTagTree, type Tag, useTagStore } from "@/stores/tagStore";
+import {
+  Bookmark,
+  ChevronRight,
+  Move,
+  Pencil,
+  Plus,
+  Search,
+  Tag as TagIcon,
+  Trash2,
+} from "lucide-react";
 
 const TAG_COLORS = [
   "#ef4444",
@@ -106,22 +113,26 @@ const isDescendant = (tags: Tag[], parentId: number, childId: number): boolean =
   return check(parent.children);
 };
 
-async function selectTagFromTree(tagId: number | null) {
-  const tagStore = useTagStore.getState();
-  const { setTagIds } = useFilterStore.getState();
-  const libraryStore = useLibraryQueryStore.getState();
-
-  if (tagId === null) {
-    tagStore.setSelectedTagId(null);
-    setTagIds([]);
-    await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
-    return;
+function filterTagTree(tags: Tag[], query: string): Tag[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) {
+    return tags;
   }
 
-  tagStore.setSelectedTagId(tagId);
-  const selectedTag = flattenTagTree(tagStore.tags).find((item) => item.id === tagId);
-  setTagIds(selectedTag ? collectTagIds(selectedTag) : [tagId]);
-  await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
+  return tags.flatMap((tag) => {
+    const filteredChildren = filterTagTree(tag.children, normalizedQuery);
+    const matches = tag.name.toLocaleLowerCase().includes(normalizedQuery);
+    if (!matches && filteredChildren.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        ...tag,
+        children: filteredChildren,
+      },
+    ];
+  });
 }
 
 interface TagItemProps {
@@ -131,10 +142,12 @@ interface TagItemProps {
   dragPosition: DragPosition;
   expandedIds: number[];
   onToggle: (id: number) => void;
-  onSelect: (id: number | null) => Promise<void>;
+  onSelect: (id: number | null) => void;
   onEdit: (tag: Tag) => void;
   onDelete: (tag: Tag) => void;
   onAddChild: (tag: Tag) => void;
+  onViewFiles: (tag: Tag) => void;
+  onOpenFiles: (tag: Tag) => void;
   focusPanel: () => void;
   registerKeyboardItem: (tagId: number, element: HTMLDivElement | null) => void;
 }
@@ -150,10 +163,12 @@ function TagItem({
   onEdit,
   onDelete,
   onAddChild,
+  onViewFiles,
+  onOpenFiles,
   focusPanel,
   registerKeyboardItem,
 }: TagItemProps) {
-  const { selectedTagId } = useTagStore();
+  const selectedTagId = useTagStore((state) => state.selectedTagId);
   const elementRef = useRef<HTMLDivElement>(null);
   const isExpanded = expandedIds.includes(tag.id);
   const isSelected = selectedTagId === tag.id;
@@ -197,10 +212,10 @@ function TagItem({
     <div>
       {isSortTarget && dragPosition.before && (
         <div
-          className="h-0.5 bg-blue-500 rounded-full my-0.5 relative"
+          className="relative my-0.5 h-0.5 rounded-full bg-blue-500"
           style={{ marginLeft: `${depth * 12 + 8}px` }}
         >
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full" />
+          <div className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-blue-500" />
         </div>
       )}
 
@@ -211,17 +226,23 @@ function TagItem({
               elementRef.current = element;
               registerKeyboardItem(tag.id, element);
             }}
-            className={`${appTreeRowClass} cursor-pointer ${
+            className={cn(
+              appTreeRowClass,
+              "cursor-pointer",
               isDragging
                 ? "opacity-50"
                 : isSelected
                   ? "bg-primary-100 dark:bg-primary-900/30"
-                  : "hover:bg-gray-100 dark:hover:bg-dark-border"
-            }`}
+                  : "hover:bg-gray-100 dark:hover:bg-dark-border",
+            )}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
             onClick={() => {
               focusPanel();
-              void onSelect(tag.id);
+              onSelect(tag.id);
+            }}
+            onDoubleClick={() => {
+              focusPanel();
+              onOpenFiles(tag);
             }}
           >
             {hasChildren ? (
@@ -229,48 +250,42 @@ function TagItem({
                 variant="ghost"
                 size="icon"
                 className="h-5 w-5 p-0"
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={(event) => {
+                  event.stopPropagation();
                   onToggle(tag.id);
                 }}
               >
                 <ChevronRight
-                  className={`w-3 h-3 text-gray-500 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                  className={cn(
+                    "h-3 w-3 text-gray-500 transition-transform",
+                    isExpanded && "rotate-90",
+                  )}
                 />
               </Button>
             ) : (
               <span className="w-5" />
             )}
 
-            <TagIcon className="w-4 h-4 flex-shrink-0" style={{ color: tag.color }} />
-            <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{tag.name}</span>
+            <TagIcon className="h-4 w-4 flex-shrink-0" style={{ color: tag.color }} />
+            <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{tag.name}</span>
             {tag.count > 0 && (
               <span className={`${appPanelMetaClass} tabular-nums`}>{tag.count}</span>
-            )}
-            {isSelected && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-5 flex-shrink-0 rounded-md"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  focusPanel();
-                  void onSelect(null);
-                }}
-              >
-                <X className="w-3 h-3 text-gray-400 hover:text-red-500" />
-              </Button>
             )}
           </div>
         </ContextMenuTrigger>
 
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onViewFiles(tag)}>
+            <Bookmark className="mr-2 h-4 w-4" />
+            查看素材
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => onAddChild(tag)}>
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             创建子标签
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onEdit(tag)}>
-            <Pencil className="w-4 h-4 mr-2" />
+            <Pencil className="mr-2 h-4 w-4" />
             重命名
           </ContextMenuItem>
           <MoveTagMenu tag={tag} />
@@ -279,7 +294,7 @@ function TagItem({
             onSelect={() => onDelete(tag)}
             className="text-red-600 dark:text-red-400"
           >
-            <Trash2 className="w-4 h-4 mr-2" />
+            <Trash2 className="mr-2 h-4 w-4" />
             删除
           </ContextMenuItem>
         </ContextMenuContent>
@@ -300,6 +315,8 @@ function TagItem({
               onEdit={onEdit}
               onDelete={onDelete}
               onAddChild={onAddChild}
+              onViewFiles={onViewFiles}
+              onOpenFiles={onOpenFiles}
               focusPanel={focusPanel}
               registerKeyboardItem={registerKeyboardItem}
             />
@@ -309,10 +326,10 @@ function TagItem({
 
       {isSortTarget && !dragPosition.before && (
         <div
-          className="h-0.5 bg-blue-500 rounded-full my-0.5 relative"
+          className="relative my-0.5 h-0.5 rounded-full bg-blue-500"
           style={{ marginLeft: `${depth * 12 + 8}px` }}
         >
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full" />
+          <div className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-blue-500" />
         </div>
       )}
     </div>
@@ -320,7 +337,9 @@ function TagItem({
 }
 
 function MoveTagMenu({ tag }: { tag: Tag }) {
-  const { tags, moveTag, reorderTags } = useTagStore();
+  const tags = useTagStore((state) => state.tags);
+  const moveTag = useTagStore((state) => state.moveTag);
+  const reorderTags = useTagStore((state) => state.reorderTags);
   const flatTags = useMemo(() => flattenTagTree(tags), [tags]);
 
   const options = flatTags.filter(
@@ -348,7 +367,7 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
-        <Move className="w-4 h-4 mr-2" />
+        <Move className="mr-2 h-4 w-4" />
         移动到
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
@@ -368,11 +387,21 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
 }
 
 export default function TagPanel() {
-  const { tags, addTag, deleteTag, updateTag, reorderTags, selectedTagId, setSelectedTagId } =
-    useTagStore();
+  const tags = useTagStore((state) => state.tags);
+  const addTag = useTagStore((state) => state.addTag);
+  const deleteTag = useTagStore((state) => state.deleteTag);
+  const updateTag = useTagStore((state) => state.updateTag);
+  const reorderTags = useTagStore((state) => state.reorderTags);
+  const selectedTagId = useTagStore((state) => state.selectedTagId);
+  const setSelectedTagId = useTagStore((state) => state.setSelectedTagId);
+  const selectFolder = useFolderStore((state) => state.selectFolder);
   const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery);
-  const selectedFolderId = useLibraryQueryStore((state) => state.selectedFolderId);
-  const { setTagIds } = useFilterStore();
+  const setSelectedFolderId = useLibraryQueryStore((state) => state.setSelectedFolderId);
+  const setTagIds = useFilterStore((state) => state.setTagIds);
+  const setFolderId = useFilterStore((state) => state.setFolderId);
+  const openLibrary = useNavigationStore((state) => state.openLibrary);
+
+  const [searchQuery, setSearchQuery] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addingParent, setAddingParent] = useState<Tag | null>(null);
   const [newTagName, setNewTagName] = useState("");
@@ -384,28 +413,32 @@ export default function TagPanel() {
   const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" });
   const [expandedIds, setExpandedIds] = useState<number[]>([]);
   const [deletingTag, setDeletingTag] = useState<Tag | null>(null);
-  const handleToggle = (id: number) => {
-    setExpandedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
-    );
-  };
+
+  const filteredTags = useMemo(() => filterTagTree(tags, searchQuery), [searchQuery, tags]);
+  const effectiveExpandedIds = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return expandedIds;
+    }
+    return flattenTagTree(filteredTags)
+      .filter((tag) => tag.children.length > 0)
+      .map((tag) => tag.id);
+  }, [expandedIds, filteredTags, searchQuery]);
+  const selectedTag = useMemo(
+    () => (selectedTagId === null ? null : findTagById(tags, selectedTagId)),
+    [selectedTagId, tags],
+  );
+  const selectedTagChildren = selectedTag?.children ?? [];
+
   const visibleTagItems = useMemo(
-    () => [
-      {
-        id: null,
-        parentId: null,
-        depth: 0,
-        hasChildren: false,
-        isExpanded: false,
-      },
-      ...buildVisibleTreeItems(tags, {
-        expandedIds,
+    () =>
+      buildVisibleTreeItems(filteredTags, {
+        expandedIds: effectiveExpandedIds,
         getId: (tag) => tag.id,
         getChildren: (tag) => tag.children,
       }),
-    ],
-    [expandedIds, tags],
+    [effectiveExpandedIds, filteredTags],
   );
+
   const {
     containerRef: panelRef,
     focusContainer: focusPanel,
@@ -416,27 +449,28 @@ export default function TagPanel() {
     selectedId: selectedTagId,
     onSelect: async (tagId) => {
       focusPanel();
-      await selectTagFromTree(tagId);
+      setSelectedTagId(tagId);
     },
-    onToggle: handleToggle,
+    onToggle: (tagId) => {
+      setExpandedIds((previous) =>
+        previous.includes(tagId)
+          ? previous.filter((item) => item !== tagId)
+          : [...previous, tagId],
+      );
+    },
     onActivate: requestFocusFirstFile,
   });
 
   useEffect(() => {
-    setExpandedIds((prev) => {
+    setExpandedIds((previous) => {
       const validIds = new Set(flattenTagTree(tags).map((tag) => tag.id));
-      const next = prev.filter((id) => validIds.has(id));
+      const next = previous.filter((id) => validIds.has(id));
       const parents = flattenTagTree(tags)
         .filter((tag) => tag.children.length > 0)
         .map((tag) => tag.id);
       return Array.from(new Set([...next, ...parents]));
     });
   }, [tags]);
-
-  const selectTagForKeyboard = async (tagId: number | null) => {
-    focusPanel();
-    await selectTagFromTree(tagId);
-  };
 
   useEffect(() => {
     return monitorForElements({
@@ -491,9 +525,9 @@ export default function TagPanel() {
         const before = extractClosestEdge(target.data) === "top";
         const activeParentId = findTagParentId(tags, activeTagId);
         const targetParentId = findTagParentId(tags, targetTagId);
-
         const targetSiblings = [...findTagSiblings(tags, targetParentId)];
         const activeIndexInTarget = targetSiblings.findIndex((item) => item.id === activeTagId);
+
         if (activeIndexInTarget !== -1) {
           targetSiblings.splice(activeIndexInTarget, 1);
         }
@@ -530,20 +564,20 @@ export default function TagPanel() {
         setDragPosition({ type: "none" });
       },
     });
-  }, [tags, reorderTags]);
+  }, [reorderTags, tags]);
 
   const openAddDialog = (parent: Tag | null = null) => {
     setAddingParent(parent);
     setIsAdding(true);
     setNewTagName("");
-    setSelectedColor(TAG_COLORS[0]);
+    setSelectedColor(parent?.color ?? TAG_COLORS[0]);
   };
 
   const handleAddTag = async () => {
     if (!newTagName.trim()) return;
     await addTag(newTagName.trim(), selectedColor, addingParent?.id ?? null);
     if (addingParent) {
-      setExpandedIds((prev) => Array.from(new Set([...prev, addingParent.id])));
+      setExpandedIds((previous) => Array.from(new Set([...previous, addingParent.id])));
     }
     setIsAdding(false);
     setAddingParent(null);
@@ -565,80 +599,165 @@ export default function TagPanel() {
     setEditColor("");
   };
 
-  const handleDeleteTag = async (tag: Tag) => {
-    setDeletingTag(tag);
-  };
-
   const confirmDeleteTag = async () => {
     if (!deletingTag) return;
 
     if (deletingTag.id === selectedTagId) {
       setSelectedTagId(null);
-      setTagIds([]);
     }
     await deleteTag(deletingTag.id);
-    await runCurrentQuery(selectedFolderId);
     setDeletingTag(null);
   };
 
+  const openFilesForTag = async (tag: Tag) => {
+    setTagIds(collectTagIds(tag));
+    setSelectedTagId(tag.id);
+    setFolderId(null);
+    selectFolder(null);
+    setSelectedFolderId(null);
+    await runCurrentQuery(null);
+    openLibrary();
+  };
+
   return (
-    <div className="flex flex-col">
-      <div className={appPanelHeaderClass}>
-        <h2 className={appPanelTitleClass}>标签</h2>
-        <Button variant="ghost" size="icon" className="rounded-lg" onClick={() => openAddDialog()}>
-          <Plus className="w-4 h-4" />
+    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-dark-bg">
+      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-dark-border">
+        <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">标签管理</h2>
+        <Button variant="outline" onClick={() => openAddDialog()} className="h-8 rounded-lg px-3">
+          <Plus className="mr-1 h-4 w-4" />
+          新建标签
         </Button>
       </div>
 
-      <div
-        ref={panelRef}
-        className="flex-1 overflow-auto p-2.5 focus:outline-none"
-        tabIndex={0}
-        onKeyDown={handlePanelKeyDown}
-      >
-        <div className="flex flex-col gap-1">
-          <div
-            ref={(element) => registerKeyboardItem(null, element)}
-            className={`${appTreeRowClass} cursor-pointer ${
-              selectedTagId === null
-                ? "bg-primary-100 dark:bg-primary-900/30"
-                : "hover:bg-gray-100 dark:hover:bg-dark-border"
-            }`}
-            style={{ paddingLeft: "8px" }}
-            onClick={() => {
-              focusPanel();
-              void selectTagForKeyboard(null);
-            }}
-          >
-            <span className="w-5" />
-            <Tags className="w-4 h-4 text-gray-500 flex-shrink-0" />
-            <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">全部标签</span>
+      <div className="flex min-h-0 flex-1">
+        <section className="flex min-h-0 w-[300px] flex-shrink-0 flex-col border-r border-gray-200 dark:border-dark-border">
+          <div className="border-b border-gray-200 px-3 py-3 dark:border-dark-border">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="搜索标签"
+                className="h-8 rounded-lg border-gray-200 bg-white pl-9 shadow-none dark:border-dark-border dark:bg-dark-bg/70"
+              />
+            </div>
           </div>
 
-          {tags.map((tag) => (
-            <TagItem
-              key={tag.id}
-              tag={tag}
-              depth={0}
-              activeId={activeId}
-              dragPosition={dragPosition}
-              expandedIds={expandedIds}
-              onToggle={handleToggle}
-              onSelect={selectTagForKeyboard}
-              onEdit={handleEditTag}
-              onDelete={handleDeleteTag}
-              onAddChild={openAddDialog}
-              focusPanel={focusPanel}
-              registerKeyboardItem={registerKeyboardItem}
-            />
-          ))}
+          <div
+            ref={panelRef}
+            className="flex-1 overflow-auto p-2.5 focus:outline-none"
+            tabIndex={0}
+            onKeyDown={handlePanelKeyDown}
+          >
+            <div className="flex flex-col gap-1">
+              {filteredTags.map((tag) => (
+                <TagItem
+                  key={tag.id}
+                  tag={tag}
+                  depth={0}
+                  activeId={activeId}
+                  dragPosition={dragPosition}
+                  expandedIds={effectiveExpandedIds}
+                  onToggle={(tagId) =>
+                    setExpandedIds((previous) =>
+                      previous.includes(tagId)
+                        ? previous.filter((item) => item !== tagId)
+                        : [...previous, tagId],
+                    )
+                  }
+                  onSelect={setSelectedTagId}
+                  onEdit={handleEditTag}
+                  onDelete={setDeletingTag}
+                  onAddChild={openAddDialog}
+                  onViewFiles={(tag) => void openFilesForTag(tag)}
+                  onOpenFiles={(tag) => void openFilesForTag(tag)}
+                  focusPanel={focusPanel}
+                  registerKeyboardItem={registerKeyboardItem}
+                />
+              ))}
 
-          {tags.length === 0 && (
-            <div className="py-4 text-center text-[12px] text-gray-400 dark:text-gray-500">
-              暂无标签
+              {filteredTags.length === 0 && (
+                <div className="px-3 py-6 text-center text-[12px] text-gray-400 dark:text-gray-500">
+                  没有匹配结果
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="flex min-h-0 flex-1 flex-col">
+          {selectedTag ? (
+            <>
+              <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
+                <div className="flex items-center gap-3">
+                  <span
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg"
+                    style={{ backgroundColor: `${selectedTag.color}1f`, color: selectedTag.color }}
+                  >
+                    <TagIcon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-[16px] font-semibold text-gray-900 dark:text-gray-100">
+                      {selectedTag.name}
+                    </h3>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-gray-500 dark:text-gray-400">
+                      <span>{selectedTag.count} 个素材</span>
+                      <span>{selectedTagChildren.length} 个子标签</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-auto">
+                <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
+                  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-y-2 text-[13px]">
+                    <span className="text-gray-500 dark:text-gray-400">颜色</span>
+                    <span className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
+                      <span
+                        className="h-3 w-3 rounded-full"
+                        style={{ backgroundColor: selectedTag.color }}
+                      />
+                      {selectedTag.color}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="px-3 py-2">
+                  {selectedTagChildren.length > 0 ? (
+                    <div className="flex flex-col gap-1">
+                      {selectedTagChildren.map((child) => (
+                        <button
+                          key={child.id}
+                          type="button"
+                          onClick={() => setSelectedTagId(child.id)}
+                          onDoubleClick={() => void openFilesForTag(child)}
+                          className={`${appTreeRowClass} hover:bg-gray-100 dark:hover:bg-dark-border`}
+                        >
+                          <span
+                            className="h-3 w-3 flex-shrink-0 rounded-full"
+                            style={{ backgroundColor: child.color }}
+                          />
+                          <span className="flex-1 truncate text-left text-gray-800 dark:text-gray-100">
+                            {child.name}
+                          </span>
+                          <span className={`${appPanelMetaClass} tabular-nums`}>{child.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-2.5 py-3 text-[12px] text-gray-400 dark:text-gray-500">
+                      暂无子标签
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="text-[13px] text-gray-400 dark:text-gray-500">选择标签</div>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
       <Dialog
@@ -656,14 +775,14 @@ export default function TagPanel() {
           <DialogHeader>
             <DialogTitle>{addingParent ? "创建子标签" : "创建标签"}</DialogTitle>
             {addingParent && (
-              <DialogDescription>在 "{addingParent.name}" 下创建子标签</DialogDescription>
+              <DialogDescription>在 “{addingParent.name}” 下创建子标签</DialogDescription>
             )}
           </DialogHeader>
           <div className="flex flex-col gap-4 py-4">
             <Input
               value={newTagName}
-              onChange={(e) => setNewTagName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
+              onChange={(event) => setNewTagName(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && void handleAddTag()}
               placeholder="标签名称"
               autoFocus
             />
@@ -671,10 +790,12 @@ export default function TagPanel() {
               {TAG_COLORS.map((color) => (
                 <button
                   key={color}
+                  type="button"
                   onClick={() => setSelectedColor(color)}
-                  className={`w-6 h-6 rounded-full transition-transform ${
-                    selectedColor === color ? "ring-2 ring-offset-2 ring-gray-400 scale-110" : ""
-                  }`}
+                  className={cn(
+                    "h-6 w-6 rounded-full transition-transform",
+                    selectedColor === color && "scale-110 ring-2 ring-gray-400 ring-offset-2",
+                  )}
                   style={{ backgroundColor: color }}
                 />
               ))}
@@ -692,7 +813,7 @@ export default function TagPanel() {
             >
               取消
             </Button>
-            <Button onClick={handleAddTag}>添加</Button>
+            <Button onClick={() => void handleAddTag()}>添加</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -714,8 +835,8 @@ export default function TagPanel() {
           <div className="flex flex-col gap-4 py-4">
             <Input
               value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSaveTag()}
+              onChange={(event) => setEditName(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && void handleSaveTag()}
               placeholder="新名称"
               autoFocus
             />
@@ -723,10 +844,12 @@ export default function TagPanel() {
               {TAG_COLORS.map((color) => (
                 <button
                   key={color}
+                  type="button"
                   onClick={() => setEditColor(color)}
-                  className={`w-6 h-6 rounded-full transition-transform ${
-                    editColor === color ? "ring-2 ring-offset-2 ring-gray-400 scale-110" : ""
-                  }`}
+                  className={cn(
+                    "h-6 w-6 rounded-full transition-transform",
+                    editColor === color && "scale-110 ring-2 ring-gray-400 ring-offset-2",
+                  )}
                   style={{ backgroundColor: color }}
                 />
               ))}
@@ -743,7 +866,7 @@ export default function TagPanel() {
             >
               取消
             </Button>
-            <Button onClick={handleSaveTag}>保存</Button>
+            <Button onClick={() => void handleSaveTag()}>保存</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -761,7 +884,7 @@ export default function TagPanel() {
             <DialogTitle>确认删除标签</DialogTitle>
             <DialogDescription>
               {deletingTag
-                ? `删除“${deletingTag.name}”后，该标签及其子标签会从所有已关联图片中移除，且无法恢复。`
+                ? `删除 “${deletingTag.name}” 后，该标签及其子标签会从所有已关联素材中移除，且无法恢复。`
                 : ""}
             </DialogDescription>
           </DialogHeader>
@@ -769,7 +892,10 @@ export default function TagPanel() {
             <Button variant="outline" onClick={() => setDeletingTag(null)}>
               取消
             </Button>
-            <Button onClick={confirmDeleteTag} className="bg-red-600 hover:bg-red-700 text-white">
+            <Button
+              onClick={() => void confirmDeleteTag()}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
               删除
             </Button>
           </div>

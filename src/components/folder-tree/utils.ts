@@ -2,6 +2,7 @@ import type { FolderNode } from "@/stores/folderStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 
@@ -82,8 +83,11 @@ export async function selectFolderFromTree(folderId: number | null) {
   const folderStore = useFolderStore.getState();
   const filterStore = useFilterStore.getState();
   const libraryStore = useLibraryQueryStore.getState();
+  const navigationStore = useNavigationStore.getState();
   const selectionStore = useSelectionStore.getState();
   const previewStore = usePreviewStore.getState();
+
+  navigationStore.openLibrary();
 
   if (filterStore.isFilterPanelOpen || folderId === null) {
     filterStore.setFolderId(null);

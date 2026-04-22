@@ -19,6 +19,7 @@ import { appPanelMetaClass, appTreeRowClass } from "@/lib/ui";
 import { showFolderInExplorer } from "@/services/desktop/system";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { Button } from "@/components/ui/Button";
 import {
@@ -74,9 +75,10 @@ export function FolderItem({
     dragOverFolderId,
     setDragOverFolderId,
   } = useFolderStore();
+  const currentView = useNavigationStore((state) => state.currentView);
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore();
   const isExpanded = expandedFolderIds.includes(folder.id);
-  const isSelected = selectedFolderId === folder.id;
+  const isSelected = currentView === "library" && selectedFolderId === folder.id;
   const hasChildren = folder.children && folder.children.length > 0;
   const isSystemFolder = folder.name === "浏览器采集" || folder.isSystem;
   const isBeingDragged = activeId === folder.id;
