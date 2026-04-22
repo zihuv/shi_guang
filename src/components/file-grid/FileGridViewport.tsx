@@ -45,6 +45,7 @@ interface FileGridViewportProps {
   listThumbnailSize: number;
   listTotalSize: number;
   listVirtualItems: ListVirtualItem[];
+  previewLoadGeneration: number;
   scrollParentRef: RefObject<HTMLDivElement | null>;
   selectedFileId: number | null;
   selectedFiles: number[];
@@ -72,6 +73,7 @@ export function FileGridViewport({
   listThumbnailSize,
   listTotalSize,
   listVirtualItems,
+  previewLoadGeneration,
   scrollParentRef,
   selectedFileId,
   selectedFiles,
@@ -107,6 +109,7 @@ export function FileGridViewport({
               <AdaptiveFileCard
                 file={item.file}
                 previewWidth={item.width}
+                generation={previewLoadGeneration}
                 visibleFields={libraryVisibleFields}
                 isSelected={selectedFileId === item.file.id}
                 isMultiSelected={selectedFiles.includes(item.file.id)}
@@ -149,6 +152,7 @@ export function FileGridViewport({
                       file={file}
                       footerHeight={gridMetadataHeight}
                       previewWidth={gridItemWidth}
+                      generation={previewLoadGeneration}
                       visibleFields={libraryVisibleFields}
                       isSelected={selectedFileId === file.id}
                       isMultiSelected={selectedFiles.includes(file.id)}
@@ -182,6 +186,7 @@ export function FileGridViewport({
                 <FileRow
                   file={file}
                   thumbnailSize={listThumbnailSize}
+                  generation={previewLoadGeneration}
                   visibleFields={libraryVisibleFields}
                   isSelected={selectedFileId === file.id}
                   isMultiSelected={selectedFiles.includes(file.id)}

@@ -56,6 +56,7 @@ import {
   type ToolbarMenu,
 } from "@/components/file-grid/FileGridChrome";
 import {
+  beginImagePreviewLoadGeneration,
   prewarmThumbHashPlaceholders,
   prewarmThumbnailImageSources,
 } from "@/components/file-grid/fileGridCards";
@@ -121,6 +122,9 @@ export default function FileGrid() {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollDirection, setScrollDirection] = useState<"forward" | "backward">("forward");
+  const [previewLoadGeneration, setPreviewLoadGeneration] = useState(() =>
+    beginImagePreviewLoadGeneration(),
+  );
 
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
@@ -442,6 +446,14 @@ export default function FileGrid() {
       return;
     }
 
+    setPreviewLoadGeneration(beginImagePreviewLoadGeneration());
+  }, [filteredFiles]);
+
+  useEffect(() => {
+    if (!filteredFiles.length) {
+      return;
+    }
+
     const visibleFiles =
       viewMode === "adaptive"
         ? adaptiveVisibleItems.map((item) => item.file)
@@ -468,7 +480,7 @@ export default function FileGrid() {
           : listVirtualItems.map((virtualRow) => virtualRow.index);
     const minVisibleIndex = visibleIndexes.length ? Math.min(...visibleIndexes) : 0;
     const maxVisibleIndex = visibleIndexes.length ? Math.max(...visibleIndexes) : -1;
-    const directionalPrewarmCount = Math.max(24, Math.min(120, visibleFiles.length * 2));
+    const directionalPrewarmCount = Math.max(12, Math.min(36, visibleFiles.length));
     const directionalFiles =
       scrollDirection === "forward"
         ? filteredFiles.slice(maxVisibleIndex + 1, maxVisibleIndex + 1 + directionalPrewarmCount)
@@ -480,8 +492,9 @@ export default function FileGrid() {
       (file, index, files) => files.findIndex((candidate) => candidate.id === file.id) === index,
     );
     const prewarm = () => {
-      prewarmThumbHashPlaceholders(nextCandidates.slice(0, 96));
-      prewarmThumbnailImageSources(nextCandidates.slice(0, 96));
+      const prewarmCandidates = nextCandidates.slice(0, 36);
+      prewarmThumbHashPlaceholders(prewarmCandidates);
+      prewarmThumbnailImageSources(prewarmCandidates, previewLoadGeneration);
     };
 
     if (typeof window.requestIdleCallback === "function") {
@@ -501,6 +514,7 @@ export default function FileGrid() {
     gridColumns,
     gridVirtualRows,
     listVirtualItems,
+    previewLoadGeneration,
     scrollDirection,
     viewMode,
   ]);
@@ -993,7 +1007,9 @@ export default function FileGrid() {
         visibleInfoFieldLabels={visibleInfoFieldLabels}
       />
 
-      {files.length === 0 ? (
+      {isLoading && files.length === 0 ? (
+        <div className="flex flex-1" aria-hidden="true" />
+      ) : files.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-gray-500 dark:text-gray-400">
           <svg
             className="mb-4 h-16 w-16 text-gray-300 dark:text-gray-600"
@@ -1032,6 +1048,7 @@ export default function FileGrid() {
           listThumbnailSize={listThumbnailSize}
           listTotalSize={listTotalSize}
           listVirtualItems={listVirtualItems}
+          previewLoadGeneration={previewLoadGeneration}
           scrollParentRef={scrollParentRef}
           selectedFileId={selectedFile?.id ?? null}
           selectedFiles={selectedFiles}

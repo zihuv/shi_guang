@@ -10,6 +10,7 @@ import { getOrCreateThumbHash } from "@/services/desktop/files";
 import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
 import { type LibraryViewMode, type LibraryVisibleField } from "@/stores/settingsStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
+import { decideThumbnailGeneration } from "@/lib/thumbnailPolicy";
 import { cn } from "@/lib/utils";
 import { thumbHashBase64ToBytes, thumbHashToDataUrl } from "@/lib/thumbhash";
 import { useExternalFileDrag } from "@/hooks/useExternalFileDrag";
@@ -36,8 +37,8 @@ const OBSERVER_ROOT_MARGIN = "320px";
 const ADAPTIVE_OBSERVER_ROOT_MARGIN = "280px";
 const IMAGE_SRC_CACHE_LIMIT = 512;
 const THUMB_HASH_CACHE_LIMIT = 256;
-const MAX_CONCURRENT_CARD_THUMBNAIL_LOADS = 6;
-const MAX_CONCURRENT_THUMBNAIL_PREWARMS = 4;
+const MAX_CONCURRENT_VISIBLE_IMAGE_LOADS = 10;
+const MAX_CONCURRENT_PREWARM_IMAGE_LOADS = 3;
 const MAX_VISIBLE_TAGS = 3;
 const LIST_MAX_VISIBLE_TAGS = 2;
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"];
@@ -77,13 +78,14 @@ const pendingThumbHashPlaceholderTasks = new Map<string, Promise<string>>();
 const queuedThumbHashPrewarmKeys = new Set<string>();
 const queuedThumbnailPrewarmKeys = new Set<string>();
 const pendingThumbHashPrewarmTasks: Array<() => void> = [];
-const pendingThumbnailPrewarmTasks: Array<() => void> = [];
-const pendingCardThumbnailTasks: CardThumbnailTaskEntry<unknown>[] = [];
-let activeCardThumbnailTaskCount = 0;
+const pendingVisibleImageLoadTasks: CardThumbnailTaskEntry<unknown>[] = [];
+const pendingPrewarmImageLoadTasks: CardThumbnailTaskEntry<unknown>[] = [];
+const activeVisibleImageLoadCounts = new Map<number, number>();
+const activePrewarmImageLoadCounts = new Map<number, number>();
 let nextCardThumbnailTaskId = 0;
 let activeThumbHashPrewarmTaskCount = 0;
 const MAX_CONCURRENT_THUMB_HASH_PREWARMS = 2;
-let activeThumbnailPrewarmTaskCount = 0;
+let currentImageLoadGeneration = 0;
 
 class CardThumbnailTaskCancelledError extends Error {
   constructor() {
@@ -94,6 +96,8 @@ class CardThumbnailTaskCancelledError extends Error {
 
 type CardThumbnailTaskEntry<T> = {
   id: number;
+  generation: number;
+  priority: "visible" | "prewarm";
   cancelled: boolean;
   settled: boolean;
   run: () => Promise<T>;
@@ -125,17 +129,75 @@ function trimStringCache(cache: Map<string, string>, limit: number) {
   }
 }
 
-function flushCardThumbnailTaskQueue() {
+function getGenerationActiveCount(
+  counts: Map<number, number>,
+  generation: number,
+) {
+  return counts.get(generation) ?? 0;
+}
+
+function setGenerationActiveCount(
+  counts: Map<number, number>,
+  generation: number,
+  nextCount: number,
+) {
+  if (nextCount <= 0) {
+    counts.delete(generation);
+    return;
+  }
+  counts.set(generation, nextCount);
+}
+
+function cleanupQueuedTasksForGeneration(
+  tasks: CardThumbnailTaskEntry<unknown>[],
+  generation: number,
+) {
+  for (let index = tasks.length - 1; index >= 0; index -= 1) {
+    const task = tasks[index];
+    if (!task || task.generation >= generation) {
+      continue;
+    }
+    tasks.splice(index, 1);
+    if (task.settled) {
+      continue;
+    }
+    task.cancelled = true;
+    task.settled = true;
+    task.reject(new CardThumbnailTaskCancelledError());
+  }
+}
+
+export function beginImagePreviewLoadGeneration() {
+  currentImageLoadGeneration += 1;
+  cleanupQueuedTasksForGeneration(pendingVisibleImageLoadTasks, currentImageLoadGeneration);
+  cleanupQueuedTasksForGeneration(pendingPrewarmImageLoadTasks, currentImageLoadGeneration);
+  return currentImageLoadGeneration;
+}
+
+function flushImageLoadTaskQueue(
+  queue: CardThumbnailTaskEntry<unknown>[],
+  counts: Map<number, number>,
+  limit: number,
+) {
   while (
-    activeCardThumbnailTaskCount < MAX_CONCURRENT_CARD_THUMBNAIL_LOADS &&
-    pendingCardThumbnailTasks.length > 0
+    getGenerationActiveCount(counts, currentImageLoadGeneration) < limit &&
+    queue.length > 0
   ) {
-    const nextTask = pendingCardThumbnailTasks.pop();
-    if (!nextTask || nextTask.cancelled) {
+    const nextTask = queue.shift();
+    if (!nextTask || nextTask.cancelled || nextTask.generation < currentImageLoadGeneration) {
+      if (nextTask && !nextTask.settled) {
+        nextTask.cancelled = true;
+        nextTask.settled = true;
+        nextTask.reject(new CardThumbnailTaskCancelledError());
+      }
       continue;
     }
 
-    activeCardThumbnailTaskCount += 1;
+    setGenerationActiveCount(
+      counts,
+      nextTask.generation,
+      getGenerationActiveCount(counts, nextTask.generation) + 1,
+    );
     nextTask
       .run()
       .then((value) => {
@@ -153,29 +215,55 @@ function flushCardThumbnailTaskQueue() {
         nextTask.reject(error);
       })
       .finally(() => {
-        activeCardThumbnailTaskCount = Math.max(0, activeCardThumbnailTaskCount - 1);
-        flushCardThumbnailTaskQueue();
+        setGenerationActiveCount(
+          counts,
+          nextTask.generation,
+          getGenerationActiveCount(counts, nextTask.generation) - 1,
+        );
+        flushImageLoadTaskQueue(queue, counts, limit);
       });
   }
 }
 
-function cancelCardThumbnailTask(taskId: number) {
-  const taskIndex = pendingCardThumbnailTasks.findIndex((task) => task.id === taskId);
-  if (taskIndex >= 0) {
-    const [task] = pendingCardThumbnailTasks.splice(taskIndex, 1);
-    if (task && !task.settled) {
-      task.cancelled = true;
-      task.settled = true;
-      task.reject(new CardThumbnailTaskCancelledError());
-    }
+function flushAllImageLoadTaskQueues() {
+  flushImageLoadTaskQueue(
+    pendingVisibleImageLoadTasks,
+    activeVisibleImageLoadCounts,
+    MAX_CONCURRENT_VISIBLE_IMAGE_LOADS,
+  );
+  flushImageLoadTaskQueue(
+    pendingPrewarmImageLoadTasks,
+    activePrewarmImageLoadCounts,
+    MAX_CONCURRENT_PREWARM_IMAGE_LOADS,
+  );
+}
+
+function cancelCardThumbnailTask(taskId: number, priority: "visible" | "prewarm") {
+  const queue =
+    priority === "visible" ? pendingVisibleImageLoadTasks : pendingPrewarmImageLoadTasks;
+  const taskIndex = queue.findIndex((task) => task.id === taskId);
+  if (taskIndex < 0) {
+    return;
+  }
+
+  const [task] = queue.splice(taskIndex, 1);
+  if (task && !task.settled) {
+    task.cancelled = true;
+    task.settled = true;
+    task.reject(new CardThumbnailTaskCancelledError());
   }
 }
 
-function scheduleCardThumbnailTask<T>(task: () => Promise<T>) {
+function scheduleCardThumbnailTask<T>(
+  task: () => Promise<T>,
+  options: { generation: number; priority: "visible" | "prewarm" },
+) {
   const taskId = nextCardThumbnailTaskId++;
   const promise = new Promise<T>((resolve, reject) => {
     const taskEntry: CardThumbnailTaskEntry<T> = {
       id: taskId,
+      generation: options.generation,
+      priority: options.priority,
       cancelled: false,
       settled: false,
       run: task,
@@ -183,14 +271,16 @@ function scheduleCardThumbnailTask<T>(task: () => Promise<T>) {
       reject,
     };
 
-    pendingCardThumbnailTasks.push(taskEntry as CardThumbnailTaskEntry<unknown>);
-    flushCardThumbnailTaskQueue();
+    const queue =
+      options.priority === "visible" ? pendingVisibleImageLoadTasks : pendingPrewarmImageLoadTasks;
+    queue.push(taskEntry as CardThumbnailTaskEntry<unknown>);
+    flushAllImageLoadTaskQueues();
   });
 
   return {
     promise,
     cancel: () => {
-      cancelCardThumbnailTask(taskId);
+      cancelCardThumbnailTask(taskId, options.priority);
     },
   };
 }
@@ -254,26 +344,6 @@ function flushThumbHashPrewarmQueue() {
       .finally(() => {
         activeThumbHashPrewarmTaskCount = Math.max(0, activeThumbHashPrewarmTaskCount - 1);
         flushThumbHashPrewarmQueue();
-      });
-  }
-}
-
-function flushThumbnailPrewarmQueue() {
-  while (
-    activeThumbnailPrewarmTaskCount < MAX_CONCURRENT_THUMBNAIL_PREWARMS &&
-    pendingThumbnailPrewarmTasks.length > 0
-  ) {
-    const nextTask = pendingThumbnailPrewarmTasks.pop();
-    if (!nextTask) {
-      continue;
-    }
-
-    activeThumbnailPrewarmTaskCount += 1;
-    void Promise.resolve()
-      .then(nextTask)
-      .finally(() => {
-        activeThumbnailPrewarmTaskCount = Math.max(0, activeThumbnailPrewarmTaskCount - 1);
-        flushThumbnailPrewarmQueue();
       });
   }
 }
@@ -370,7 +440,46 @@ function getImagePreviewCacheKey(file: FileItem) {
   return `${file.path}:${file.modifiedAt}:${file.size}:image-preview`;
 }
 
-function scheduleThumbnailImagePrewarm(file: FileItem) {
+function shouldUseGeneratedThumbnail(file: Pick<FileItem, "ext" | "width" | "height" | "size">) {
+  return decideThumbnailGeneration({
+    ext: file.ext,
+    width: file.width,
+    height: file.height,
+    size: file.size,
+  }).shouldGenerate;
+}
+
+type PreviewSourceFile = Pick<
+  FileItem,
+  "path" | "ext" | "width" | "height" | "size" | "modifiedAt"
+>;
+
+async function loadPreviewImageSrc(
+  file: PreviewSourceFile,
+  maxEdge: number | undefined,
+) {
+  if (isVideoFile(file.ext)) {
+    return getVideoThumbnailSrc(file.path, maxEdge);
+  }
+
+  const shouldGenerateThumbnail = shouldUseGeneratedThumbnail(file);
+  if (shouldGenerateThumbnail) {
+    const thumbnailSrc = await getThumbnailImageSrc(file.path, file.ext, maxEdge);
+    if (thumbnailSrc) {
+      return thumbnailSrc;
+    }
+    if (isPdfFile(file.ext) || isPsdFile(file.ext)) {
+      return "";
+    }
+  }
+
+  return getFileSrc(file.path);
+}
+
+function scheduleThumbnailImagePrewarm(
+  file: FileItem,
+  generation: number,
+) {
   if (!canGenerateThumbnail(file.ext) || isVideoFile(file.ext)) {
     return;
   }
@@ -385,30 +494,32 @@ function scheduleThumbnailImagePrewarm(file: FileItem) {
   }
 
   queuedThumbnailPrewarmKeys.add(cacheKey);
-  pendingThumbnailPrewarmTasks.push(async () => {
-    if (getCachedImageSrc(cacheKey)) {
-      queuedThumbnailPrewarmKeys.delete(cacheKey);
-      return;
-    }
+  const scheduledTask = scheduleCardThumbnailTask(
+    async () => loadPreviewImageSrc(file, undefined),
+    { generation, priority: "prewarm" },
+  );
 
-    try {
-      const thumbnailSrc = await getThumbnailImageSrc(file.path, file.ext);
-      const resolvedSrc = thumbnailSrc || (await getFileSrc(file.path));
-      if (resolvedSrc) {
-        cacheImageSrc(cacheKey, resolvedSrc);
+  void scheduledTask.promise
+    .then((resolvedSrc) => {
+      if (!resolvedSrc || generation < currentImageLoadGeneration) {
+        releaseUnusedImageSrc(resolvedSrc);
+        return;
       }
-    } catch (error) {
-      console.error("Failed to prewarm thumbnail image source:", error);
-    } finally {
+      cacheImageSrc(cacheKey, resolvedSrc);
+    })
+    .catch((error) => {
+      if (!(error instanceof CardThumbnailTaskCancelledError)) {
+        console.error("Failed to prewarm thumbnail image source:", error);
+      }
+    })
+    .finally(() => {
       queuedThumbnailPrewarmKeys.delete(cacheKey);
-    }
-  });
-  flushThumbnailPrewarmQueue();
+    });
 }
 
-export function prewarmThumbnailImageSources(files: FileItem[]) {
+export function prewarmThumbnailImageSources(files: FileItem[], generation: number) {
   for (const file of files) {
-    scheduleThumbnailImagePrewarm(file);
+    scheduleThumbnailImagePrewarm(file, generation);
   }
 }
 
@@ -442,12 +553,12 @@ function useVisibility(
 }
 
 function useLazyImageSrc(
-  path: string,
-  ext: string,
+  file: PreviewSourceFile,
   cacheKey: string,
   isVisible: boolean,
   maxEdge: number | undefined,
   refreshVersion: number,
+  generation: number,
 ) {
   const [imageError, setImageError] = useState(false);
   const [imageSrc, setImageSrc] = useState<string | null>(() => getCachedImageSrc(cacheKey));
@@ -463,7 +574,7 @@ function useLazyImageSrc(
       return;
     }
 
-    if (!canGenerateThumbnail(ext)) {
+    if (!canGenerateThumbnail(file.ext)) {
       setImageError(false);
       setImageSrc("");
       return;
@@ -479,24 +590,14 @@ function useLazyImageSrc(
     let active = true;
     setImageError(false);
 
-    const scheduledTask = scheduleCardThumbnailTask(async () => {
-      if (isVideoFile(ext)) {
-        return getVideoThumbnailSrc(path, maxEdge);
-      }
-
-      const thumbnailSrc = await getThumbnailImageSrc(path, ext, maxEdge);
-      if (thumbnailSrc) {
-        return thumbnailSrc;
-      }
-      if (isPdfFile(ext) || isPsdFile(ext)) {
-        return "";
-      }
-      return getFileSrc(path);
-    });
+    const scheduledTask = scheduleCardThumbnailTask(
+      async () => loadPreviewImageSrc(file, maxEdge),
+      { generation, priority: "visible" },
+    );
 
     scheduledTask.promise
       .then((src) => {
-        if (!active) {
+        if (!active || generation < currentImageLoadGeneration) {
           releaseUnusedImageSrc(src);
           return;
         }
@@ -520,13 +621,13 @@ function useLazyImageSrc(
       active = false;
       scheduledTask.cancel();
     };
-  }, [cacheKey, ext, isVisible, maxEdge, path, refreshVersion]);
+  }, [cacheKey, file, generation, isVisible, maxEdge, refreshVersion]);
 
   useEffect(() => {
     if (imageSrc) {
-      rememberPreviewImageSrc(path, imageSrc);
+      rememberPreviewImageSrc(file.path, imageSrc);
     }
-  }, [imageSrc, path]);
+  }, [file.path, imageSrc]);
 
   return {
     imageSrc,
@@ -587,17 +688,60 @@ function ThumbHashPlaceholder({ src, className }: { src: string; className?: str
   );
 }
 
+function PreviewImage({
+  src,
+  alt,
+  className,
+  onError,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  onError: () => void;
+}) {
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    setIsReady(false);
+    const image = imageRef.current;
+    if (image?.complete && image.naturalWidth > 0) {
+      setIsReady(true);
+    }
+  }, [src]);
+
+  return (
+    <img
+      ref={imageRef}
+      src={src}
+      alt={alt}
+      className={cn(
+        "transition-opacity duration-150 ease-out",
+        isReady ? "opacity-100" : "opacity-0",
+        className,
+      )}
+      draggable={false}
+      onLoad={() => setIsReady(true)}
+      onError={() => {
+        setIsReady(false);
+        onError();
+      }}
+    />
+  );
+}
+
 export function FileCard({
   file,
   visibleFields,
   footerHeight,
   previewWidth,
+  generation,
   isSelected,
   isMultiSelected,
   scrollRootRef,
   onClick,
   onDoubleClick,
-}: FileCardBaseProps & { footerHeight: number; previewWidth: number }) {
+}: FileCardBaseProps & { footerHeight: number; previewWidth: number; generation: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef);
   const isVideo = isVideoFile(file.ext);
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
@@ -606,12 +750,12 @@ export function FileCard({
   const thumbnailMaxEdge = isVideo ? resolveCardThumbnailMaxEdge(previewWidth) : undefined;
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? (thumbnailMaxEdge ?? "video") : "image-preview"}`;
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
-    file.path,
-    file.ext,
+    file,
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
+    generation,
   );
   const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
     file.path,
@@ -668,13 +812,11 @@ export function FileCard({
                 </svg>
               </div>
             ) : showImagePreview ? (
-              <img
+              <PreviewImage
                 src={imagePreviewSrc}
                 alt={file.name}
                 className="absolute inset-0 h-full w-full object-contain"
-                draggable={false}
                 onError={() => setImageError(true)}
-                decoding="async"
               />
             ) : !showLoadingPreview ? (
               <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
@@ -720,12 +862,13 @@ export function AdaptiveFileCard({
   file,
   visibleFields,
   previewWidth,
+  generation,
   isSelected,
   isMultiSelected,
   scrollRootRef,
   onClick,
   onDoubleClick,
-}: FileCardBaseProps & { previewWidth: number }) {
+}: FileCardBaseProps & { previewWidth: number; generation: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(
     scrollRootRef,
     ADAPTIVE_OBSERVER_ROOT_MARGIN,
@@ -743,12 +886,12 @@ export function AdaptiveFileCard({
     : undefined;
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? (thumbnailMaxEdge ?? "video") : "image-preview"}`;
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
-    file.path,
-    file.ext,
+    file,
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
+    generation,
   );
   const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
     file.path,
@@ -806,13 +949,11 @@ export function AdaptiveFileCard({
                 </svg>
               </div>
             ) : showImagePreview ? (
-              <img
+              <PreviewImage
                 src={imagePreviewSrc}
                 alt={file.name}
                 className="absolute inset-0 h-full w-full object-contain"
-                draggable={false}
                 onError={() => setImageError(true)}
-                decoding="async"
               />
             ) : !showLoadingPreview ? (
               <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
@@ -858,12 +999,13 @@ export function FileRow({
   file,
   visibleFields,
   thumbnailSize,
+  generation,
   isSelected,
   isMultiSelected,
   scrollRootRef,
   onClick,
   onDoubleClick,
-}: FileCardBaseProps & { thumbnailSize: number }) {
+}: FileCardBaseProps & { thumbnailSize: number; generation: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef);
   const isVideo = isVideoFile(file.ext);
   const thumbnailRefreshVersion = useThumbnailRefreshStore(
@@ -872,12 +1014,12 @@ export function FileRow({
   const thumbnailMaxEdge = isVideo ? resolveThumbnailRequestMaxEdge(thumbnailSize) : undefined;
   const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:${isVideo ? (thumbnailMaxEdge ?? "video") : "image-preview"}`;
   const { imageSrc, imageError, setImageError } = useLazyImageSrc(
-    file.path,
-    file.ext,
+    file,
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
+    generation,
   );
   const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
     file.path,
@@ -932,13 +1074,11 @@ export function FileRow({
                 />
               </svg>
             ) : showImagePreview ? (
-              <img
+              <PreviewImage
                 src={imagePreviewSrc}
                 alt={file.name}
                 className="max-h-full max-w-full object-contain"
-                draggable={false}
                 onError={() => setImageError(true)}
-                decoding="async"
               />
             ) : !showLoadingPreview ? (
               <FilePreviewFallback

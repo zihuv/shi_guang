@@ -111,6 +111,39 @@ function applyPaginatedFilesResult(
   return true;
 }
 
+function beginFileListLoading(
+  set: (
+    partial:
+      | Partial<LibraryQueryStore>
+      | ((state: LibraryQueryStore) => Partial<LibraryQueryStore>),
+  ) => void,
+  options?: {
+    clearFiles?: boolean;
+    selectedFolderId?: number | null;
+  },
+) {
+  set((state) => {
+    const nextState: Partial<LibraryQueryStore> = {
+      isLoading: true,
+    };
+
+    if (options && "selectedFolderId" in options) {
+      nextState.selectedFolderId = options.selectedFolderId ?? null;
+    }
+
+    if (options?.clearFiles) {
+      nextState.files = [];
+      nextState.pagination = {
+        ...state.pagination,
+        total: 0,
+        totalPages: 0,
+      };
+    }
+
+    return nextState;
+  });
+}
+
 function roundDebugScore(score: number) {
   return Number(score.toFixed(6));
 }
@@ -265,7 +298,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     const { pagination } = get();
     const { sortBy, sortDirection } = getCurrentSortConfig();
     const requestId = ++fileListRequestId;
-    set({ isLoading: true });
+    beginFileListLoading(set);
 
     try {
       const result = await getAllFiles({
@@ -284,7 +317,12 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   },
 
   loadFilesInFolder: async (folderId) => {
-    set({ selectedFolderId: folderId });
+    const previousFolderId = get().selectedFolderId;
+    const shouldClearFiles = previousFolderId !== folderId;
+    beginFileListLoading(set, {
+      clearFiles: shouldClearFiles,
+      selectedFolderId: folderId,
+    });
     void setLastSelectedFolderId(folderId).catch((error) => {
       console.error("Failed to persist last selected folder:", error);
     });
@@ -298,7 +336,6 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     const { pagination } = get();
     const { sortBy, sortDirection } = getCurrentSortConfig();
     const requestId = ++fileListRequestId;
-    set({ isLoading: true });
 
     try {
       const result =
@@ -358,7 +395,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     const { pagination } = get();
     const requestId = ++fileListRequestId;
     const criteria = useFilterStore.getState().criteria;
-    set({ isLoading: true });
+    beginFileListLoading(set);
 
     try {
       const result = await filterFilesCommand({

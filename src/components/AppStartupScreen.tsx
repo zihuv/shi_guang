@@ -30,24 +30,19 @@ export default function AppStartupScreen({
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">拾光</span>
-            <span
-              className="text-[11px] text-gray-500 dark:text-gray-400"
-              aria-live="polite"
-              role="status"
-            >
-              {errorMessage ? "启动遇到问题" : "正在恢复上次位置"}
-            </span>
+            {errorMessage ? (
+              <span
+                className="text-[11px] text-gray-500 dark:text-gray-400"
+                aria-live="polite"
+                role="status"
+              >
+                启动遇到问题
+              </span>
+            ) : null}
           </div>
         </div>
 
         <SkeletonBlock className="h-10 flex-1 rounded-2xl" />
-
-        {!errorMessage && (
-          <div className="hidden items-center gap-2 rounded-full border border-gray-200/80 bg-white/75 px-3 py-1 text-[11px] text-gray-500 dark:border-dark-border dark:bg-dark-surface/75 dark:text-gray-400 lg:inline-flex">
-            <div className="h-2 w-2 rounded-full bg-blue-500 motion-safe:animate-pulse motion-reduce:animate-none" />
-            恢复上次位置
-          </div>
-        )}
 
         <div className="ml-auto flex items-center gap-2">
           <SkeletonBlock className="h-8 w-8 rounded-full" />
