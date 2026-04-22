@@ -64,6 +64,7 @@ import {
   updateFileColorData,
   updateFileDimensions,
   updateFileMetadata,
+  updateFileThumbHash,
   updateFileNameRecord,
   updateFilePathAndFolder,
   updateTag,
@@ -72,6 +73,7 @@ import {
   type UpsertFileInput,
 } from "./database";
 import {
+  buildThumbHash,
   canAnalyzeImage,
   computeVisualContentHash,
   detectExtensionFromBytes,
@@ -243,6 +245,7 @@ async function buildFileInputFromPath(
   const colors = await extractColorDistributionFromInput(filePath);
   const dominantColor = colors[0]?.color ?? "";
   const contentHash = await computeVisualContentHash(filePath);
+  const thumbHash = await buildThumbHash(filePath, ext);
   return {
     path: filePath,
     name: path.basename(filePath),
@@ -255,6 +258,7 @@ async function buildFileInputFromPath(
     modifiedAt: timestampFromStats(stats, "mtime"),
     dominantColor,
     colorDistribution: JSON.stringify(colors),
+    thumbHash,
     contentHash,
   };
 }
@@ -289,6 +293,7 @@ async function importBytes(
   const stats = await fs.stat(targetPath);
   const dimensions = await getImageDimensions(targetPath, recordExt);
   const colors = await extractColorDistributionFromInput(targetPath);
+  const thumbHash = await buildThumbHash(targetPath, recordExt);
   const fileId = upsertFile(state.db, {
     path: targetPath,
     name: path.basename(targetPath),
@@ -304,6 +309,7 @@ async function importBytes(
     sourceUrl: request.sourceUrl ?? "",
     dominantColor: colors[0]?.color ?? "",
     colorDistribution: JSON.stringify(colors),
+    thumbHash,
     contentHash: await computeVisualContentHash(targetPath),
   });
   return getFileById(state.db, fileId) as FileRecord;
@@ -1159,6 +1165,20 @@ export function registerIpcHandlers(
         numberArg(args, "width"),
         numberArg(args, "height"),
       ),
+    get_or_create_thumb_hash: async (args) => {
+      const filePath = stringArg(args, "filePath", "file_path");
+      const file = getFileByPath(state.db, filePath);
+      if (file?.thumbHash) {
+        return file.thumbHash;
+      }
+
+      const ext = file?.ext ?? path.extname(filePath).slice(1);
+      const thumbHash = await buildThumbHash(filePath, ext);
+      if (file && thumbHash) {
+        updateFileThumbHash(state.db, file.id, thumbHash);
+      }
+      return thumbHash;
+    },
     extract_color: async (args) => {
       const fileId = numberArg(args, "fileId", "file_id");
       const file = getFileById(state.db, fileId);

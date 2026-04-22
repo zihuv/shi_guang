@@ -24,6 +24,7 @@ export interface FileRecord {
   sourceUrl: string;
   dominantColor: string;
   colorDistribution: string;
+  thumbHash: string;
   tags: TagRecord[];
   deletedAt: string | null;
 }

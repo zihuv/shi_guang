@@ -112,6 +112,10 @@ export function updateFileDimensions(args: { fileId: number; width: number; heig
   return invokeDesktop<void>("update_file_dimensions", args);
 }
 
+export function getOrCreateThumbHash(filePath: string) {
+  return invokeDesktop<string>("get_or_create_thumb_hash", { filePath });
+}
+
 export function extractColor(fileId: number) {
   return invokeDesktop<string>("extract_color", { fileId });
 }

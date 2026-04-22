@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import sharp from "sharp";
+import { rgbaToThumbHash, thumbHashBytesToBase64 } from "../src/lib/thumbhash";
 
 const PROBE_READ_LIMIT = 4096;
 
@@ -245,6 +246,34 @@ export async function getImageDimensions(
     };
   } catch {
     return { width: 0, height: 0 };
+  }
+}
+
+export async function buildThumbHash(filePath: string, ext: string): Promise<string> {
+  if (!canBackendDecodeImage(ext)) {
+    return "";
+  }
+
+  try {
+    const image = await sharp(filePath, { animated: false })
+      .rotate()
+      .resize(100, 100, {
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    if (!image.info.width || !image.info.height || image.data.length === 0) {
+      return "";
+    }
+
+    return thumbHashBytesToBase64(
+      rgbaToThumbHash(image.info.width, image.info.height, new Uint8Array(image.data)),
+    );
+  } catch {
+    return "";
   }
 }
 

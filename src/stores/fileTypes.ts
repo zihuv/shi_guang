@@ -21,6 +21,7 @@ export interface FileItem {
   sourceUrl: string;
   dominantColor: string;
   colorDistribution: Array<{ color: string; percentage: number }>;
+  thumbHash: string;
   tags: Tag[];
   deletedAt?: string | null;
 }

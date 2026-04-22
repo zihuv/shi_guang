@@ -7,12 +7,7 @@ import {
 import { type FileItem } from "@/stores/fileTypes";
 import { type LibraryVisibleField, type LibraryViewMode } from "@/stores/settingsStore";
 import { AdaptiveFileCard, FileCard, FileRow } from "@/components/file-grid/fileGridCards";
-import {
-  ADAPTIVE_VIEWPORT_OVERSCAN_PX,
-  GRID_GAP,
-  type AdaptiveLayoutItem,
-  type SelectionBox,
-} from "@/components/file-grid/fileGridLayout";
+import { GRID_GAP, type AdaptiveLayoutItem, type SelectionBox } from "@/components/file-grid/fileGridLayout";
 
 type ListVirtualItem = {
   index: number;
@@ -28,6 +23,7 @@ interface FileGridViewportProps {
     columnWidth: number;
     trackWidth: number;
   };
+  adaptiveVisibleItems: AdaptiveLayoutItem[];
   filteredFiles: FileItem[];
   gridColumns: number;
   gridItemWidth: number;
@@ -45,17 +41,16 @@ interface FileGridViewportProps {
   listThumbnailSize: number;
   listTotalSize: number;
   listVirtualItems: ListVirtualItem[];
-  scrollTop: number;
   scrollParentRef: RefObject<HTMLDivElement | null>;
   selectedFileId: number | null;
   selectedFiles: number[];
   selectionBox: SelectionBox | null;
-  viewportHeight: number;
   viewMode: LibraryViewMode;
 }
 
 export function FileGridViewport({
   adaptiveLayout,
+  adaptiveVisibleItems,
   filteredFiles,
   gridColumns,
   gridItemWidth,
@@ -73,20 +68,12 @@ export function FileGridViewport({
   listThumbnailSize,
   listTotalSize,
   listVirtualItems,
-  scrollTop,
   scrollParentRef,
   selectedFileId,
   selectedFiles,
   selectionBox,
-  viewportHeight,
   viewMode,
 }: FileGridViewportProps) {
-  const adaptiveVisibleStart = scrollTop - ADAPTIVE_VIEWPORT_OVERSCAN_PX;
-  const adaptiveVisibleEnd = scrollTop + viewportHeight + ADAPTIVE_VIEWPORT_OVERSCAN_PX;
-  const adaptiveVisibleItems = adaptiveLayout.items.filter(
-    (item) => item.top + item.height >= adaptiveVisibleStart && item.top <= adaptiveVisibleEnd,
-  );
-
   return (
     <div
       ref={scrollParentRef}

@@ -6,10 +6,12 @@ import {
   type RefObject,
 } from "react";
 import { Play } from "lucide-react";
+import { getOrCreateThumbHash } from "@/services/desktop/files";
 import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
 import { type LibraryViewMode, type LibraryVisibleField } from "@/stores/settingsStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { cn } from "@/lib/utils";
+import { thumbHashBase64ToBytes, thumbHashToDataUrl } from "@/lib/thumbhash";
 import { useExternalFileDrag } from "@/hooks/useExternalFileDrag";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileContextMenu from "@/components/FileContextMenu";
@@ -28,10 +30,12 @@ import {
   resolveThumbnailRequestMaxEdge,
 } from "@/utils";
 
-const OBSERVER_ROOT_MARGIN = "96px";
-const ADAPTIVE_OBSERVER_ROOT_MARGIN = "72px";
-const IMAGE_SRC_CACHE_LIMIT = 192;
+const OBSERVER_ROOT_MARGIN = "320px";
+const ADAPTIVE_OBSERVER_ROOT_MARGIN = "280px";
+const IMAGE_SRC_CACHE_LIMIT = 512;
+const THUMB_HASH_CACHE_LIMIT = 256;
 const MAX_CONCURRENT_CARD_THUMBNAIL_LOADS = 6;
+const MAX_CONCURRENT_THUMBNAIL_PREWARMS = 4;
 const MAX_VISIBLE_TAGS = 3;
 const LIST_MAX_VISIBLE_TAGS = 2;
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"];
@@ -66,8 +70,34 @@ type FilePreviewFallbackProps = {
 };
 
 const imageSrcCache = new Map<string, string>();
-const pendingCardThumbnailTasks: Array<() => void> = [];
+const thumbHashPlaceholderCache = new Map<string, string>();
+const pendingThumbHashPlaceholderTasks = new Map<string, Promise<string>>();
+const queuedThumbHashPrewarmKeys = new Set<string>();
+const queuedThumbnailPrewarmKeys = new Set<string>();
+const pendingThumbHashPrewarmTasks: Array<() => void> = [];
+const pendingThumbnailPrewarmTasks: Array<() => void> = [];
+const pendingCardThumbnailTasks: CardThumbnailTaskEntry<unknown>[] = [];
 let activeCardThumbnailTaskCount = 0;
+let nextCardThumbnailTaskId = 0;
+let activeThumbHashPrewarmTaskCount = 0;
+const MAX_CONCURRENT_THUMB_HASH_PREWARMS = 2;
+let activeThumbnailPrewarmTaskCount = 0;
+
+class CardThumbnailTaskCancelledError extends Error {
+  constructor() {
+    super("Card thumbnail task cancelled");
+    this.name = "CardThumbnailTaskCancelledError";
+  }
+}
+
+type CardThumbnailTaskEntry<T> = {
+  id: number;
+  cancelled: boolean;
+  settled: boolean;
+  run: () => Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
 
 function isRevocableBlobSrc(src: string | null | undefined): src is string {
   return typeof src === "string" && src.startsWith("blob:");
@@ -83,32 +113,84 @@ function shouldCacheImageSrc(src: string) {
   return Boolean(src) && !src.startsWith("blob:") && !src.startsWith("data:");
 }
 
+function trimStringCache(cache: Map<string, string>, limit: number) {
+  while (cache.size > limit) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    cache.delete(oldestKey);
+  }
+}
+
 function flushCardThumbnailTaskQueue() {
   while (
     activeCardThumbnailTaskCount < MAX_CONCURRENT_CARD_THUMBNAIL_LOADS &&
     pendingCardThumbnailTasks.length > 0
   ) {
-    const nextTask = pendingCardThumbnailTasks.shift();
-    nextTask?.();
+    const nextTask = pendingCardThumbnailTasks.pop();
+    if (!nextTask || nextTask.cancelled) {
+      continue;
+    }
+
+    activeCardThumbnailTaskCount += 1;
+    nextTask
+      .run()
+      .then((value) => {
+        if (nextTask.cancelled || nextTask.settled) {
+          return;
+        }
+        nextTask.settled = true;
+        nextTask.resolve(value);
+      })
+      .catch((error) => {
+        if (nextTask.cancelled || nextTask.settled) {
+          return;
+        }
+        nextTask.settled = true;
+        nextTask.reject(error);
+      })
+      .finally(() => {
+        activeCardThumbnailTaskCount = Math.max(0, activeCardThumbnailTaskCount - 1);
+        flushCardThumbnailTaskQueue();
+      });
   }
 }
 
-function scheduleCardThumbnailTask<T>(task: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const runTask = () => {
-      activeCardThumbnailTaskCount += 1;
-      task()
-        .then(resolve)
-        .catch(reject)
-        .finally(() => {
-          activeCardThumbnailTaskCount = Math.max(0, activeCardThumbnailTaskCount - 1);
-          flushCardThumbnailTaskQueue();
-        });
+function cancelCardThumbnailTask(taskId: number) {
+  const taskIndex = pendingCardThumbnailTasks.findIndex((task) => task.id === taskId);
+  if (taskIndex >= 0) {
+    const [task] = pendingCardThumbnailTasks.splice(taskIndex, 1);
+    if (task && !task.settled) {
+      task.cancelled = true;
+      task.settled = true;
+      task.reject(new CardThumbnailTaskCancelledError());
+    }
+  }
+}
+
+function scheduleCardThumbnailTask<T>(task: () => Promise<T>) {
+  const taskId = nextCardThumbnailTaskId++;
+  const promise = new Promise<T>((resolve, reject) => {
+    const taskEntry: CardThumbnailTaskEntry<T> = {
+      id: taskId,
+      cancelled: false,
+      settled: false,
+      run: task,
+      resolve,
+      reject,
     };
 
-    pendingCardThumbnailTasks.push(runTask);
+    pendingCardThumbnailTasks.push(taskEntry as CardThumbnailTaskEntry<unknown>);
     flushCardThumbnailTaskQueue();
   });
+
+  return {
+    promise,
+    cancel: () => {
+      cancelCardThumbnailTask(taskId);
+    },
+  };
 }
 
 function getCachedImageSrc(cacheKey: string) {
@@ -154,6 +236,180 @@ function resolveCardThumbnailMaxEdge(previewWidth: number, previewHeight: number
   });
 }
 
+function flushThumbHashPrewarmQueue() {
+  while (
+    activeThumbHashPrewarmTaskCount < MAX_CONCURRENT_THUMB_HASH_PREWARMS &&
+    pendingThumbHashPrewarmTasks.length > 0
+  ) {
+    const nextTask = pendingThumbHashPrewarmTasks.pop();
+    if (!nextTask) {
+      continue;
+    }
+
+    activeThumbHashPrewarmTaskCount += 1;
+    void Promise.resolve()
+      .then(nextTask)
+      .finally(() => {
+        activeThumbHashPrewarmTaskCount = Math.max(0, activeThumbHashPrewarmTaskCount - 1);
+        flushThumbHashPrewarmQueue();
+      });
+  }
+}
+
+function flushThumbnailPrewarmQueue() {
+  while (
+    activeThumbnailPrewarmTaskCount < MAX_CONCURRENT_THUMBNAIL_PREWARMS &&
+    pendingThumbnailPrewarmTasks.length > 0
+  ) {
+    const nextTask = pendingThumbnailPrewarmTasks.pop();
+    if (!nextTask) {
+      continue;
+    }
+
+    activeThumbnailPrewarmTaskCount += 1;
+    void Promise.resolve()
+      .then(nextTask)
+      .finally(() => {
+        activeThumbnailPrewarmTaskCount = Math.max(0, activeThumbnailPrewarmTaskCount - 1);
+        flushThumbnailPrewarmQueue();
+      });
+  }
+}
+
+function getThumbHashPlaceholderSrc(thumbHash: string | null | undefined) {
+  const normalizedThumbHash = thumbHash?.trim() ?? "";
+  if (!normalizedThumbHash) {
+    return "";
+  }
+
+  const cached = thumbHashPlaceholderCache.get(normalizedThumbHash);
+  if (cached) {
+    thumbHashPlaceholderCache.delete(normalizedThumbHash);
+    thumbHashPlaceholderCache.set(normalizedThumbHash, cached);
+    return cached;
+  }
+
+  try {
+    const placeholderSrc = thumbHashToDataUrl(thumbHashBase64ToBytes(normalizedThumbHash));
+    thumbHashPlaceholderCache.set(normalizedThumbHash, placeholderSrc);
+    trimStringCache(thumbHashPlaceholderCache, THUMB_HASH_CACHE_LIMIT);
+    return placeholderSrc;
+  } catch (error) {
+    console.error("Failed to decode thumb hash placeholder:", error);
+    return "";
+  }
+}
+
+async function loadThumbHashPlaceholder(
+  path: string,
+  cacheKey: string,
+  thumbHash: string | null | undefined,
+) {
+  const directPlaceholder = getThumbHashPlaceholderSrc(thumbHash);
+  if (directPlaceholder) {
+    return directPlaceholder;
+  }
+
+  const pendingTask = pendingThumbHashPlaceholderTasks.get(cacheKey);
+  if (pendingTask) {
+    return pendingTask;
+  }
+
+  const task = getOrCreateThumbHash(path)
+    .then((resolvedThumbHash) => getThumbHashPlaceholderSrc(resolvedThumbHash))
+    .catch((error) => {
+      console.error("Failed to load thumb hash placeholder:", error);
+      return "";
+    })
+    .finally(() => {
+      pendingThumbHashPlaceholderTasks.delete(cacheKey);
+    });
+
+  pendingThumbHashPlaceholderTasks.set(cacheKey, task);
+  return task;
+}
+
+function scheduleThumbHashPlaceholderPrewarm(
+  path: string,
+  cacheKey: string,
+  thumbHash: string | null | undefined,
+) {
+  if (getThumbHashPlaceholderSrc(thumbHash)) {
+    return;
+  }
+
+  if (pendingThumbHashPlaceholderTasks.has(cacheKey)) {
+    return;
+  }
+
+  if (queuedThumbHashPrewarmKeys.has(cacheKey)) {
+    return;
+  }
+
+  queuedThumbHashPrewarmKeys.add(cacheKey);
+  pendingThumbHashPrewarmTasks.push(() =>
+    loadThumbHashPlaceholder(path, cacheKey, thumbHash)
+      .then(() => undefined)
+      .finally(() => {
+        queuedThumbHashPrewarmKeys.delete(cacheKey);
+      }),
+  );
+  flushThumbHashPrewarmQueue();
+}
+
+export function prewarmThumbHashPlaceholders(files: FileItem[]) {
+  for (const file of files) {
+    const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:thumb-hash`;
+    scheduleThumbHashPlaceholderPrewarm(file.path, cacheKey, file.thumbHash);
+  }
+}
+
+function getImagePreviewCacheKey(file: FileItem) {
+  return `${file.path}:${file.modifiedAt}:${file.size}:image-preview`;
+}
+
+function scheduleThumbnailImagePrewarm(file: FileItem) {
+  if (!canGenerateThumbnail(file.ext) || isVideoFile(file.ext)) {
+    return;
+  }
+
+  const cacheKey = getImagePreviewCacheKey(file);
+  if (getCachedImageSrc(cacheKey)) {
+    return;
+  }
+
+  if (queuedThumbnailPrewarmKeys.has(cacheKey)) {
+    return;
+  }
+
+  queuedThumbnailPrewarmKeys.add(cacheKey);
+  pendingThumbnailPrewarmTasks.push(async () => {
+    if (getCachedImageSrc(cacheKey)) {
+      queuedThumbnailPrewarmKeys.delete(cacheKey);
+      return;
+    }
+
+    try {
+      const thumbnailSrc = await getThumbnailImageSrc(file.path, file.ext);
+      const resolvedSrc = thumbnailSrc || (await getFileSrc(file.path));
+      if (resolvedSrc) {
+        cacheImageSrc(cacheKey, resolvedSrc);
+      }
+    } catch (error) {
+      console.error("Failed to prewarm thumbnail image source:", error);
+    } finally {
+      queuedThumbnailPrewarmKeys.delete(cacheKey);
+    }
+  });
+  flushThumbnailPrewarmQueue();
+}
+
+export function prewarmThumbnailImageSources(files: FileItem[]) {
+  for (const file of files) {
+    scheduleThumbnailImagePrewarm(file);
+  }
+}
+
 function useVisibility(
   rootRef: RefObject<HTMLElement | null>,
   rootMargin: string = OBSERVER_ROOT_MARGIN,
@@ -195,8 +451,12 @@ function useLazyImageSrc(
   const [imageSrc, setImageSrc] = useState<string | null>(() => getCachedImageSrc(cacheKey));
 
   useEffect(() => {
+    setImageSrc(getCachedImageSrc(cacheKey));
+    setImageError(false);
+  }, [cacheKey]);
+
+  useEffect(() => {
     if (!isVisible) {
-      setImageSrc(null);
       setImageError(false);
       return;
     }
@@ -217,14 +477,16 @@ function useLazyImageSrc(
     let active = true;
     setImageError(false);
 
-    scheduleCardThumbnailTask(async () => {
+    const scheduledTask = scheduleCardThumbnailTask(async () => {
       if (isVideoFile(ext)) {
         return getVideoThumbnailSrc(path, maxEdge);
       }
 
       const thumbnailSrc = await getThumbnailImageSrc(path, ext, maxEdge);
       return thumbnailSrc || getFileSrc(path);
-    })
+    });
+
+    scheduledTask.promise
       .then((src) => {
         if (!active) {
           releaseUnusedImageSrc(src);
@@ -238,6 +500,9 @@ function useLazyImageSrc(
         if (!active) {
           return;
         }
+        if (error instanceof CardThumbnailTaskCancelledError) {
+          return;
+        }
         console.error("Failed to load card thumbnail:", error);
         setImageError(true);
         setImageSrc("");
@@ -245,6 +510,7 @@ function useLazyImageSrc(
 
     return () => {
       active = false;
+      scheduledTask.cancel();
     };
   }, [cacheKey, ext, isVisible, maxEdge, path, refreshVersion]);
 
@@ -259,6 +525,64 @@ function useLazyImageSrc(
     imageError,
     setImageError,
   };
+}
+
+function useThumbHashPlaceholder(
+  path: string,
+  thumbHash: string | null | undefined,
+  cacheKey: string,
+  isVisible: boolean,
+  refreshVersion: number,
+) {
+  const [placeholderSrc, setPlaceholderSrc] = useState(() => getThumbHashPlaceholderSrc(thumbHash));
+
+  useEffect(() => {
+    setPlaceholderSrc(getThumbHashPlaceholderSrc(thumbHash));
+  }, [cacheKey, thumbHash]);
+
+  useEffect(() => {
+    if (!isVisible || placeholderSrc) {
+      return;
+    }
+
+    let active = true;
+    void loadThumbHashPlaceholder(path, cacheKey, thumbHash).then((src) => {
+      if (active && src) {
+        setPlaceholderSrc(src);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [cacheKey, isVisible, path, placeholderSrc, refreshVersion, thumbHash]);
+
+  return placeholderSrc;
+}
+
+function ThumbHashPlaceholder({
+  src,
+  className,
+}: {
+  src: string;
+  className?: string;
+}) {
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute inset-0 h-full w-full scale-[1.04] object-cover blur-2xl saturate-150",
+        className,
+      )}
+      draggable={false}
+    />
+  );
 }
 
 export function FileCard({
@@ -285,6 +609,13 @@ export function FileCard({
     cacheKey,
     isVisible,
     thumbnailMaxEdge,
+    thumbnailRefreshVersion,
+  );
+  const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
+    file.path,
+    file.thumbHash,
+    cacheKey,
+    isVisible,
     thumbnailRefreshVersion,
   );
   const showName = visibleFields.includes("name");
@@ -314,7 +645,8 @@ export function FileCard({
             className={FILE_CARD_PREVIEW_CLASS}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
           >
-            {!isVisible || imageSrc === null ? (
+            <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
+            {!thumbHashPlaceholderSrc && (!isVisible || imageSrc === null) ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
                   className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600"
@@ -337,7 +669,6 @@ export function FileCard({
                 className="absolute inset-0 h-full w-full object-contain"
                 draggable={false}
                 onError={() => setImageError(true)}
-                loading="lazy"
                 decoding="async"
               />
             ) : (
@@ -414,6 +745,13 @@ export function AdaptiveFileCard({
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
   );
+  const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
+    file.path,
+    file.thumbHash,
+    cacheKey,
+    isVisible,
+    thumbnailRefreshVersion,
+  );
   const footerHeight = getAdaptiveFooterHeight(file, visibleFields);
   const showName = visibleFields.includes("name");
   const metaTokens = getFileInfoTokens(file, visibleFields);
@@ -442,7 +780,8 @@ export function AdaptiveFileCard({
           )}
         >
           <div className={FILE_CARD_PREVIEW_CLASS} style={{ paddingBottom: aspectRatio }}>
-            {!isVisible || imageSrc === null ? (
+            <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
+            {!thumbHashPlaceholderSrc && (!isVisible || imageSrc === null) ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
                   className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600"
@@ -465,7 +804,6 @@ export function AdaptiveFileCard({
                 className="absolute inset-0 h-full w-full object-contain"
                 draggable={false}
                 onError={() => setImageError(true)}
-                loading="lazy"
                 decoding="async"
               />
             ) : (
@@ -533,6 +871,13 @@ export function FileRow({
     thumbnailMaxEdge,
     thumbnailRefreshVersion,
   );
+  const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
+    file.path,
+    file.thumbHash,
+    cacheKey,
+    isVisible,
+    thumbnailRefreshVersion,
+  );
   const showTags = shouldShowTags(file, visibleFields);
   const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : [];
   const showName = visibleFields.includes("name");
@@ -560,7 +905,8 @@ export function FileRow({
             className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gray-100 dark:bg-dark-bg"
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
           >
-            {!isVisible || imageSrc === null ? (
+            <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-80 blur-xl" />
+            {!thumbHashPlaceholderSrc && (!isVisible || imageSrc === null) ? (
               <svg
                 className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600"
                 fill="none"
@@ -581,7 +927,6 @@ export function FileRow({
                 className="max-h-full max-w-full object-contain"
                 draggable={false}
                 onError={() => setImageError(true)}
-                loading="lazy"
                 decoding="async"
               />
             ) : (

@@ -70,6 +70,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
       dominant_g INTEGER,
       dominant_b INTEGER,
       color_distribution TEXT NOT NULL DEFAULT '[]',
+      thumb_hash TEXT NOT NULL DEFAULT '',
       deleted_at TEXT DEFAULT NULL,
       sync_id TEXT NOT NULL UNIQUE,
       content_hash TEXT,
@@ -177,6 +178,13 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
     CREATE INDEX IF NOT EXISTS idx_file_visual_embeddings_model_status ON file_visual_embeddings(model_id, status);
   `);
 
+  const fileColumns = (
+    db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>
+  ).map((column) => column.name);
+  if (!fileColumns.includes("thumb_hash")) {
+    db.exec("ALTER TABLE files ADD COLUMN thumb_hash TEXT NOT NULL DEFAULT ''");
+  }
+
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')").run();
   db.prepare("INSERT OR IGNORE INTO index_paths (path) VALUES (?)").run(indexPath);
   return db;
@@ -199,6 +207,7 @@ export type FileRow = {
   source_url: string;
   dominant_color: string;
   color_distribution: string;
+  thumb_hash: string;
   deleted_at?: string | null;
 };
 
@@ -230,6 +239,7 @@ function toFile(row: FileRow, tags: TagRecord[] = []): FileRecord {
     sourceUrl: row.source_url,
     dominantColor: row.dominant_color,
     colorDistribution: row.color_distribution || "[]",
+    thumbHash: row.thumb_hash || "",
     tags,
     deletedAt: row.deleted_at ?? null,
   };
@@ -1063,6 +1073,7 @@ export interface UpsertFileInput {
   sourceUrl?: string;
   dominantColor?: string;
   colorDistribution?: string;
+  thumbHash?: string;
   contentHash?: string | null;
 }
 
@@ -1074,6 +1085,7 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
   const sourceUrl = existing?.sourceUrl ?? input.sourceUrl ?? "";
   const dominantColor = existing?.dominantColor ?? input.dominantColor ?? "";
   const colorDistribution = existing?.colorDistribution ?? input.colorDistribution ?? "[]";
+  const thumbHash = existing?.thumbHash ?? input.thumbHash ?? "";
   const rgb = parseHexColor(dominantColor);
   const now = currentTimestamp();
   const syncId = existing
@@ -1089,8 +1101,8 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
     `INSERT INTO files (
       path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
       rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b,
-      color_distribution, sync_id, content_hash, fs_modified_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      color_distribution, thumb_hash, sync_id, content_hash, fs_modified_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
       name = excluded.name,
       ext = excluded.ext,
@@ -1109,6 +1121,7 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
       dominant_g = excluded.dominant_g,
       dominant_b = excluded.dominant_b,
       color_distribution = excluded.color_distribution,
+      thumb_hash = excluded.thumb_hash,
       content_hash = excluded.content_hash,
       fs_modified_at = excluded.fs_modified_at,
       deleted_at = NULL`,
@@ -1131,6 +1144,7 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
     rgb?.[1] ?? null,
     rgb?.[2] ?? null,
     colorDistribution,
+    thumbHash,
     syncId,
     input.contentHash ?? existingContentHash,
     input.modifiedAt,
@@ -1156,6 +1170,14 @@ export function updateFileColorData(
     colorDistribution,
     fileId,
   );
+}
+
+export function updateFileThumbHash(
+  db: Database.Database,
+  fileId: number,
+  thumbHash: string,
+): void {
+  db.prepare("UPDATE files SET thumb_hash = ? WHERE id = ?").run(thumbHash, fileId);
 }
 
 export function getAllFolders(db: Database.Database): FolderRecord[] {
@@ -1589,7 +1611,7 @@ export function updateFileBasicInfo(db: Database.Database, input: UpsertFileInpu
   db.prepare(
     `UPDATE files
      SET name = ?, ext = ?, size = ?, width = ?, height = ?, folder_id = ?,
-         created_at = ?, modified_at = ?, fs_modified_at = ?, content_hash = ?
+         created_at = ?, modified_at = ?, fs_modified_at = ?, thumb_hash = ?, content_hash = ?
      WHERE path = ?`,
   ).run(
     input.name,
@@ -1601,6 +1623,7 @@ export function updateFileBasicInfo(db: Database.Database, input: UpsertFileInpu
     input.createdAt,
     input.modifiedAt,
     input.modifiedAt,
+    input.thumbHash ?? "",
     input.contentHash ?? null,
     input.path,
   );

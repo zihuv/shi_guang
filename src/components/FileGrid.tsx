@@ -31,7 +31,6 @@ import {
   getGridMetadataHeight,
   getPointerPositionInScrollContainer,
   getSelectionBounds,
-  GRID_VIEWPORT_OVERSCAN_PX,
   GRID_GAP,
   GRID_PREVIEW_HEIGHT_RATIO,
   isCardIntersectingSelection,
@@ -56,6 +55,10 @@ import {
   FileGridToolbar,
   type ToolbarMenu,
 } from "@/components/file-grid/FileGridChrome";
+import {
+  prewarmThumbHashPlaceholders,
+  prewarmThumbnailImageSources,
+} from "@/components/file-grid/fileGridCards";
 import { FileGridViewport } from "@/components/file-grid/FileGridViewport";
 
 const SORT_FIELD_LABELS: Record<string, string> = {
@@ -117,6 +120,7 @@ export default function FileGrid() {
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [scrollDirection, setScrollDirection] = useState<"forward" | "backward">("forward");
 
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
@@ -134,6 +138,7 @@ export default function FileGrid() {
   const sortDidMountRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
   const pendingScrollTopRef = useRef(0);
+  const previousScrollTopRef = useRef(0);
 
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
@@ -265,7 +270,14 @@ export default function FileGrid() {
 
       scrollFrameRef.current = window.requestAnimationFrame(() => {
         scrollFrameRef.current = null;
-        setScrollTop(pendingScrollTopRef.current);
+        const nextScrollTop = pendingScrollTopRef.current;
+        if (nextScrollTop !== previousScrollTopRef.current) {
+          setScrollDirection(
+            nextScrollTop > previousScrollTopRef.current ? "forward" : "backward",
+          );
+          previousScrollTopRef.current = nextScrollTop;
+        }
+        setScrollTop(nextScrollTop);
       });
     };
 
@@ -348,13 +360,17 @@ export default function FileGrid() {
   const gridRowHeight = gridPreviewHeight + gridMetadataHeight;
   const gridRowSpan = gridRowHeight + GRID_GAP;
   const gridRowCount = Math.ceil(filteredFiles.length / gridColumns);
+  const leadingOverscanPx = Math.max(320, Math.min(960, Math.round(viewportHeight * 0.75)));
+  const trailingOverscanPx = Math.max(960, Math.min(2200, Math.round(viewportHeight * 2)));
+  const overscanBeforePx = scrollDirection === "forward" ? leadingOverscanPx : trailingOverscanPx;
+  const overscanAfterPx = scrollDirection === "forward" ? trailingOverscanPx : leadingOverscanPx;
   const gridVisibleStartRow = Math.max(
     0,
-    Math.floor((scrollTop - GRID_VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)),
+    Math.floor((scrollTop - overscanBeforePx) / Math.max(gridRowSpan, 1)),
   );
   const gridVisibleEndRow = Math.min(
     Math.max(0, gridRowCount - 1),
-    Math.ceil((scrollTop + viewportHeight + GRID_VIEWPORT_OVERSCAN_PX) / Math.max(gridRowSpan, 1)),
+    Math.ceil((scrollTop + viewportHeight + overscanAfterPx) / Math.max(gridRowSpan, 1)),
   );
   const gridVirtualRows = useMemo(
     () =>
@@ -397,12 +413,28 @@ export default function FileGrid() {
       ),
     [adaptiveColumnWidth, adaptiveColumns, filteredFiles, libraryVisibleFields],
   );
+  const adaptiveVisibleStart = scrollTop - overscanBeforePx;
+  const adaptiveVisibleEnd = scrollTop + viewportHeight + overscanAfterPx;
+  const adaptiveVisibleItems = useMemo(
+    () =>
+      adaptiveLayout.items.filter(
+        (item) => item.top + item.height >= adaptiveVisibleStart && item.top <= adaptiveVisibleEnd,
+      ),
+    [adaptiveLayout.items, adaptiveVisibleEnd, adaptiveVisibleStart],
+  );
+  const listOverscanRows = Math.max(
+    12,
+    Math.min(
+      48,
+      Math.ceil((Math.max(viewportHeight, listRowHeight) / Math.max(listRowHeight, 1)) * 2),
+    ),
+  );
 
   const listRowVirtualizer = useVirtualizer({
     count: filteredFiles.length,
     getScrollElement: () => scrollParentRef.current,
     estimateSize: () => listRowHeight,
-    overscan: 8,
+    overscan: listOverscanRows,
   });
 
   useEffect(() => {
@@ -410,6 +442,74 @@ export default function FileGrid() {
   }, [listRowHeight, listRowVirtualizer]);
   const listVirtualItems = listRowVirtualizer.getVirtualItems();
   const listTotalSize = listRowVirtualizer.getTotalSize();
+
+  useEffect(() => {
+    if (!filteredFiles.length) {
+      return;
+    }
+
+    const visibleFiles =
+      viewMode === "adaptive"
+        ? adaptiveVisibleItems.map((item) => item.file)
+        : viewMode === "grid"
+          ? gridVirtualRows.flatMap((rowIndex) => {
+              const startIndex = rowIndex * gridColumns;
+              return filteredFiles.slice(startIndex, startIndex + gridColumns);
+            })
+          : listVirtualItems
+              .map((virtualRow) => filteredFiles[virtualRow.index])
+              .filter((file): file is FileItem => Boolean(file));
+
+    const visibleIndexes =
+      viewMode === "adaptive"
+        ? adaptiveVisibleItems.map((item) => item.index)
+        : viewMode === "grid"
+          ? gridVirtualRows.flatMap((rowIndex) => {
+              const startIndex = rowIndex * gridColumns;
+              return Array.from(
+                { length: Math.min(gridColumns, Math.max(0, filteredFiles.length - startIndex)) },
+                (_, offset) => startIndex + offset,
+              );
+            })
+          : listVirtualItems.map((virtualRow) => virtualRow.index);
+    const minVisibleIndex = visibleIndexes.length ? Math.min(...visibleIndexes) : 0;
+    const maxVisibleIndex = visibleIndexes.length ? Math.max(...visibleIndexes) : -1;
+    const directionalPrewarmCount = Math.max(24, Math.min(120, visibleFiles.length * 2));
+    const directionalFiles =
+      scrollDirection === "forward"
+        ? filteredFiles.slice(maxVisibleIndex + 1, maxVisibleIndex + 1 + directionalPrewarmCount)
+        : filteredFiles.slice(
+            Math.max(0, minVisibleIndex - directionalPrewarmCount),
+            Math.max(0, minVisibleIndex),
+          );
+    const nextCandidates = [...visibleFiles, ...directionalFiles].filter(
+      (file, index, files) => files.findIndex((candidate) => candidate.id === file.id) === index,
+    );
+    const prewarm = () => {
+      prewarmThumbHashPlaceholders(nextCandidates.slice(0, 96));
+      prewarmThumbnailImageSources(nextCandidates.slice(0, 96));
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleHandle = window.requestIdleCallback(prewarm);
+      return () => {
+        if (typeof window.cancelIdleCallback === "function") {
+          window.cancelIdleCallback(idleHandle);
+        }
+      };
+    }
+
+    const timeoutId = setTimeout(prewarm, 40);
+    return () => clearTimeout(timeoutId);
+  }, [
+    adaptiveVisibleItems,
+    filteredFiles,
+    gridColumns,
+    gridVirtualRows,
+    listVirtualItems,
+    scrollDirection,
+    viewMode,
+  ]);
 
   const handleViewModeChange = (nextViewMode: LibraryViewMode) => {
     wheelScaleRemainderRef.current = 0;
@@ -920,6 +1020,7 @@ export default function FileGrid() {
       ) : (
         <FileGridViewport
           adaptiveLayout={adaptiveLayout}
+          adaptiveVisibleItems={adaptiveVisibleItems}
           filteredFiles={filteredFiles}
           gridColumns={gridColumns}
           gridItemWidth={gridItemWidth}
@@ -937,12 +1038,10 @@ export default function FileGrid() {
           listThumbnailSize={listThumbnailSize}
           listTotalSize={listTotalSize}
           listVirtualItems={listVirtualItems}
-          scrollTop={scrollTop}
           scrollParentRef={scrollParentRef}
           selectedFileId={selectedFile?.id ?? null}
           selectedFiles={selectedFiles}
           selectionBox={selectionBox}
-          viewportHeight={viewportHeight}
           viewMode={viewMode}
         />
       )}
