@@ -1,11 +1,12 @@
 import * as React from "react";
 
+import { handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => {
+  ({ className, onKeyDown, ...props }, ref) => {
     return (
       <textarea
         className={cn(
@@ -13,6 +14,14 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           className,
         )}
         ref={ref}
+        onKeyDown={(event) => {
+          onKeyDown?.(event);
+          if (event.defaultPrevented) {
+            return;
+          }
+
+          handlePrimarySelectAll(event);
+        }}
         {...props}
       />
     );

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 import { appTagPillClass } from "@/lib/ui";
 import type { Tag as FileTag } from "@/stores/fileTypes";
@@ -267,6 +268,9 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
           aria-activedescendant={
             activeSuggestion ? `${listboxId}-${activeSuggestion.id}` : undefined
           }
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
           onChange={(event) => {
             const nextValue = event.target.value;
             setTagInput(nextValue);
@@ -278,6 +282,9 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
             }
           }}
           onKeyDown={(event) => {
+            if (handlePrimarySelectAll(event)) {
+              return;
+            }
             void handleKeyDown(event);
           }}
         />

@@ -705,6 +705,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
             }}
             onBlur={handleNameSave}
             placeholder="名称"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
           />
         </div>
 
@@ -718,6 +721,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
             onChange={(e) => handleDescriptionChange(e.target.value)}
             placeholder="添加备注"
             rows={2}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
           />
         </div>
 
@@ -728,6 +734,9 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
             value={sourceUrl}
             onChange={(e) => handleSourceUrlChange(e.target.value)}
             placeholder="https://"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
           />
         </div>
 
