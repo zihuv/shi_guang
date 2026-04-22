@@ -61,7 +61,6 @@ import {
   searchFiles,
   searchFilesByVisualEmbedding,
   setDeleteMode,
-  setIndexPath,
   setSetting,
   softDeleteFile,
   touchFileLastAccessed,
@@ -95,6 +94,8 @@ import {
   getThumbnailCachePath,
   isPathAllowedForRead,
   persistIndexPath,
+  readRecentIndexPaths,
+  rememberRecentIndexPaths,
   removeThumbnailForFile,
 } from "./storage";
 import { isHiddenName, pathHasPrefix } from "./path-utils";
@@ -1737,6 +1738,7 @@ export function registerIpcHandlers(
     },
     set_setting: (args) => setSetting(state.db, stringArg(args, "key"), stringArg(args, "value")),
     get_index_paths: () => getIndexPaths(state.db),
+    get_recent_index_paths: async () => readRecentIndexPaths(state.appDataDir),
     get_default_index_path: async () => {
       const indexPath = getDefaultIndexPath();
       await fs.mkdir(indexPath, { recursive: true });
@@ -1753,8 +1755,8 @@ export function registerIpcHandlers(
       const indexPath = stringArg(args, "path");
       await fs.mkdir(indexPath, { recursive: true });
       await ensureStorageDirs(indexPath);
+      await rememberRecentIndexPaths(state.appDataDir, [indexPath, state.indexPath]);
       await persistIndexPath(state.appDataDir, indexPath);
-      setIndexPath(state.db, indexPath);
       const { app } = await import("electron");
       app.relaunch();
       app.quit();
@@ -2004,6 +2006,10 @@ export function registerIpcHandlers(
       const folder = getFolderById(state.db, numberArg(args, "folderId", "folder_id"));
       if (!folder) throw new Error("Folder not found");
       const result = await shell.openPath(folder.path);
+      if (result) throw new Error(result);
+    },
+    show_current_library_in_explorer: async () => {
+      const result = await shell.openPath(state.indexPath);
       if (result) throw new Error(result);
     },
   };

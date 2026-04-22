@@ -35,3 +35,7 @@ export function showInExplorer(fileId: number) {
 export function showFolderInExplorer(folderId: number) {
   return invokeDesktop<void>("show_folder_in_explorer", { folderId });
 }
+
+export function showCurrentLibraryInExplorer() {
+  return invokeDesktop<void>("show_current_library_in_explorer");
+}

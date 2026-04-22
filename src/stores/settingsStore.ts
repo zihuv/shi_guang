@@ -8,14 +8,12 @@ import {
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import {
-  addIndexPath,
-  getDefaultIndexPath,
   getIndexPaths,
+  getRecentIndexPaths,
   getSetting,
   rebuildLibraryIndex,
   setSetting,
   switchIndexPathAndRestart,
-  syncIndexPath,
 } from "@/services/desktop/indexing";
 import { scanFolders } from "@/services/desktop/folders";
 import {
@@ -474,6 +472,7 @@ const loadFilesInCurrentFolder = async () => {
 interface Settings {
   theme: "light" | "dark";
   indexPaths: string[];
+  recentIndexPaths: string[];
   useTrash: boolean;
   aiConfig: AiConfig;
   aiBatchAnalyzeConcurrency: number;
@@ -527,6 +526,7 @@ interface SettingsStore extends Settings {
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
   theme: "light",
   indexPaths: [],
+  recentIndexPaths: [],
   useTrash: true,
   aiConfig: cloneAiConfig(DEFAULT_AI_CONFIG),
   aiBatchAnalyzeConcurrency: DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
@@ -682,6 +682,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   loadSettings: async () => {
     let theme: "light" | "dark" = "light";
     let indexPaths: string[] = [];
+    let recentIndexPaths: string[] = [];
     let useTrash: boolean = true;
     let aiConfig = cloneAiConfig(DEFAULT_AI_CONFIG);
     let aiBatchAnalyzeConcurrency = DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
@@ -717,6 +718,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       indexPaths = await getIndexPaths();
     } catch (e) {
       console.error("Failed to load index paths:", e);
+    }
+
+    try {
+      recentIndexPaths = await getRecentIndexPaths();
+    } catch (e) {
+      console.error("Failed to load recent index paths:", e);
     }
 
     try {
@@ -841,24 +848,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       console.error("Failed to load panel layout:", e);
     }
 
-    // If no index paths configured, add default path (user's Pictures/shiguang folder)
-    if (!indexPaths || indexPaths.length === 0) {
-      try {
-        const defaultPath = await getDefaultIndexPath();
-        await addIndexPath(defaultPath);
-        indexPaths = [defaultPath];
-        await syncIndexPath(defaultPath);
-        // Reload folders and files in UI
-        useFolderStore.getState().loadFolders();
-        loadFilesInCurrentFolder();
-      } catch (e) {
-        console.error("Failed to add default index path:", e);
-      }
-    }
-
     set({
       theme,
       indexPaths: indexPaths || [],
+      recentIndexPaths:
+        recentIndexPaths.filter((item) => item !== (indexPaths[0] ?? null)) || [],
       useTrash,
       aiConfig,
       aiBatchAnalyzeConcurrency,

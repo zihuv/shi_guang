@@ -210,7 +210,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
   `);
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')").run();
-  db.prepare("INSERT OR IGNORE INTO index_paths (path) VALUES (?)").run(indexPath);
+  setIndexPath(db, indexPath);
   return db;
 }
 

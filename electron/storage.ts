@@ -14,9 +14,18 @@ import {
   THUMBNAIL_WEBP_QUALITY,
 } from "./thumbnail";
 
+const LIBRARY_STATE_FILE = "library-state.json";
 const CURRENT_INDEX_PATH_FILE = "current-index-path.txt";
+const RECENT_INDEX_PATHS_FILE = "recent-index-paths.json";
+const MAX_RECENT_INDEX_PATHS = 8;
 const thumbnailBuildTasks = new Map<string, Promise<string | null>>();
 let pdfJsModuleReady: Promise<void> | null = null;
+
+interface LibraryState {
+  version: number;
+  currentPath: string | null;
+  recentPaths: string[];
+}
 
 type PsdParser = {
   parse: (buffer: ArrayBuffer) => {
@@ -68,7 +77,15 @@ export function getThumbnailRoot(indexPath: string): string {
   return path.join(indexPath, ".shiguang", "thumbs");
 }
 
-export async function readCurrentIndexPath(appDataDir: string): Promise<string | null> {
+function emptyLibraryState(): LibraryState {
+  return {
+    version: 1,
+    currentPath: null,
+    recentPaths: [],
+  };
+}
+
+async function readLegacyCurrentIndexPath(appDataDir: string): Promise<string | null> {
   try {
     const raw = await fs.readFile(path.join(appDataDir, CURRENT_INDEX_PATH_FILE), "utf8");
     return raw.trim() || null;
@@ -77,9 +94,176 @@ export async function readCurrentIndexPath(appDataDir: string): Promise<string |
   }
 }
 
-export async function persistIndexPath(appDataDir: string, indexPath: string): Promise<void> {
+function normalizeIndexPathValue(indexPath: string): string {
+  return path.resolve(indexPath.trim());
+}
+
+function isExistingDirectory(targetPath: string): boolean {
+  try {
+    return fssync.statSync(targetPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function dedupeRecentIndexPaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const next: string[] = [];
+
+  for (const candidate of paths) {
+    const normalized = normalizeIndexPathValue(candidate);
+    if (!normalized || seen.has(normalized) || !isExistingDirectory(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    next.push(normalized);
+    if (next.length >= MAX_RECENT_INDEX_PATHS) {
+      break;
+    }
+  }
+
+  return next;
+}
+
+async function readLegacyRecentIndexPaths(appDataDir: string): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(path.join(appDataDir, RECENT_INDEX_PATHS_FILE), "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? dedupeRecentIndexPaths(parsed.filter((item): item is string => typeof item === "string"))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeCurrentIndexPath(indexPath: string | null | undefined): string | null {
+  if (typeof indexPath !== "string") {
+    return null;
+  }
+
+  const trimmed = indexPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return normalizeIndexPathValue(trimmed);
+}
+
+function sanitizeLibraryState(input: Partial<LibraryState>): LibraryState {
+  const currentPath = sanitizeCurrentIndexPath(input.currentPath);
+  const recentCandidates = Array.isArray(input.recentPaths) ? input.recentPaths : [];
+  const recentPaths = dedupeRecentIndexPaths(
+    currentPath ? [currentPath, ...recentCandidates] : recentCandidates,
+  );
+
+  return {
+    version: 1,
+    currentPath,
+    recentPaths,
+  };
+}
+
+async function removeLegacyLibraryStateFiles(appDataDir: string): Promise<void> {
+  await Promise.allSettled([
+    fs.rm(path.join(appDataDir, CURRENT_INDEX_PATH_FILE), { force: true }),
+    fs.rm(path.join(appDataDir, RECENT_INDEX_PATHS_FILE), { force: true }),
+  ]);
+}
+
+async function persistLibraryState(
+  appDataDir: string,
+  state: Partial<LibraryState>,
+): Promise<LibraryState> {
+  const sanitized = sanitizeLibraryState(state);
   await fs.mkdir(appDataDir, { recursive: true });
-  await fs.writeFile(path.join(appDataDir, CURRENT_INDEX_PATH_FILE), indexPath, "utf8");
+  await fs.writeFile(
+    path.join(appDataDir, LIBRARY_STATE_FILE),
+    JSON.stringify(sanitized, null, 2),
+    "utf8",
+  );
+  await removeLegacyLibraryStateFiles(appDataDir);
+  return sanitized;
+}
+
+async function readPersistedLibraryState(appDataDir: string): Promise<LibraryState | null> {
+  try {
+    const raw = await fs.readFile(path.join(appDataDir, LIBRARY_STATE_FILE), "utf8");
+    return sanitizeLibraryState(JSON.parse(raw) as Partial<LibraryState>);
+  } catch {
+    return null;
+  }
+}
+
+async function migrateLegacyLibraryState(appDataDir: string): Promise<LibraryState> {
+  const currentPath = await readLegacyCurrentIndexPath(appDataDir);
+  const recentPaths = await readLegacyRecentIndexPaths(appDataDir);
+  return persistLibraryState(appDataDir, {
+    ...emptyLibraryState(),
+    currentPath,
+    recentPaths,
+  });
+}
+
+async function readLibraryState(appDataDir: string): Promise<LibraryState> {
+  const persisted = await readPersistedLibraryState(appDataDir);
+  if (persisted) {
+    return persisted;
+  }
+
+  const legacyCurrentPath = await readLegacyCurrentIndexPath(appDataDir);
+  const legacyRecentPaths = await readLegacyRecentIndexPaths(appDataDir);
+  if (legacyCurrentPath || legacyRecentPaths.length > 0) {
+    return migrateLegacyLibraryState(appDataDir);
+  }
+
+  return emptyLibraryState();
+}
+
+export async function readCurrentIndexPath(appDataDir: string): Promise<string | null> {
+  const state = await readLibraryState(appDataDir);
+  return state.currentPath;
+}
+
+export async function persistIndexPath(appDataDir: string, indexPath: string): Promise<void> {
+  const state = await readLibraryState(appDataDir);
+  await persistLibraryState(appDataDir, {
+    ...state,
+    currentPath: indexPath,
+    recentPaths: [indexPath, ...state.recentPaths],
+  });
+}
+
+export async function readRecentIndexPaths(appDataDir: string): Promise<string[]> {
+  const state = await readLibraryState(appDataDir);
+  const currentPath = state.currentPath;
+  return state.recentPaths.filter((candidate) => candidate !== currentPath);
+}
+
+export async function persistRecentIndexPaths(
+  appDataDir: string,
+  indexPaths: string[],
+): Promise<string[]> {
+  const state = await readLibraryState(appDataDir);
+  const persisted = await persistLibraryState(appDataDir, {
+    ...state,
+    recentPaths: state.currentPath ? [state.currentPath, ...indexPaths] : indexPaths,
+  });
+  return persisted.recentPaths;
+}
+
+export async function rememberRecentIndexPaths(
+  appDataDir: string,
+  indexPaths: string[],
+): Promise<string[]> {
+  const state = await readLibraryState(appDataDir);
+  const persisted = await persistLibraryState(appDataDir, {
+    ...state,
+    recentPaths: state.currentPath
+      ? [state.currentPath, ...indexPaths, ...state.recentPaths]
+      : [...indexPaths, ...state.recentPaths],
+  });
+  return persisted.recentPaths;
 }
 
 export async function resolveInitialIndexPath(appDataDir: string): Promise<string> {

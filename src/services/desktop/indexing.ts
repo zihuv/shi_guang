@@ -37,6 +37,10 @@ export function getIndexPaths() {
   return invokeDesktop<string[]>("get_index_paths");
 }
 
+export function getRecentIndexPaths() {
+  return invokeDesktop<string[]>("get_recent_index_paths");
+}
+
 export function getDefaultIndexPath() {
   return invokeDesktop<string>("get_default_index_path");
 }
