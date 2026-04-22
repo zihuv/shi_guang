@@ -129,11 +129,8 @@ export default function SidePanel({ width }: SidePanelProps) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-        <div className="px-5 pb-1 pt-1">
-          <span className={appSectionLabelClass}>文件夹</span>
-        </div>
         <div className="min-h-0 flex-1 overflow-auto">
-          <FolderTree showAllFilesRow={false} showHeader={false} />
+          <FolderTree showAllFilesRow={false} showHeader />
         </div>
       </div>
     </aside>

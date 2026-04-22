@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 import { Files, Plus } from "lucide-react";
+import { toast } from "sonner";
 import {
   buildVisibleTreeItems,
   useTreeKeyboardNavigation,
@@ -369,9 +370,15 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
 
   const handleAddFolder = async () => {
     if (!newFolderName.trim()) return;
-    await createFolder(newFolderName.trim(), null);
-    setNewFolderName("");
-    setIsAdding(false);
+    try {
+      const createdFolder = await createFolder(newFolderName.trim(), null);
+      setNewFolderName("");
+      setIsAdding(false);
+      selectFolder(createdFolder.id);
+      await loadFilesInFolder(createdFolder.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const handleAddSubfolderSubmit = async () => {
@@ -425,6 +432,8 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
             size="icon"
             className="rounded-lg"
             onClick={() => setIsAdding(true)}
+            title="在当前素材库根目录创建文件夹"
+            aria-label="创建文件夹"
           >
             <Plus className="h-4 w-4" />
           </Button>

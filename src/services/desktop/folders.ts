@@ -18,7 +18,7 @@ export function initDefaultFolder() {
 }
 
 export function createFolder(args: { name: string; parentId: number | null }) {
-  return invokeDesktop<void>("create_folder", args);
+  return invokeDesktop<FolderSummary>("create_folder", args);
 }
 
 export function deleteFolder(id: number) {

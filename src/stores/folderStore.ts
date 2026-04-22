@@ -46,7 +46,7 @@ interface FolderStore {
   initDefaultFolder: () => Promise<FolderSummary | null>;
   selectFolder: (folderId: number | null) => void;
   toggleFolder: (folderId: number) => void;
-  createFolder: (name: string, parentId: number | null) => Promise<void>;
+  createFolder: (name: string, parentId: number | null) => Promise<FolderSummary>;
   deleteFolder: (id: number) => Promise<void>;
   renameFolder: (id: number, name: string) => Promise<void>;
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>;
@@ -132,10 +132,12 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   createFolder: async (name, parentId) => {
     try {
-      await createFolder({ name, parentId });
+      const folder = await createFolder({ name, parentId });
       await get().loadFolders();
+      return folder;
     } catch (e) {
       console.error("Failed to create folder:", e);
+      throw e;
     }
   },
 

@@ -2,13 +2,20 @@ type DesktopEvent<T> = {
   payload: T;
 };
 
+function cleanDesktopErrorMessage(message: string) {
+  return message
+    .replace(/^Error invoking remote method ['"][^'"]+['"]:\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+}
+
 export function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
-    return error.message;
+    return cleanDesktopErrorMessage(error.message);
   }
 
   if (typeof error === "string") {
-    return error;
+    return cleanDesktopErrorMessage(error);
   }
 
   if (typeof error === "object" && error !== null) {
@@ -16,7 +23,7 @@ export function getErrorMessage(error: unknown) {
     for (const key of ["message", "error", "cause", "details"]) {
       const value = candidate[key];
       if (typeof value === "string" && value.trim()) {
-        return value;
+        return cleanDesktopErrorMessage(value);
       }
     }
 
@@ -31,7 +38,7 @@ export function getErrorMessage(error: unknown) {
 
 function normalizeDesktopError(error: unknown) {
   if (error instanceof Error) {
-    return error;
+    return new Error(cleanDesktopErrorMessage(error.message));
   }
 
   return new Error(getErrorMessage(error));

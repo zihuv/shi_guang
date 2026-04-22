@@ -378,6 +378,20 @@ function generatedImportName(prefix: string | null, ext: string): string {
   return prefix ? `${prefix}_${stamp}_${id}.${ext}` : `${stamp}_${id}.${ext}`;
 }
 
+function normalizeFolderName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("文件夹名称不能为空");
+  }
+  if (trimmed === "." || trimmed === "..") {
+    throw new Error("文件夹名称不合法");
+  }
+  if (trimmed.includes("/") || trimmed.includes("\\")) {
+    throw new Error("文件夹名称不能包含斜杠");
+  }
+  return trimmed;
+}
+
 function getTargetDir(state: AppState, folderId: number | null): string {
   if (folderId !== null) {
     const folder = getFolderById(state.db, folderId);
@@ -1828,14 +1842,18 @@ export function registerIpcHandlers(
       const parentPath =
         parentId === null ? getIndexPaths(state.db)[0] : getFolderById(state.db, parentId)?.path;
       if (!parentPath) throw new Error("No index path configured");
-      const folderPath = path.join(parentPath, stringArg(args, "name"));
-      await fs.mkdir(folderPath, { recursive: true });
+      const folderName = normalizeFolderName(stringArg(args, "name"));
+      const folderPath = path.join(parentPath, folderName);
+      if (getFolderByPath(state.db, folderPath) || fssync.existsSync(folderPath)) {
+        throw new Error(`文件夹“${folderName}”已存在`);
+      }
+      await fs.mkdir(folderPath);
       return getFolderById(
         state.db,
         createFolderRecord(
           state.db,
           folderPath,
-          stringArg(args, "name"),
+          folderName,
           parentId,
           Boolean(args.isSystem ?? args.is_system),
         ),
