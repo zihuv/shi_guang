@@ -22,24 +22,17 @@ export function ShortcutsSettingsSection({
   onShortcutReset,
 }: ShortcutsSettingsSectionProps) {
   return (
-    <section className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">快捷键</h3>
-      </div>
+    <section className="flex flex-col gap-4">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">快捷键</h3>
 
-      <div className="rounded-xl border border-gray-200 dark:border-dark-border">
-        {SHORTCUT_ACTIONS.map((action, index) => (
+      <div className="flex flex-col gap-4">
+        {SHORTCUT_ACTIONS.map((action) => (
           <div
             key={action.id}
-            className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${
-              index !== SHORTCUT_ACTIONS.length - 1
-                ? "border-b border-gray-200 dark:border-dark-border"
-                : ""
-            }`}
+            className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{action.label}</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{action.description}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{action.label}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ShortcutRecorder

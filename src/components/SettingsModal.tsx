@@ -193,13 +193,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="flex h-[42rem] max-h-[85vh] w-[64rem] max-w-[92vw] flex-col overflow-hidden p-0">
+      <DialogContent className="flex h-[42rem] max-h-[85vh] w-[66rem] max-w-[92vw] flex-col overflow-hidden p-0">
         <DialogHeader className="shrink-0">
-          <div className="border-b border-gray-200 px-6 py-5 dark:border-dark-border">
-            <DialogTitle>设置</DialogTitle>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              调整素材目录、删除方式、外观、AI 和快捷键。
-            </p>
+          <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
+            <DialogTitle className="text-base">设置</DialogTitle>
           </div>
         </DialogHeader>
 

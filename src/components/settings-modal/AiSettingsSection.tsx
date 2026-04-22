@@ -25,7 +25,6 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
-import { StatusBadge, type StatusTone } from "./StatusBadge";
 
 const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
   {
@@ -162,8 +161,6 @@ interface AiSettingsSectionProps {
 }
 
 function AiConfigCard({
-  title,
-  description,
   target,
   endpointTarget,
   modelLabel,
@@ -173,8 +170,6 @@ function AiConfigCard({
   onSetField,
   onTest,
 }: {
-  title: string;
-  description: string;
   target: AiConfigTarget;
   endpointTarget: AiEndpointTarget;
   modelLabel: string;
@@ -193,17 +188,9 @@ function AiConfigCard({
   const modelInputId = `ai-${target}-model`;
 
   return (
-    <div className="space-y-4">
-      <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-          模型配置
-        </p>
-        <h4 className="mt-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</h4>
-        <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">{description}</p>
-      </div>
-
+    <div className="flex flex-col gap-4">
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <label
             htmlFor={baseUrlInputId}
             className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -218,7 +205,7 @@ function AiConfigCard({
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <label
             htmlFor={apiKeyInputId}
             className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -234,7 +221,7 @@ function AiConfigCard({
           />
         </div>
 
-        <div className="space-y-2 md:col-span-2">
+        <div className="flex flex-col gap-2 md:col-span-2">
           <label
             htmlFor={modelInputId}
             className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -250,10 +237,7 @@ function AiConfigCard({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 md:flex-row md:items-center md:justify-between dark:border-dark-border">
-        <p className="text-xs leading-6 text-gray-500 dark:text-gray-400">
-          会发送一次最小真实请求，用于验证 Base URL、API Key 和模型是否可用。
-        </p>
+      <div className="flex justify-end">
         <Button
           variant="outline"
           disabled={isTesting}
@@ -274,7 +258,7 @@ function FeatureToggle({
   hint,
 }: {
   title: string;
-  description: string;
+  description?: string;
   enabled: boolean;
   onChange: (enabled: boolean) => void;
   hint?: string;
@@ -283,20 +267,14 @@ function FeatureToggle({
     <div className="py-3">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{title}</p>
-          <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">{description}</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</p>
+          {description ? (
+            <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{description}</p>
+          ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 items-center">
           <Switch checked={enabled} onCheckedChange={onChange} aria-label={title} />
-          <span
-            className={cn(
-              "text-xs font-medium",
-              enabled
-                ? "text-primary-700 dark:text-primary-300"
-                : "text-gray-500 dark:text-gray-400",
-            )}
-          />
         </div>
       </div>
 
@@ -340,40 +318,6 @@ export function AiSettingsSection({
       setCustomIntraThreadsInput(String(visualSearch.runtime.intraThreads));
     }
   }, [visualSearch.runtime.intraThreads]);
-
-  const metadataConfig = aiConfig.metadata;
-  const metadataDraftExists =
-    Boolean(metadataConfig.baseUrl.trim()) ||
-    Boolean(metadataConfig.apiKey.trim()) ||
-    Boolean(metadataConfig.model.trim());
-  const metadataConfigured =
-    Boolean(metadataConfig.baseUrl.trim()) &&
-    Boolean(metadataConfig.apiKey.trim()) &&
-    Boolean(metadataConfig.model.trim());
-  const metadataStatusTone: StatusTone = metadataConfigured
-    ? "success"
-    : metadataDraftExists
-      ? "warning"
-      : "neutral";
-  const metadataStatusLabel = metadataConfigured
-    ? "已配置"
-    : metadataDraftExists
-      ? "待补全"
-      : "未配置";
-
-  const visualModelReady = Boolean(visualModelValidation?.valid);
-  const visualSearchStatusTone: StatusTone = !visualSearch.enabled
-    ? "neutral"
-    : visualModelReady
-      ? "success"
-      : "warning";
-  const visualSearchStatusLabel = !visualSearch.enabled
-    ? "未启用"
-    : visualModelReady
-      ? "模型就绪"
-      : visualSearch.modelPath.trim()
-        ? "待校验"
-        : "待配置";
 
   const indexedCount = visualIndexStatus?.indexedCount ?? 0;
   const totalImageCount = visualIndexStatus?.totalImageCount ?? 0;
@@ -440,25 +384,13 @@ export function AiSettingsSection({
   };
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5 shadow-sm dark:border-dark-border dark:bg-dark-bg/30">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              AI 元数据分析
-            </h3>
-            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              使用多模态模型分析图片，自动生成文件名、标签和备注。
-            </p>
-          </div>
-          <StatusBadge label={metadataStatusLabel} tone={metadataStatusTone} />
-        </div>
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">AI 元数据分析</h3>
 
-        <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-          <div>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="min-w-0">
             <AiConfigCard
-              title=""
-              description=""
               target="metadata"
               endpointTarget="metadata"
               modelLabel="多模态模型"
@@ -470,26 +402,19 @@ export function AiSettingsSection({
             />
           </div>
 
-          <div className="border-t border-gray-200 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0 dark:border-dark-border">
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-              功能
-            </p>
-            <div className="mt-2 divide-y divide-gray-200 dark:divide-dark-border">
+          <div className="xl:pl-4">
+            <div className="flex flex-col gap-4">
               <FeatureToggle
                 title="导入后自动 AI 分析"
-                description="新导入图片后自动生成文件名、标签和备注。"
                 enabled={autoAnalyzeOnImport}
                 onChange={onSetAutoAnalyzeOnImport}
               />
 
-              <div className="py-3">
+              <div>
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                       批量分析同时处理数量
-                    </p>
-                    <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
-                      右键批量 AI 分析时，后台一次同时分析的图片数量。
                     </p>
                   </div>
 
@@ -515,55 +440,30 @@ export function AiSettingsSection({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5 shadow-sm dark:border-dark-border dark:bg-dark-bg/30">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              本地自然语言搜索
-            </h3>
-            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-              使用本地多模态 embedding 模型目录，实现自然语言搜索。
-            </p>
-          </div>
-          <StatusBadge label={visualSearchStatusLabel} tone={visualSearchStatusTone} />
-        </div>
+      <section className="flex flex-col gap-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">本地自然语言搜索</h3>
 
-        <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
-          <div className="space-y-5">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
+          <div className="flex min-w-0 flex-col gap-5">
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                功能
-              </p>
-              <div className="mt-2 divide-y divide-gray-200 dark:divide-dark-border">
+              <div className="flex flex-col gap-4">
                 <FeatureToggle
                   title="启用自然语言搜索"
-                  description="打开后，顶部搜索框支持自然语言搜索。"
                   enabled={visualSearch.enabled}
                   onChange={(enabled) => onSetVisualSearchField("enabled", enabled)}
                 />
                 <FeatureToggle
                   title="导入后自动建立视觉索引"
-                  description="新导入图片会在后台自动建立视觉索引，便于后续直接搜索。"
                   enabled={visualSearch.autoVectorizeOnImport}
                   onChange={(enabled) => onSetVisualSearchField("autoVectorizeOnImport", enabled)}
                 />
               </div>
             </div>
 
-            <div className="border-t border-gray-200 pt-4 dark:border-dark-border">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                    模型目录
-                  </p>
-                </div>
-                <StatusBadge
-                  label={visualSearch.modelPath.trim() ? "已填写路径" : "未填写路径"}
-                  tone={visualSearch.modelPath.trim() ? "neutral" : "warning"}
-                />
-              </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">模型目录</p>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 flex flex-col gap-2">
                 <div className="flex flex-col gap-2 xl:flex-row">
                   <Input
                     id="visual-search-model-path"
@@ -591,14 +491,14 @@ export function AiSettingsSection({
                 </div>
               </div>
 
-              <div className="mt-3 text-xs leading-6 text-gray-500 dark:text-gray-400">
-                <p>目录内应包含 `model_config.json` 以及模型引用的 ONNX、tokenizer 等文件。</p>
-                <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                <span>需包含 model_config.json</span>
+                <div className="flex flex-wrap gap-2">
                   <a
                     href="https://github.com/zihuv/vl-embedding-test/releases"
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-blue-600 transition-colors hover:border-blue-200 hover:bg-blue-50 dark:border-dark-border dark:bg-dark-surface/50 dark:text-blue-400 dark:hover:border-blue-500/30 dark:hover:bg-blue-500/10"
+                    className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10"
                   >
                     模型下载地址
                   </a>
@@ -606,18 +506,11 @@ export function AiSettingsSection({
               </div>
             </div>
 
-            <div className="border-t border-gray-200 pt-4 dark:border-dark-border">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                    运行时配置
-                  </p>
-                </div>
-                <StatusBadge label="可选覆盖" tone="neutral" />
-              </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">运行时配置</p>
 
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <label
                     htmlFor="visual-search-device"
                     className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -645,13 +538,9 @@ export function AiSettingsSection({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    自动会优先尝试 GPU 加速，不可用时回落到 CPU；GPU 会强制启用加速提供者，CPU
-                    则固定走纯 CPU。
-                  </p>
                 </div>
 
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <label
                     htmlFor="visual-search-intra-threads"
                     className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -682,13 +571,9 @@ export function AiSettingsSection({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    `Interactive` 优先兼顾冷启动和兼容性，适合桌面交互；`Service`
-                    偏向长时间运行下的吞吐；`Auto` 则回到 SDK 默认顺序。
-                  </p>
                 </div>
 
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <label
                     htmlFor="visual-search-intra-threads"
                     className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -720,14 +605,9 @@ export function AiSettingsSection({
                       placeholder={String(DEFAULT_CUSTOM_INTRA_THREADS)}
                     />
                   </div>
-                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    自动会使用 SDK
-                    默认线程数，通常等于当前机器的物理核心数。自定义用于控制单张图片编码时底层并行计算占用的
-                    CPU 线程数。
-                  </p>
                 </div>
 
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <label
                     htmlFor="visual-search-fgclip-max-patches"
                     className="text-sm font-medium text-gray-700 dark:text-gray-200"
@@ -760,42 +640,17 @@ export function AiSettingsSection({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    值越高，处理的 Patch
-                    数量越多，匹配文字描述的精度通常也越高，但计算开销会相应增大。FG-CLIP2
-                    一般推荐从 `576` 开始平衡速度和效果。修改后需要重新建立视觉索引才能生效。
-                  </p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="space-y-5 border-t border-gray-200 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0 dark:border-dark-border">
+          <div className="flex flex-col gap-5 xl:pl-4">
             <div>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                  模型状态
-                </p>
-                <StatusBadge
-                  label={
-                    visualModelValidation?.valid
-                      ? "模型可用"
-                      : visualSearch.modelPath.trim()
-                        ? "待校验"
-                        : "未配置"
-                  }
-                  tone={
-                    visualModelValidation?.valid
-                      ? "success"
-                      : visualSearch.modelPath.trim()
-                        ? "warning"
-                        : "neutral"
-                  }
-                />
-              </div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">模型状态</p>
               <p
                 className={cn(
-                  "mt-2 text-sm leading-6",
+                  "mt-2 text-sm leading-5",
                   visualModelValidation?.valid
                     ? "text-emerald-700 dark:text-emerald-300"
                     : "text-gray-600 dark:text-gray-300",
@@ -804,29 +659,24 @@ export function AiSettingsSection({
                 {visualModelValidation?.message ?? "尚未校验模型目录"}
               </p>
               {visualModelValidation?.valid ? (
-                <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
-                  <p>模型：{visualModelValidation.modelId}</p>
-                  <p>版本：{visualModelValidation.version}</p>
-                  <p>
-                    向量维度：{visualModelValidation.embeddingDim}
-                    {" · "}上下文长度：
-                    {visualModelValidation.contextLength}
-                  </p>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                  <span>{visualModelValidation.modelId}</span>
+                  <span>v{visualModelValidation.version}</span>
+                  <span>{visualModelValidation.embeddingDim} 维</span>
+                  <span>{visualModelValidation.contextLength} 上下文</span>
                 </div>
               ) : null}
               {!visualModelValidation?.valid && visualModelValidation?.missingFiles.length ? (
-                <p className="mt-2 text-xs leading-6 text-amber-700 dark:text-amber-300">
+                <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
                   缺少文件：{visualModelValidation.missingFiles.join("、")}
                 </p>
               ) : null}
             </div>
 
-            <div className="border-t border-gray-200 pt-4 dark:border-dark-border">
+            <div>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-700 dark:text-primary-300">
-                    索引状态
-                  </p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">索引状态</p>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     当前模型：{visualIndexStatus?.modelId ?? "未就绪"}
                   </p>
@@ -839,66 +689,64 @@ export function AiSettingsSection({
                   {isVisualIndexRunning ? "处理中..." : visualIndexActionLabel}
                 </Button>
               </div>
-              <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+              <p className="mt-2 text-sm leading-5 text-gray-600 dark:text-gray-300">
                 {visualIndexStatus?.message ?? "未读取索引状态"}
               </p>
-              <div className="mt-2 text-xs leading-6 text-gray-500 dark:text-gray-400">
-                <p>
-                  总图片数 {totalImageCount} · 已索引 {indexedCount}
-                </p>
-                <p>
-                  待处理 {pendingCount} · 失败 {failedCount} · 已过期 {outdatedCount}
-                </p>
-                <p>当前未就绪 {unindexedCount}</p>
-                <p>
-                  请求设备 {formatRequestedDeviceLabel(visualIndexStatus?.requestedDevice ?? null)}
-                  {" · "}策略 {formatProviderPolicyLabel(visualIndexStatus?.providerPolicy ?? null)}
-                </p>
-                <p>
-                  当前 Provider{" "}
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
+                <span>总数 {totalImageCount}</span>
+                <span>已索引 {indexedCount}</span>
+                <span>待处理 {pendingCount}</span>
+                <span>失败 {failedCount}</span>
+                <span>过期 {outdatedCount}</span>
+                <span>未就绪 {unindexedCount}</span>
+                <span>
+                  设备 {formatRequestedDeviceLabel(visualIndexStatus?.requestedDevice ?? null)}
+                </span>
+                <span>
+                  策略 {formatProviderPolicyLabel(visualIndexStatus?.providerPolicy ?? null)}
+                </span>
+                <span>
+                  Provider{" "}
                   {formatEffectiveProviderLabel(
                     visualIndexStatus?.effectiveProvider ?? null,
                     visualIndexStatus?.runtimeLoaded ?? false,
                   )}
-                  {" · "}模式{" "}
+                </span>
+                <span>
+                  模式{" "}
                   {formatRuntimeModeLabel(
                     visualIndexStatus?.runtimeMode ?? null,
                     visualIndexStatus?.runtimeLoaded ?? false,
                   )}
-                </p>
+                </span>
               </div>
               {visualIndexStatus?.runtimeReason ? (
-                <p className="mt-2 text-xs leading-6 text-amber-700 dark:text-amber-300">
+                <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
                   运行时提示：{visualIndexStatus.runtimeReason}
                 </p>
               ) : null}
 
-              <div className="mt-4 rounded-2xl border border-gray-200 bg-white/70 p-4 dark:border-dark-border dark:bg-dark-surface/30">
+              <div className="mt-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                       处理未索引图片
                     </p>
-                    <p className="mt-1 text-xs leading-6 text-gray-500 dark:text-gray-400">
-                      开启后只处理待处理、失败和已过期图片，适合增量更新；关闭后会全量重建所有视觉索引。
-                    </p>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2">
-                    <Switch
-                      checked={visualSearch.processUnindexedOnly}
-                      onCheckedChange={(enabled) =>
-                        onSetVisualSearchField("processUnindexedOnly", enabled)
-                      }
-                      disabled={isVisualIndexRunning}
-                      aria-label="处理未索引图片"
-                    />
-                  </div>
+                  <Switch
+                    checked={visualSearch.processUnindexedOnly}
+                    onCheckedChange={(enabled) =>
+                      onSetVisualSearchField("processUnindexedOnly", enabled)
+                    }
+                    disabled={isVisualIndexRunning}
+                    aria-label="处理未索引图片"
+                  />
                 </div>
               </div>
 
               {isVisualIndexRunning ? (
                 <div
-                  className="mt-4 rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 dark:border-amber-900/40 dark:bg-amber-950/20"
+                  className="mt-4 border-l-2 border-amber-400 bg-amber-50/80 px-3 py-3 dark:bg-amber-950/20"
                   role="status"
                   aria-live="polite"
                   aria-label={`${visualIndexTaskTitle} ${visualIndexCountLabel}`}
@@ -914,11 +762,11 @@ export function AiSettingsSection({
                         </span>
                       </div>
                       {visualIndexTask?.currentFileName ? (
-                        <p className="mt-1 truncate text-xs leading-6 text-amber-700/80 dark:text-amber-200/80">
+                        <p className="mt-1 truncate text-xs leading-5 text-amber-700/80 dark:text-amber-200/80">
                           当前：{visualIndexTask.currentFileName}
                         </p>
                       ) : null}
-                      <p className="mt-1 text-xs leading-6 text-amber-700/80 dark:text-amber-200/80">
+                      <p className="mt-1 text-xs leading-5 text-amber-700/80 dark:text-amber-200/80">
                         成功 {visualIndexTask?.indexedCount ?? 0} · 失败{" "}
                         {visualIndexTask?.failureCount ?? 0} · 跳过{" "}
                         {visualIndexTask?.skippedCount ?? 0}
