@@ -84,6 +84,7 @@ import {
 } from "./media";
 import {
   ensureStorageDirs,
+  hasThumbnailCachePath,
   getDefaultIndexPath,
   getOrCreateThumbnail,
   getThumbnailCachePath,
@@ -92,6 +93,7 @@ import {
   removeThumbnailForFile,
 } from "./storage";
 import { isHiddenName, pathHasPrefix } from "./path-utils";
+import { decideThumbnailGeneration, isVideoThumbnailExt } from "./thumbnail";
 import {
   embeddingToBuffer,
   encodeVisualSearchImage,
@@ -146,6 +148,7 @@ type CommandHandler = (
 const recentImports = new Map<string, number>();
 let collectorServer: FastifyInstance | null = null;
 let autoVisualIndexQueue = Promise.resolve();
+let autoThumbnailQueue = Promise.resolve();
 
 function emit(window: BrowserWindow | null, channel: string, payload: unknown): void {
   if (!window || window.isDestroyed()) {
@@ -211,6 +214,83 @@ function timestampFromStats(stats: fssync.Stats, key: "birthtime" | "mtime"): st
 function normalizeImportExtension(ext: string | null | undefined): string {
   const normalized = ext?.trim().replace(/^\./, "").toLowerCase();
   return normalized || "bin";
+}
+
+function shouldGenerateFileThumbnail(file: Pick<FileRecord, "ext" | "width" | "height" | "size">) {
+  return decideThumbnailGeneration({
+    ext: file.ext,
+    width: file.width,
+    height: file.height,
+    size: file.size,
+  }).shouldGenerate;
+}
+
+async function ensureThumbnailForFile(
+  state: AppState,
+  window: BrowserWindow | null,
+  fileId: number,
+  options: {
+    allowBackgroundRequest?: boolean;
+  } = {},
+): Promise<string | null> {
+  const file = getFileById(state.db, fileId);
+  if (!file) {
+    return null;
+  }
+
+  if (!shouldGenerateFileThumbnail(file)) {
+    return null;
+  }
+
+  const existingThumbnailPath = hasThumbnailCachePath(
+    getIndexPaths(state.db),
+    file.path,
+    file.contentHash,
+  );
+  if (existingThumbnailPath) {
+    return existingThumbnailPath;
+  }
+
+  if (isVideoThumbnailExt(file.ext)) {
+    if (options.allowBackgroundRequest !== false && window) {
+      emit(window, "thumbnail-build-request", {
+        fileId: file.id,
+        path: file.path,
+        ext: file.ext,
+      });
+    }
+    return null;
+  }
+
+  const thumbnailPath = await getOrCreateThumbnail(getIndexPaths(state.db), {
+    filePath: file.path,
+    ext: file.ext,
+    contentHash: file.contentHash,
+  });
+
+  if (thumbnailPath) {
+    emit(window, "file-updated", { fileId: file.id });
+    return thumbnailPath;
+  }
+
+  return null;
+}
+
+function scheduleThumbnailGeneration(
+  state: AppState,
+  window: BrowserWindow | null,
+  fileId: number,
+): void {
+  autoThumbnailQueue = autoThumbnailQueue
+    .then(async () => {
+      await ensureThumbnailForFile(state, window, fileId);
+    })
+    .catch((error) => {
+      log.warn("[thumbnail] background generation failed", {
+        fileId,
+        error,
+      });
+    });
 }
 
 function generatedImportName(prefix: string | null, ext: string): string {
@@ -417,6 +497,7 @@ async function maybeAutoIndexImportedFile(
 function postImport(state: AppState, window: BrowserWindow | null, file: FileRecord): void {
   emit(window, "file-imported", { file_id: file.id, path: file.path });
   emit(window, "file-updated", { fileId: file.id });
+  scheduleThumbnailGeneration(state, window, file.id);
   void maybeAutoIndexImportedFile(state, file, window);
 }
 
@@ -522,7 +603,11 @@ async function scanFoldersOnly(state: AppState, rootPath: string): Promise<numbe
   return count;
 }
 
-async function scanIndexPath(state: AppState, rootPath: string): Promise<number> {
+async function scanIndexPath(
+  state: AppState,
+  rootPath: string,
+  window: BrowserWindow | null = null,
+): Promise<number> {
   const indexPaths = getIndexPaths(state.db);
   const existing = filePathsInDir(state.db, rootPath);
   const processed = new Set<string>();
@@ -546,16 +631,29 @@ async function scanIndexPath(state: AppState, rootPath: string): Promise<number>
       const input = await buildFileInputFromPath(candidate, folderId);
       if (existing.has(candidate)) {
         if (!isFileUnchanged(state.db, candidate, ext, input.size, input.modifiedAt)) {
+          const existingFile = getFileByPath(state.db, candidate);
+          if (existingFile?.contentHash && existingFile.contentHash !== input.contentHash) {
+            await removeThumbnailForFile(
+              getIndexPaths(state.db),
+              candidate,
+              existingFile.contentHash,
+            );
+          }
           updateFileBasicInfo(state.db, input);
-          updateFileColorData(
-            state.db,
-            getFileByPath(state.db, candidate)?.id ?? 0,
-            input.dominantColor ?? "",
-            input.colorDistribution ?? "[]",
-          );
+          const updatedFile = getFileByPath(state.db, candidate);
+          if (updatedFile) {
+            updateFileColorData(
+              state.db,
+              updatedFile.id,
+              input.dominantColor ?? "",
+              input.colorDistribution ?? "[]",
+            );
+            scheduleThumbnailGeneration(state, window, updatedFile.id);
+          }
         }
       } else {
-        upsertFile(state.db, input);
+        const fileId = upsertFile(state.db, input);
+        scheduleThumbnailGeneration(state, window, fileId);
         inserted += 1;
       }
     }
@@ -1348,28 +1446,28 @@ export function registerIpcHandlers(
       app.relaunch();
       app.quit();
     },
-    sync_index_path: (args) => scanIndexPath(state, stringArg(args, "path")),
-    rebuild_library_index: async () => {
+    sync_index_path: (args, window) => scanIndexPath(state, stringArg(args, "path"), window),
+    rebuild_library_index: async (_args, window) => {
       let total = 0;
       for (const indexPath of getIndexPaths(state.db))
-        total += await scanIndexPath(state, indexPath);
+        total += await scanIndexPath(state, indexPath, window);
       return total;
     },
-    reindex_all: async () => {
+    reindex_all: async (_args, window) => {
       let total = 0;
       for (const indexPath of getIndexPaths(state.db))
-        total += await scanIndexPath(state, indexPath);
+        total += await scanIndexPath(state, indexPath, window);
       return total;
     },
     get_thumbnail_path: async (args) => {
       const filePath = stringArg(args, "filePath", "file_path");
       const file = getFileByPath(state.db, filePath);
-      return getOrCreateThumbnail(
-        getIndexPaths(state.db),
-        filePath,
-        file?.ext ?? path.extname(filePath).slice(1),
-        optionalNumberArg(args, "maxEdge", "max_edge") ?? undefined,
-      );
+      if (!file) {
+        return null;
+      }
+      return ensureThumbnailForFile(state, getWindow(), file.id, {
+        allowBackgroundRequest: true,
+      });
     },
     get_thumbnail_data_base64: async (args) => {
       const thumbnail = await commands.get_thumbnail_path(args, getWindow());
@@ -1377,24 +1475,28 @@ export function registerIpcHandlers(
         ? (await fs.readFile(thumbnail)).toString("base64")
         : null;
     },
-    get_thumbnail_cache_path: (args) =>
-      getThumbnailCachePath(
-        getIndexPaths(state.db),
-        stringArg(args, "filePath", "file_path"),
-        optionalNumberArg(args, "maxEdge", "max_edge") ?? undefined,
-      ),
+    get_thumbnail_cache_path: (args) => {
+      const filePath = stringArg(args, "filePath", "file_path");
+      const file = getFileByPath(state.db, filePath);
+      return getThumbnailCachePath(getIndexPaths(state.db), filePath, file?.contentHash);
+    },
     save_thumbnail_cache: async (args) => {
-      const cachePath = getThumbnailCachePath(
-        getIndexPaths(state.db),
-        stringArg(args, "filePath", "file_path"),
-        optionalNumberArg(args, "maxEdge", "max_edge") ?? undefined,
-      );
+      const filePath = stringArg(args, "filePath", "file_path");
+      const file = getFileByPath(state.db, filePath);
+      if (!file) {
+        return null;
+      }
+      if (!shouldGenerateFileThumbnail(file)) {
+        return null;
+      }
+      const cachePath = getThumbnailCachePath(getIndexPaths(state.db), filePath, file.contentHash);
       if (!cachePath) return null;
       await fs.mkdir(path.dirname(cachePath), { recursive: true });
       await fs.writeFile(
         cachePath,
         Buffer.from(stringArg(args, "dataBase64", "data_base64"), "base64"),
       );
+      emit(getWindow(), "file-updated", { fileId: file.id });
       return cachePath;
     },
     remove_index_path: (args) => removeIndexPath(state.db, stringArg(args, "path")),
@@ -1436,7 +1538,7 @@ export function registerIpcHandlers(
         state.db.prepare("SELECT * FROM files").all() as never,
       )) {
         if (pathHasPrefix(file.path, folder.path)) {
-          await removeThumbnailForFile(getIndexPaths(state.db), file.path);
+          await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
           deleteFileByPath(state.db, file.path);
         }
       }
@@ -1722,7 +1824,7 @@ async function restoreOneFile(state: AppState, fileId: number): Promise<void> {
 async function permanentDeleteOneFile(state: AppState, fileId: number): Promise<void> {
   const file = getFileById(state.db, fileId);
   if (!file) return;
-  await removeThumbnailForFile(getIndexPaths(state.db), file.path);
+  await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
   permanentDeleteFileRecord(state.db, fileId);
   await fs.rm(file.path, { force: true }).catch(() => undefined);
 }

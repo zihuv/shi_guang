@@ -2,14 +2,50 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import sharp from "sharp";
+import * as WebtoonPsd from "@webtoon/psd";
+import { definePDFJSModule, renderPageAsImage } from "unpdf";
 import { canBackendDecodeImage } from "./media";
 import { isInsideAnyPath, pathHasPrefix } from "./path-utils";
+import {
+  normalizeThumbnailExt,
+  resolveThumbnailCacheKey,
+  THUMBNAIL_MAX_EDGE,
+  THUMBNAIL_WEBP_QUALITY,
+} from "./thumbnail";
 
 const CURRENT_INDEX_PATH_FILE = "current-index-path.txt";
-const THUMBNAIL_VERSION = "v3";
-const DEFAULT_THUMBNAIL_MAX_EDGE = 320;
+const thumbnailBuildTasks = new Map<string, Promise<string | null>>();
+let pdfJsModuleReady: Promise<void> | null = null;
+
+type PsdParser = {
+  parse: (buffer: ArrayBuffer) => {
+    width: number;
+    height: number;
+    composite: () => Promise<Uint8ClampedArray>;
+  };
+};
+
+function getPsdParser(): PsdParser {
+  const candidates = [
+    WebtoonPsd,
+    (WebtoonPsd as { default?: unknown }).default,
+    ((WebtoonPsd as { default?: { default?: unknown } }).default ?? {}).default,
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      (typeof candidate === "object" || typeof candidate === "function") &&
+      "parse" in candidate &&
+      typeof (candidate as { parse?: unknown }).parse === "function"
+    ) {
+      return candidate as PsdParser;
+    }
+  }
+
+  throw new Error("Unable to resolve PSD parser export");
+}
 
 export function getDefaultIndexPath(): string {
   return path.join(app.getPath("pictures"), "shiguang");
@@ -29,7 +65,7 @@ export function getDbPath(indexPath: string): string {
 }
 
 export function getThumbnailRoot(indexPath: string): string {
-  return path.join(indexPath, ".shiguang", "thumbnails");
+  return path.join(indexPath, ".shiguang", "thumbs");
 }
 
 export async function readCurrentIndexPath(appDataDir: string): Promise<string | null> {
@@ -62,39 +98,118 @@ export function isPathAllowedForRead(filePath: string, indexPaths: string[]): bo
   return isInsideAnyPath(filePath, indexPaths) || isInsideAnyPath(filePath, thumbnailRoots);
 }
 
-function thumbnailHash(filePath: string, maxEdge: number): string {
-  return crypto
-    .createHash("sha256")
-    .update(THUMBNAIL_VERSION)
-    .update("\0")
-    .update(path.resolve(filePath))
-    .update("\0")
-    .update(String(maxEdge))
-    .digest("hex");
+function resolveIndexPath(indexPaths: string[], filePath: string): string | null {
+  return indexPaths.find((candidate) => pathHasPrefix(filePath, candidate)) ?? null;
+}
+
+function canBuildThumbnail(ext: string): boolean {
+  const normalizedExt = normalizeThumbnailExt(ext);
+  return canBackendDecodeImage(normalizedExt) || normalizedExt === "pdf" || normalizedExt === "psd";
+}
+
+async function ensurePdfJsModule(): Promise<void> {
+  if (!pdfJsModuleReady) {
+    pdfJsModuleReady = definePDFJSModule(() => import("pdfjs-dist/legacy/build/pdf.mjs"));
+  }
+  await pdfJsModuleReady;
+}
+
+async function buildImageThumbnailBuffer(filePath: string): Promise<Buffer> {
+  return sharp(filePath, { animated: false })
+    .rotate()
+    .resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: THUMBNAIL_WEBP_QUALITY })
+    .toBuffer();
+}
+
+async function buildPdfThumbnailBuffer(filePath: string): Promise<Buffer> {
+  await ensurePdfJsModule();
+  const pdfBuffer = new Uint8Array(await fs.readFile(filePath));
+  const renderedPage = await renderPageAsImage(pdfBuffer, 1, {
+    canvasImport: () => import("@napi-rs/canvas"),
+    width: THUMBNAIL_MAX_EDGE,
+  });
+  return sharp(Buffer.from(renderedPage))
+    .rotate()
+    .resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: THUMBNAIL_WEBP_QUALITY })
+    .toBuffer();
+}
+
+async function buildPsdThumbnailBuffer(filePath: string): Promise<Buffer> {
+  const source = await fs.readFile(filePath);
+  const arrayBuffer = source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
+  const psd = getPsdParser().parse(arrayBuffer);
+  const composite = await psd.composite();
+
+  return sharp(Buffer.from(composite), {
+    raw: {
+      width: psd.width,
+      height: psd.height,
+      channels: 4,
+    },
+  })
+    .resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: THUMBNAIL_WEBP_QUALITY })
+    .toBuffer();
+}
+
+async function buildThumbnailBuffer(filePath: string, ext: string): Promise<Buffer> {
+  const normalizedExt = normalizeThumbnailExt(ext);
+  if (normalizedExt === "pdf") {
+    return buildPdfThumbnailBuffer(filePath);
+  }
+  if (normalizedExt === "psd") {
+    return buildPsdThumbnailBuffer(filePath);
+  }
+  return buildImageThumbnailBuffer(filePath);
 }
 
 export function getThumbnailCachePath(
   indexPaths: string[],
   filePath: string,
-  maxEdge = DEFAULT_THUMBNAIL_MAX_EDGE,
+  contentHash?: string | null,
 ): string | null {
-  const indexPath = indexPaths.find((candidate) => pathHasPrefix(filePath, candidate));
+  const indexPath = resolveIndexPath(indexPaths, filePath);
   if (!indexPath) {
     return null;
   }
 
-  const hash = thumbnailHash(filePath, maxEdge);
-  return path.join(getThumbnailRoot(indexPath), hash.slice(0, 2), `${hash}.webp`);
+  const cacheKey = resolveThumbnailCacheKey(path.resolve(filePath), contentHash);
+  return path.join(getThumbnailRoot(indexPath), `${cacheKey}.webp`);
+}
+
+export function hasThumbnailCachePath(
+  indexPaths: string[],
+  filePath: string,
+  contentHash?: string | null,
+): string | null {
+  const cachePath = getThumbnailCachePath(indexPaths, filePath, contentHash);
+  if (!cachePath || !fssync.existsSync(cachePath)) {
+    return null;
+  }
+  return cachePath;
 }
 
 export async function getOrCreateThumbnail(
   indexPaths: string[],
-  filePath: string,
-  ext: string,
-  maxEdge = DEFAULT_THUMBNAIL_MAX_EDGE,
+  input: {
+    filePath: string;
+    ext: string;
+    contentHash?: string | null;
+  },
 ): Promise<string | null> {
-  const thumbnailPath = getThumbnailCachePath(indexPaths, filePath, maxEdge);
-  if (!thumbnailPath || !canBackendDecodeImage(ext)) {
+  const thumbnailPath = getThumbnailCachePath(indexPaths, input.filePath, input.contentHash);
+  if (!thumbnailPath || !canBuildThumbnail(input.ext)) {
     return null;
   }
 
@@ -102,30 +217,42 @@ export async function getOrCreateThumbnail(
     return thumbnailPath;
   }
 
-  try {
-    await fs.mkdir(path.dirname(thumbnailPath), { recursive: true });
-    await sharp(filePath, { animated: false })
-      .rotate()
-      .resize(maxEdge, maxEdge, { fit: "inside", withoutEnlargement: true })
-      .webp({ lossless: true, quality: 90 })
-      .toFile(thumbnailPath);
-    return thumbnailPath;
-  } catch {
-    return null;
+  const cacheKey = resolveThumbnailCacheKey(path.resolve(input.filePath), input.contentHash);
+  const pendingTask = thumbnailBuildTasks.get(cacheKey);
+  if (pendingTask) {
+    return pendingTask;
   }
+
+  const task = fs
+    .mkdir(path.dirname(thumbnailPath), { recursive: true })
+    .then(async () => {
+      const thumbnailBuffer = await buildThumbnailBuffer(input.filePath, input.ext);
+      await fs.writeFile(thumbnailPath, thumbnailBuffer);
+      return thumbnailPath;
+    })
+    .catch((error) => {
+      console.error("[thumbnail] build failed", {
+        filePath: input.filePath,
+        ext: input.ext,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    })
+    .finally(() => {
+      thumbnailBuildTasks.delete(cacheKey);
+    });
+
+  thumbnailBuildTasks.set(cacheKey, task);
+  return task;
 }
 
 export async function removeThumbnailForFile(
   indexPaths: string[],
   filePath: string,
+  contentHash?: string | null,
 ): Promise<void> {
-  const maxEdges = [160, 224, 320, 448, 640];
-  for (const indexPath of indexPaths) {
-    for (const maxEdge of maxEdges) {
-      const cachePath = getThumbnailCachePath([indexPath], filePath, maxEdge);
-      if (cachePath) {
-        await fs.rm(cachePath, { force: true }).catch(() => undefined);
-      }
-    }
+  const cachePath = getThumbnailCachePath(indexPaths, filePath, contentHash);
+  if (cachePath) {
+    await fs.rm(cachePath, { force: true }).catch(() => undefined);
   }
 }

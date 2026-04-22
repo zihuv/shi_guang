@@ -7,7 +7,11 @@ import {
 import { type FileItem } from "@/stores/fileTypes";
 import { type LibraryVisibleField, type LibraryViewMode } from "@/stores/settingsStore";
 import { AdaptiveFileCard, FileCard, FileRow } from "@/components/file-grid/fileGridCards";
-import { GRID_GAP, type AdaptiveLayoutItem, type SelectionBox } from "@/components/file-grid/fileGridLayout";
+import {
+  GRID_GAP,
+  type AdaptiveLayoutItem,
+  type SelectionBox,
+} from "@/components/file-grid/fileGridLayout";
 
 type ListVirtualItem = {
   index: number;

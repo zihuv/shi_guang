@@ -25,6 +25,8 @@ import {
   getFileSrc,
   getThumbnailImageSrc,
   getVideoThumbnailSrc,
+  isPdfFile,
+  isPsdFile,
   isVideoFile,
   rememberPreviewImageSrc,
   resolveThumbnailRequestMaxEdge,
@@ -483,7 +485,13 @@ function useLazyImageSrc(
       }
 
       const thumbnailSrc = await getThumbnailImageSrc(path, ext, maxEdge);
-      return thumbnailSrc || getFileSrc(path);
+      if (thumbnailSrc) {
+        return thumbnailSrc;
+      }
+      if (isPdfFile(ext) || isPsdFile(ext)) {
+        return "";
+      }
+      return getFileSrc(path);
     });
 
     scheduledTask.promise
@@ -560,13 +568,7 @@ function useThumbHashPlaceholder(
   return placeholderSrc;
 }
 
-function ThumbHashPlaceholder({
-  src,
-  className,
-}: {
-  src: string;
-  className?: string;
-}) {
+function ThumbHashPlaceholder({ src, className }: { src: string; className?: string }) {
   if (!src) {
     return null;
   }

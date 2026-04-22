@@ -23,6 +23,7 @@ import {
   formatSize,
   findFolderById,
   debounce,
+  isPsdFile,
   resolveThumbnailRequestMaxEdge,
 } from "@/utils";
 import { cn } from "@/lib/utils";
@@ -231,6 +232,8 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
   const [isVideoPlayerLoading, setIsVideoPlayerLoading] = useState(false);
   const previewType = getFilePreviewMode(file.ext);
+  const isPsd = isPsdFile(file.ext);
+  const usesThumbnailPreview = previewType === "image" || previewType === "pdf" || isPsd;
   const [rating, setRating] = useState(file.rating || 0);
   const [description, setDescription] = useState(file.description || "");
   const [sourceUrl, setSourceUrl] = useState(file.sourceUrl || "");
@@ -263,7 +266,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     videoLoadVersionRef.current += 1;
     imageLoadVersionRef.current += 1;
 
-    if (previewType !== "image") {
+    if (!usesThumbnailPreview) {
       setImageSrc("");
     }
 
@@ -275,7 +278,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
       setTextContent("");
     }
 
-    if (previewType === "none") {
+    if (previewType === "none" && !isPsd) {
       return () => {
         mounted = false;
       };
@@ -293,7 +296,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
       };
     }
 
-    if (previewType === "image") {
+    if (usesThumbnailPreview) {
       void (async () => {
         const thumbnailSrc = await getThumbnailImageSrc(
           file.path,
@@ -309,6 +312,11 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
         if (thumbnailSrc) {
           setImageSrc(thumbnailSrc);
+          return;
+        }
+
+        if (previewType !== "image") {
+          setPreviewError(true);
           return;
         }
 
@@ -361,8 +369,10 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     file.size,
     previewType,
     file.ext,
+    isPsd,
     previewThumbnailMaxEdge,
     thumbnailRefreshVersion,
+    usesThumbnailPreview,
   ]);
 
   useEffect(() => {
@@ -561,11 +571,15 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 pb-5 pt-4 [&>*]:shrink-0">
         {/* Preview image */}
         <div className="relative w-full shrink-0 aspect-video overflow-hidden rounded-[18px] bg-gray-100 shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:bg-dark-bg dark:shadow-[0_16px_30px_rgba(0,0,0,0.24)]">
-          {previewType === "image" ? (
+          {usesThumbnailPreview ? (
             <div
-              onDoubleClick={() => void handleOpenOriginalImage()}
-              className={`relative h-full w-full bg-gray-100 dark:bg-dark-bg ${isImageOriginalOpen ? "" : "cursor-zoom-in"}`}
-              title={isImageOriginalOpen ? undefined : "双击加载原图"}
+              onDoubleClick={
+                previewType === "image" ? () => void handleOpenOriginalImage() : undefined
+              }
+              className={`relative h-full w-full bg-gray-100 dark:bg-dark-bg ${
+                previewType === "image" && !isImageOriginalOpen ? "cursor-zoom-in" : ""
+              }`}
+              title={previewType === "image" && !isImageOriginalOpen ? "双击加载原图" : undefined}
             >
               {imageSrc ? (
                 <img src={imageSrc} alt={file.name} className="w-full h-full object-contain" />
@@ -627,14 +641,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                 </div>
               )}
             </button>
-          ) : previewType === "pdf" && imageSrc ? (
-            <object data={imageSrc} type="application/pdf" className="h-full w-full bg-white">
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
-                <FileTypeIcon ext={file.ext} className="h-10 w-10" />
-                <p className="text-[13px]">当前环境不支持 PDF 内嵌预览</p>
-              </div>
-            </object>
-          ) : previewError && previewType !== "none" ? (
+          ) : previewError && (previewType !== "none" || isPsd) ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
               <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path

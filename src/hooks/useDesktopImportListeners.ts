@@ -7,7 +7,7 @@ import { useTagStore } from "@/stores/tagStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { completeVisualIndexBrowserDecodeRequest } from "@/services/desktop/files";
 import { getDesktopBridge, listenDesktop } from "@/services/desktop/core";
-import { buildBrowserDecodedImageDataUrl } from "@/utils";
+import { buildBrowserDecodedImageDataUrl, getVideoThumbnailSrc } from "@/utils";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -47,6 +47,13 @@ type VisualIndexBrowserDecodeRequestPayload = {
   output_mime_type?: string;
 };
 
+type ThumbnailBuildRequestPayload = {
+  fileId?: number;
+  file_id?: number;
+  path?: string;
+  ext?: string;
+};
+
 async function handleVisualIndexBrowserDecodeRequest(
   payload?: VisualIndexBrowserDecodeRequestPayload,
 ) {
@@ -76,6 +83,31 @@ async function handleVisualIndexBrowserDecodeRequest(
     imageDataUrl,
     error: errorMessage,
   });
+}
+
+async function handleThumbnailBuildRequest(payload?: ThumbnailBuildRequestPayload) {
+  const path = payload?.path?.trim();
+  const ext = payload?.ext?.trim().toLowerCase();
+
+  if (!path || !ext) {
+    return;
+  }
+
+  if (
+    ext !== "mp4" &&
+    ext !== "avi" &&
+    ext !== "mov" &&
+    ext !== "mkv" &&
+    ext !== "wmv" &&
+    ext !== "flv" &&
+    ext !== "webm" &&
+    ext !== "m4v" &&
+    ext !== "3gp"
+  ) {
+    return;
+  }
+
+  await getVideoThumbnailSrc(path);
 }
 
 function enqueueVisualIndexBrowserDecodeRequest(payload?: VisualIndexBrowserDecodeRequestPayload) {
@@ -114,6 +146,7 @@ export function useDesktopImportListeners({
     let unlistenFileImportError: (() => void) | undefined;
     let unlistenFileUpdated: (() => void) | undefined;
     let unlistenVisualIndexBrowserDecodeRequest: (() => void) | undefined;
+    let unlistenThumbnailBuildRequest: (() => void) | undefined;
 
     const setupListeners = async () => {
       const handleDragEnter = (event: DragEvent) => {
@@ -252,6 +285,17 @@ export function useDesktopImportListeners({
           },
         );
 
+      unlistenThumbnailBuildRequest = await listenDesktop<ThumbnailBuildRequestPayload>(
+        "thumbnail-build-request",
+        async (event) => {
+          try {
+            await handleThumbnailBuildRequest(event.payload);
+          } catch (error) {
+            console.error("Failed to build thumbnail from background request:", error);
+          }
+        },
+      );
+
       dragDropState.listenersReady = true;
     };
 
@@ -265,6 +309,7 @@ export function useDesktopImportListeners({
       unlistenFileImportError?.();
       unlistenFileUpdated?.();
       unlistenVisualIndexBrowserDecodeRequest?.();
+      unlistenThumbnailBuildRequest?.();
       dragDropState.listenersReady = false;
     };
   }, [setIsDragging]);

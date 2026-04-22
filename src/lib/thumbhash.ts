@@ -52,7 +52,11 @@ export function rgbaToThumbHash(width: number, height: number, rgba: Uint8Array)
   let avgB = 0;
   let avgA = 0;
 
-  for (let pixelIndex = 0, byteIndex = 0; pixelIndex < width * height; pixelIndex += 1, byteIndex += 4) {
+  for (
+    let pixelIndex = 0, byteIndex = 0;
+    pixelIndex < width * height;
+    pixelIndex += 1, byteIndex += 4
+  ) {
     const alpha = (rgba[byteIndex + 3] ?? 0) / 255;
     avgR += (alpha * (rgba[byteIndex] ?? 0)) / 255;
     avgG += (alpha * (rgba[byteIndex + 1] ?? 0)) / 255;
@@ -75,7 +79,11 @@ export function rgbaToThumbHash(width: number, height: number, rgba: Uint8Array)
   const q: number[] = [];
   const a: number[] = [];
 
-  for (let pixelIndex = 0, byteIndex = 0; pixelIndex < width * height; pixelIndex += 1, byteIndex += 4) {
+  for (
+    let pixelIndex = 0, byteIndex = 0;
+    pixelIndex < width * height;
+    pixelIndex += 1, byteIndex += 4
+  ) {
     const alpha = (rgba[byteIndex + 3] ?? 0) / 255;
     const r = avgR * (1 - alpha) + (alpha * (rgba[byteIndex] ?? 0)) / 255;
     const g = avgG * (1 - alpha) + (alpha * (rgba[byteIndex + 1] ?? 0)) / 255;
@@ -200,7 +208,10 @@ export function thumbHashToRGBA(hash: Uint8Array) {
     const ac: number[] = [];
     for (let cy = 0; cy < ny; cy += 1) {
       for (let cx = cy ? 0 : 1; cx * ny < nx * (ny - cy); cx += 1) {
-        ac.push((((((hash[acStart + (acIndex >> 1)] ?? 0) >> ((acIndex++ & 1) << 2)) & 15) / 7.5 - 1) * scale));
+        ac.push(
+          ((((hash[acStart + (acIndex >> 1)] ?? 0) >> ((acIndex++ & 1) << 2)) & 15) / 7.5 - 1) *
+            scale,
+        );
       }
     }
     return ac;
@@ -234,7 +245,11 @@ export function thumbHashToRGBA(hash: Uint8Array) {
       }
 
       for (let cy = 0, index = 0; cy < ly; cy += 1) {
-        for (let cx = cy ? 0 : 1, fy2 = (fy[cy] ?? 0) * 2; cx * ly < lx * (ly - cy); cx += 1, index += 1) {
+        for (
+          let cx = cy ? 0 : 1, fy2 = (fy[cy] ?? 0) * 2;
+          cx * ly < lx * (ly - cy);
+          cx += 1, index += 1
+        ) {
           l += (lAc[index] ?? 0) * (fx[cx] ?? 0) * fy2;
         }
       }
@@ -272,16 +287,54 @@ function rgbaToDataUrl(width: number, height: number, rgba: Uint8Array): string 
   const row = width * 4 + 1;
   const idat = 6 + height * (5 + row);
   const bytes = [
-    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0,
-    width >> 8, width & 255, 0, 0, height >> 8, height & 255, 8, 6, 0, 0, 0,
-    0, 0, 0, 0, idat >>> 24, (idat >> 16) & 255, (idat >> 8) & 255, idat & 255,
-    73, 68, 65, 84, 120, 1,
+    137,
+    80,
+    78,
+    71,
+    13,
+    10,
+    26,
+    10,
+    0,
+    0,
+    0,
+    13,
+    73,
+    72,
+    68,
+    82,
+    0,
+    0,
+    width >> 8,
+    width & 255,
+    0,
+    0,
+    height >> 8,
+    height & 255,
+    8,
+    6,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    idat >>> 24,
+    (idat >> 16) & 255,
+    (idat >> 8) & 255,
+    idat & 255,
+    73,
+    68,
+    65,
+    84,
+    120,
+    1,
   ];
 
   const table = [
-    0, 498536548, 997073096, 651767980, 1994146192, 1802195444, 1303535960,
-    1342533948, -306674912, -267414716, -690576408, -882789492, -1687895376,
-    -2032938284, -1609899400, -1111625188,
+    0, 498536548, 997073096, 651767980, 1994146192, 1802195444, 1303535960, 1342533948, -306674912,
+    -267414716, -690576408, -882789492, -1687895376, -2032938284, -1609899400, -1111625188,
   ];
 
   let a = 1;

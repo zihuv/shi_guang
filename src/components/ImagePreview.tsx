@@ -54,9 +54,9 @@ function isGeneratedThumbnailSrc(src: string) {
 
   try {
     const normalizedSrc = decodeURIComponent(src).replace(/\\/g, "/").toLowerCase();
-    return normalizedSrc.includes("/.shiguang/thumbnails/");
+    return normalizedSrc.includes("/.shiguang/thumbs/");
   } catch {
-    return src.toLowerCase().includes(".shiguang/thumbnails");
+    return src.toLowerCase().includes(".shiguang/thumbs");
   }
 }
 

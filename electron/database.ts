@@ -178,9 +178,9 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
     CREATE INDEX IF NOT EXISTS idx_file_visual_embeddings_model_status ON file_visual_embeddings(model_id, status);
   `);
 
-  const fileColumns = (
-    db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>
-  ).map((column) => column.name);
+  const fileColumns = (db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>).map(
+    (column) => column.name,
+  );
   if (!fileColumns.includes("thumb_hash")) {
     db.exec("ALTER TABLE files ADD COLUMN thumb_hash TEXT NOT NULL DEFAULT ''");
   }
@@ -208,6 +208,7 @@ export type FileRow = {
   dominant_color: string;
   color_distribution: string;
   thumb_hash: string;
+  content_hash: string | null;
   deleted_at?: string | null;
 };
 
@@ -240,6 +241,7 @@ function toFile(row: FileRow, tags: TagRecord[] = []): FileRecord {
     dominantColor: row.dominant_color,
     colorDistribution: row.color_distribution || "[]",
     thumbHash: row.thumb_hash || "",
+    contentHash: row.content_hash ?? null,
     tags,
     deletedAt: row.deleted_at ?? null,
   };

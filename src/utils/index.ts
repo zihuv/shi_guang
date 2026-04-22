@@ -82,19 +82,13 @@ const CODE_EXTENSIONS = [
 const TEXT_EXTENSIONS = ["txt", "log", "ini", "conf"];
 const TEXT_PREVIEW_EXTENSIONS = ["txt", "log", "md", "csv", "ini", "conf"];
 const MAX_TEXT_PREVIEW_SIZE = 512 * 1024;
-const THUMBNAIL_CACHE_VERSION = "v3";
-const THUMBNAIL_MAX_EDGE = 320;
-export const LIST_THUMBNAIL_MAX_EDGE = 160;
-export const MAX_THUMBNAIL_MAX_EDGE = 640;
-const THUMBNAIL_VARIANT_MAX_EDGES = [
-  LIST_THUMBNAIL_MAX_EDGE,
-  224,
-  THUMBNAIL_MAX_EDGE,
-  448,
-  MAX_THUMBNAIL_MAX_EDGE,
-] as const;
+const THUMBNAIL_CACHE_VERSION = "v4";
+const THUMBNAIL_MAX_EDGE = 768;
+export const LIST_THUMBNAIL_MAX_EDGE = THUMBNAIL_MAX_EDGE;
+export const MAX_THUMBNAIL_MAX_EDGE = THUMBNAIL_MAX_EDGE;
+const THUMBNAIL_VARIANT_MAX_EDGES = [THUMBNAIL_MAX_EDGE] as const;
 const DEFAULT_THUMBNAIL_DEVICE_PIXEL_RATIO_CAP = 1;
-const THUMBNAIL_BROWSER_OUTPUT_QUALITY = 1;
+const THUMBNAIL_BROWSER_OUTPUT_QUALITY = 0.85;
 const THUMBNAIL_BROWSER_OUTPUT_MIME = "image/webp";
 const PREVIEW_IMAGE_CACHE_LIMIT = 256;
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>();
@@ -443,6 +437,10 @@ export function isPdfFile(ext: string): boolean {
   return normalizeExt(ext) === "pdf";
 }
 
+export function isPsdFile(ext: string): boolean {
+  return normalizeExt(ext) === "psd";
+}
+
 export function isTextPreviewFile(ext: string): boolean {
   return TEXT_PREVIEW_EXTENSIONS.includes(normalizeExt(ext));
 }
@@ -468,7 +466,7 @@ export function canPreviewFile(ext: string): boolean {
 }
 
 export function canGenerateThumbnail(ext: string): boolean {
-  return isImageFile(ext) || isVideoFile(ext);
+  return isImageFile(ext) || isVideoFile(ext) || isPdfFile(ext) || isPsdFile(ext);
 }
 
 export function resolveThumbnailRequestMaxEdge(

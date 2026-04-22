@@ -6,6 +6,7 @@ const eventChannels = new Set([
   "file-updated",
   "import-task-updated",
   "ai-metadata-task-updated",
+  "thumbnail-build-request",
   "visual-index-task-updated",
   "visual-index-browser-decode-request",
 ]);
