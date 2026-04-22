@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, net, protocol } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, net, protocol } from "electron";
 import log from "electron-log/main";
 import crypto from "node:crypto";
 import fssync from "node:fs";
@@ -36,6 +36,8 @@ if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
 
 let mainWindow: BrowserWindow | null = null;
 let appState: AppState | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 const tokenToPath = new Map<string, string>();
 const pathToToken = new Map<string, string>();
 
@@ -88,6 +90,101 @@ function setDockIcon(): void {
   if (!icon.isEmpty()) {
     app.dock.setIcon(icon);
   }
+}
+
+function setDockVisibility(visible: boolean): void {
+  if (process.platform !== "darwin" || !app.dock) {
+    return;
+  }
+
+  if (visible) {
+    app.dock.show();
+    return;
+  }
+
+  app.dock.hide();
+}
+
+function createTrayIcon() {
+  const icon = nativeImage.createFromPath(getAppIconPath());
+  if (icon.isEmpty()) {
+    return icon;
+  }
+
+  const size = process.platform === "darwin" ? 18 : 16;
+  return icon.resize({ width: size, height: size });
+}
+
+async function showMainWindow(): Promise<BrowserWindow> {
+  setDockVisibility(true);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.setSkipTaskbar(false);
+    mainWindow.show();
+    mainWindow.focus();
+    updateTrayMenu();
+    return mainWindow;
+  }
+
+  const window = await createMainWindow();
+  updateTrayMenu();
+  return window;
+}
+
+function quitApplication(): void {
+  isQuitting = true;
+  tray?.destroy();
+  tray = null;
+  app.quit();
+}
+
+function updateTrayMenu(): void {
+  if (!tray) {
+    return;
+  }
+
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: mainWindow && !mainWindow.isDestroyed() ? "显示主窗口" : "打开拾光",
+        click: () => {
+          void showMainWindow();
+        },
+      },
+      {
+        label: "退出拾光",
+        click: () => {
+          quitApplication();
+        },
+      },
+    ]),
+  );
+}
+
+function ensureTray(): Tray {
+  if (tray) {
+    updateTrayMenu();
+    return tray;
+  }
+
+  const icon = createTrayIcon();
+  tray = new Tray(icon.isEmpty() ? getAppIconPath() : icon);
+  tray.setToolTip("拾光");
+  tray.on("click", () => {
+    void showMainWindow();
+  });
+  updateTrayMenu();
+  return tray;
+}
+
+function moveWindowToBackground(window: BrowserWindow): void {
+  ensureTray();
+  setDockVisibility(false);
+  window.setSkipTaskbar(true);
+  window.destroy();
 }
 
 function assetToUrl(filePath: string): string {
@@ -166,9 +263,9 @@ function registerFileProtocol(): void {
   });
 }
 
-async function createMainWindow(): Promise<void> {
+async function createMainWindow(): Promise<BrowserWindow> {
   const preload = path.join(__dirname, "../preload/preload.cjs");
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 960,
@@ -185,33 +282,49 @@ async function createMainWindow(): Promise<void> {
       preload,
     },
   });
+  mainWindow = window;
+
+  window.on("close", (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    moveWindowToBackground(window);
+  });
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+    updateTrayMenu();
+  });
+  window.on("focus", () => {
+    if (appState) {
+      requestLibrarySyncScan(appState, getMainWindow, "focus");
+    }
+  });
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+    await window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    await mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    await window.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 
   if (!app.isPackaged) {
-    mainWindow.webContents.on("before-input-event", (event, input) => {
+    window.webContents.on("before-input-event", (event, input) => {
       if (!isDevToolsToggleShortcut(input)) {
         return;
       }
 
       event.preventDefault();
-      mainWindow?.webContents.toggleDevTools();
+      window.webContents.toggleDevTools();
     });
   }
 
-  mainWindow.removeMenu();
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
-  mainWindow.on("focus", () => {
-    if (appState) {
-      requestLibrarySyncScan(appState, getMainWindow, "focus");
-    }
-  });
+  window.setSkipTaskbar(false);
+  window.removeMenu();
+  updateTrayMenu();
+  return window;
 }
 
 async function bootstrap(): Promise<void> {
@@ -248,14 +361,18 @@ app.whenReady().then(() => {
 
 Menu.setApplicationMenu(null);
 
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    void createMainWindow();
-  }
+  void showMainWindow().catch((error) => {
+    log.error("Failed to show main window", error);
+  });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
+  if (isQuitting) {
+    return;
   }
 });
