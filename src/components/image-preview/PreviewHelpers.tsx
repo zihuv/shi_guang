@@ -4,6 +4,7 @@ import FileTypeIcon from "@/components/FileTypeIcon";
 import {
   getFilePreviewMode,
   getFileSrc,
+  getThumbnailImageSrc,
   getVideoThumbnailSrc,
   rememberPreviewImageSrc,
 } from "@/utils";
@@ -25,14 +26,18 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
     srcRef.current = null;
     setSrc(null);
 
-    if (previewType !== "image" && previewType !== "video") {
+    if (previewType !== "image" && previewType !== "video" && previewType !== "thumbnail") {
       return () => {
         mounted = false;
       };
     }
 
     const loader =
-      previewType === "video" ? getVideoThumbnailSrc(file.path) : getFileSrc(file.path);
+      previewType === "video"
+        ? getVideoThumbnailSrc(file.path)
+        : previewType === "thumbnail"
+          ? getThumbnailImageSrc(file.path, file.ext)
+          : getFileSrc(file.path);
 
     loader.then((imageSrc) => {
       if (!mounted) {
@@ -50,7 +55,7 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
       revokeBlobUrl(srcRef.current);
       srcRef.current = null;
     };
-  }, [file.path, previewType]);
+  }, [file.ext, file.path, previewType]);
 
   useEffect(() => {
     if (src) {
@@ -58,7 +63,7 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
     }
   }, [file.path, src]);
 
-  if (!src || (previewType !== "image" && previewType !== "video")) {
+  if (!src || (previewType !== "image" && previewType !== "video" && previewType !== "thumbnail")) {
     return (
       <div className="h-full w-full bg-gray-900/90">
         <UnsupportedThumbnail ext={file.ext} />

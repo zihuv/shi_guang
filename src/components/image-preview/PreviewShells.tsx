@@ -24,6 +24,7 @@ interface FullscreenPreviewShellProps extends PreviewViewportProps {
   canGoPrev: boolean;
   canGoNext: boolean;
   supportsZoom: boolean;
+  previewType: string;
   isFitMode: boolean;
   onZoomOut: () => void;
   onZoomIn: () => void;
@@ -95,6 +96,7 @@ export function FullscreenPreviewShell({
   canGoPrev,
   canGoNext,
   supportsZoom,
+  previewType,
   isFitMode,
   onZoomOut,
   onZoomIn,
@@ -134,6 +136,9 @@ export function FullscreenPreviewShell({
             </div>
 
             <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+              {previewType === "thumbnail" && (
+                <span className={OVERLAY_CHIP_CLASS}>快照缩略图</span>
+              )}
               {totalFiles > 1 && (
                 <span className={OVERLAY_CHIP_CLASS}>
                   {currentNum} / {totalFiles}
@@ -286,6 +291,11 @@ export function StandardPreviewShell({
         </div>
 
         <div className="flex items-center gap-3">
+          {previewType === "thumbnail" && (
+            <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
+              快照缩略图
+            </span>
+          )}
           {supportsZoom ? (
             <div className="flex items-center gap-2">
               <button
@@ -305,11 +315,7 @@ export function StandardPreviewShell({
             </div>
           ) : (
             <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
-              {previewType === "video"
-                ? "视频播放"
-                : previewType === "pdf"
-                  ? "PDF 预览"
-                  : "文件预览"}
+              {previewType === "video" ? "视频播放" : "文件预览"}
             </span>
           )}
 

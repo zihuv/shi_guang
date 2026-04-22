@@ -10,7 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/Dialog";
 import { Trash2, RotateCcw, X, AlertTriangle } from "lucide-react";
-import { getFilePreviewMode, getFileSrc } from "@/utils";
+import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
 
 type TrashPanelProps = {
   variant?: "sidebar" | "header";
@@ -47,19 +47,24 @@ function TrashFileItem({
     setImageSrc(null);
     setImageError(false);
 
-    if (previewType !== "image") {
+    if (previewType !== "image" && previewType !== "thumbnail") {
       return () => {
         mounted = false;
       };
     }
 
-    getFileSrc(file.path).then((src) => {
+    const loader =
+      previewType === "thumbnail"
+        ? getThumbnailImageSrc(file.path, file.ext)
+        : getFileSrc(file.path);
+
+    loader.then((src) => {
       if (mounted) setImageSrc(src);
     });
     return () => {
       mounted = false;
     };
-  }, [file.path, previewType]);
+  }, [file.ext, file.path, previewType]);
 
   useEffect(() => {
     return () => {

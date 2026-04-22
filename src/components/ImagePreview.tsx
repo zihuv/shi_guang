@@ -42,7 +42,7 @@ import {
   getFilePreviewMode,
   getFileSrc,
   getTextPreviewContent,
-  isPdfFile,
+  getThumbnailImageSrc,
   preloadFileImage,
   isVideoFile,
 } from "@/utils";
@@ -108,12 +108,11 @@ export default function ImagePreview() {
   const currentFile = previewFiles[previewIndex];
   const previewType = currentFile ? getFilePreviewMode(currentFile.ext) : "none";
   const isVideo = currentFile ? isVideoFile(currentFile.ext) : false;
-  const isPdf = currentFile ? isPdfFile(currentFile.ext) : false;
-  const isImageLike = previewType === "image";
+  const isImageLike = previewType === "image" || previewType === "thumbnail";
   const canAnalyzeWithAi = currentFile
     ? AI_IMAGE_EXTENSIONS.has(currentFile.ext.toLowerCase())
     : false;
-  const supportsZoom = previewType === "image";
+  const supportsZoom = isImageLike;
   const wheelZoomSensitivity = BASE_WHEEL_ZOOM_SENSITIVITY * previewTrackpadZoomSpeed;
 
   const handleCopyFileToClipboard = useCallback(async () => {
@@ -219,6 +218,33 @@ export default function ImagePreview() {
           if (!rememberedSrc) {
             setImageError(true);
           }
+          setIsLoading(false);
+        });
+
+      return () => {
+        mounted = false;
+      };
+    }
+
+    if (previewType === "thumbnail") {
+      setImageSrc(null);
+
+      getThumbnailImageSrc(currentFile.path, currentFile.ext)
+        .then((src) => {
+          if (!mounted) return;
+          if (src) {
+            setImageSrc(src);
+            setImageError(false);
+          } else {
+            setImageError(true);
+          }
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          if (!mounted) return;
+
+          console.error("Failed to load thumbnail preview:", error);
+          setImageError(true);
           setIsLoading(false);
         });
 
@@ -649,14 +675,25 @@ export default function ImagePreview() {
 
   const handleImageLoad = useCallback(
     (event: SyntheticEvent<HTMLImageElement>) => {
+      const target = event.currentTarget;
+
+      if (previewType === "thumbnail") {
+        setLoadedImageSize((current) => {
+          if (current.width === target.naturalWidth && current.height === target.naturalHeight) {
+            return current;
+          }
+          return { width: target.naturalWidth, height: target.naturalHeight };
+        });
+        return;
+      }
+
       if (isPlaceholderImageSrc) {
         return;
       }
 
-      const target = event.currentTarget;
       hydrateCurrentFileDimensions(target.naturalWidth, target.naturalHeight);
     },
-    [hydrateCurrentFileDimensions, isPlaceholderImageSrc],
+    [hydrateCurrentFileDimensions, isPlaceholderImageSrc, previewType],
   );
 
   const finishPan = (pointerId: number) => {
@@ -719,7 +756,10 @@ export default function ImagePreview() {
   const currentNum = previewIndex + 1;
   const canGoPrev = previewIndex > 0;
   const canGoNext = previewIndex < totalFiles - 1;
-  const previewMeta = getPreviewMetaText(currentFile, loadedImageSize);
+  const previewMeta = getPreviewMetaText(
+    currentFile,
+    previewType === "thumbnail" ? undefined : loadedImageSize,
+  );
 
   const renderedPreviewContent = isLoading ? (
     <div className="flex h-full min-h-full items-center justify-center p-4">
@@ -767,19 +807,6 @@ export default function ImagePreview() {
           preload="metadata"
           className={`${isFullscreen ? "max-w-6xl shadow-2xl" : "max-w-5xl shadow-lg"} max-h-full w-full rounded-lg bg-black`}
         />
-      </div>
-    ) : isPdf ? (
-      <div className="h-full min-h-full p-4">
-        <object
-          data={imageSrc}
-          type="application/pdf"
-          className="h-full w-full rounded-lg bg-white"
-        >
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-gray-500">
-            <p>当前环境不支持 PDF 内嵌预览</p>
-            <p className="text-xs">可以使用右键菜单用默认应用打开</p>
-          </div>
-        </object>
       </div>
     ) : isImageLike ? (
       isFitMode || scaledImageWidth === null || scaledImageHeight === null ? (
@@ -841,6 +868,7 @@ export default function ImagePreview() {
         canGoPrev={canGoPrev}
         canGoNext={canGoNext}
         supportsZoom={supportsZoom}
+        previewType={previewType}
         isFitMode={isFitMode}
         canPanImage={canPanImage}
         isPanning={isPanning}

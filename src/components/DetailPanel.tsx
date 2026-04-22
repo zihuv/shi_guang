@@ -23,7 +23,6 @@ import {
   formatSize,
   findFolderById,
   debounce,
-  isPsdFile,
   resolveThumbnailRequestMaxEdge,
 } from "@/utils";
 import { cn } from "@/lib/utils";
@@ -232,8 +231,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
   const [isVideoPlayerLoading, setIsVideoPlayerLoading] = useState(false);
   const previewType = getFilePreviewMode(file.ext);
-  const isPsd = isPsdFile(file.ext);
-  const usesThumbnailPreview = previewType === "image" || previewType === "pdf" || isPsd;
+  const usesThumbnailPreview = previewType === "image" || previewType === "thumbnail";
   const [rating, setRating] = useState(file.rating || 0);
   const [description, setDescription] = useState(file.description || "");
   const [sourceUrl, setSourceUrl] = useState(file.sourceUrl || "");
@@ -278,7 +276,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
       setTextContent("");
     }
 
-    if (previewType === "none" && !isPsd) {
+    if (previewType === "none") {
       return () => {
         mounted = false;
       };
@@ -369,7 +367,6 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     file.size,
     previewType,
     file.ext,
-    isPsd,
     previewThumbnailMaxEdge,
     thumbnailRefreshVersion,
     usesThumbnailPreview,
@@ -641,7 +638,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
                 </div>
               )}
             </button>
-          ) : previewError && (previewType !== "none" || isPsd) ? (
+          ) : previewError && previewType !== "none" ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
               <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path

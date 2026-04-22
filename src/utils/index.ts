@@ -343,7 +343,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
-export type FilePreviewMode = "image" | "video" | "pdf" | "text" | "none";
+export type FilePreviewMode = "image" | "video" | "thumbnail" | "text" | "none";
 export type FileKind =
   | "image"
   | "video"
@@ -452,8 +452,8 @@ export function getFilePreviewMode(ext: string): FilePreviewMode {
   if (isVideoFile(ext)) {
     return "video";
   }
-  if (isPdfFile(ext)) {
-    return "pdf";
+  if (isPdfFile(ext) || isPsdFile(ext)) {
+    return "thumbnail";
   }
   if (isTextPreviewFile(ext)) {
     return "text";

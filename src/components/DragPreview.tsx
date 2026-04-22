@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import FileTypeIcon from "@/components/FileTypeIcon";
-import { getFilePreviewMode, getFileSrc } from "@/utils";
+import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
 
 type DragPreviewProps = {
   fileId: number;
@@ -18,14 +18,19 @@ export default function DragPreview({ fileId, files }: DragPreviewProps) {
       return;
     }
 
-    if (previewType !== "image") {
+    if (previewType !== "image" && previewType !== "thumbnail") {
       setImageSrc(null);
       return;
     }
 
     let active = true;
 
-    getFileSrc(file.path)
+    const loader =
+      previewType === "thumbnail"
+        ? getThumbnailImageSrc(file.path, file.ext)
+        : getFileSrc(file.path);
+
+    loader
       .then((src) => {
         if (!active) {
           return;
