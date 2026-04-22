@@ -1,10 +1,28 @@
 import { useCallback, useEffect } from "react";
 
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(
+    target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']"),
+  );
+}
+
 export function useClipboardImport(
   importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<unknown>,
 ) {
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
       const items = event.clipboardData?.items;
       if (!items) {
         return;

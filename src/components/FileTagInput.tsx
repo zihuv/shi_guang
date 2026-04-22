@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
+import { handlePrimaryClipboardShortcut, handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 import { appTagPillClass } from "@/lib/ui";
 import type { Tag as FileTag } from "@/stores/fileTypes";
@@ -283,6 +283,9 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
           }}
           onKeyDown={(event) => {
             if (handlePrimarySelectAll(event)) {
+              return;
+            }
+            if (handlePrimaryClipboardShortcut(event)) {
               return;
             }
             void handleKeyDown(event);

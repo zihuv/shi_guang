@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
+import { handlePrimaryClipboardShortcut, handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
@@ -21,6 +21,11 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           }
 
           handlePrimarySelectAll(event);
+          if (event.defaultPrevented) {
+            return;
+          }
+
+          handlePrimaryClipboardShortcut(event);
         }}
         {...props}
       />

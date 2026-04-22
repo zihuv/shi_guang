@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
+import { clipboard, contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 
 const eventChannels = new Set([
   "file-imported",
@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld("shiguang", {
   },
   file: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  },
+  clipboard: {
+    readText: () => clipboard.readText(),
+    writeText: (text: string) => clipboard.writeText(text),
   },
   asset: {
     toUrl: (filePath: string) => ipcRenderer.invoke("shiguang:asset:toUrl", filePath),

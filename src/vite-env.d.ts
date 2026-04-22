@@ -20,6 +20,10 @@ interface ShiguangDesktopApi {
   file: {
     getPathForFile(file: File): string;
   };
+  clipboard: {
+    readText(): string;
+    writeText(text: string): void;
+  };
   asset: {
     toUrl(path: string): Promise<string>;
   };

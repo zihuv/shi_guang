@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
+import { handlePrimaryClipboardShortcut, handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
@@ -22,6 +22,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           }
 
           handlePrimarySelectAll(event);
+          if (event.defaultPrevented) {
+            return;
+          }
+
+          handlePrimaryClipboardShortcut(event);
         }}
         {...props}
       />
