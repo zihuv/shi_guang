@@ -620,6 +620,9 @@ export function FileCard({
     isVisible,
     thumbnailRefreshVersion,
   );
+  const showLoadingPreview = imageSrc === null && !imageError;
+  const imagePreviewSrc = !imageError && imageSrc ? imageSrc : "";
+  const showImagePreview = Boolean(imagePreviewSrc);
   const showName = visibleFields.includes("name");
   const metaTokens = getFileInfoTokens(file, visibleFields);
   const showTags = shouldShowTags(file, visibleFields);
@@ -648,7 +651,7 @@ export function FileCard({
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
           >
             <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
-            {!thumbHashPlaceholderSrc && (!isVisible || imageSrc === null) ? (
+            {showLoadingPreview && !thumbHashPlaceholderSrc ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
                   className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600"
@@ -664,18 +667,18 @@ export function FileCard({
                   />
                 </svg>
               </div>
-            ) : imageSrc && !imageError ? (
+            ) : showImagePreview ? (
               <img
-                src={imageSrc}
+                src={imagePreviewSrc}
                 alt={file.name}
                 className="absolute inset-0 h-full w-full object-contain"
                 draggable={false}
                 onError={() => setImageError(true)}
                 decoding="async"
               />
-            ) : (
+            ) : !showLoadingPreview ? (
               <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
-            )}
+            ) : null}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
@@ -754,6 +757,9 @@ export function AdaptiveFileCard({
     isVisible,
     thumbnailRefreshVersion,
   );
+  const showLoadingPreview = imageSrc === null && !imageError;
+  const imagePreviewSrc = !imageError && imageSrc ? imageSrc : "";
+  const showImagePreview = Boolean(imagePreviewSrc);
   const footerHeight = getAdaptiveFooterHeight(file, visibleFields);
   const showName = visibleFields.includes("name");
   const metaTokens = getFileInfoTokens(file, visibleFields);
@@ -783,7 +789,7 @@ export function AdaptiveFileCard({
         >
           <div className={FILE_CARD_PREVIEW_CLASS} style={{ paddingBottom: aspectRatio }}>
             <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
-            {!thumbHashPlaceholderSrc && (!isVisible || imageSrc === null) ? (
+            {showLoadingPreview && !thumbHashPlaceholderSrc ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
                   className="h-8 w-8 animate-pulse text-gray-300 dark:text-gray-600"
@@ -799,18 +805,18 @@ export function AdaptiveFileCard({
                   />
                 </svg>
               </div>
-            ) : imageSrc && !imageError ? (
+            ) : showImagePreview ? (
               <img
-                src={imageSrc}
+                src={imagePreviewSrc}
                 alt={file.name}
                 className="absolute inset-0 h-full w-full object-contain"
                 draggable={false}
                 onError={() => setImageError(true)}
                 decoding="async"
               />
-            ) : (
+            ) : !showLoadingPreview ? (
               <FilePreviewFallback ext={file.ext} className="absolute inset-0" />
-            )}
+            ) : null}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
@@ -880,6 +886,9 @@ export function FileRow({
     isVisible,
     thumbnailRefreshVersion,
   );
+  const showLoadingPreview = imageSrc === null && !imageError;
+  const imagePreviewSrc = !imageError && imageSrc ? imageSrc : "";
+  const showImagePreview = Boolean(imagePreviewSrc);
   const showTags = shouldShowTags(file, visibleFields);
   const visibleTags = showTags ? file.tags.slice(0, LIST_MAX_VISIBLE_TAGS) : [];
   const showName = visibleFields.includes("name");
@@ -908,7 +917,7 @@ export function FileRow({
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
           >
             <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-80 blur-xl" />
-            {!thumbHashPlaceholderSrc && (!isVisible || imageSrc === null) ? (
+            {showLoadingPreview && !thumbHashPlaceholderSrc ? (
               <svg
                 className="h-5 w-5 animate-pulse text-gray-300 dark:text-gray-600"
                 fill="none"
@@ -922,16 +931,16 @@ export function FileRow({
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
-            ) : imageSrc && !imageError ? (
+            ) : showImagePreview ? (
               <img
-                src={imageSrc}
+                src={imagePreviewSrc}
                 alt={file.name}
                 className="max-h-full max-w-full object-contain"
                 draggable={false}
                 onError={() => setImageError(true)}
                 decoding="async"
               />
-            ) : (
+            ) : !showLoadingPreview ? (
               <FilePreviewFallback
                 ext={file.ext}
                 compact
@@ -939,7 +948,7 @@ export function FileRow({
                 iconClassName="h-5 w-5"
                 labelClassName="text-[9px]"
               />
-            )}
+            ) : null}
             {isVideo && <VideoPlayBadge compact className="absolute inset-0" />}
           </div>
           <div className="min-w-0 flex-1">
