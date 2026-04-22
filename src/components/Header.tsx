@@ -235,7 +235,8 @@ export default function Header({ onOpenSettings }: HeaderProps) {
                 type="button"
                 className={cn(
                   "inline-flex h-8 max-w-[18rem] items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-gray-600 transition-colors hover:bg-black/5 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/8 dark:hover:text-gray-100",
-                  isLibraryMenuOpen && "bg-black/5 text-gray-900 dark:bg-white/8 dark:text-gray-100",
+                  isLibraryMenuOpen &&
+                    "bg-black/5 text-gray-900 dark:bg-white/8 dark:text-gray-100",
                 )}
                 onClick={() => setIsLibraryMenuOpen((value) => !value)}
                 aria-haspopup="menu"

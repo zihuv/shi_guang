@@ -1,13 +1,5 @@
 import { useEffect } from "react";
-import {
-  Bookmark,
-  Clock3,
-  FolderX,
-  Library,
-  Shuffle,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { Bookmark, Clock3, FolderX, Library, Shuffle, Tag, Trash2 } from "lucide-react";
 import { appPanelClass, appPanelMetaClass, appSectionLabelClass, appTreeRowClass } from "@/lib/ui";
 import FolderTree from "@/components/FolderTree";
 import { selectSmartCollectionFromSidebar } from "@/components/folder-tree/utils";
@@ -85,7 +77,9 @@ export default function SidePanel({ width }: SidePanelProps) {
             const count = getSmartCollectionCount(item.id);
             const isActive =
               currentView === "library" &&
-              ((item.id === "all" && selectedFolderId === null && activeSmartCollection === "all") ||
+              ((item.id === "all" &&
+                selectedFolderId === null &&
+                activeSmartCollection === "all") ||
                 activeSmartCollection === item.id);
 
             return (
@@ -104,14 +98,12 @@ export default function SidePanel({ width }: SidePanelProps) {
             );
           })}
 
-          <button
-            type="button"
-            className={navItemClass(currentView === "tags")}
-            onClick={openTags}
-          >
+          <button type="button" className={navItemClass(currentView === "tags")} onClick={openTags}>
             <Bookmark className="h-4 w-4 flex-shrink-0" />
             <span className="flex-1 truncate text-left">标签管理</span>
-            {tagCount > 0 && <span className={`${appPanelMetaClass} tabular-nums`}>{tagCount}</span>}
+            {tagCount > 0 && (
+              <span className={`${appPanelMetaClass} tabular-nums`}>{tagCount}</span>
+            )}
           </button>
 
           <button

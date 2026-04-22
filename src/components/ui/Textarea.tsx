@@ -1,6 +1,9 @@
 import * as React from "react";
 
-import { handlePrimaryClipboardShortcut, handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
+import {
+  handlePrimaryClipboardShortcut,
+  handlePrimarySelectAll,
+} from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}

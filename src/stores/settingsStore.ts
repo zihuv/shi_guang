@@ -851,8 +851,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({
       theme,
       indexPaths: indexPaths || [],
-      recentIndexPaths:
-        recentIndexPaths.filter((item) => item !== (indexPaths[0] ?? null)) || [],
+      recentIndexPaths: recentIndexPaths.filter((item) => item !== (indexPaths[0] ?? null)) || [],
       useTrash,
       aiConfig,
       aiBatchAnalyzeConcurrency,

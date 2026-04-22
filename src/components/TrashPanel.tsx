@@ -95,7 +95,10 @@ function TrashFileItem({
       </div>
 
       <div className="space-y-1 px-3 py-3">
-        <p className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100" title={file.name}>
+        <p
+          className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100"
+          title={file.name}
+        >
           {file.name}
         </p>
         <p className="text-[12px] text-gray-500 dark:text-gray-400">{formatFileSize(file.size)}</p>

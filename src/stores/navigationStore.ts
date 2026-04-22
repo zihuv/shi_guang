@@ -31,14 +31,16 @@ export const useNavigationStore = create<NavigationStore>((set) => ({
     set((state) => ({
       currentView: "library",
       activeSmartCollection: smartCollection,
-      randomSeed: smartCollection === "random" ? nextRandomSeed(state.randomSeed) : state.randomSeed,
+      randomSeed:
+        smartCollection === "random" ? nextRandomSeed(state.randomSeed) : state.randomSeed,
     })),
 
   openSmartCollection: (smartCollection) =>
     set((state) => ({
       currentView: "library",
       activeSmartCollection: smartCollection,
-      randomSeed: smartCollection === "random" ? nextRandomSeed(state.randomSeed) : state.randomSeed,
+      randomSeed:
+        smartCollection === "random" ? nextRandomSeed(state.randomSeed) : state.randomSeed,
     })),
 
   clearSmartCollection: () => set({ activeSmartCollection: null }),

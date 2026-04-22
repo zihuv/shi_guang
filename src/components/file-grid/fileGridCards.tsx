@@ -129,10 +129,7 @@ function trimStringCache(cache: Map<string, string>, limit: number) {
   }
 }
 
-function getGenerationActiveCount(
-  counts: Map<number, number>,
-  generation: number,
-) {
+function getGenerationActiveCount(counts: Map<number, number>, generation: number) {
   return counts.get(generation) ?? 0;
 }
 
@@ -179,10 +176,7 @@ function flushImageLoadTaskQueue(
   counts: Map<number, number>,
   limit: number,
 ) {
-  while (
-    getGenerationActiveCount(counts, currentImageLoadGeneration) < limit &&
-    queue.length > 0
-  ) {
+  while (getGenerationActiveCount(counts, currentImageLoadGeneration) < limit && queue.length > 0) {
     const nextTask = queue.shift();
     if (!nextTask || nextTask.cancelled || nextTask.generation < currentImageLoadGeneration) {
       if (nextTask && !nextTask.settled) {
@@ -454,10 +448,7 @@ type PreviewSourceFile = Pick<
   "path" | "ext" | "width" | "height" | "size" | "modifiedAt"
 >;
 
-async function loadPreviewImageSrc(
-  file: PreviewSourceFile,
-  maxEdge: number | undefined,
-) {
+async function loadPreviewImageSrc(file: PreviewSourceFile, maxEdge: number | undefined) {
   if (isVideoFile(file.ext)) {
     return getVideoThumbnailSrc(file.path, maxEdge);
   }
@@ -476,10 +467,7 @@ async function loadPreviewImageSrc(
   return getFileSrc(file.path);
 }
 
-function scheduleThumbnailImagePrewarm(
-  file: FileItem,
-  generation: number,
-) {
+function scheduleThumbnailImagePrewarm(file: FileItem, generation: number) {
   if (!canGenerateThumbnail(file.ext) || isVideoFile(file.ext)) {
     return;
   }

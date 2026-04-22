@@ -453,9 +453,7 @@ export default function TagPanel() {
     },
     onToggle: (tagId) => {
       setExpandedIds((previous) =>
-        previous.includes(tagId)
-          ? previous.filter((item) => item !== tagId)
-          : [...previous, tagId],
+        previous.includes(tagId) ? previous.filter((item) => item !== tagId) : [...previous, tagId],
       );
     },
     onActivate: requestFocusFirstFile,

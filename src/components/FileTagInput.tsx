@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { handlePrimaryClipboardShortcut, handlePrimarySelectAll } from "@/lib/textSelectionShortcuts";
+import {
+  handlePrimaryClipboardShortcut,
+  handlePrimarySelectAll,
+} from "@/lib/textSelectionShortcuts";
 import { cn } from "@/lib/utils";
 import { appTagPillClass } from "@/lib/ui";
 import type { Tag as FileTag } from "@/stores/fileTypes";
