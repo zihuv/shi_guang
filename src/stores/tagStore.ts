@@ -7,6 +7,7 @@ import {
   reorderTags,
   updateTag,
 } from "@/services/desktop/tags";
+import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 
 export interface Tag {
   id: number;
@@ -114,6 +115,7 @@ export const useTagStore = create<TagStore>((set, get) => ({
   deleteTag: async (id) => {
     await deleteTag(id);
     await get().loadTags();
+    await useSmartCollectionStore.getState().loadStats();
   },
 
   updateTag: async (id, name, color) => {

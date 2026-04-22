@@ -14,6 +14,7 @@ import { parseFileList, type FileItem } from "@/stores/fileTypes";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 
 interface UndoAction {
   type: "delete";
@@ -43,6 +44,7 @@ async function refreshCurrentLibraryState() {
   const selectedFolderId = useLibraryQueryStore.getState().selectedFolderId;
   await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId);
   await useFolderStore.getState().loadFolders();
+  await useSmartCollectionStore.getState().loadStats();
 }
 
 export const useTrashStore = create<TrashStore>((set, get) => ({
@@ -121,18 +123,21 @@ export const useTrashStore = create<TrashStore>((set, get) => ({
     await permanentDeleteFile(fileId);
     await get().loadTrashFiles();
     await get().loadTrashCount();
+    await useSmartCollectionStore.getState().loadStats();
   },
 
   permanentDeleteFiles: async (fileIds) => {
     await permanentDeleteFiles(fileIds);
     await get().loadTrashFiles();
     await get().loadTrashCount();
+    await useSmartCollectionStore.getState().loadStats();
   },
 
   emptyTrash: async () => {
     await emptyTrash();
     await get().loadTrashFiles();
     await get().loadTrashCount();
+    await useSmartCollectionStore.getState().loadStats();
   },
 
   loadTrashCount: async () => {

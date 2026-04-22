@@ -4,7 +4,14 @@ import fssync from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { pathHasPrefix, replacePathPrefix } from "./path-utils";
-import type { FileRecord, FolderRecord, FolderTreeNode, PaginatedFiles, TagRecord } from "./types";
+import type {
+  FileRecord,
+  FolderRecord,
+  FolderTreeNode,
+  PaginatedFiles,
+  SmartCollectionStats,
+  TagRecord,
+} from "./types";
 
 export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
 export const BROWSER_COLLECTION_FOLDER_SORT_ORDER = -1;
@@ -62,6 +69,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
       created_at TEXT NOT NULL,
       modified_at TEXT NOT NULL,
       imported_at TEXT NOT NULL,
+      last_accessed_at TEXT DEFAULT NULL,
       rating INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
       source_url TEXT NOT NULL DEFAULT '',
@@ -189,12 +197,16 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
   if (!fileColumns.includes("missing_at")) {
     db.exec("ALTER TABLE files ADD COLUMN missing_at TEXT DEFAULT NULL");
   }
+  if (!fileColumns.includes("last_accessed_at")) {
+    db.exec("ALTER TABLE files ADD COLUMN last_accessed_at TEXT DEFAULT NULL");
+  }
   db.exec(`
     DROP INDEX IF EXISTS idx_files_active_order;
     DROP INDEX IF EXISTS idx_files_folder_active_order;
     CREATE INDEX IF NOT EXISTS idx_files_active_order ON files(deleted_at, missing_at, imported_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_files_folder_active_order ON files(folder_id, deleted_at, missing_at, imported_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_files_missing_at ON files(missing_at);
+    CREATE INDEX IF NOT EXISTS idx_files_last_accessed_at ON files(last_accessed_at);
   `);
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')").run();
@@ -214,6 +226,7 @@ export type FileRow = {
   created_at: string;
   modified_at: string;
   imported_at: string;
+  last_accessed_at: string | null;
   rating: number;
   description: string;
   source_url: string;
@@ -248,6 +261,7 @@ function toFile(row: FileRow, tags: TagRecord[] = []): FileRecord {
     createdAt: row.created_at,
     modifiedAt: row.modified_at,
     importedAt: row.imported_at,
+    lastAccessedAt: row.last_accessed_at ?? null,
     rating: row.rating,
     description: row.description,
     sourceUrl: row.source_url,
@@ -574,6 +588,15 @@ function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): 
     params.push(filter.folder_id);
   }
 
+  const smartView = String(filter.smart_view ?? "").trim();
+  if (smartView === "unclassified") {
+    conditions.push("f.folder_id IS NULL");
+  } else if (smartView === "untagged") {
+    conditions.push("NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id)");
+  } else if (smartView === "recent") {
+    conditions.push("f.last_accessed_at IS NOT NULL");
+  }
+
   const fileTypes = Array.isArray(filter.file_types) ? filter.file_types.map(String) : [];
   const extGroups = fileTypes.flatMap((type) => FILE_TYPE_EXTENSIONS[type] ?? []);
   if (extGroups.length) {
@@ -647,6 +670,50 @@ export function filterFiles(db: Database.Database, args: Record<string, unknown>
     pageSize: args.pageSize as number | undefined,
   });
   return paginated(db, rows, total, page, pageSize);
+}
+
+export function getSmartCollectionStats(db: Database.Database): SmartCollectionStats {
+  const row = db
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM files f WHERE f.deleted_at IS NULL AND f.missing_at IS NULL) AS all_count,
+         (
+           SELECT COUNT(*)
+           FROM files f
+           WHERE f.deleted_at IS NULL AND f.missing_at IS NULL AND f.folder_id IS NULL
+         ) AS unclassified_count,
+         (
+           SELECT COUNT(*)
+           FROM files f
+           WHERE
+             f.deleted_at IS NULL
+             AND f.missing_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id)
+         ) AS untagged_count`,
+    )
+    .get() as {
+    all_count: number;
+    unclassified_count: number;
+    untagged_count: number;
+  };
+
+  return {
+    allCount: row.all_count,
+    unclassifiedCount: row.unclassified_count,
+    untaggedCount: row.untagged_count,
+  };
+}
+
+export function touchFileLastAccessed(
+  db: Database.Database,
+  fileId: number,
+  timestamp = currentTimestamp(),
+): void {
+  db.prepare("UPDATE files SET last_accessed_at = ?, updated_at = ? WHERE id = ?").run(
+    timestamp,
+    timestamp,
+    fileId,
+  );
 }
 
 type VisualIndexCandidate = {
@@ -734,14 +801,26 @@ function queryFilteredRows(
   const { page, pageSize, offset } = pageArgs(args.page, args.pageSize);
   const params: unknown[] = [];
   const where = appendFilterWhere(filter, params);
-  const orderSql = buildOrderSql(
+  const smartView = String(filter.smart_view ?? "").trim();
+  const orderParams: unknown[] = [];
+  let orderSql = buildOrderSql(
     filter.sort_by as string | undefined,
     filter.sort_direction as string | undefined,
     "f.",
   );
+
+  if (smartView === "recent") {
+    orderSql = "f.last_accessed_at DESC, f.imported_at DESC, f.id ASC";
+  } else if (smartView === "random") {
+    const rawSeed = Number(filter.smart_seed);
+    const seed = Number.isInteger(rawSeed) ? Math.abs(rawSeed) + 1 : 1;
+    orderSql = "ABS(((f.id * ?) + ?) % 2147483647) ASC, f.id ASC";
+    orderParams.push(seed, seed * 97 + 13);
+  }
+
   const rows = db
     .prepare(`SELECT DISTINCT f.* FROM files f${where} ORDER BY ${orderSql} LIMIT ? OFFSET ?`)
-    .all(...params, pageSize, offset) as FileRow[];
+    .all(...params, ...orderParams, pageSize, offset) as FileRow[];
   const total = (
     db.prepare(`SELECT COUNT(DISTINCT f.id) AS count FROM files f${where}`).get(...params) as {
       count: number;

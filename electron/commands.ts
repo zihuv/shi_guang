@@ -36,6 +36,7 @@ import {
   getFolderTree,
   getIndexPaths,
   getSetting,
+  getSmartCollectionStats,
   getOrCreateFolder,
   getUnindexedVisualIndexCandidates,
   getVisualIndexCandidate,
@@ -63,6 +64,7 @@ import {
   setIndexPath,
   setSetting,
   softDeleteFile,
+  touchFileLastAccessed,
   updateFileBasicInfo,
   updateFileColorData,
   updateFileDimensions,
@@ -1791,6 +1793,9 @@ export function registerIpcHandlers(
       const file = getFileByPath(state.db, filePath);
       return getThumbnailCachePath(getIndexPaths(state.db), filePath, file?.contentHash);
     },
+    get_smart_collection_stats: () => getSmartCollectionStats(state.db),
+    touch_file_last_accessed: (args) =>
+      touchFileLastAccessed(state.db, numberArg(args, "fileId", "file_id")),
     save_thumbnail_cache: async (args) => {
       const filePath = stringArg(args, "filePath", "file_path");
       const file = getFileByPath(state.db, filePath);
@@ -1983,8 +1988,10 @@ export function registerIpcHandlers(
       });
     },
     open_file: async (args) => {
-      const file = getFileById(state.db, numberArg(args, "fileId", "file_id"));
+      const fileId = numberArg(args, "fileId", "file_id");
+      const file = getFileById(state.db, fileId);
       if (!file) throw new Error("File not found");
+      touchFileLastAccessed(state.db, fileId);
       const result = await shell.openPath(file.path);
       if (result) throw new Error(result);
     },

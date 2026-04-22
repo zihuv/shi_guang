@@ -64,6 +64,7 @@ interface FileGridToolbarProps {
   setOpenToolbarMenu: (menu: ToolbarMenu | null) => void;
   setSortBy: (sortBy: FileSortField) => void;
   setSortDirection: (sortDirection: SortDirection) => void;
+  sortLocked?: boolean;
   toggleFilterPanel: () => void;
   toggleLibraryVisibleField: (field: LibraryVisibleField) => void;
   handleViewModeChange: (mode: LibraryViewMode) => void;
@@ -106,6 +107,7 @@ export function FileGridToolbar({
   setOpenToolbarMenu,
   setSortBy,
   setSortDirection,
+  sortLocked = false,
   sortBy,
   sortDirection,
   sortMenuButtonRef,
@@ -154,16 +156,29 @@ export function FileGridToolbar({
             <button
               ref={sortMenuButtonRef}
               type="button"
-              onClick={() => toggleToolbarMenu("sort")}
-              className={getToolbarButtonClassName(openToolbarMenu === "sort")}
-              title={`排序：${currentSortFieldLabel} · ${currentSortDirectionLabel}`}
+              onClick={() => {
+                if (sortLocked) {
+                  return;
+                }
+                toggleToolbarMenu("sort");
+              }}
+              className={cn(
+                getToolbarButtonClassName(openToolbarMenu === "sort"),
+                sortLocked && "cursor-default opacity-60",
+              )}
+              title={
+                sortLocked
+                  ? `当前视图固定为${currentSortFieldLabel}`
+                  : `排序：${currentSortFieldLabel} · ${currentSortDirectionLabel}`
+              }
               aria-label="排序"
-              aria-expanded={openToolbarMenu === "sort"}
+              aria-expanded={sortLocked ? false : openToolbarMenu === "sort"}
+              disabled={sortLocked}
             >
               <ArrowUpDown className="h-4 w-4" />
             </button>
 
-            {openToolbarMenu === "sort" && (
+            {openToolbarMenu === "sort" && !sortLocked && (
               <div
                 ref={sortMenuRef}
                 className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"

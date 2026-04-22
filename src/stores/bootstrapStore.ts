@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { useFilterStore } from "@/stores/filterStore";
@@ -46,10 +48,12 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
       await useFilterStore.getState().loadPreferences();
       await useTagStore.getState().loadTags();
       await useFolderStore.getState().loadFolders();
+      await useSmartCollectionStore.getState().loadStats();
       await useTrashStore.getState().loadTrashCount();
 
       const folderStore = useFolderStore.getState();
       const libraryStore = useLibraryQueryStore.getState();
+      const navigationStore = useNavigationStore.getState();
       const persistedFolderId = await getLastSelectedFolderId();
       const initialFolderId =
         persistedFolderId !== null && hasFolderId(folderStore.folders, persistedFolderId)
@@ -57,10 +61,12 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
           : ((await folderStore.initDefaultFolder())?.id ?? null);
 
       if (initialFolderId !== null) {
+        navigationStore.clearSmartCollection();
         folderStore.selectFolder(initialFolderId);
         libraryStore.setSelectedFolderId(initialFolderId);
         await libraryStore.loadFilesInFolder(initialFolderId);
       } else {
+        navigationStore.openLibrary("all");
         folderStore.selectFolder(null);
         libraryStore.setSelectedFolderId(null);
         await libraryStore.loadFilesInFolder(null);

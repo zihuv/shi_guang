@@ -12,6 +12,7 @@ import {
 } from "@/stores/fileTypes";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 import { listenDesktop } from "@/services/desktop/core";
 
 interface ImportStore {
@@ -133,6 +134,7 @@ async function finalizeImportTask(
   await delay(0);
   await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId);
   await useFolderStore.getState().loadFolders();
+  await useSmartCollectionStore.getState().loadStats();
   setImportTask(null);
   return results;
 }

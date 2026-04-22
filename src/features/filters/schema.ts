@@ -76,13 +76,17 @@ export function buildFileFilterPayload(args: {
   fallbackQuery?: string;
   naturalLanguageQuery?: string;
   folderId?: number | null;
+  smartView?: import("@/stores/fileTypes").SmartCollectionId | null;
+  smartSeed?: number | null;
 }): FileFilterPayload {
-  const { criteria, fallbackQuery, naturalLanguageQuery, folderId } = args;
+  const { criteria, fallbackQuery, naturalLanguageQuery, folderId, smartView, smartSeed } = args;
 
   return {
     query: criteria.keyword || fallbackQuery || null,
     natural_language_query: naturalLanguageQuery || null,
     folder_id: criteria.folderId ?? folderId ?? null,
+    smart_view: smartView ?? null,
+    smart_seed: smartSeed ?? null,
     file_types: criteria.fileType !== "all" ? [criteria.fileType] : null,
     date_start: criteria.dateRange.start || null,
     date_end: criteria.dateRange.end || null,

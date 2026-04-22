@@ -1,3 +1,4 @@
+import type { SmartCollectionId } from "@/stores/fileTypes";
 import type { FolderNode } from "@/stores/folderStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
@@ -87,7 +88,7 @@ export async function selectFolderFromTree(folderId: number | null) {
   const selectionStore = useSelectionStore.getState();
   const previewStore = usePreviewStore.getState();
 
-  navigationStore.openLibrary();
+  navigationStore.openLibrary(folderId === null ? "all" : null);
 
   if (filterStore.isFilterPanelOpen || folderId === null) {
     filterStore.setFolderId(null);
@@ -107,6 +108,25 @@ export async function selectFolderFromTree(folderId: number | null) {
   previewStore.closePreview();
   selectionStore.setSelectedFile(null);
   await libraryStore.loadFilesInFolder(folderId);
+}
+
+export async function selectSmartCollectionFromSidebar(
+  smartCollection: SmartCollectionId,
+) {
+  const folderStore = useFolderStore.getState();
+  const filterStore = useFilterStore.getState();
+  const libraryStore = useLibraryQueryStore.getState();
+  const navigationStore = useNavigationStore.getState();
+  const selectionStore = useSelectionStore.getState();
+  const previewStore = usePreviewStore.getState();
+
+  navigationStore.openSmartCollection(smartCollection);
+  filterStore.setFolderId(null);
+  folderStore.selectFolder(null);
+  selectionStore.clearSelection();
+  previewStore.closePreview();
+  selectionStore.setSelectedFile(null);
+  await libraryStore.runCurrentQuery(null);
 }
 
 export const flattenFolders = (nodes: FolderNode[], depth = 0): FlattenedFolderNode[] => {

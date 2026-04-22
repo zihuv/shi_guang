@@ -10,6 +10,7 @@ import {
   type FolderSummary,
 } from "@/services/desktop/folders";
 import { useLibraryQueryStore } from "./libraryQueryStore";
+import { useSmartCollectionStore } from "./smartCollectionStore";
 
 export interface FolderNode {
   id: number;
@@ -134,6 +135,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     try {
       await deleteFolder(id);
       await get().loadFolders();
+      await useSmartCollectionStore.getState().loadStats();
     } catch (e) {
       console.error("Failed to delete folder:", e);
     }

@@ -19,6 +19,7 @@ export interface FileRecord {
   createdAt: string;
   modifiedAt: string;
   importedAt: string;
+  lastAccessedAt: string | null;
   rating: number;
   description: string;
   sourceUrl: string;
@@ -29,6 +30,14 @@ export interface FileRecord {
   tags: TagRecord[];
   deletedAt: string | null;
   missingAt: string | null;
+}
+
+export type SmartCollectionId = "all" | "unclassified" | "untagged" | "recent" | "random";
+
+export interface SmartCollectionStats {
+  allCount: number;
+  unclassifiedCount: number;
+  untaggedCount: number;
 }
 
 export interface FolderRecord {

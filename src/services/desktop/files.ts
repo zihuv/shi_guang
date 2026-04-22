@@ -4,6 +4,8 @@ import type {
   FileItem,
   ImportTaskSnapshot,
   PaginatedFilesResponse,
+  SmartCollectionId,
+  SmartCollectionStats,
   VisualIndexTaskSnapshot,
 } from "@/stores/fileTypes";
 
@@ -11,6 +13,8 @@ export interface FileFilterPayload {
   query: string | null;
   natural_language_query: string | null;
   folder_id: number | null;
+  smart_view: SmartCollectionId | null;
+  smart_seed: number | null;
   file_types: string[] | null;
   date_start: string | null;
   date_end: string | null;
@@ -97,6 +101,14 @@ export function getFile(fileId: number) {
 
 export function filterFiles(args: { filter: FileFilterPayload; page: number; pageSize: number }) {
   return invokeDesktop<PaginatedFilesResponse>("filter_files", args);
+}
+
+export function getSmartCollectionStats() {
+  return invokeDesktop<SmartCollectionStats>("get_smart_collection_stats");
+}
+
+export function touchFileLastAccessed(fileId: number) {
+  return invokeDesktop<void>("touch_file_last_accessed", { fileId });
 }
 
 export function updateFileMetadata(args: {

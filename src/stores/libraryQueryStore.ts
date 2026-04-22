@@ -2,8 +2,10 @@ import { create } from "zustand";
 import { toast } from "sonner";
 import { useFilterStore, getSortConfig } from "@/stores/filterStore";
 import { useFolderStore } from "@/stores/folderStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import {
   analyzeFileMetadata as analyzeFileMetadataCommand,
@@ -13,6 +15,7 @@ import {
   getAllFiles,
   getFile,
   getFilesInFolder,
+  touchFileLastAccessed as touchFileLastAccessedCommand,
   updateFileMetadata,
   updateFileName,
 } from "@/services/desktop/files";
@@ -29,6 +32,7 @@ import {
   parseFileList,
   type FileItem,
   type PaginatedFilesResponse,
+  type SmartCollectionId,
   type VisualSearchDebugScore,
 } from "@/stores/fileTypes";
 
@@ -43,6 +47,8 @@ interface FilterFilesInput {
   query?: string;
   naturalLanguageQuery?: string;
   folderId?: number | null;
+  smartView?: SmartCollectionId | null;
+  smartSeed?: number | null;
 }
 
 interface LibraryQueryStore {
@@ -76,6 +82,7 @@ interface LibraryQueryStore {
   exportFile: (fileId: number) => Promise<string>;
   updateFileName: (fileId: number, newName: string) => Promise<void>;
   analyzeFileMetadata: (fileId: number, imageDataUrl?: string) => Promise<FileItem>;
+  touchFileLastAccessed: (fileId: number) => Promise<void>;
 }
 
 let fileListRequestId = 0;
@@ -228,6 +235,10 @@ async function refreshFolders() {
   await useFolderStore.getState().loadFolders();
 }
 
+async function refreshSmartCollections() {
+  await useSmartCollectionStore.getState().loadStats();
+}
+
 function syncUpdatedFileAcrossStores(
   updatedFile: FileItem,
   set: (
@@ -319,6 +330,9 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   loadFilesInFolder: async (folderId) => {
     const previousFolderId = get().selectedFolderId;
     const shouldClearFiles = previousFolderId !== folderId;
+    const activeSmartCollection = useNavigationStore.getState().activeSmartCollection;
+    const hasSmartCollectionQuery =
+      activeSmartCollection !== null && activeSmartCollection !== "all";
     beginFileListLoading(set, {
       clearFiles: shouldClearFiles,
       selectedFolderId: folderId,
@@ -328,7 +342,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     });
 
     const criteria = useFilterStore.getState().criteria;
-    if (hasStructuredFilters(criteria) || get().searchQuery.trim()) {
+    if (hasStructuredFilters(criteria) || get().searchQuery.trim() || hasSmartCollectionQuery) {
       await get().runCurrentQuery(folderId);
       return;
     }
@@ -371,11 +385,16 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     const { searchQuery, selectedFolderId } = get();
     const criteria = useFilterStore.getState().criteria;
     const folderId = folderIdOverride !== undefined ? folderIdOverride : selectedFolderId;
+    const { activeSmartCollection, randomSeed } = useNavigationStore.getState();
+    const hasSmartCollectionQuery =
+      activeSmartCollection !== null && activeSmartCollection !== "all";
 
-    if (hasStructuredFilters(criteria)) {
+    if (hasStructuredFilters(criteria) || hasSmartCollectionQuery) {
       await get().filterFiles({
         naturalLanguageQuery: searchQuery || undefined,
         folderId,
+        smartView: activeSmartCollection,
+        smartSeed: randomSeed,
       });
       return;
     }
@@ -384,6 +403,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       await get().filterFiles({
         naturalLanguageQuery: searchQuery,
         folderId,
+        smartView: activeSmartCollection,
+        smartSeed: randomSeed,
       });
       return;
     }
@@ -404,6 +425,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
           fallbackQuery: filter?.query,
           naturalLanguageQuery: filter?.naturalLanguageQuery,
           folderId: filter?.folderId,
+          smartView: filter?.smartView ?? useNavigationStore.getState().activeSmartCollection,
+          smartSeed: filter?.smartSeed ?? useNavigationStore.getState().randomSeed,
         }),
         page: pagination.page,
         pageSize: pagination.pageSize,
@@ -427,12 +450,14 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     await addTagToFileCommand({ fileId, tagId });
     await get().loadFilesInFolder(get().selectedFolderId);
     await useTagStore.getState().loadTags();
+    await refreshSmartCollections();
   },
 
   removeTagFromFile: async (fileId, tagId) => {
     await removeTagFromFileCommand({ fileId, tagId });
     await get().loadFilesInFolder(get().selectedFolderId);
     await useTagStore.getState().loadTags();
+    await refreshSmartCollections();
   },
 
   updateFileMetadata: async (fileId, rating, description, sourceUrl) => {
@@ -445,6 +470,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     await moveFile({ fileId, targetFolderId });
     await get().loadFilesInFolder(get().selectedFolderId);
     await refreshFolders();
+    await refreshSmartCollections();
   },
 
   moveFiles: async (fileIds, targetFolderId) => {
@@ -453,12 +479,14 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     useSelectionStore.getState().setSelectedFile(null);
     await get().loadFilesInFolder(get().selectedFolderId);
     await refreshFolders();
+    await refreshSmartCollections();
   },
 
   copyFiles: async (fileIds, targetFolderId) => {
     await copyFiles({ fileIds, targetFolderId });
     await get().loadFilesInFolder(get().selectedFolderId);
     await refreshFolders();
+    await refreshSmartCollections();
   },
 
   extractColor: async (fileId) => {
@@ -482,5 +510,9 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     syncUpdatedFileAcrossStores(updatedFile, set);
     await useTagStore.getState().loadTags();
     return updatedFile;
+  },
+
+  touchFileLastAccessed: async (fileId) => {
+    await touchFileLastAccessedCommand(fileId);
   },
 }));

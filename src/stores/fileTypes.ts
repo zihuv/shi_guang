@@ -16,6 +16,7 @@ export interface FileItem {
   createdAt: string;
   modifiedAt: string;
   importedAt: string;
+  lastAccessedAt: string | null;
   rating: number;
   description: string;
   sourceUrl: string;
@@ -40,6 +41,14 @@ export interface VisualSearchDebugScore {
   fileId: number;
   name: string;
   score: number;
+}
+
+export type SmartCollectionId = "all" | "unclassified" | "untagged" | "recent" | "random";
+
+export interface SmartCollectionStats {
+  allCount: number;
+  unclassifiedCount: number;
+  untaggedCount: number;
 }
 
 export interface ImportTaskItemResult {

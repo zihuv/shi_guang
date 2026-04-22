@@ -70,6 +70,7 @@ export default function ImagePreview() {
   const moveFiles = useLibraryQueryStore((state) => state.moveFiles);
   const copyFiles = useLibraryQueryStore((state) => state.copyFiles);
   const analyzeFileMetadata = useLibraryQueryStore((state) => state.analyzeFileMetadata);
+  const touchFileLastAccessed = useLibraryQueryStore((state) => state.touchFileLastAccessed);
   const deleteFile = useTrashStore((state) => state.deleteFile);
 
   const { folders, selectedFolderId } = useFolderStore();
@@ -145,6 +146,14 @@ export default function ImagePreview() {
       setSelectedFile(currentFile);
     }
   }, [currentFile, previewIndex, setSelectedFile]);
+
+  useEffect(() => {
+    if (!currentFile?.id) {
+      return;
+    }
+
+    void touchFileLastAccessed(currentFile.id);
+  }, [currentFile?.id, touchFileLastAccessed]);
 
   useEffect(() => {
     if (!currentFile) {

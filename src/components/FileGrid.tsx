@@ -11,6 +11,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { type FileItem } from "@/stores/fileTypes";
 import { useFilterStore } from "@/stores/filterStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import {
@@ -108,6 +109,7 @@ export default function FileGrid() {
   const sortDirection = useFilterStore((state) => state.criteria.sortDirection);
   const setSortBy = useFilterStore((state) => state.setSortBy);
   const setSortDirection = useFilterStore((state) => state.setSortDirection);
+  const activeSmartCollection = useNavigationStore((state) => state.activeSmartCollection);
   const viewMode = useSettingsStore((state) => state.libraryViewMode);
   const libraryViewScales = useSettingsStore((state) => state.libraryViewScales);
   const libraryVisibleFields = useSettingsStore((state) => state.libraryVisibleFields);
@@ -152,8 +154,18 @@ export default function FileGrid() {
   const listViewScale = libraryViewScales.list;
   const currentViewScale = viewMode === "list" ? listViewScale : tileViewScale;
   const currentViewScaleRange = getLibraryViewScaleRange(viewMode);
-  const currentSortFieldLabel = SORT_FIELD_LABELS[sortBy] ?? "导入时间";
-  const currentSortDirectionLabel = sortDirection === "asc" ? "升序" : "降序";
+  const currentSortFieldLabel =
+    activeSmartCollection === "random"
+      ? "随机模式"
+      : activeSmartCollection === "recent"
+        ? "最近使用"
+        : (SORT_FIELD_LABELS[sortBy] ?? "导入时间");
+  const currentSortDirectionLabel =
+    activeSmartCollection === "random" || activeSmartCollection === "recent"
+      ? "固定排序"
+      : sortDirection === "asc"
+        ? "升序"
+        : "降序";
   const currentViewModeLabel = VIEW_MODE_LABELS[viewMode] ?? "网格";
   const visibleInfoFieldLabels = libraryVisibleFields.map((field) => INFO_FIELD_LABELS[field]);
 
@@ -997,6 +1009,7 @@ export default function FileGrid() {
         setOpenToolbarMenu={setOpenToolbarMenu}
         setSortBy={setSortBy}
         setSortDirection={setSortDirection}
+        sortLocked={activeSmartCollection === "random" || activeSmartCollection === "recent"}
         sortBy={sortBy}
         sortDirection={sortDirection}
         sortMenuButtonRef={sortMenuButtonRef}
