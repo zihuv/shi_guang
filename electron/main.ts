@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, net, protocol } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, net, protocol } from "electron";
 import log from "electron-log/main";
 import crypto from "node:crypto";
 import fssync from "node:fs";
@@ -77,6 +77,17 @@ function getAppIconPath(): string {
 
   const iconPath = candidates.find((candidate) => fssync.existsSync(candidate));
   return iconPath ?? path.join(process.cwd(), "assets", "image.png");
+}
+
+function setDockIcon(): void {
+  if (process.platform !== "darwin" || !app.dock) {
+    return;
+  }
+
+  const icon = nativeImage.createFromPath(getAppIconPath());
+  if (!icon.isEmpty()) {
+    app.dock.setIcon(icon);
+  }
 }
 
 function assetToUrl(filePath: string): string {
@@ -218,6 +229,7 @@ async function bootstrap(): Promise<void> {
     visualIndexTasks: new Map(),
   };
 
+  setDockIcon();
   registerFileProtocol();
   registerIpcHandlers(appState, getMainWindow, assetToUrl);
   await createMainWindow();

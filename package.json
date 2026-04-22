@@ -116,21 +116,21 @@
         "nsis",
         "zip"
       ],
-      "icon": "assets/image.png"
+      "icon": "assets/icon.ico"
     },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "icon": "assets/image.png"
+      "icon": "assets/icon.icns"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "icon": "assets/image.png",
+      "icon": "assets/icon.png",
       "category": "Utility",
       "maintainer": "zihuv <zihuv@users.noreply.github.com>"
     }
