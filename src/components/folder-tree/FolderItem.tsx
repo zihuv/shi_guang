@@ -35,10 +35,12 @@ import {
 import type { DragPosition, RegisterTreeItem } from "./types";
 import {
   INTERNAL_FILE_DRAG_MIME,
+  buildFolderMovePlan,
   findFolderParentId,
   findSiblings,
   flattenFolders,
   isDescendant,
+  isPersistedFolder,
 } from "./utils";
 
 interface FolderItemProps {
@@ -109,9 +111,7 @@ export function FolderItem({
   ];
 
   const parentId = findFolderParentId(folders, folder.id, null);
-  const siblingFolders = findSiblings(folders, parentId).filter(
-    (item) => !item.isSystem && item.name !== "浏览器采集",
-  );
+  const siblingFolders = findSiblings(folders, parentId).filter(isPersistedFolder);
   const siblingIndex = siblingFolders.findIndex((item) => item.id === folder.id);
   const canMoveUp = siblingIndex > 0;
   const canMoveDown = siblingIndex >= 0 && siblingIndex < siblingFolders.length - 1;
@@ -155,11 +155,28 @@ export function FolderItem({
             hasChildren,
             uniqueContextId,
           };
-          return attachClosestEdge(data, {
-            input,
-            element,
-            allowedEdges: ["top", "bottom"],
-          });
+          const rect = element.getBoundingClientRect();
+          const offsetY = input.clientY - rect.top;
+          const edgeThreshold = Math.min(10, rect.height / 4);
+
+          if (offsetY <= edgeThreshold || offsetY >= rect.height - edgeThreshold) {
+            return attachClosestEdge(
+              {
+                ...data,
+                dropIntent: "sort" as const,
+              },
+              {
+                input,
+                element,
+                allowedEdges: ["top", "bottom"],
+              },
+            );
+          }
+
+          return {
+            ...data,
+            dropIntent: "nest" as const,
+          };
         },
         canDrop: ({ source }) => {
           if (source.data.uniqueContextId !== uniqueContextId) {
@@ -167,28 +184,11 @@ export function FolderItem({
           }
           return source.data.type === "folder" && source.data.folderId !== folder.id;
         },
-        onDragEnter: ({ source }) => {
-          if (source.data.type !== "folder") return;
-          const sourceFolderId = source.data.folderId as number;
-          if (sourceFolderId === folder.id || isDescendant(folders, sourceFolderId, folder.id)) {
-            return;
-          }
-          onDragPositionChange({ type: "nest", folderId: folder.id });
-        },
-        onDragLeave: ({ source }) => {
-          if (source.data.type !== "folder") return;
-          const sourceFolderId = source.data.folderId as number;
-          if (isDescendant(folders, folder.id, sourceFolderId)) return;
-          if (dragPosition.type === "nest" && dragPosition.folderId === folder.id) {
-            onDragPositionChange({ type: "none" });
-          }
-        },
         onDrop: () => {},
       }),
     );
   }, [
     canDrag,
-    dragPosition,
     folder.id,
     folder.name,
     folders,
@@ -226,6 +226,23 @@ export function FolderItem({
     const [moved] = reordered.splice(siblingIndex, 1);
     reordered.splice(nextIndex, 0, moved);
     await reorderFolders(reordered.map((item) => item.id));
+  };
+
+  const moveFolderToParent = async (newParentId: number | null) => {
+    if (isSystemFolder) return;
+
+    const plan = buildFolderMovePlan(folders, folder.id, newParentId);
+    if (!plan) return;
+
+    if (plan.currentParentId === newParentId) {
+      return;
+    }
+
+    await moveFolder(folder.id, newParentId, {
+      sortOrder: plan.sortOrder,
+      sourceSiblingIds: plan.sourceSiblingIds,
+      targetSiblingIds: plan.targetSiblingIds,
+    });
   };
 
   const isInternalFileDrag = (event: React.DragEvent) => {
@@ -440,7 +457,9 @@ export function FolderItem({
               {menuItems.map((target) => (
                 <ContextMenuItem
                   key={target.id === null ? "root" : target.id}
-                  onSelect={() => moveFolder(folder.id, target.id)}
+                  onSelect={() => {
+                    void moveFolderToParent(target.id);
+                  }}
                   style={{
                     paddingLeft: `${(target.sortOrder === -1 ? 0 : target.sortOrder) * 12 + 8}px`,
                   }}

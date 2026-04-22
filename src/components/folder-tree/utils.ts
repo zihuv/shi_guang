@@ -11,6 +11,9 @@ export const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids";
 
 export type FlattenedFolderNode = FolderNode & { sortOrder: number };
 
+export const isPersistedFolder = (folder: FolderNode): boolean =>
+  !folder.isSystem && folder.name !== "浏览器采集";
+
 export const findFolderById = (folders: FolderNode[], folderId: number): FolderNode | null => {
   for (const folder of folders) {
     if (folder.id === folderId) return folder;
@@ -54,6 +57,9 @@ export const findSiblings = (folders: FolderNode[], parentId: number | null): Fo
   return findParentChildren(folders) || [];
 };
 
+export const getPersistedFolderIds = (folders: FolderNode[]): number[] =>
+  folders.filter(isPersistedFolder).map((folder) => folder.id);
+
 export const getAllFolderIds = (folders: FolderNode[]): number[] => {
   const ids: number[] = [];
   for (const folder of folders) {
@@ -79,6 +85,46 @@ export const isDescendant = (folders: FolderNode[], parentId: number, childId: n
 
   return checkDescendant(parent.children, childId);
 };
+
+export function buildFolderMovePlan(
+  folders: FolderNode[],
+  folderId: number,
+  newParentId: number | null,
+  insertIndex?: number,
+): {
+  currentParentId: number | null;
+  sortOrder: number;
+  sourceSiblingIds: number[];
+  targetSiblingIds: number[];
+} | null {
+  const folder = findFolderById(folders, folderId);
+  if (!folder) {
+    return null;
+  }
+
+  const currentParentId = findFolderParentId(folders, folderId, null);
+  const sourceSiblings = findSiblings(folders, currentParentId)
+    .filter(isPersistedFolder)
+    .filter((item) => item.id !== folderId);
+  const targetSiblings = findSiblings(folders, newParentId)
+    .filter(isPersistedFolder)
+    .filter((item) => item.id !== folderId);
+
+  const nextTargetSiblings = [...targetSiblings];
+  const safeInsertIndex =
+    insertIndex === undefined
+      ? nextTargetSiblings.length
+      : Math.max(0, Math.min(insertIndex, nextTargetSiblings.length));
+
+  nextTargetSiblings.splice(safeInsertIndex, 0, folder);
+
+  return {
+    currentParentId,
+    sortOrder: safeInsertIndex,
+    sourceSiblingIds: getPersistedFolderIds(sourceSiblings),
+    targetSiblingIds: getPersistedFolderIds(nextTargetSiblings),
+  };
+}
 
 export async function selectFolderFromTree(folderId: number | null) {
   const folderStore = useFolderStore.getState();
@@ -110,9 +156,7 @@ export async function selectFolderFromTree(folderId: number | null) {
   await libraryStore.loadFilesInFolder(folderId);
 }
 
-export async function selectSmartCollectionFromSidebar(
-  smartCollection: SmartCollectionId,
-) {
+export async function selectSmartCollectionFromSidebar(smartCollection: SmartCollectionId) {
   const folderStore = useFolderStore.getState();
   const filterStore = useFilterStore.getState();
   const libraryStore = useLibraryQueryStore.getState();

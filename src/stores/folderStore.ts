@@ -4,8 +4,8 @@ import {
   deleteFolder,
   getFolderTree,
   initDefaultFolder,
-  moveFolder,
-  reorderFolders,
+  moveFolder as moveFolderDesktop,
+  reorderFolders as reorderFoldersDesktop,
   renameFolder,
   type FolderSummary,
 } from "@/services/desktop/folders";
@@ -50,7 +50,15 @@ interface FolderStore {
   deleteFolder: (id: number) => Promise<void>;
   renameFolder: (id: number, name: string) => Promise<void>;
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>;
-  moveFolder: (folderId: number, newParentId: number | null) => Promise<void>;
+  moveFolder: (
+    folderId: number,
+    newParentId: number | null,
+    options?: {
+      sortOrder?: number;
+      sourceSiblingIds?: number[];
+      targetSiblingIds?: number[];
+    },
+  ) => Promise<void>;
   reorderFolders: (folderIds: number[]) => Promise<void>;
   setFolders: (folders: FolderNode[]) => void;
   setNewFolderName: (name: string) => void;
@@ -159,9 +167,19 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     }
   },
 
-  moveFolder: async (folderId, newParentId) => {
+  moveFolder: async (folderId, newParentId, options) => {
     try {
-      await moveFolder({ folderId, newParentId, sortOrder: 0 });
+      await moveFolderDesktop({
+        folderId,
+        newParentId,
+        sortOrder: options?.sortOrder ?? 0,
+      });
+      if (options?.sourceSiblingIds && options.sourceSiblingIds.length > 0) {
+        await reorderFoldersDesktop(options.sourceSiblingIds);
+      }
+      if (options?.targetSiblingIds && options.targetSiblingIds.length > 0) {
+        await reorderFoldersDesktop(options.targetSiblingIds);
+      }
       await get().loadFolders();
       // Reload files to reflect the new paths after folder move
       const libraryStore = useLibraryQueryStore.getState();
@@ -173,7 +191,7 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   reorderFolders: async (folderIds) => {
     try {
-      await reorderFolders(folderIds);
+      await reorderFoldersDesktop(folderIds);
       // Reload folders to reflect the new order
       await get().loadFolders();
     } catch (e) {

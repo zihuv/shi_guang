@@ -17,9 +17,11 @@ import { FolderDialogs } from "@/components/folder-tree/FolderDialogs";
 import { FolderItem } from "@/components/folder-tree/FolderItem";
 import { createTreeItemRegistry, type DragPosition } from "@/components/folder-tree/types";
 import {
+  buildFolderMovePlan,
   findFolderParentId,
   findSiblings,
   getAllFolderIds,
+  getPersistedFolderIds,
   isDescendant,
   selectFolderFromTree,
 } from "@/components/folder-tree/utils";
@@ -70,21 +72,12 @@ function reorderSiblings(
   return nextSiblings;
 }
 
-function getPersistedFolderIds(folders: FolderNode[]) {
-  return folders
-    .filter((folder) => !folder.isSystem && folder.name !== "浏览器采集")
-    .map((folder) => folder.id);
-}
-
 interface FolderTreeProps {
   showHeader?: boolean;
   showAllFilesRow?: boolean;
 }
 
-export default function FolderTree({
-  showHeader = true,
-  showAllFilesRow = true,
-}: FolderTreeProps) {
+export default function FolderTree({ showHeader = true, showAllFilesRow = true }: FolderTreeProps) {
   const {
     folders,
     selectedFolderId,
@@ -198,7 +191,29 @@ export default function FolderTree({
       const targetParentId = findFolderParentId(folders, targetId, null);
 
       if (activeParentId !== targetParentId) {
-        moveFolder(activeFolderId, targetParentId);
+        const targetSiblings = findSiblings(folders, targetParentId).filter(
+          (item) => item.id !== activeFolderId,
+        );
+        const targetIndex = targetSiblings.findIndex((item) => item.id === targetId);
+        if (targetIndex === -1) {
+          return;
+        }
+
+        const plan = buildFolderMovePlan(
+          folders,
+          activeFolderId,
+          targetParentId,
+          insertBefore ? targetIndex : targetIndex + 1,
+        );
+        if (!plan) {
+          return;
+        }
+
+        void moveFolder(activeFolderId, targetParentId, {
+          sortOrder: plan.sortOrder,
+          sourceSiblingIds: plan.sourceSiblingIds,
+          targetSiblingIds: plan.targetSiblingIds,
+        });
         return;
       }
 
@@ -216,7 +231,7 @@ export default function FolderTree({
 
       const folderIds = getPersistedFolderIds(reorderedSiblings);
       if (folderIds.length > 0) {
-        reorderFolders(folderIds);
+        void reorderFolders(folderIds);
       }
     },
     [folders, moveFolder, reorderFolders, setFolders],
@@ -264,28 +279,27 @@ export default function FolderTree({
           return;
         }
 
-        const target = dropTargets[0];
-        const targetData = target.data;
-        const closestEdge = extractClosestEdge(targetData);
-
-        if (closestEdge && source.data.type === "folder") {
-          setDragPosition({
-            type: "sort",
-            targetId: targetData.folderId as number,
-            before: closestEdge === "top",
-          });
-          return;
-        }
-
+        const targetData = dropTargets[0].data;
         if (targetData.type === "folder") {
           const targetFolderId = targetData.folderId as number;
           const sourceFolderId = source.data.folderId as number;
-          if (
-            source.data.type === "folder" &&
-            sourceFolderId !== targetFolderId &&
-            !isDescendant(folders, sourceFolderId, targetFolderId)
-          ) {
-            setDragPosition({ type: "nest", folderId: targetFolderId });
+          if (targetData.dropIntent === "nest") {
+            if (
+              sourceFolderId !== targetFolderId &&
+              !isDescendant(folders, sourceFolderId, targetFolderId)
+            ) {
+              setDragPosition({ type: "nest", folderId: targetFolderId });
+              return;
+            }
+          }
+
+          const closestEdge = extractClosestEdge(targetData);
+          if (closestEdge) {
+            setDragPosition({
+              type: "sort",
+              targetId: targetFolderId,
+              before: closestEdge === "top",
+            });
             return;
           }
         }
@@ -316,17 +330,30 @@ export default function FolderTree({
 
         if (targetData.type === "folder") {
           const targetFolderId = targetData.folderId as number;
-          if (
-            activeFolderId !== targetFolderId &&
-            !isDescendant(folders, activeFolderId, targetFolderId)
-          ) {
-            moveFolder(activeFolderId, targetFolderId);
-          }
-        }
+          if (targetData.dropIntent === "nest") {
+            if (
+              activeFolderId !== targetFolderId &&
+              !isDescendant(folders, activeFolderId, targetFolderId)
+            ) {
+              const plan = buildFolderMovePlan(folders, activeFolderId, targetFolderId);
+              if (plan) {
+                void moveFolder(activeFolderId, targetFolderId, {
+                  sortOrder: plan.sortOrder,
+                  sourceSiblingIds: plan.sourceSiblingIds,
+                  targetSiblingIds: plan.targetSiblingIds,
+                });
+              }
+            }
 
-        const closestEdge = extractClosestEdge(targetData);
-        if (closestEdge && targetData.folderId !== activeFolderId) {
-          applySortDrop(activeFolderId, targetData.folderId as number, closestEdge === "top");
+            setDragPosition({ type: "none" });
+            setActiveId(null);
+            return;
+          }
+
+          const closestEdge = extractClosestEdge(targetData);
+          if (closestEdge && targetFolderId !== activeFolderId) {
+            applySortDrop(activeFolderId, targetFolderId, closestEdge === "top");
+          }
         }
 
         setDragPosition({ type: "none" });
