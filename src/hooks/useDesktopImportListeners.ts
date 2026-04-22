@@ -35,6 +35,10 @@ type FileImportedPayload = {
   path?: string;
 };
 
+type LibrarySyncUpdatedPayload = {
+  errorCount?: number;
+};
+
 type VisualIndexBrowserDecodeRequestPayload = {
   requestId?: string;
   request_id?: string;
@@ -145,6 +149,8 @@ export function useDesktopImportListeners({
     let unlistenFileImported: (() => void) | undefined;
     let unlistenFileImportError: (() => void) | undefined;
     let unlistenFileUpdated: (() => void) | undefined;
+    let unlistenLibrarySyncUpdated: (() => void) | undefined;
+    let librarySyncRefreshTimer: ReturnType<typeof setTimeout> | null = null;
     let unlistenVisualIndexBrowserDecodeRequest: (() => void) | undefined;
     let unlistenThumbnailBuildRequest: (() => void) | undefined;
 
@@ -273,6 +279,29 @@ export function useDesktopImportListeners({
         },
       );
 
+      unlistenLibrarySyncUpdated = await listenDesktop<LibrarySyncUpdatedPayload>(
+        "library-sync-updated",
+        (event) => {
+          if ((event.payload?.errorCount ?? 0) > 0) {
+            toast.error("素材目录同步时遇到部分文件处理失败");
+          }
+
+          if (librarySyncRefreshTimer) {
+            return;
+          }
+
+          librarySyncRefreshTimer = setTimeout(() => {
+            librarySyncRefreshTimer = null;
+            const libraryStore = useLibraryQueryStore.getState();
+            void Promise.all([
+              libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
+              useFolderStore.getState().loadFolders(),
+              useTagStore.getState().loadTags(),
+            ]);
+          }, 400);
+        },
+      );
+
       unlistenVisualIndexBrowserDecodeRequest =
         await listenDesktop<VisualIndexBrowserDecodeRequestPayload>(
           "visual-index-browser-decode-request",
@@ -308,6 +337,10 @@ export function useDesktopImportListeners({
       unlistenFileImported?.();
       unlistenFileImportError?.();
       unlistenFileUpdated?.();
+      unlistenLibrarySyncUpdated?.();
+      if (librarySyncRefreshTimer) {
+        clearTimeout(librarySyncRefreshTimer);
+      }
       unlistenVisualIndexBrowserDecodeRequest?.();
       unlistenThumbnailBuildRequest?.();
       dragDropState.listenersReady = false;

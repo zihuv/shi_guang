@@ -28,6 +28,7 @@ export interface FileRecord {
   contentHash: string | null;
   tags: TagRecord[];
   deletedAt: string | null;
+  missingAt: string | null;
 }
 
 export interface FolderRecord {

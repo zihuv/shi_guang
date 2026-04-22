@@ -72,6 +72,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
       color_distribution TEXT NOT NULL DEFAULT '[]',
       thumb_hash TEXT NOT NULL DEFAULT '',
       deleted_at TEXT DEFAULT NULL,
+      missing_at TEXT DEFAULT NULL,
       sync_id TEXT NOT NULL UNIQUE,
       content_hash TEXT,
       fs_modified_at TEXT NOT NULL,
@@ -167,6 +168,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
     CREATE INDEX IF NOT EXISTS idx_files_folder_active_order ON files(folder_id, deleted_at, imported_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_files_dominant_rgb ON files(dominant_r, dominant_g, dominant_b);
     CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash);
     CREATE INDEX IF NOT EXISTS idx_files_sync_id ON files(sync_id);
     CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
     CREATE INDEX IF NOT EXISTS idx_folders_parent_sort_order ON folders(parent_id, sort_order, name);
@@ -184,6 +186,16 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
   if (!fileColumns.includes("thumb_hash")) {
     db.exec("ALTER TABLE files ADD COLUMN thumb_hash TEXT NOT NULL DEFAULT ''");
   }
+  if (!fileColumns.includes("missing_at")) {
+    db.exec("ALTER TABLE files ADD COLUMN missing_at TEXT DEFAULT NULL");
+  }
+  db.exec(`
+    DROP INDEX IF EXISTS idx_files_active_order;
+    DROP INDEX IF EXISTS idx_files_folder_active_order;
+    CREATE INDEX IF NOT EXISTS idx_files_active_order ON files(deleted_at, missing_at, imported_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_files_folder_active_order ON files(folder_id, deleted_at, missing_at, imported_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_files_missing_at ON files(missing_at);
+  `);
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')").run();
   db.prepare("INSERT OR IGNORE INTO index_paths (path) VALUES (?)").run(indexPath);
@@ -210,6 +222,7 @@ export type FileRow = {
   thumb_hash: string;
   content_hash: string | null;
   deleted_at?: string | null;
+  missing_at?: string | null;
 };
 
 type FolderRow = {
@@ -244,6 +257,7 @@ function toFile(row: FileRow, tags: TagRecord[] = []): FileRecord {
     contentHash: row.content_hash ?? null,
     tags,
     deletedAt: row.deleted_at ?? null,
+    missingAt: row.missing_at ?? null,
   };
 }
 
@@ -321,6 +335,29 @@ export function getFileById(db: Database.Database, fileId: number): FileRecord |
 export function getFileByPath(db: Database.Database, filePath: string): FileRecord | null {
   const row = db.prepare("SELECT * FROM files WHERE path = ?").get(filePath) as FileRow | undefined;
   return row ? attachTags(db, [row])[0] : null;
+}
+
+export function findMoveCandidateByContentHash(
+  db: Database.Database,
+  contentHash: string,
+): FileRecord | null {
+  if (!contentHash) {
+    return null;
+  }
+  const row = db
+    .prepare(
+      `SELECT *
+       FROM files
+       WHERE content_hash = ?
+         AND deleted_at IS NULL
+       ORDER BY missing_at IS NULL DESC, imported_at DESC, id ASC
+       LIMIT 8`,
+    )
+    .all(contentHash) as FileRow[];
+  const missing = row.find((item) => item.missing_at);
+  const active = row.find((item) => !item.missing_at && !fssync.existsSync(item.path));
+  const candidate = missing ?? active;
+  return candidate ? attachTags(db, [candidate])[0] : null;
 }
 
 export function getIndexPaths(db: Database.Database): string[] {
@@ -423,10 +460,16 @@ export function getAllFiles(db: Database.Database, args: Record<string, unknown>
     args.sortDirection as string | undefined,
   );
   const rows = db
-    .prepare(`SELECT * FROM files WHERE deleted_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`)
+    .prepare(
+      `SELECT * FROM files WHERE deleted_at IS NULL AND missing_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
+    )
     .all(pageSize, offset) as FileRow[];
   const total = (
-    db.prepare("SELECT COUNT(*) AS count FROM files WHERE deleted_at IS NULL").get() as {
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM files WHERE deleted_at IS NULL AND missing_at IS NULL",
+      )
+      .get() as {
       count: number;
     }
   ).count;
@@ -446,12 +489,14 @@ export function searchFiles(db: Database.Database, args: Record<string, unknown>
   const pattern = `%${query}%`;
   const rows = db
     .prepare(
-      `SELECT * FROM files WHERE name LIKE ? AND deleted_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
+      `SELECT * FROM files WHERE name LIKE ? AND deleted_at IS NULL AND missing_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
     )
     .all(pattern, pageSize, offset) as FileRow[];
   const total = (
     db
-      .prepare("SELECT COUNT(*) AS count FROM files WHERE name LIKE ? AND deleted_at IS NULL")
+      .prepare(
+        "SELECT COUNT(*) AS count FROM files WHERE name LIKE ? AND deleted_at IS NULL AND missing_at IS NULL",
+      )
       .get(pattern) as { count: number }
   ).count;
   return paginated(db, rows, total, page, pageSize);
@@ -475,12 +520,14 @@ export function getFilesInFolder(
   const countArgs = folderId == null ? [] : [folderId];
   const rows = db
     .prepare(
-      `SELECT * FROM files WHERE ${where} AND deleted_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
+      `SELECT * FROM files WHERE ${where} AND deleted_at IS NULL AND missing_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
     )
     .all(...queryArgs) as FileRow[];
   const total = (
     db
-      .prepare(`SELECT COUNT(*) AS count FROM files WHERE ${where} AND deleted_at IS NULL`)
+      .prepare(
+        `SELECT COUNT(*) AS count FROM files WHERE ${where} AND deleted_at IS NULL AND missing_at IS NULL`,
+      )
       .get(...countArgs) as { count: number }
   ).count;
   return paginated(db, rows, total, page, pageSize);
@@ -515,7 +562,7 @@ const FILE_TYPE_EXTENSIONS: Record<string, string[]> = {
 };
 
 function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): string {
-  const conditions = ["f.deleted_at IS NULL"];
+  const conditions = ["f.deleted_at IS NULL AND f.missing_at IS NULL"];
   const query = String(filter.query ?? "").trim();
   if (query) {
     conditions.push("f.name LIKE ?");
@@ -785,7 +832,7 @@ export function getVisualIndexCandidate(
 ): VisualIndexCandidate | null {
   const row = db
     .prepare(
-      "SELECT id, path, name, ext, size, fs_modified_at, content_hash FROM files WHERE id = ? AND deleted_at IS NULL",
+      "SELECT id, path, name, ext, size, fs_modified_at, content_hash FROM files WHERE id = ? AND deleted_at IS NULL AND missing_at IS NULL",
     )
     .get(fileId) as
     | {
@@ -817,7 +864,7 @@ export function getVisualIndexCandidate(
 export function getVisualIndexCandidates(db: Database.Database): VisualIndexCandidate[] {
   const rows = db
     .prepare(
-      "SELECT id, path, name, ext, size, fs_modified_at, content_hash FROM files WHERE deleted_at IS NULL ORDER BY imported_at DESC, id ASC",
+      "SELECT id, path, name, ext, size, fs_modified_at, content_hash FROM files WHERE deleted_at IS NULL AND missing_at IS NULL ORDER BY imported_at DESC, id ASC",
     )
     .all() as Array<{
     id: number;
@@ -855,7 +902,7 @@ export function getUnindexedVisualIndexCandidates(
      LEFT JOIN file_visual_embeddings fve
        ON fve.file_id = f.id
       AND fve.model_id = ?
-     WHERE f.deleted_at IS NULL
+     WHERE f.deleted_at IS NULL AND f.missing_at IS NULL
        AND (
          fve.file_id IS NULL
          OR fve.status != 'ready'
@@ -899,7 +946,7 @@ export function getVisualIndexCounts(db: Database.Database, modelId: string): Vi
      LEFT JOIN file_visual_embeddings fve
        ON fve.file_id = f.id
       AND fve.model_id = ?
-     WHERE f.deleted_at IS NULL`,
+     WHERE f.deleted_at IS NULL AND f.missing_at IS NULL`,
     )
     .all(modelId) as Array<{
     ext: string;
@@ -999,7 +1046,7 @@ export function searchFilesByVisualEmbedding(
      WHERE fve.model_id = ?
        AND fve.status = 'ready'
        AND fve.embedding IS NOT NULL
-       AND f.deleted_at IS NULL
+       AND f.deleted_at IS NULL AND f.missing_at IS NULL
        AND ${currentVisualSourceMatchSql()}
        AND fve.file_id IN (${placeholders})`,
     )
@@ -1126,7 +1173,8 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
       thumb_hash = excluded.thumb_hash,
       content_hash = excluded.content_hash,
       fs_modified_at = excluded.fs_modified_at,
-      deleted_at = NULL`,
+      deleted_at = NULL,
+      missing_at = NULL`,
   ).run(
     input.path,
     input.name,
@@ -1268,7 +1316,7 @@ export function getFolderTree(db: Database.Database): FolderTreeNode[] {
     (
       db
         .prepare(
-          "SELECT folder_id, COUNT(*) AS count FROM files WHERE folder_id IS NOT NULL AND deleted_at IS NULL GROUP BY folder_id",
+          "SELECT folder_id, COUNT(*) AS count FROM files WHERE folder_id IS NOT NULL AND deleted_at IS NULL AND missing_at IS NULL GROUP BY folder_id",
         )
         .all() as Array<{ folder_id: number; count: number }>
     ).map((row) => [row.folder_id, row.count]),
@@ -1393,7 +1441,7 @@ export function getAllTags(db: Database.Database): TagRecord[] {
         `SELECT t.id, t.name, t.color, COUNT(f.id) AS count, t.parent_id, t.sort_order
      FROM tags t
      LEFT JOIN file_tags ft ON t.id = ft.tag_id
-     LEFT JOIN files f ON f.id = ft.file_id AND f.deleted_at IS NULL
+     LEFT JOIN files f ON f.id = ft.file_id AND f.deleted_at IS NULL AND f.missing_at IS NULL
      GROUP BY t.id
      ORDER BY COALESCE(t.parent_id, t.id), t.sort_order ASC, t.name ASC`,
       )
@@ -1513,8 +1561,15 @@ export function updateFilePathAndFolder(
   folderId: number | null,
 ): void {
   db.prepare(
-    "UPDATE files SET path = ?, folder_id = ?, modified_at = ?, fs_modified_at = ? WHERE id = ?",
-  ).run(filePath, folderId, currentTimestamp(), currentTimestamp(), fileId);
+    "UPDATE files SET path = ?, name = ?, folder_id = ?, modified_at = ?, fs_modified_at = ? WHERE id = ?",
+  ).run(
+    filePath,
+    path.basename(filePath),
+    folderId,
+    currentTimestamp(),
+    currentTimestamp(),
+    fileId,
+  );
 }
 
 export function updateFileContentHash(
@@ -1529,12 +1584,28 @@ export function deleteFileByPath(db: Database.Database, filePath: string): void 
   db.prepare("DELETE FROM files WHERE path = ?").run(filePath);
 }
 
+export function markFileMissingByPath(db: Database.Database, filePath: string): boolean {
+  const result = db
+    .prepare(
+      "UPDATE files SET missing_at = ? WHERE path = ? AND deleted_at IS NULL AND missing_at IS NULL",
+    )
+    .run(currentTimestamp(), filePath);
+  return result.changes > 0;
+}
+
+export function markFilePresent(db: Database.Database, fileId: number): void {
+  db.prepare("UPDATE files SET deleted_at = NULL, missing_at = NULL WHERE id = ?").run(fileId);
+}
+
 export function softDeleteFile(db: Database.Database, fileId: number): void {
-  db.prepare("UPDATE files SET deleted_at = ? WHERE id = ?").run(currentTimestamp(), fileId);
+  db.prepare("UPDATE files SET deleted_at = ?, missing_at = NULL WHERE id = ?").run(
+    currentTimestamp(),
+    fileId,
+  );
 }
 
 export function restoreFileRecord(db: Database.Database, fileId: number): void {
-  db.prepare("UPDATE files SET deleted_at = NULL WHERE id = ?").run(fileId);
+  db.prepare("UPDATE files SET deleted_at = NULL, missing_at = NULL WHERE id = ?").run(fileId);
 }
 
 export function permanentDeleteFileRecord(db: Database.Database, fileId: number): void {
@@ -1613,7 +1684,8 @@ export function updateFileBasicInfo(db: Database.Database, input: UpsertFileInpu
   db.prepare(
     `UPDATE files
      SET name = ?, ext = ?, size = ?, width = ?, height = ?, folder_id = ?,
-         created_at = ?, modified_at = ?, fs_modified_at = ?, thumb_hash = ?, content_hash = ?
+         created_at = ?, modified_at = ?, fs_modified_at = ?, thumb_hash = ?, content_hash = ?,
+         deleted_at = NULL, missing_at = NULL
      WHERE path = ?`,
   ).run(
     input.name,

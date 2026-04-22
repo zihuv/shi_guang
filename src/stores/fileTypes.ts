@@ -24,6 +24,7 @@ export interface FileItem {
   thumbHash: string;
   tags: Tag[];
   deletedAt?: string | null;
+  missingAt?: string | null;
 }
 
 export interface PaginatedFilesResponse {

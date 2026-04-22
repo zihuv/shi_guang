@@ -6,7 +6,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openDatabase } from "./database";
-import { registerIpcHandlers, startCollectorServer } from "./commands";
+import {
+  registerIpcHandlers,
+  requestLibrarySyncScan,
+  startCollectorServer,
+  startLibrarySyncService,
+} from "./commands";
 import { getDbPath, isPathAllowedForRead, resolveInitialIndexPath } from "./storage";
 import type { AppState } from "./types";
 
@@ -191,6 +196,11 @@ async function createMainWindow(): Promise<void> {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  mainWindow.on("focus", () => {
+    if (appState) {
+      requestLibrarySyncScan(appState, getMainWindow, "focus");
+    }
+  });
 }
 
 async function bootstrap(): Promise<void> {
@@ -211,6 +221,7 @@ async function bootstrap(): Promise<void> {
   registerFileProtocol();
   registerIpcHandlers(appState, getMainWindow, assetToUrl);
   await createMainWindow();
+  startLibrarySyncService(appState, getMainWindow);
   await startCollectorServer(appState, getMainWindow).catch((error) => {
     log.warn("Failed to start collector server", error);
   });

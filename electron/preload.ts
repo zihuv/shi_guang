@@ -4,6 +4,8 @@ const eventChannels = new Set([
   "file-imported",
   "file-import-error",
   "file-updated",
+  "library-sync-updated",
+  "library-sync-status",
   "import-task-updated",
   "ai-metadata-task-updated",
   "thumbnail-build-request",
