@@ -8,8 +8,7 @@ export type FilterFieldId =
   | "keyword"
   | "dateRange"
   | "sizeRange"
-  | "minRating"
-  | "favoritesOnly";
+  | "minRating";
 
 export interface FilterFieldDefinition {
   id: FilterFieldId;
@@ -53,11 +52,6 @@ export const FILTER_FIELD_DEFINITIONS: FilterFieldDefinition[] = [
     label: "最低评分",
     isActive: (criteria) => criteria.minRating > 0,
   },
-  {
-    id: "favoritesOnly",
-    label: "仅收藏",
-    isActive: (criteria) => criteria.favoritesOnly,
-  },
 ];
 
 export function getActiveFilterCount(criteria: FilterCriteria) {
@@ -94,7 +88,6 @@ export function buildFileFilterPayload(args: {
     size_max: criteria.sizeRange.max ?? null,
     tag_ids: criteria.tagIds.length ? criteria.tagIds : null,
     min_rating: criteria.minRating > 0 ? criteria.minRating : null,
-    favorites_only: criteria.favoritesOnly || null,
     dominant_color: criteria.dominantColor || null,
     sort_by: criteria.sortBy,
     sort_direction: criteria.sortDirection,

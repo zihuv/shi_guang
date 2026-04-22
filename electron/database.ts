@@ -627,9 +627,6 @@ function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): 
     conditions.push("f.rating >= ?");
     params.push(filter.min_rating);
   }
-  if (filter.favorites_only === true) {
-    conditions.push("f.rating > 0");
-  }
 
   const tagIds = Array.isArray(filter.tag_ids)
     ? filter.tag_ids.filter((value) => typeof value === "number")

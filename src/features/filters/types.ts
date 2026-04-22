@@ -9,7 +9,6 @@ export interface FilterCriteria {
   sizeRange: { min: number | null; max: number | null };
   tagIds: number[];
   minRating: number;
-  favoritesOnly: boolean;
   dominantColor: string | null;
   keyword: string;
   folderId: number | null;
@@ -27,7 +26,6 @@ export const initialFilterCriteria: FilterCriteria = {
   sizeRange: { min: null, max: null },
   tagIds: [],
   minRating: 0,
-  favoritesOnly: false,
   dominantColor: null,
   keyword: "",
   folderId: null,

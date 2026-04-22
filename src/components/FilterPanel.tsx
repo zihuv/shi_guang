@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, RotateCcw, SlidersHorizontal, Star, X } from "lucide-react";
+import {
+  Bookmark,
+  CalendarRange,
+  ChevronDown,
+  FileCode2,
+  Palette,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  Star,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
-import { Input } from "@/components/ui/Input";
+import { Input as BaseInput } from "@/components/ui/Input";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useTagStore } from "@/stores/tagStore";
@@ -38,11 +50,11 @@ const RATING_OPTIONS = [
   { label: "5 星", value: "5" },
 ];
 
-const TRIGGER_CLASS_NAME =
-  "h-8 rounded-full border-gray-200 bg-white px-3 text-[12px] text-gray-700 shadow-none hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg/90 dark:text-gray-200";
+const SELECT_TRIGGER_CLASS_NAME =
+  "!h-auto !min-h-0 !rounded-none !border-transparent !bg-transparent !px-0 !py-0 !text-[13px] !font-medium !text-gray-600 !shadow-none hover:!border-transparent hover:!bg-transparent dark:!text-gray-300";
 
-const INPUT_CLASS_NAME =
-  "h-8 rounded-full border-gray-200 bg-white px-3 text-[12px] shadow-none dark:border-dark-border dark:bg-dark-bg/90";
+const INLINE_INPUT_CLASS_NAME =
+  "h-8 rounded-full border-transparent bg-transparent px-0 text-[12px] text-gray-700 shadow-none placeholder:text-gray-400 focus:border-transparent focus:bg-transparent focus:ring-0 dark:text-gray-200";
 
 function getColorDisplay(color: string | null) {
   if (!color) return "颜色";
@@ -96,7 +108,6 @@ export default function FilterPanel() {
     setDateRange,
     setSizeRange,
     setMinRating,
-    setFavoritesOnly,
   } = useFilterStore();
   const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery);
   const resetPage = useLibraryQueryStore((state) => state.resetPage);
@@ -117,6 +128,7 @@ export default function FilterPanel() {
     criteria.sizeRange.min !== null || criteria.sizeRange.max !== null,
   ].filter(Boolean).length;
   const [showAdvanced, setShowAdvanced] = useState(hasAdvancedFilters);
+  const [showColorTray, setShowColorTray] = useState(Boolean(criteria.dominantColor));
 
   const criteriaKey = useMemo(
     () =>
@@ -128,7 +140,6 @@ export default function FilterPanel() {
         dateRange: criteria.dateRange,
         sizeRange: criteria.sizeRange,
         minRating: criteria.minRating,
-        favoritesOnly: criteria.favoritesOnly,
       }),
     [criteria],
   );
@@ -149,6 +160,12 @@ export default function FilterPanel() {
     }
   }, [hasAdvancedFilters]);
 
+  useEffect(() => {
+    if (criteria.dominantColor) {
+      setShowColorTray(true);
+    }
+  }, [criteria.dominantColor]);
+
   const tagDisplay =
     criteria.tagIds.length === 0
       ? "全部标签"
@@ -157,181 +174,126 @@ export default function FilterPanel() {
         : `${criteria.tagIds.length} 个标签`;
 
   return (
-    <div className="flex w-full flex-col gap-3 text-gray-900 dark:text-gray-100">
+    <div className="flex w-full flex-col gap-3 pb-1 text-gray-900 dark:text-gray-100">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {activeCount > 0 ? (
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">已筛选</span>
-
-            {criteria.fileType !== "all" && (
-              <FilterChip onRemove={() => setFileType("all")}>
-                {getFileTypeDisplay(criteria.fileType)}
-              </FilterChip>
-            )}
-
-            {criteria.tagIds.length > 0 && (
-              <FilterChip onRemove={() => setTagIds([])}>{tagDisplay}</FilterChip>
-            )}
-
-            {criteria.dominantColor && (
-              <FilterChip onRemove={() => setDominantColor(null)}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
+          <ToolbarButton
+            icon={Palette}
+            label="颜色"
+            active={showColorTray || Boolean(criteria.dominantColor)}
+            trailing={
+              criteria.dominantColor ? (
                 <span
-                  className="h-2.5 w-2.5 rounded-full border border-gray-300"
+                  className="h-2.5 w-2.5 rounded-full border border-black/10"
                   style={{ backgroundColor: criteria.dominantColor }}
                 />
-                {getColorDisplay(criteria.dominantColor)}
-              </FilterChip>
-            )}
+              ) : null
+            }
+            onClick={() => setShowColorTray((current) => !current)}
+          />
 
-            {criteria.keyword.trim() && (
-              <FilterChip onRemove={() => setKeyword("")}>{criteria.keyword}</FilterChip>
-            )}
+          <ToolbarSelectField icon={Bookmark} label="标签" active={criteria.tagIds.length > 0}>
+            <Select
+              value={criteria.tagIds.length === 1 ? criteria.tagIds[0].toString() : "all"}
+              displayValue={criteria.tagIds.length > 0 ? tagDisplay : "全部"}
+              onValueChange={(value) => {
+                if (value === "all") {
+                  setTagIds([]);
+                  return;
+                }
+                toggleTag(Number(value));
+              }}
+              className="min-w-[72px] max-w-[180px]"
+              triggerClassName={SELECT_TRIGGER_CLASS_NAME}
+            >
+              <SelectContent>
+                <SelectItem value="all">全部标签</SelectItem>
+                {flatTags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: tag.color }}
+                      />
+                      <span>
+                        {"　".repeat(tag.depth)}
+                        {tag.name}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ToolbarSelectField>
 
-            {(criteria.dateRange.start || criteria.dateRange.end) && (
-              <FilterChip onRemove={() => setDateRange({ start: null, end: null })}>
-                {formatDateBadge(criteria.dateRange.start, criteria.dateRange.end)}
-              </FilterChip>
-            )}
+          <ToolbarSelectField icon={FileCode2} label="格式" active={criteria.fileType !== "all"}>
+            <Select
+              value={criteria.fileType}
+              displayValue={
+                criteria.fileType !== "all" ? getFileTypeDisplay(criteria.fileType) : "全部"
+              }
+              onValueChange={(value) =>
+                setFileType(value as "all" | "image" | "video" | "document")
+              }
+              className="min-w-[56px]"
+              triggerClassName={SELECT_TRIGGER_CLASS_NAME}
+            >
+              <SelectContent>
+                {FILE_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ToolbarSelectField>
 
-            {(criteria.sizeRange.min !== null || criteria.sizeRange.max !== null) && (
-              <FilterChip onRemove={() => setSizeRange({ min: null, max: null })}>
-                {formatSizeBadge(criteria.sizeRange.min, criteria.sizeRange.max)}
-              </FilterChip>
-            )}
+          <ToolbarSelectField icon={Star} label="评分" active={criteria.minRating > 0}>
+            <Select
+              value={String(criteria.minRating)}
+              displayValue={criteria.minRating > 0 ? getRatingDisplay(criteria.minRating) : "全部"}
+              onValueChange={(value) => setMinRating(Number(value))}
+              className="min-w-[56px]"
+              triggerClassName={SELECT_TRIGGER_CLASS_NAME}
+            >
+              <SelectContent>
+                {RATING_OPTIONS.map((rating) => (
+                  <SelectItem key={rating.value} value={rating.value}>
+                    {rating.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ToolbarSelectField>
 
-            {criteria.minRating > 0 && (
-              <FilterChip onRemove={() => setMinRating(0)}>
-                {getRatingDisplay(criteria.minRating)}
-              </FilterChip>
-            )}
-
-            {criteria.favoritesOnly && (
-              <FilterChip onRemove={() => setFavoritesOnly(false)}>仅收藏</FilterChip>
-            )}
-          </div>
-        ) : (
-          <p className="text-[12px] text-gray-400 dark:text-gray-500">
-            按类型、标签、颜色快速缩小范围。
-          </p>
-        )}
+          <ToolbarButton
+            icon={SlidersHorizontal}
+            label="更多"
+            active={showAdvanced || hasAdvancedFilters}
+            valueLabel={advancedFilterCount > 0 ? `${advancedFilterCount}` : null}
+            trailing={
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-180")}
+              />
+            }
+            onClick={() => setShowAdvanced((current) => !current)}
+            ariaExpanded={showAdvanced}
+          />
+        </div>
 
         <button
           type="button"
           onClick={clearFilters}
           disabled={activeCount === 0}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-transparent px-2.5 text-[12px] font-medium text-gray-500 transition-colors hover:border-gray-200 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-default disabled:opacity-40 dark:hover:border-dark-border dark:hover:bg-dark-border dark:hover:text-gray-200"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12px] text-gray-500 transition-colors hover:bg-gray-100/80 hover:text-gray-800 disabled:cursor-default disabled:opacity-35 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100"
         >
           <RotateCcw className="h-3.5 w-3.5" />
           清空
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <FilterInlineGroup label="类型">
-          <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-gray-200 bg-gray-50/85 p-1 dark:border-dark-border dark:bg-dark-bg/85">
-            {FILE_TYPES.map((type) => (
-              <SegmentButton
-                key={type.value}
-                active={criteria.fileType === type.value}
-                onClick={() => setFileType(type.value as "all" | "image" | "video" | "document")}
-              >
-                {type.value === "all" ? "全部" : type.label}
-              </SegmentButton>
-            ))}
-          </div>
-        </FilterInlineGroup>
-
-        <FilterInlineGroup label="标签">
-          <Select
-            value={criteria.tagIds.length === 1 ? criteria.tagIds[0].toString() : "all"}
-            displayValue={tagDisplay}
-            onValueChange={(value) => {
-              if (value === "all") {
-                setTagIds([]);
-                return;
-              }
-              toggleTag(Number(value));
-            }}
-            className="w-[152px] max-w-full"
-            triggerClassName={TRIGGER_CLASS_NAME}
-          >
-            <SelectContent>
-              <SelectItem value="all">全部标签</SelectItem>
-              {flatTags.map((tag) => (
-                <SelectItem key={tag.id} value={tag.id.toString()}>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                    <span>
-                      {"　".repeat(tag.depth)}
-                      {tag.name}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterInlineGroup>
-
-        <FilterInlineGroup label="评分">
-          <Select
-            value={String(criteria.minRating)}
-            displayValue={getRatingDisplay(criteria.minRating)}
-            onValueChange={(value) => setMinRating(Number(value))}
-            className="w-[128px] max-w-full"
-            triggerClassName={TRIGGER_CLASS_NAME}
-          >
-            <SelectContent>
-              {RATING_OPTIONS.map((rating) => (
-                <SelectItem key={rating.value} value={rating.value}>
-                  {rating.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterInlineGroup>
-
-        <FilterInlineGroup label="收藏">
-          <button
-            type="button"
-            onClick={() => setFavoritesOnly(!criteria.favoritesOnly)}
-            className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium transition-colors",
-              criteria.favoritesOnly
-                ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
-                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg/90 dark:text-gray-300",
-            )}
-          >
-            <Star className="h-3.5 w-3.5" />
-            仅收藏
-          </button>
-        </FilterInlineGroup>
-
-        <button
-          type="button"
-          onClick={() => setShowAdvanced((current) => !current)}
-          className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium transition-colors",
-            showAdvanced || hasAdvancedFilters
-              ? "border-gray-200 bg-gray-100 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
-              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-dark-border dark:bg-dark-bg/90 dark:text-gray-300",
-          )}
-          aria-expanded={showAdvanced}
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          <span>更多筛选</span>
-          {advancedFilterCount > 0 && (
-            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[10px] font-semibold leading-none text-gray-700 dark:bg-black/20 dark:text-gray-100">
-              {advancedFilterCount}
-            </span>
-          )}
-          <ChevronDown
-            className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-180")}
-          />
-        </button>
-      </div>
-
-      <FilterInlineGroup label="颜色" className="items-start">
-        <div className="flex flex-wrap items-center gap-1.5">
+      {showColorTray && (
+        <div className="flex flex-wrap items-center gap-1.5 pl-1">
           <ColorButton
             active={criteria.dominantColor === null}
             label="全部颜色"
@@ -349,125 +311,119 @@ export default function FilterPanel() {
             />
           ))}
         </div>
-      </FilterInlineGroup>
+      )}
 
       {showAdvanced && (
-        <div className="grid gap-3 rounded-2xl border border-gray-200/80 bg-gray-50/80 p-3 dark:border-dark-border dark:bg-dark-bg/70 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <section>
-            <FilterSectionLabel>备注 / 来源</FilterSectionLabel>
+        <div className="flex flex-wrap items-center gap-2 pl-1">
+          <InlineField icon={Search} label="关键词">
             <Input
               value={criteria.keyword}
               onChange={(event) => setKeyword(event.target.value)}
-              placeholder="关键词"
-              className={INPUT_CLASS_NAME}
+              placeholder="备注 / 来源"
+              className="min-w-[160px] sm:min-w-[180px]"
             />
-          </section>
+          </InlineField>
 
-          <section>
-            <FilterSectionLabel>导入时间</FilterSectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                type="date"
-                value={criteria.dateRange.start ?? ""}
-                onChange={(event) =>
-                  setDateRange({ ...criteria.dateRange, start: event.target.value || null })
-                }
-                className={INPUT_CLASS_NAME}
-              />
-              <Input
-                type="date"
-                value={criteria.dateRange.end ?? ""}
-                onChange={(event) =>
-                  setDateRange({ ...criteria.dateRange, end: event.target.value || null })
-                }
-                className={INPUT_CLASS_NAME}
-              />
-            </div>
-          </section>
+          <InlineField icon={CalendarRange} label="时间">
+            <Input
+              type="date"
+              value={criteria.dateRange.start ?? ""}
+              onChange={(event) =>
+                setDateRange({ ...criteria.dateRange, start: event.target.value || null })
+              }
+              className="min-w-[132px]"
+            />
+            <span className="text-[12px] text-gray-400">至</span>
+            <Input
+              type="date"
+              value={criteria.dateRange.end ?? ""}
+              onChange={(event) =>
+                setDateRange({ ...criteria.dateRange, end: event.target.value || null })
+              }
+              className="min-w-[132px]"
+            />
+          </InlineField>
 
-          <section>
-            <FilterSectionLabel>文件大小 / MB</FilterSectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                type="number"
-                min={0}
-                value={criteria.sizeRange.min ?? ""}
-                onChange={(event) =>
-                  setSizeRange({
-                    ...criteria.sizeRange,
-                    min: event.target.value ? Number(event.target.value) : null,
-                  })
-                }
-                placeholder="最小"
-                className={INPUT_CLASS_NAME}
-              />
-              <Input
-                type="number"
-                min={0}
-                value={criteria.sizeRange.max ?? ""}
-                onChange={(event) =>
-                  setSizeRange({
-                    ...criteria.sizeRange,
-                    max: event.target.value ? Number(event.target.value) : null,
-                  })
-                }
-                placeholder="最大"
-                className={INPUT_CLASS_NAME}
-              />
-            </div>
-          </section>
+          <InlineField icon={FileCode2} label="大小">
+            <Input
+              type="number"
+              min={0}
+              value={criteria.sizeRange.min ?? ""}
+              onChange={(event) =>
+                setSizeRange({
+                  ...criteria.sizeRange,
+                  min: event.target.value ? Number(event.target.value) : null,
+                })
+              }
+              placeholder="最小 MB"
+              className="w-[88px]"
+            />
+            <span className="text-[12px] text-gray-400">-</span>
+            <Input
+              type="number"
+              min={0}
+              value={criteria.sizeRange.max ?? ""}
+              onChange={(event) =>
+                setSizeRange({
+                  ...criteria.sizeRange,
+                  max: event.target.value ? Number(event.target.value) : null,
+                })
+              }
+              placeholder="最大 MB"
+              className="w-[88px]"
+            />
+          </InlineField>
         </div>
       )}
+
+      {activeCount > 0 ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pl-1 text-[12px] text-gray-500 dark:text-gray-400">
+          <span className="text-gray-400 dark:text-gray-500">已选</span>
+
+          {criteria.fileType !== "all" && (
+            <FilterChip onRemove={() => setFileType("all")}>
+              {getFileTypeDisplay(criteria.fileType)}
+            </FilterChip>
+          )}
+
+          {criteria.tagIds.length > 0 && (
+            <FilterChip onRemove={() => setTagIds([])}>{tagDisplay}</FilterChip>
+          )}
+
+          {criteria.dominantColor && (
+            <FilterChip onRemove={() => setDominantColor(null)}>
+              <span
+                className="h-2.5 w-2.5 rounded-full border border-black/10"
+                style={{ backgroundColor: criteria.dominantColor }}
+              />
+              {getColorDisplay(criteria.dominantColor)}
+            </FilterChip>
+          )}
+
+          {criteria.keyword.trim() && (
+            <FilterChip onRemove={() => setKeyword("")}>{criteria.keyword}</FilterChip>
+          )}
+
+          {(criteria.dateRange.start || criteria.dateRange.end) && (
+            <FilterChip onRemove={() => setDateRange({ start: null, end: null })}>
+              {formatDateBadge(criteria.dateRange.start, criteria.dateRange.end)}
+            </FilterChip>
+          )}
+
+          {(criteria.sizeRange.min !== null || criteria.sizeRange.max !== null) && (
+            <FilterChip onRemove={() => setSizeRange({ min: null, max: null })}>
+              {formatSizeBadge(criteria.sizeRange.min, criteria.sizeRange.max)}
+            </FilterChip>
+          )}
+
+          {criteria.minRating > 0 && (
+            <FilterChip onRemove={() => setMinRating(0)}>
+              {getRatingDisplay(criteria.minRating)}
+            </FilterChip>
+          )}
+        </div>
+      ) : null}
     </div>
-  );
-}
-
-function FilterInlineGroup({
-  children,
-  className,
-  label,
-}: {
-  children: ReactNode;
-  className?: string;
-  label: string;
-}) {
-  return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <span className="text-[12px] font-medium text-gray-500 dark:text-gray-400">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function FilterSectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="mb-2 text-[11px] font-medium tracking-[0.08em] text-gray-400">{children}</div>
-  );
-}
-
-function SegmentButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex h-6 items-center justify-center rounded-full px-2.5 text-[11px] font-medium transition-colors",
-        active
-          ? "bg-white text-gray-900 shadow-sm dark:bg-dark-surface dark:text-gray-100"
-          : "text-gray-500 hover:bg-white/80 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-dark-surface dark:hover:text-gray-200",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -494,16 +450,19 @@ function ColorButton({
       className={cn(
         "flex items-center justify-center rounded-full border transition-all",
         active
-          ? "border-primary-300 ring-1 ring-primary-300 dark:border-primary-700 dark:ring-primary-700"
-          : "border-gray-200 hover:border-gray-300 dark:border-dark-border",
+          ? "border-gray-900 bg-gray-900 text-white dark:border-gray-200 dark:bg-gray-100 dark:text-gray-900"
+          : "border-transparent hover:bg-gray-100/80 dark:hover:bg-white/[0.06]",
         color
           ? "h-7 w-7 bg-transparent p-1"
-          : "h-7 px-2.5 text-[11px] font-medium text-gray-600 dark:bg-dark-bg/90 dark:text-gray-300",
+          : "h-7 px-2.5 text-[11px] font-medium text-gray-600 dark:text-gray-300",
       )}
     >
       {color ? (
         <span
-          className="h-full w-full rounded-full border border-black/10"
+          className={cn(
+            "h-full w-full rounded-full border border-black/10",
+            active && "ring-1 ring-white/70 dark:ring-black/20",
+          )}
           style={{ backgroundColor: color }}
         />
       ) : (
@@ -518,10 +477,111 @@ function FilterChip({ children, onRemove }: { children: ReactNode; onRemove: () 
     <button
       type="button"
       onClick={onRemove}
-      className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-800 dark:border-dark-border dark:bg-dark-bg/90 dark:text-gray-300 dark:hover:text-gray-100"
+      className="inline-flex items-center gap-1 text-[12px] transition-colors hover:text-gray-900 dark:hover:text-gray-100"
     >
       {children}
       <X className="h-3 w-3" />
     </button>
   );
+}
+
+function ToolbarButton({
+  active,
+  ariaExpanded,
+  icon: Icon,
+  label,
+  onClick,
+  trailing,
+  valueLabel,
+}: {
+  active: boolean;
+  ariaExpanded?: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  trailing?: ReactNode;
+  valueLabel?: string | null;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-expanded={ariaExpanded}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors",
+        active
+          ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
+          : "text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-gray-100",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span>{label}</span>
+      {valueLabel ? (
+        <span className="max-w-[120px] truncate text-gray-400">{valueLabel}</span>
+      ) : null}
+      {trailing}
+    </button>
+  );
+}
+
+function ToolbarSelectField({
+  active,
+  children,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  children: ReactNode;
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors",
+        active
+          ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
+          : "text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-gray-100",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function InlineField({
+  children,
+  icon: Icon,
+  label,
+}: {
+  children: ReactNode;
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <div className="inline-flex min-h-8 items-center gap-2 rounded-full bg-gray-100/75 px-3 py-1 dark:bg-white/[0.05]">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+      <span className="text-[12px] text-gray-500 dark:text-gray-400">{label}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        {Array.isArray(children)
+          ? children.map((child, index) =>
+              typeof child === "string" ? (
+                <span key={index} className="text-[12px] text-gray-400">
+                  {child}
+                </span>
+              ) : (
+                child
+              ),
+            )
+          : children}
+      </div>
+    </div>
+  );
+}
+
+function Input(props: React.ComponentProps<typeof BaseInput>) {
+  return <BaseInput {...props} className={cn(INLINE_INPUT_CLASS_NAME, props.className)} />;
 }

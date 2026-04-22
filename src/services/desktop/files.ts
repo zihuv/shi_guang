@@ -22,7 +22,6 @@ export interface FileFilterPayload {
   size_max: number | null;
   tag_ids: number[] | null;
   min_rating: number | null;
-  favorites_only: boolean | null;
   dominant_color: string | null;
   sort_by: string | null;
   sort_direction: string | null;

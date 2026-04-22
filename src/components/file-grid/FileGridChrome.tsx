@@ -37,14 +37,14 @@ const INFO_FIELD_OPTIONS: Array<{ value: LibraryVisibleField; label: string }> =
 ];
 
 const TOOLBAR_BUTTON_CLASS_NAME =
-  "relative inline-flex size-8 items-center justify-center rounded-[10px] border text-gray-500 transition-colors";
+  "relative inline-flex size-8 items-center justify-center rounded-lg text-gray-500 transition-colors";
 
 function getToolbarButtonClassName(isActive: boolean) {
   return cn(
     TOOLBAR_BUTTON_CLASS_NAME,
     isActive
-      ? "border-gray-200 bg-gray-100 text-gray-800 dark:border-gray-600 dark:bg-dark-border dark:text-gray-100"
-      : "border-transparent bg-transparent hover:border-gray-200/80 hover:bg-gray-100/80 hover:text-gray-700 dark:hover:border-dark-border dark:hover:bg-dark-border dark:hover:text-gray-200",
+      ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
+      : "bg-transparent hover:bg-gray-100/80 hover:text-gray-700 dark:hover:bg-white/[0.06] dark:hover:text-gray-200",
   );
 }
 
@@ -122,10 +122,10 @@ export function FileGridToolbar({
   };
 
   return (
-    <div className="relative z-20 bg-white/38 backdrop-blur-xl shadow-[inset_0_-1px_0_rgba(15,23,42,0.05)] dark:bg-white/[0.02] dark:shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
-      <div className="flex h-11 items-center justify-between gap-3 px-4">
+    <div className="relative z-20 bg-white/30 backdrop-blur-xl dark:bg-white/[0.02]">
+      <div className="flex h-10 items-center justify-between gap-3 px-4">
         <div className="min-w-0">
-          <span className="truncate text-[13px] text-gray-500 dark:text-gray-400">
+          <span className="truncate text-[12px] text-gray-500 dark:text-gray-400">
             {filteredFileCount} 个文件
             {paginationLabel ? ` ${paginationLabel}` : ""}
             {activeFilterCount > 0 ? ` · 已筛选 ${activeFilterCount} 项` : ""}
@@ -147,7 +147,7 @@ export function FileGridToolbar({
           >
             <Filter className="h-3.5 w-3.5" />
             {activeFilterCount > 0 && (
-              <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[10px] font-semibold leading-none text-gray-700 shadow-sm dark:bg-black/20 dark:text-gray-100">
+              <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-semibold leading-none text-white dark:bg-gray-100 dark:text-gray-900">
                 {activeFilterCount}
               </span>
             )}
@@ -181,7 +181,7 @@ export function FileGridToolbar({
             {openToolbarMenu === "sort" && !sortLocked && (
               <div
                 ref={sortMenuRef}
-                className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-black/5 bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
               >
                 <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">排序方式</div>
                 {SORT_DIRECTION_OPTIONS.map((option) => {
@@ -211,10 +211,9 @@ export function FileGridToolbar({
                     </button>
                   );
                 })}
-
-                <div className="my-1.5 h-px bg-gray-100 dark:bg-dark-border" />
-
-                <div className="app-kicker px-3 pb-1 pt-1 text-gray-400">排序依据</div>
+                <div className="px-3 pb-1 pt-2 text-[11px] font-medium tracking-[0.08em] text-gray-400">
+                  排序依据
+                </div>
                 {SORT_FIELD_OPTIONS.map((option) => {
                   const isActive = sortBy === option.value;
                   return (
@@ -261,7 +260,7 @@ export function FileGridToolbar({
             {openToolbarMenu === "info" && (
               <div
                 ref={infoMenuRef}
-                className="absolute right-0 top-10 z-30 w-52 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-black/5 bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
               >
                 <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">信息显示</div>
                 {INFO_FIELD_OPTIONS.map((option) => {
@@ -312,7 +311,7 @@ export function FileGridToolbar({
             {openToolbarMenu === "layout" && (
               <div
                 ref={layoutMenuRef}
-                className="absolute right-0 top-10 z-30 w-44 rounded-2xl border border-gray-200 bg-white/98 p-1.5 shadow-2xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/98"
+                className="absolute right-0 top-10 z-30 w-44 rounded-xl border border-black/5 bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
               >
                 <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">布局</div>
                 {VIEW_MODE_OPTIONS.map((option) => {
@@ -359,10 +358,7 @@ export function FileGridToolbar({
       </div>
 
       {isFilterPanelOpen && (
-        <div
-          ref={filterMenuRef}
-          className="px-4 py-3 shadow-[inset_0_1px_0_rgba(15,23,42,0.05)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-        >
+        <div ref={filterMenuRef} className="px-4 pb-3 pt-1">
           <FilterPanel />
         </div>
       )}

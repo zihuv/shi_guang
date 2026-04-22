@@ -46,7 +46,6 @@ interface FilterStore {
   setSizeRange: (range: FilterCriteria["sizeRange"]) => void;
   toggleTag: (tagId: number) => void;
   setMinRating: (rating: number) => void;
-  setFavoritesOnly: (favoritesOnly: boolean) => void;
   clearFilters: () => void;
   setFilterPanelOpen: (open: boolean) => void;
   toggleFilterPanel: () => void;
@@ -236,12 +235,6 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
   setMinRating: (rating) => {
     set((state) => ({
       criteria: { ...state.criteria, minRating: rating },
-    }));
-  },
-
-  setFavoritesOnly: (favoritesOnly) => {
-    set((state) => ({
-      criteria: { ...state.criteria, favoritesOnly },
     }));
   },
 

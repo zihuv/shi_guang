@@ -204,7 +204,8 @@ export default function FileGrid() {
 
       if (
         filterMenuRef.current?.contains(target) ||
-        filterMenuButtonRef.current?.contains(target)
+        filterMenuButtonRef.current?.contains(target) ||
+        scrollParentRef.current?.contains(target)
       ) {
         return;
       }
