@@ -27,21 +27,15 @@ import { getActiveFilterCount } from "@/features/filters/schema";
 import { REQUEST_FOCUS_FIRST_FILE_EVENT } from "@/lib/libraryNavigation";
 import {
   buildAdaptiveLayout,
-  findAdaptiveNeighborIndex,
   getAdaptiveFooterHeight,
   getGridMetadataHeight,
-  getPointerPositionInScrollContainer,
-  getSelectionBounds,
   GRID_GAP,
   GRID_PREVIEW_HEIGHT_RATIO,
-  isCardIntersectingSelection,
   isDialogTarget,
   isEditableTarget,
   LIST_BASE_ROW_HEIGHT,
   LIST_BASE_THUMBNAIL_SIZE,
   resolvePackedTileColumns,
-  SELECTION_DRAG_THRESHOLD,
-  type SelectionBox,
   TILE_CARD_BASE_WIDTH,
   TILE_CARD_MAX_WIDTH,
   TILE_CARD_MIN_WIDTH,
@@ -57,34 +51,22 @@ import {
   type ToolbarMenu,
 } from "@/components/file-grid/FileGridChrome";
 import {
+  getCurrentSortDirectionLabel,
+  getCurrentSortFieldLabel,
+  getCurrentViewModeLabel,
+  getNextFileGridIndex,
+  getPrewarmCandidates,
+  getVisibleInfoFieldLabels,
+} from "@/components/file-grid/fileGridModel";
+import { FileGridViewport } from "@/components/file-grid/FileGridViewport";
+import {
   beginImagePreviewLoadGeneration,
   prewarmThumbHashPlaceholders,
   prewarmThumbnailImageSources,
-} from "@/components/file-grid/fileGridCards";
-import { FileGridViewport } from "@/components/file-grid/FileGridViewport";
-
-const SORT_FIELD_LABELS: Record<string, string> = {
-  imported_at: "导入时间",
-  created_at: "创建时间",
-  modified_at: "修改时间",
-  name: "名称",
-  ext: "类型",
-  size: "文件大小",
-};
-
-const VIEW_MODE_LABELS: Record<LibraryViewMode, string> = {
-  grid: "网格",
-  adaptive: "自适应",
-  list: "列表",
-};
-
-const INFO_FIELD_LABELS = {
-  name: "名称",
-  ext: "类型",
-  size: "文件大小",
-  dimensions: "尺寸",
-  tags: "标签",
-} as const;
+} from "@/components/file-grid/fileGridPreviewLoader";
+import { useFileGridSelectionDrag } from "@/components/file-grid/useFileGridSelectionDrag";
+import { useFileGridToolbarDismiss } from "@/components/file-grid/useFileGridToolbarDismiss";
+import { useFileGridViewportMetrics } from "@/components/file-grid/useFileGridViewportMetrics";
 
 export default function FileGrid() {
   const files = useLibraryQueryStore((state) => state.files);
@@ -120,10 +102,6 @@ export default function FileGrid() {
   const filteredFiles = files;
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [openToolbarMenu, setOpenToolbarMenu] = useState<ToolbarMenu | null>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [scrollDirection, setScrollDirection] = useState<"forward" | "backward">("forward");
   const [previewLoadGeneration, setPreviewLoadGeneration] = useState(() =>
     beginImagePreviewLoadGeneration(),
   );
@@ -142,36 +120,49 @@ export default function FileGrid() {
   );
   const wheelScaleRemainderRef = useRef(0);
   const sortDidMountRef = useRef(false);
-  const scrollFrameRef = useRef<number | null>(null);
-  const pendingScrollTopRef = useRef(0);
-  const previousScrollTopRef = useRef(0);
 
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
-  const selectionBoxRef = useRef<SelectionBox | null>(null);
+  const { isSelecting, selectionBox, handleSelectionStart } = useFileGridSelectionDrag({
+    scrollParentRef,
+    selectedFile,
+    selectedFilesLength: selectedFiles.length,
+    clearSelection,
+    setSelectedFile,
+    setSelectedFiles,
+  });
+  const { containerWidth, scrollTop, viewportHeight, scrollDirection } = useFileGridViewportMetrics(
+    scrollParentRef,
+    {
+      isLoading,
+      filesLength: files.length,
+    },
+  );
   const tileViewScale = libraryViewScales.grid;
   const gridViewScale = tileViewScale;
   const listViewScale = libraryViewScales.list;
   const currentViewScale = viewMode === "list" ? listViewScale : tileViewScale;
   const currentViewScaleRange = getLibraryViewScaleRange(viewMode);
-  const currentSortFieldLabel =
-    activeSmartCollection === "random"
-      ? "随机模式"
-      : activeSmartCollection === "recent"
-        ? "最近使用"
-        : (SORT_FIELD_LABELS[sortBy] ?? "导入时间");
-  const currentSortDirectionLabel =
-    activeSmartCollection === "random" || activeSmartCollection === "recent"
-      ? "固定排序"
-      : sortDirection === "asc"
-        ? "升序"
-        : "降序";
-  const currentViewModeLabel = VIEW_MODE_LABELS[viewMode] ?? "网格";
-  const visibleInfoFieldLabels = libraryVisibleFields.map((field) => INFO_FIELD_LABELS[field]);
-
-  useEffect(() => {
-    selectionBoxRef.current = selectionBox;
-  }, [selectionBox]);
+  const currentSortFieldLabel = getCurrentSortFieldLabel(sortBy, activeSmartCollection);
+  const currentSortDirectionLabel = getCurrentSortDirectionLabel(
+    sortDirection,
+    activeSmartCollection,
+  );
+  const currentViewModeLabel = getCurrentViewModeLabel(viewMode);
+  const visibleInfoFieldLabels = getVisibleInfoFieldLabels(libraryVisibleFields);
+  useFileGridToolbarDismiss({
+    openToolbarMenu,
+    isFilterPanelOpen,
+    setOpenToolbarMenu,
+    setFilterPanelOpen,
+    scrollParentRef,
+    filterMenuRef,
+    filterMenuButtonRef,
+    sortMenuRef,
+    sortMenuButtonRef,
+    layoutMenuRef,
+    layoutMenuButtonRef,
+    infoMenuRef,
+    infoMenuButtonRef,
+  });
 
   useEffect(() => {
     currentViewScaleRef.current = currentViewScale;
@@ -190,123 +181,6 @@ export default function FileGrid() {
     resetPage();
     void runCurrentQuery();
   }, [resetPage, runCurrentQuery, sortBy, sortDirection]);
-
-  useEffect(() => {
-    if (!openToolbarMenu && !isFilterPanelOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
-
-      if (
-        filterMenuRef.current?.contains(target) ||
-        filterMenuButtonRef.current?.contains(target) ||
-        scrollParentRef.current?.contains(target)
-      ) {
-        return;
-      }
-
-      const activeMenuRef =
-        openToolbarMenu === "sort"
-          ? sortMenuRef
-          : openToolbarMenu === "layout"
-            ? layoutMenuRef
-            : infoMenuRef;
-      const activeButtonRef =
-        openToolbarMenu === "sort"
-          ? sortMenuButtonRef
-          : openToolbarMenu === "layout"
-            ? layoutMenuButtonRef
-            : infoMenuButtonRef;
-
-      if (activeMenuRef.current?.contains(target) || activeButtonRef.current?.contains(target)) {
-        return;
-      }
-
-      if (openToolbarMenu) {
-        setOpenToolbarMenu(null);
-      }
-
-      if (isFilterPanelOpen) {
-        setFilterPanelOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (openToolbarMenu) {
-          setOpenToolbarMenu(null);
-        }
-        if (isFilterPanelOpen) {
-          setFilterPanelOpen(false);
-        }
-      }
-    };
-
-    window.addEventListener("mousedown", handlePointerDown, true);
-    window.addEventListener("keydown", handleEscape);
-
-    return () => {
-      window.removeEventListener("mousedown", handlePointerDown, true);
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, [isFilterPanelOpen, openToolbarMenu, setFilterPanelOpen]);
-
-  useEffect(() => {
-    const element = scrollParentRef.current;
-    if (!element) return;
-
-    const updateWidth = () => {
-      const styles = window.getComputedStyle(element);
-      const horizontalPadding =
-        Number.parseFloat(styles.paddingLeft || "0") +
-        Number.parseFloat(styles.paddingRight || "0");
-      const verticalPadding =
-        Number.parseFloat(styles.paddingTop || "0") +
-        Number.parseFloat(styles.paddingBottom || "0");
-
-      setContainerWidth(Math.max(0, element.clientWidth - horizontalPadding));
-      setViewportHeight(Math.max(0, element.clientHeight - verticalPadding));
-      pendingScrollTopRef.current = element.scrollTop;
-      setScrollTop(element.scrollTop);
-    };
-
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(element);
-
-    const handleScroll = () => {
-      pendingScrollTopRef.current = element.scrollTop;
-      if (scrollFrameRef.current !== null) {
-        return;
-      }
-
-      scrollFrameRef.current = window.requestAnimationFrame(() => {
-        scrollFrameRef.current = null;
-        const nextScrollTop = pendingScrollTopRef.current;
-        if (nextScrollTop !== previousScrollTopRef.current) {
-          setScrollDirection(nextScrollTop > previousScrollTopRef.current ? "forward" : "backward");
-          previousScrollTopRef.current = nextScrollTop;
-        }
-        setScrollTop(nextScrollTop);
-      });
-    };
-
-    element.addEventListener("scroll", handleScroll, { passive: true });
-
-    return () => {
-      if (scrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(scrollFrameRef.current);
-        scrollFrameRef.current = null;
-      }
-      observer.disconnect();
-      element.removeEventListener("scroll", handleScroll);
-    };
-  }, [isLoading, files.length]);
 
   const tileTargetWidth = Math.max(
     TILE_CARD_MIN_WIDTH,
@@ -467,43 +341,15 @@ export default function FileGrid() {
       return;
     }
 
-    const visibleFiles =
-      viewMode === "adaptive"
-        ? adaptiveVisibleItems.map((item) => item.file)
-        : viewMode === "grid"
-          ? gridVirtualRows.flatMap((rowIndex) => {
-              const startIndex = rowIndex * gridColumns;
-              return filteredFiles.slice(startIndex, startIndex + gridColumns);
-            })
-          : listVirtualItems
-              .map((virtualRow) => filteredFiles[virtualRow.index])
-              .filter((file): file is FileItem => Boolean(file));
-
-    const visibleIndexes =
-      viewMode === "adaptive"
-        ? adaptiveVisibleItems.map((item) => item.index)
-        : viewMode === "grid"
-          ? gridVirtualRows.flatMap((rowIndex) => {
-              const startIndex = rowIndex * gridColumns;
-              return Array.from(
-                { length: Math.min(gridColumns, Math.max(0, filteredFiles.length - startIndex)) },
-                (_, offset) => startIndex + offset,
-              );
-            })
-          : listVirtualItems.map((virtualRow) => virtualRow.index);
-    const minVisibleIndex = visibleIndexes.length ? Math.min(...visibleIndexes) : 0;
-    const maxVisibleIndex = visibleIndexes.length ? Math.max(...visibleIndexes) : -1;
-    const directionalPrewarmCount = Math.max(12, Math.min(36, visibleFiles.length));
-    const directionalFiles =
-      scrollDirection === "forward"
-        ? filteredFiles.slice(maxVisibleIndex + 1, maxVisibleIndex + 1 + directionalPrewarmCount)
-        : filteredFiles.slice(
-            Math.max(0, minVisibleIndex - directionalPrewarmCount),
-            Math.max(0, minVisibleIndex),
-          );
-    const nextCandidates = [...visibleFiles, ...directionalFiles].filter(
-      (file, index, files) => files.findIndex((candidate) => candidate.id === file.id) === index,
-    );
+    const nextCandidates = getPrewarmCandidates({
+      filteredFiles,
+      viewMode,
+      adaptiveVisibleItems,
+      gridVirtualRows,
+      gridColumns,
+      listVirtualIndexes: listVirtualItems.map((virtualRow) => virtualRow.index),
+      scrollDirection,
+    });
     const prewarm = () => {
       const prewarmCandidates = nextCandidates.slice(0, 36);
       prewarmThumbHashPlaceholders(prewarmCandidates);
@@ -626,112 +472,6 @@ export default function FileGrid() {
   const handleFileDoubleClick = (index: number) => {
     openPreview(index, filteredFiles);
   };
-
-  const handleSelectionStart = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const target = event.target as HTMLElement;
-    if (target.closest(".file-card")) {
-      return;
-    }
-
-    const container = scrollParentRef.current;
-    if (!container) {
-      return;
-    }
-
-    container.focus({ preventScroll: true });
-
-    if (selectedFiles.length > 0) {
-      clearSelection();
-    }
-    if (selectedFile) {
-      setSelectedFile(null);
-    }
-
-    setIsSelecting(true);
-    const startPoint = getPointerPositionInScrollContainer(event.clientX, event.clientY, container);
-
-    setSelectionBox({
-      startX: startPoint.x,
-      startY: startPoint.y,
-      endX: startPoint.x,
-      endY: startPoint.y,
-    });
-  };
-
-  useEffect(() => {
-    if (!isSelecting) {
-      return;
-    }
-
-    const handleWindowMouseMove = (event: MouseEvent) => {
-      const container = scrollParentRef.current;
-      if (!container) {
-        return;
-      }
-
-      setSelectionBox((current) => {
-        if (!current) {
-          return current;
-        }
-
-        const point = getPointerPositionInScrollContainer(event.clientX, event.clientY, container);
-        return {
-          ...current,
-          endX: point.x,
-          endY: point.y,
-        };
-      });
-    };
-
-    const handleWindowMouseUp = () => {
-      const container = scrollParentRef.current;
-      const currentSelectionBox = selectionBoxRef.current;
-
-      if (container && currentSelectionBox) {
-        const bounds = getSelectionBounds(currentSelectionBox);
-
-        if (Math.max(bounds.width, bounds.height) > SELECTION_DRAG_THRESHOLD) {
-          const containerRect = container.getBoundingClientRect();
-          const nextSelectedFiles = Array.from(container.querySelectorAll(".file-card"))
-            .map((card) => {
-              if (
-                !isCardIntersectingSelection(
-                  card.getBoundingClientRect(),
-                  containerRect,
-                  container,
-                  bounds,
-                )
-              ) {
-                return null;
-              }
-
-              const fileId = Number(card.getAttribute("data-file-id") || "0");
-              return fileId > 0 ? fileId : null;
-            })
-            .filter((fileId): fileId is number => fileId !== null);
-
-          setSelectedFiles(nextSelectedFiles);
-          setSelectedFile(null);
-        }
-      }
-
-      selectionBoxRef.current = null;
-      setIsSelecting(false);
-      setSelectionBox(null);
-    };
-
-    window.addEventListener("mousemove", handleWindowMouseMove);
-    window.addEventListener("mouseup", handleWindowMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleWindowMouseMove);
-      window.removeEventListener("mouseup", handleWindowMouseUp);
-    };
-  }, [isSelecting, setSelectedFile, setSelectedFiles]);
 
   const scrollIndexIntoView = useCallback(
     (index: number) => {
@@ -910,48 +650,16 @@ export default function FileGrid() {
       const currentIndex = selectedFile
         ? filteredFiles.findIndex((file) => file.id === selectedFile.id)
         : -1;
-      let nextIndex = currentIndex;
+      const nextIndex = getNextFileGridIndex({
+        currentIndex,
+        key: event.key,
+        filteredFilesLength: filteredFiles.length,
+        viewMode,
+        gridColumns,
+        adaptiveItems: adaptiveLayout.items,
+      });
 
-      if (currentIndex === -1) {
-        nextIndex =
-          event.key === "ArrowLeft" || event.key === "ArrowUp" ? filteredFiles.length - 1 : 0;
-      } else if (viewMode === "list") {
-        if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-          nextIndex = Math.max(0, currentIndex - 1);
-        } else {
-          nextIndex = Math.min(filteredFiles.length - 1, currentIndex + 1);
-        }
-      } else if (viewMode === "grid") {
-        const row = Math.floor(currentIndex / gridColumns);
-        const col = currentIndex % gridColumns;
-
-        switch (event.key) {
-          case "ArrowLeft":
-            nextIndex = Math.max(0, currentIndex - 1);
-            break;
-          case "ArrowRight":
-            nextIndex = Math.min(filteredFiles.length - 1, currentIndex + 1);
-            break;
-          case "ArrowUp":
-            if (row === 0) {
-              return;
-            }
-            nextIndex = (row - 1) * gridColumns + col;
-            break;
-          case "ArrowDown": {
-            const nextRowStart = (row + 1) * gridColumns;
-            if (nextRowStart >= filteredFiles.length) {
-              return;
-            }
-            nextIndex = Math.min(nextRowStart + col, filteredFiles.length - 1);
-            break;
-          }
-        }
-      } else {
-        nextIndex = findAdaptiveNeighborIndex(adaptiveLayout.items, currentIndex, event.key);
-      }
-
-      if (nextIndex === currentIndex || nextIndex < 0 || nextIndex >= filteredFiles.length) {
+      if (nextIndex == null || nextIndex === currentIndex) {
         return;
       }
 
@@ -966,9 +674,7 @@ export default function FileGrid() {
     adaptiveLayout.items,
     filteredFiles,
     gridColumns,
-    gridRowHeight,
     isSelecting,
-    listRowHeight,
     selectedFile,
     selectedFiles.length,
     selectFileAtIndex,

@@ -1,109 +1,39 @@
 import fs from "node:fs/promises";
-import fssync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Tokenizer as HuggingFaceTokenizer } from "@huggingface/tokenizers";
 import * as ort from "onnxruntime-node";
-import sharp from "sharp";
 import { BertWordPieceTokenizer } from "./bert-wordpiece.js";
+import {
+  SUPPORTED_FGCLIP_PATCH_BUCKETS,
+  preprocessChineseClipImage,
+  preprocessFgClipImage,
+} from "./clip-image-preprocess.js";
+import {
+  readFlatManifest,
+  type ClipEffectiveProvider,
+  type ClipModelValidationResult,
+  type ClipRuntimeConfig,
+  type ClipRuntimeSnapshot,
+  type FlatManifest,
+} from "./clip-manifest.js";
 
-export type ClipRuntimeDevice = "auto" | "cpu" | "gpu";
-export type ClipProviderPolicy = "auto" | "interactive" | "service";
-export type ClipRuntimeThreadConfig = "auto" | number;
-export type ClipEffectiveProvider = "tensorrt" | "cuda" | "direct_ml" | "core_ml" | "cpu";
 type OrtExecutionProvider = "cpu" | "dml" | "coreml";
 
-export interface ClipRuntimeConfig {
-  device: ClipRuntimeDevice;
-  providerPolicy: ClipProviderPolicy;
-  intraThreads: ClipRuntimeThreadConfig;
-  fgclipMaxPatches: number | null;
-}
-
-export interface ClipModelValidationResult {
-  valid: boolean;
-  message: string;
-  normalizedModelPath: string;
-  modelId: string | null;
-  version: string | null;
-  embeddingDim: number | null;
-  contextLength: number | null;
-  missingFiles: string[];
-}
-
-export interface ClipRuntimeSnapshot {
-  runtimeLoaded: boolean;
-  runtimeMode: "uninitialized" | "cpu_only" | "gpu_enabled" | "mixed" | "unknown" | null;
-  effectiveProvider: ClipEffectiveProvider | null;
-  runtimeReason: string | null;
-}
-
-export type FlatManifest = {
-  format: string;
-  schema_version: number;
-  family: "chinese_clip" | "fg_clip" | "open_clip" | string;
-  model_id: string;
-  model_revision?: string;
-  embedding_dim: number;
-  normalize_output?: boolean;
-  text: {
-    onnx: string;
-    output_name: string;
-    tokenizer: string;
-    context_length: number;
-    input:
-      | {
-          kind: "bert_like";
-          input_ids_name: string;
-          attention_mask_name: string;
-          token_type_ids_name?: string;
-        }
-      | {
-          kind: "token_embeds";
-        }
-      | {
-          kind: string;
-          input_ids_name?: string;
-          attention_mask_name?: string;
-          token_type_ids_name?: string;
-        };
-    token_embedding?: {
-      file: string;
-      dtype: "f16" | "f32" | string;
-      embedding_dim: number;
-    };
-  };
-  image: {
-    onnx: string;
-    output_name: string;
-    preprocess:
-      | {
-          kind: "clip_image";
-          image_size: number;
-          resize_shortest_edge?: number;
-          crop?: "none" | "center";
-          mean: number[];
-          std: number[];
-        }
-      | {
-          kind: "fgclip_patch_tokens";
-          patch_size: number;
-          default_max_patches: number;
-          vision_pos_embedding: string;
-        }
-      | {
-          kind: string;
-          image_size?: number;
-          resize_shortest_edge?: number;
-          crop?: "none" | "center";
-          mean?: number[];
-          std?: number[];
-          patch_size?: number;
-          default_max_patches?: number;
-          vision_pos_embedding?: string;
-        };
-  };
-};
+export {
+  buildClipValidationResult,
+  missingFilesForManifest,
+  readFlatManifest,
+  validateFlatClipManifest,
+  type ClipEffectiveProvider,
+  type ClipModelValidationResult,
+  type ClipProviderPolicy,
+  type ClipRuntimeConfig,
+  type ClipRuntimeDevice,
+  type ClipRuntimeSnapshot,
+  type ClipRuntimeThreadConfig,
+  type FlatManifest,
+} from "./clip-manifest.js";
 
 type ResolvedClipModel = {
   manifest: FlatManifest;
@@ -149,16 +79,6 @@ type ProviderAttempt = {
   runtimeMode: ClipRuntimeSnapshot["runtimeMode"];
   reason: string;
 };
-
-type FgClipImageInputs = {
-  pixelValues: Float32Array;
-  pixelAttentionMask: Int32Array;
-  posEmbed: Float32Array;
-  maxPatches: number;
-  channels: number;
-};
-
-const SUPPORTED_FGCLIP_PATCH_BUCKETS = [128, 256, 576, 784, 1024];
 
 let runtimeHandle: RuntimeHandle | null = null;
 let runtimePromise: Promise<RuntimeHandle> | null = null;
@@ -212,198 +132,6 @@ function providerSnapshot(
     effectiveProvider,
     runtimeReason: reason,
   };
-}
-
-export async function readFlatManifest(modelPath: string): Promise<FlatManifest> {
-  return JSON.parse(
-    await fs.readFile(path.join(modelPath, "model_config.json"), "utf8"),
-  ) as FlatManifest;
-}
-
-export function missingFilesForManifest(modelPath: string, manifest: FlatManifest): string[] {
-  const required = [
-    "model_config.json",
-    manifest.text.onnx,
-    manifest.image.onnx,
-    manifest.text.tokenizer,
-  ];
-
-  if (manifest.family === "fg_clip") {
-    if (manifest.text.token_embedding?.file) {
-      required.push(manifest.text.token_embedding.file);
-    } else {
-      required.push("text.token_embedding.file");
-    }
-    if (
-      manifest.image.preprocess.kind === "fgclip_patch_tokens" &&
-      manifest.image.preprocess.vision_pos_embedding
-    ) {
-      required.push(manifest.image.preprocess.vision_pos_embedding);
-    } else {
-      required.push("image.preprocess.vision_pos_embedding");
-    }
-  }
-
-  return required.filter((relativePath) => {
-    if (relativePath.includes(".")) {
-      return !fssync.existsSync(path.join(modelPath, relativePath));
-    }
-    return !fssync.existsSync(path.join(modelPath, relativePath));
-  });
-}
-
-export function buildClipValidationResult(
-  valid: boolean,
-  message: string,
-  normalizedModelPath: string,
-  manifest: FlatManifest | null,
-  missingFiles: string[],
-): ClipModelValidationResult {
-  return {
-    valid,
-    message,
-    normalizedModelPath,
-    modelId: manifest?.model_id ?? null,
-    version: manifest?.model_revision ?? null,
-    embeddingDim: manifest?.embedding_dim ?? null,
-    contextLength: manifest?.text.context_length ?? null,
-    missingFiles,
-  };
-}
-
-export function validateFlatClipManifest(
-  manifest: FlatManifest,
-  normalizedModelPath: string,
-): ClipModelValidationResult {
-  if (manifest.format !== "omni_flat_v1" || manifest.schema_version !== 1) {
-    return buildClipValidationResult(
-      false,
-      "仅支持 omni_flat_v1 / schema_version=1 的平铺模型目录。",
-      normalizedModelPath,
-      manifest,
-      [],
-    );
-  }
-
-  if (
-    !Number.isFinite(manifest.embedding_dim) ||
-    manifest.embedding_dim <= 0 ||
-    !Number.isFinite(manifest.text.context_length) ||
-    manifest.text.context_length <= 2
-  ) {
-    return buildClipValidationResult(
-      false,
-      "模型配置缺少有效的 embedding_dim 或 context_length。",
-      normalizedModelPath,
-      manifest,
-      [],
-    );
-  }
-
-  if (manifest.family === "chinese_clip") {
-    if (manifest.text.input.kind !== "bert_like") {
-      return buildClipValidationResult(
-        false,
-        `chinese_clip 需要 bert_like 文本输入，收到 ${manifest.text.input.kind}。`,
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    if (manifest.image.preprocess.kind !== "clip_image") {
-      return buildClipValidationResult(
-        false,
-        `chinese_clip 需要 clip_image 图片预处理，收到 ${manifest.image.preprocess.kind}。`,
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    return buildClipValidationResult(
-      true,
-      `模型目录可用：${manifest.model_id} (${manifest.model_revision ?? "unknown"})`,
-      normalizedModelPath,
-      manifest,
-      [],
-    );
-  }
-
-  if (manifest.family === "fg_clip") {
-    if (manifest.text.input.kind !== "token_embeds") {
-      return buildClipValidationResult(
-        false,
-        `fg_clip 需要 token_embeds 文本输入，收到 ${manifest.text.input.kind}。`,
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    if (manifest.image.preprocess.kind !== "fgclip_patch_tokens") {
-      return buildClipValidationResult(
-        false,
-        `fg_clip 需要 fgclip_patch_tokens 图片预处理，收到 ${manifest.image.preprocess.kind}。`,
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    if (!manifest.text.token_embedding) {
-      return buildClipValidationResult(
-        false,
-        "fg_clip 模型配置缺少 text.token_embedding。",
-        normalizedModelPath,
-        manifest,
-        ["text.token_embedding.file"],
-      );
-    }
-    if (manifest.text.token_embedding.embedding_dim !== manifest.embedding_dim) {
-      return buildClipValidationResult(
-        false,
-        "fg_clip token embedding 维度和模型 embedding_dim 不一致。",
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    if (
-      manifest.text.token_embedding.dtype !== "f16" &&
-      manifest.text.token_embedding.dtype !== "f32"
-    ) {
-      return buildClipValidationResult(
-        false,
-        `fg_clip token embedding dtype 暂不支持 ${manifest.text.token_embedding.dtype}。`,
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    const patchSize = manifest.image.preprocess.patch_size;
-    const defaultMaxPatches = manifest.image.preprocess.default_max_patches;
-    if ((patchSize ?? 0) <= 0 || (defaultMaxPatches ?? 0) <= 0) {
-      return buildClipValidationResult(
-        false,
-        "fg_clip patch_size 和 default_max_patches 必须大于 0。",
-        normalizedModelPath,
-        manifest,
-        [],
-      );
-    }
-    return buildClipValidationResult(
-      true,
-      `模型目录可用：${manifest.model_id} (${manifest.model_revision ?? "unknown"})`,
-      normalizedModelPath,
-      manifest,
-      [],
-    );
-  }
-
-  return buildClipValidationResult(
-    false,
-    `当前 Electron 版本仅支持 chinese_clip 和 fg_clip，暂不支持 ${manifest.family}。`,
-    normalizedModelPath,
-    manifest,
-    [],
-  );
 }
 
 export function getCachedClipRuntimeSnapshot(
@@ -996,57 +724,6 @@ async function encodeFgClipText(runtime: RuntimeHandle, query: string): Promise<
   );
 }
 
-async function preprocessChineseClipImage(
-  filePath: string,
-  manifest: FlatManifest,
-): Promise<Float32Array> {
-  const preprocess = manifest.image.preprocess;
-  if (preprocess.kind !== "clip_image") {
-    throw new Error("chinese_clip 图片预处理配置无效。");
-  }
-
-  const imageSize = preprocess.image_size;
-  if (
-    !imageSize ||
-    !Array.isArray(preprocess.mean) ||
-    !Array.isArray(preprocess.std) ||
-    preprocess.mean.length !== 3 ||
-    preprocess.std.length !== 3
-  ) {
-    throw new Error("chinese_clip 图片预处理配置无效。");
-  }
-  const cropMode = preprocess.crop ?? "none";
-  const pipeline = sharp(filePath, { animated: false }).rotate().removeAlpha();
-  const resized =
-    cropMode === "center"
-      ? pipeline.resize(imageSize, imageSize, {
-          fit: "cover",
-          position: "centre",
-        })
-      : pipeline.resize(imageSize, imageSize, {
-          fit: "fill",
-        });
-
-  const { data, info } = await resized.raw().toBuffer({ resolveWithObject: true });
-  if (info.channels < 3) {
-    throw new Error("图像预处理失败：通道数不足。");
-  }
-
-  const tensor = new Float32Array(1 * 3 * imageSize * imageSize);
-  const planeSize = imageSize * imageSize;
-  for (let y = 0; y < imageSize; y += 1) {
-    for (let x = 0; x < imageSize; x += 1) {
-      const pixelIndex = (y * imageSize + x) * info.channels;
-      for (let channel = 0; channel < 3; channel += 1) {
-        const value = data[pixelIndex + channel] / 255;
-        tensor[channel * planeSize + y * imageSize + x] =
-          (value - preprocess.mean[channel]) / preprocess.std[channel];
-      }
-    }
-  }
-  return tensor;
-}
-
 async function encodeChineseClipImage(
   runtime: RuntimeHandle,
   filePath: string,
@@ -1072,193 +749,6 @@ async function encodeChineseClipImage(
     runtime.model.manifest.embedding_dim,
     runtime.model.manifest.normalize_output !== false,
   );
-}
-
-function determineFgClipMaxPatches(
-  width: number,
-  height: number,
-  patchSize: number,
-  defaultMaxPatches: number,
-): number {
-  const raw = Math.floor(width / patchSize) * Math.floor(height / patchSize);
-  const buckets = [
-    ...SUPPORTED_FGCLIP_PATCH_BUCKETS.filter((item) => item <= defaultMaxPatches),
-    defaultMaxPatches,
-  ]
-    .sort((left, right) => left - right)
-    .filter((item, index, values) => index === 0 || item !== values[index - 1]);
-  return buckets.find((candidate) => raw <= candidate) ?? defaultMaxPatches;
-}
-
-function scaledPatchSize(scale: number, size: number, patchSize: number): number {
-  const scaled = size * scale;
-  return Math.max(patchSize, Math.ceil(scaled / patchSize) * patchSize);
-}
-
-function getFgClipImageSizeForMaxPatches(
-  imageHeight: number,
-  imageWidth: number,
-  patchSize: number,
-  maxPatches: number,
-): { targetHeight: number; targetWidth: number } {
-  const eps = 1e-5;
-  let scaleMin = eps / 10;
-  let scaleMax = 100;
-  while (scaleMax - scaleMin >= eps) {
-    const scale = (scaleMin + scaleMax) / 2;
-    const targetHeight = scaledPatchSize(scale, imageHeight, patchSize);
-    const targetWidth = scaledPatchSize(scale, imageWidth, patchSize);
-    const patchCount = (targetHeight / patchSize) * (targetWidth / patchSize);
-    if (patchCount <= maxPatches) {
-      scaleMin = scale;
-    } else {
-      scaleMax = scale;
-    }
-  }
-  return {
-    targetHeight: scaledPatchSize(scaleMin, imageHeight, patchSize),
-    targetWidth: scaledPatchSize(scaleMin, imageWidth, patchSize),
-  };
-}
-
-function linearSourceCoordinate(
-  outputIndex: number,
-  outputSize: number,
-  inputSize: number,
-): number {
-  const source = ((outputIndex + 0.5) * inputSize) / outputSize - 0.5;
-  return Math.max(0, Math.min(inputSize - 1, source));
-}
-
-function lerp(left: number, right: number, weight: number): number {
-  return left + (right - left) * weight;
-}
-
-function buildFgClipPositionalEmbedding(
-  runtime: FgClipRuntime,
-  targetHeight: number,
-  targetWidth: number,
-  maxPatches: number,
-): Float32Array {
-  const channels = runtime.tokenEmbeddingDim;
-  const output = new Float32Array(maxPatches * channels);
-  for (let outY = 0; outY < targetHeight; outY += 1) {
-    const inY = linearSourceCoordinate(outY, targetHeight, runtime.baseGridHeight);
-    const y0 = Math.max(0, Math.min(runtime.baseGridHeight - 1, Math.floor(inY)));
-    const y1 = Math.min(y0 + 1, runtime.baseGridHeight - 1);
-    const wy = inY - y0;
-
-    for (let outX = 0; outX < targetWidth; outX += 1) {
-      const inX = linearSourceCoordinate(outX, targetWidth, runtime.baseGridWidth);
-      const x0 = Math.max(0, Math.min(runtime.baseGridWidth - 1, Math.floor(inX)));
-      const x1 = Math.min(x0 + 1, runtime.baseGridWidth - 1);
-      const wx = inX - x0;
-      const token = outY * targetWidth + outX;
-
-      for (let channel = 0; channel < channels; channel += 1) {
-        const top = lerp(
-          runtime.basePosEmbedding[(y0 * runtime.baseGridWidth + x0) * channels + channel],
-          runtime.basePosEmbedding[(y0 * runtime.baseGridWidth + x1) * channels + channel],
-          wx,
-        );
-        const bottom = lerp(
-          runtime.basePosEmbedding[(y1 * runtime.baseGridWidth + x0) * channels + channel],
-          runtime.basePosEmbedding[(y1 * runtime.baseGridWidth + x1) * channels + channel],
-          wx,
-        );
-        output[token * channels + channel] = lerp(top, bottom, wy);
-      }
-    }
-  }
-
-  const valid = targetHeight * targetWidth;
-  if (valid > 0 && valid < maxPatches) {
-    const first = output.slice(0, channels);
-    for (let token = valid; token < maxPatches; token += 1) {
-      output.set(first, token * channels);
-    }
-  }
-
-  return output;
-}
-
-async function preprocessFgClipImage(
-  filePath: string,
-  runtime: FgClipRuntime,
-): Promise<FgClipImageInputs> {
-  const metadata = await sharp(filePath, { animated: false }).rotate().metadata();
-  const originalWidth = metadata.width ?? 0;
-  const originalHeight = metadata.height ?? 0;
-  if (originalWidth <= 0 || originalHeight <= 0) {
-    throw new Error("图像预处理失败：无法读取图片尺寸。");
-  }
-
-  const maxPatches = determineFgClipMaxPatches(
-    originalWidth,
-    originalHeight,
-    runtime.patchSize,
-    runtime.defaultMaxPatches,
-  );
-  const { targetHeight, targetWidth } = getFgClipImageSizeForMaxPatches(
-    originalHeight,
-    originalWidth,
-    runtime.patchSize,
-    maxPatches,
-  );
-  const { data, info } = await sharp(filePath, { animated: false })
-    .rotate()
-    .removeAlpha()
-    .resize(targetWidth, targetHeight, {
-      fit: "fill",
-      kernel: "linear",
-    })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  if (info.channels < 3) {
-    throw new Error("图像预处理失败：通道数不足。");
-  }
-
-  const spatialHeight = targetHeight / runtime.patchSize;
-  const spatialWidth = targetWidth / runtime.patchSize;
-  const validPatches = spatialHeight * spatialWidth;
-  const channels = runtime.patchSize * runtime.patchSize * 3;
-  if (validPatches > maxPatches) {
-    throw new Error(`fg_clip patch 数异常：${validPatches} > ${maxPatches}。`);
-  }
-
-  const pixelValues = new Float32Array(maxPatches * channels);
-  for (let patchY = 0; patchY < spatialHeight; patchY += 1) {
-    for (let patchX = 0; patchX < spatialWidth; patchX += 1) {
-      const patchIndex = patchY * spatialWidth + patchX;
-      let dst = patchIndex * channels;
-      for (let y = 0; y < runtime.patchSize; y += 1) {
-        for (let x = 0; x < runtime.patchSize; x += 1) {
-          const pixelIndex =
-            ((patchY * runtime.patchSize + y) * targetWidth + (patchX * runtime.patchSize + x)) *
-            info.channels;
-          for (let channel = 0; channel < 3; channel += 1) {
-            pixelValues[dst] = data[pixelIndex + channel] / 127.5 - 1;
-            dst += 1;
-          }
-        }
-      }
-    }
-  }
-
-  const pixelAttentionMask = new Int32Array(maxPatches);
-  pixelAttentionMask.fill(0);
-  for (let index = 0; index < validPatches; index += 1) {
-    pixelAttentionMask[index] = 1;
-  }
-
-  return {
-    pixelValues,
-    pixelAttentionMask,
-    posEmbed: buildFgClipPositionalEmbedding(runtime, spatialHeight, spatialWidth, maxPatches),
-    maxPatches,
-    channels,
-  };
 }
 
 async function encodeFgClipImage(runtime: RuntimeHandle, filePath: string): Promise<Float32Array> {
