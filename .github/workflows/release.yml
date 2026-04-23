@@ -136,12 +136,17 @@ jobs:
           - name: macOS arm64
             platform: macos-15
             args: --mac --arm64
+            files: release/*.dmg
           - name: Linux x64
             platform: ubuntu-22.04
             args: --linux --x64
+            files: |
+              release/*.AppImage
+              release/*.deb
           - name: Windows x64
             platform: windows-2022
             args: --win --x64
+            files: release/*.exe
 
     steps:
       - name: Checkout repository
@@ -171,13 +176,16 @@ jobs:
       - name: Verify packaged native dependencies
         run: node scripts/verify-package-native-deps.cjs "${{ runner.os }}"
 
+      - name: Report packaged sizes
+        run: node scripts/report-package-size.cjs release
+
       - name: Upload app assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
           draft: true
           fail_on_unmatched_files: true
-          files: release/*.*
+          files: ${{ matrix.files }}
 
   publish:
     name: Publish release
