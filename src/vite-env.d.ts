@@ -23,6 +23,7 @@ interface ShiguangDesktopApi {
   clipboard: {
     readText(): string;
     writeText(text: string): void;
+    readImageData(): { bytes: Uint8Array; ext: string } | null;
   };
   asset: {
     toUrl(path: string): Promise<string>;

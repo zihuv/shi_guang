@@ -136,7 +136,7 @@ function App() {
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const setDetailPanelWidth = useSettingsStore((state) => state.setDetailPanelWidth);
 
-  const { importImagesFromBase64, importFiles } = useImportStore();
+  const { importBinaryImages, importFiles } = useImportStore();
   const previewMode = usePreviewStore((state) => state.previewMode);
   const closePreview = usePreviewStore((state) => state.closePreview);
   const files = useLibraryQueryStore((state) => state.files);
@@ -175,7 +175,7 @@ function App() {
     setIsDragging,
     importFiles,
   });
-  useClipboardImport(importImagesFromBase64);
+  useClipboardImport(importBinaryImages);
   useDocumentTheme(theme);
   useKeyboardShortcuts();
 
@@ -354,23 +354,10 @@ function App() {
     return mimePart ? mimePart.toLowerCase() : "png";
   }, []);
 
-  const fileToBase64 = useCallback((file: File) => {
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result;
-        if (typeof result !== "string") {
-          reject(new Error("Failed to read dropped file as base64"));
-          return;
-        }
-
-        const base64 = result.includes(",") ? result.split(",")[1] : result;
-        resolve(base64);
-      };
-      reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
-      reader.readAsDataURL(file);
-    });
-  }, []);
+  const fileToBytes = useCallback(
+    async (file: File) => new Uint8Array(await file.arrayBuffer()),
+    [],
+  );
 
   // Handle drag and drop to import files while keeping internal DnD enabled.
   const handleDragOver = useCallback(
@@ -441,13 +428,13 @@ function App() {
       } else {
         const items = await Promise.all(
           Array.from(e.dataTransfer.files).map(async (file) => ({
-            base64Data: await fileToBase64(file),
+            bytes: await fileToBytes(file),
             ext: getFileExt(file),
           })),
         );
 
         if (items.length > 0) {
-          void importImagesFromBase64(items, targetFolderId);
+          void importBinaryImages(items, targetFolderId);
         }
       }
 
@@ -456,12 +443,12 @@ function App() {
       }
     },
     [
-      fileToBase64,
+      fileToBytes,
       getDropTargetFolderId,
       getFileExt,
       getDroppedPaths,
       importFiles,
-      importImagesFromBase64,
+      importBinaryImages,
       isDraggingInternal,
       isExternalFileDrag,
       setDragOverFolderId,

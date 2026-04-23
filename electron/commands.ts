@@ -708,6 +708,9 @@ function importTaskSource(item: ImportTaskItem): string {
   if (item.kind === "base64_image") {
     return `clipboard.${item.ext ?? "png"}`;
   }
+  if (item.kind === "binary_image") {
+    return `clipboard.${item.ext ?? "png"}`;
+  }
   return String(item.path ?? "");
 }
 
@@ -738,7 +741,14 @@ async function runImportTask(
               fallbackExt: item.ext,
               namePrefix: "paste",
             })
-          : await importFilePath(state, String(item.path ?? ""), entry.folderId);
+          : item.kind === "binary_image"
+            ? await importBytes(state, {
+                bytes: Buffer.from(item.bytes ?? []),
+                folderId: entry.folderId,
+                fallbackExt: item.ext,
+                namePrefix: "paste",
+              })
+            : await importFilePath(state, String(item.path ?? ""), entry.folderId);
       entry.snapshot.successCount += 1;
       entry.snapshot.results.push({ index, status: "completed", source, error: null, file });
       postImport(state, window, file);
@@ -2219,9 +2229,20 @@ export function registerIpcHandlers(
         );
     },
     copy_files_to_clipboard: (args) => {
-      const paths = numberArrayArg(args, "fileIds", "file_ids")
-        .map((fileId) => getFileById(state.db, fileId)?.path)
-        .filter((item): item is string => Boolean(item));
+      const files = numberArrayArg(args, "fileIds", "file_ids")
+        .map((fileId) => getFileById(state.db, fileId))
+        .filter((item): item is FileRecord => Boolean(item));
+      const paths = files.map((file) => file.path);
+      if (files.length === 1) {
+        const image = nativeImage.createFromPath(files[0].path);
+        if (!image.isEmpty()) {
+          clipboard.write({
+            image,
+            text: files[0].path,
+          });
+          return;
+        }
+      }
       clipboard.writeText(paths.join("\n"));
     },
     start_drag_files: (args, window) => {

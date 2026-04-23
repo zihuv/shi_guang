@@ -84,11 +84,17 @@ export interface PaginatedFiles {
   debugScores?: Array<{ fileId: number; name: string; score: number }>;
 }
 
+export interface BinaryImageImportItem {
+  bytes: Uint8Array;
+  ext: string;
+}
+
 export interface ImportTaskItem {
   kind?: string;
   path?: string;
   base64Data?: string;
   base64_data?: string;
+  bytes?: Uint8Array;
   ext?: string;
 }
 

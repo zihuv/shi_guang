@@ -67,6 +67,11 @@ export interface SmartCollectionStats {
   untaggedCount: number;
 }
 
+export interface BinaryImageImportItem {
+  bytes: Uint8Array;
+  ext: string;
+}
+
 export interface ImportTaskItemResult {
   index: number;
   status: string;

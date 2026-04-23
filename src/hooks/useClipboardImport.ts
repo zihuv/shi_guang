@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import type { BinaryImageImportItem } from "@/stores/fileTypes";
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
@@ -15,7 +16,7 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 export function useClipboardImport(
-  importImagesFromBase64: (items: { base64Data: string; ext: string }[]) => Promise<unknown>,
+  importBinaryImages: (items: BinaryImageImportItem[]) => Promise<unknown>,
 ) {
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {
@@ -25,10 +26,15 @@ export function useClipboardImport(
 
       const items = event.clipboardData?.items;
       if (!items) {
+        const image = window.shiguang?.clipboard.readImageData();
+        if (image) {
+          event.preventDefault();
+          await importBinaryImages([image]);
+        }
         return;
       }
 
-      const imageItems: { base64Data: string; ext: string }[] = [];
+      const imageItems: BinaryImageImportItem[] = [];
 
       for (const item of items) {
         if (!item.type.startsWith("image/")) {
@@ -41,23 +47,25 @@ export function useClipboardImport(
           continue;
         }
 
-        const base64Data = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            resolve((reader.result as string).split(",")[1]);
-          };
-          reader.readAsDataURL(blob);
+        const ext = blob.type.split("/")[1]?.replace(/\+.*/, "") || "png";
+        imageItems.push({
+          bytes: new Uint8Array(await blob.arrayBuffer()),
+          ext,
         });
-
-        const ext = blob.type.split("/")[1] || "png";
-        imageItems.push({ base64Data, ext });
       }
 
       if (imageItems.length > 0) {
-        await importImagesFromBase64(imageItems);
+        await importBinaryImages(imageItems);
+        return;
+      }
+
+      const image = window.shiguang?.clipboard.readImageData();
+      if (image) {
+        event.preventDefault();
+        await importBinaryImages([image]);
       }
     },
-    [importImagesFromBase64],
+    [importBinaryImages],
   );
 
   useEffect(() => {

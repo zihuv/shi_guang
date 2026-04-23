@@ -7,6 +7,7 @@ import {
 import {
   parseFileList,
   TERMINAL_IMPORT_TASK_STATUSES,
+  type BinaryImageImportItem,
   type FileItem,
   type ImportTaskSnapshot,
 } from "@/stores/fileTypes";
@@ -34,10 +35,24 @@ interface ImportStore {
     items: { base64Data: string; ext: string }[],
     targetFolderId?: number | null,
   ) => Promise<FileItem[]>;
+  importBinaryImage: (
+    bytes: Uint8Array,
+    ext: string,
+    refresh?: boolean,
+    targetFolderId?: number | null,
+  ) => Promise<FileItem | null>;
+  importBinaryImages: (
+    items: BinaryImageImportItem[],
+    targetFolderId?: number | null,
+  ) => Promise<FileItem[]>;
   cancelImportTask: () => Promise<void>;
 }
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function decodeBase64ToBytes(base64Data: string) {
+  return Uint8Array.from(atob(base64Data), (char) => char.charCodeAt(0));
+}
 
 async function waitForImportTask(taskId: string, onUpdate: (task: ImportTaskSnapshot) => void) {
   let unlisten: (() => void) | null = null;
@@ -184,7 +199,10 @@ export const useImportStore = create<ImportStore>((set, get) => ({
   },
 
   importImageFromBase64: async (base64Data, ext, refresh = true, targetFolderId) => {
-    const files = await get().importImagesFromBase64([{ base64Data, ext }], targetFolderId);
+    const files = await get().importBinaryImages(
+      [{ bytes: decodeBase64ToBytes(base64Data), ext }],
+      targetFolderId,
+    );
     if (!refresh && files.length > 0) {
       return files[0];
     }
@@ -192,6 +210,24 @@ export const useImportStore = create<ImportStore>((set, get) => ({
   },
 
   importImagesFromBase64: async (items, targetFolderId) => {
+    return get().importBinaryImages(
+      items.map((item) => ({
+        bytes: decodeBase64ToBytes(item.base64Data),
+        ext: item.ext,
+      })),
+      targetFolderId,
+    );
+  },
+
+  importBinaryImage: async (bytes, ext, refresh = true, targetFolderId) => {
+    const files = await get().importBinaryImages([{ bytes, ext }], targetFolderId);
+    if (!refresh && files.length > 0) {
+      return files[0];
+    }
+    return files[0] ?? null;
+  },
+
+  importBinaryImages: async (items, targetFolderId) => {
     if (items.length === 0) return [];
 
     const selectedFolderId =
@@ -202,8 +238,8 @@ export const useImportStore = create<ImportStore>((set, get) => ({
     try {
       const task = await startImportTask({
         items: items.map((item) => ({
-          kind: "base64_image",
-          base64Data: item.base64Data,
+          kind: "binary_image",
+          bytes: item.bytes,
           ext: item.ext,
         })),
         folderId: selectedFolderId,

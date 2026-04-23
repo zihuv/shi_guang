@@ -39,6 +39,17 @@ contextBridge.exposeInMainWorld("shiguang", {
   clipboard: {
     readText: () => clipboard.readText(),
     writeText: (text: string) => clipboard.writeText(text),
+    readImageData: () => {
+      const image = clipboard.readImage();
+      if (image.isEmpty()) {
+        return null;
+      }
+
+      return {
+        bytes: new Uint8Array(image.toPNG()),
+        ext: "png",
+      };
+    },
   },
   asset: {
     toUrl: (filePath: string) => ipcRenderer.invoke("shiguang:asset:toUrl", filePath),
