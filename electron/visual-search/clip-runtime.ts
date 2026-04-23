@@ -8,6 +8,7 @@ import {
   SUPPORTED_FGCLIP_PATCH_BUCKETS,
   preprocessChineseClipImage,
   preprocessFgClipImage,
+  type FgClipImageRuntime,
 } from "./clip-image-preprocess.js";
 import {
   readFlatManifest,
@@ -45,32 +46,43 @@ type ResolvedClipModel = {
   visionPosEmbeddingPath: string | null;
 };
 
-type ChineseClipRuntime = {
+type ChineseClipTextRuntime = {
   kind: "chinese_clip";
   tokenizer: BertWordPieceTokenizer;
 };
 
-type FgClipRuntime = {
+type FgClipTextRuntime = {
   kind: "fg_clip";
   tokenizer: HuggingFaceTokenizer;
   tokenEmbeddingPath: string;
   tokenEmbeddingRows: number;
   tokenEmbeddingDtype: "f16" | "f32";
   tokenEmbeddingDim: number;
-  defaultMaxPatches: number;
-  patchSize: number;
-  basePosEmbedding: Float32Array;
-  baseGridHeight: number;
-  baseGridWidth: number;
 };
+
+type ChineseClipImageRuntime = {
+  kind: "chinese_clip";
+};
+
+type FgClipImageRuntimeHandle = FgClipImageRuntime & {
+  kind: "fg_clip";
+};
+
+type ClipTextRuntime = ChineseClipTextRuntime | FgClipTextRuntime;
+type ClipImageRuntime = ChineseClipImageRuntime | FgClipImageRuntimeHandle;
 
 type RuntimeHandle = {
   key: string;
   model: ResolvedClipModel;
-  textSession: ort.InferenceSession;
-  imageSession: ort.InferenceSession;
-  familyRuntime: ChineseClipRuntime | FgClipRuntime;
-  runtimeSnapshot: ClipRuntimeSnapshot;
+  providerAttempt: ProviderAttempt | null;
+  textRuntime: ClipTextRuntime | null;
+  textRuntimePromise: Promise<ClipTextRuntime> | null;
+  imageRuntime: ClipImageRuntime | null;
+  imageRuntimePromise: Promise<ClipImageRuntime> | null;
+  textSession: ort.InferenceSession | null;
+  textSessionPromise: Promise<ort.InferenceSession> | null;
+  imageSession: ort.InferenceSession | null;
+  imageSessionPromise: Promise<ort.InferenceSession> | null;
 };
 
 type ProviderAttempt = {
@@ -80,9 +92,13 @@ type ProviderAttempt = {
   reason: string;
 };
 
+const CLIP_RUNTIME_IDLE_RELEASE_MS = 30_000;
+
 let runtimeHandle: RuntimeHandle | null = null;
 let runtimePromise: Promise<RuntimeHandle> | null = null;
 let runtimePromiseKey: string | null = null;
+let runtimeReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+let runtimeInvalidationToken = 0;
 let lastRuntimeSnapshot: ClipRuntimeSnapshot = {
   runtimeLoaded: false,
   runtimeMode: "uninitialized",
@@ -140,7 +156,20 @@ export function getCachedClipRuntimeSnapshot(
 ): ClipRuntimeSnapshot {
   const runtimeKey = createClipRuntimeKey(config, normalizedModelPath);
   if (runtimeHandle && runtimeHandle.key === runtimeKey) {
-    return runtimeHandle.runtimeSnapshot;
+    if (
+      runtimeHandle.textSession ||
+      runtimeHandle.imageSession ||
+      runtimeHandle.textSessionPromise ||
+      runtimeHandle.imageSessionPromise
+    ) {
+      return {
+        ...lastRuntimeSnapshot,
+        runtimeMode: lastRuntimeSnapshot.runtimeLoaded
+          ? lastRuntimeSnapshot.runtimeMode
+          : "uninitialized",
+      };
+    }
+    return cpuOnlyRuntimeSnapshot(lastRuntimeSnapshot.runtimeReason, false);
   }
   if (runtimePromiseKey === runtimeKey) {
     return {
@@ -159,10 +188,18 @@ export async function encodeClipText(
   query: string,
 ): Promise<Float32Array> {
   const runtime = await loadClipRuntime(config, validation);
-  if (runtime.familyRuntime.kind === "fg_clip") {
-    return encodeFgClipText(runtime, query);
+  try {
+    const [textRuntime, textSession] = await Promise.all([
+      ensureTextRuntime(runtime, validation),
+      ensureSession(runtime, config, "text"),
+    ]);
+    if (textRuntime.kind === "fg_clip") {
+      return encodeFgClipText(runtime.model, textRuntime, textSession, query);
+    }
+    return encodeChineseClipText(runtime.model, textRuntime, textSession, query);
+  } finally {
+    scheduleClipRuntimeRelease(runtime.key);
   }
-  return encodeChineseClipText(runtime, query);
 }
 
 export async function encodeClipImage(
@@ -171,10 +208,18 @@ export async function encodeClipImage(
   filePath: string,
 ): Promise<Float32Array> {
   const runtime = await loadClipRuntime(config, validation);
-  if (runtime.familyRuntime.kind === "fg_clip") {
-    return encodeFgClipImage(runtime, filePath);
+  try {
+    const [imageRuntime, imageSession] = await Promise.all([
+      ensureImageRuntime(runtime, config, validation),
+      ensureSession(runtime, config, "image"),
+    ]);
+    if (imageRuntime.kind === "fg_clip") {
+      return encodeFgClipImage(runtime.model, imageRuntime, imageSession, filePath);
+    }
+    return encodeChineseClipImage(runtime.model, imageSession, filePath);
+  } finally {
+    scheduleClipRuntimeRelease(runtime.key);
   }
-  return encodeChineseClipImage(runtime, filePath);
 }
 
 export function embeddingToBuffer(embedding: Float32Array): Buffer {
@@ -220,6 +265,7 @@ async function loadClipRuntime(
   }
 
   const runtimeKey = createClipRuntimeKey(config, validation.normalizedModelPath);
+  clearClipRuntimeReleaseTimer();
   if (runtimeHandle && runtimeHandle.key === runtimeKey) {
     return runtimeHandle;
   }
@@ -228,43 +274,90 @@ async function loadClipRuntime(
   }
 
   if (runtimeHandle && runtimeHandle.key !== runtimeKey) {
-    await runtimeHandle.textSession.release().catch(() => undefined);
-    await runtimeHandle.imageSession.release().catch(() => undefined);
+    await releaseRuntimeHandle(runtimeHandle);
     runtimeHandle = null;
   }
 
   runtimePromiseKey = runtimeKey;
-  runtimePromise = (async () => {
+  const invalidationToken = runtimeInvalidationToken;
+  const loadPromise = (async () => {
     const model = await resolveModel(validation.normalizedModelPath);
-    const familyRuntime = await loadFamilyRuntime(config, model);
-    const sessions = await createClipSessions(model, config);
+    if (invalidationToken !== runtimeInvalidationToken) {
+      throw new Error("视觉搜索运行时在加载期间已释放。");
+    }
 
     const handle: RuntimeHandle = {
       key: runtimeKey,
       model,
-      textSession: sessions.textSession,
-      imageSession: sessions.imageSession,
-      familyRuntime,
-      runtimeSnapshot: sessions.runtimeSnapshot,
+      providerAttempt: null,
+      textRuntime: null,
+      textRuntimePromise: null,
+      imageRuntime: null,
+      imageRuntimePromise: null,
+      textSession: null,
+      textSessionPromise: null,
+      imageSession: null,
+      imageSessionPromise: null,
     };
 
     runtimeHandle = handle;
-    lastRuntimeSnapshot = sessions.runtimeSnapshot;
     return handle;
   })();
+  runtimePromise = loadPromise;
 
   try {
-    return await runtimePromise;
+    return await loadPromise;
   } catch (error) {
-    runtimeHandle = null;
-    lastRuntimeSnapshot = cpuOnlyRuntimeSnapshot(
-      error instanceof Error ? error.message : String(error),
-      false,
-    );
+    if (runtimePromise === loadPromise) {
+      runtimeHandle = null;
+      lastRuntimeSnapshot = cpuOnlyRuntimeSnapshot(
+        error instanceof Error ? error.message : String(error),
+        false,
+      );
+    }
     throw error;
   } finally {
-    runtimePromise = null;
-    runtimePromiseKey = null;
+    if (runtimePromise === loadPromise) {
+      runtimePromise = null;
+      runtimePromiseKey = null;
+    }
+  }
+}
+
+function clearClipRuntimeReleaseTimer(): void {
+  if (!runtimeReleaseTimer) {
+    return;
+  }
+  clearTimeout(runtimeReleaseTimer);
+  runtimeReleaseTimer = null;
+}
+
+function scheduleClipRuntimeRelease(runtimeKey: string): void {
+  clearClipRuntimeReleaseTimer();
+  runtimeReleaseTimer = setTimeout(() => {
+    if (!runtimeHandle || runtimeHandle.key !== runtimeKey || runtimePromise) {
+      return;
+    }
+    void releaseClipRuntime("视觉搜索运行时空闲后已释放。");
+  }, CLIP_RUNTIME_IDLE_RELEASE_MS);
+  runtimeReleaseTimer.unref?.();
+}
+
+export async function releaseClipRuntime(reason: string | null = "视觉搜索运行时已释放。"): Promise<void> {
+  clearClipRuntimeReleaseTimer();
+  runtimeInvalidationToken += 1;
+  runtimePromise = null;
+  runtimePromiseKey = null;
+
+  const currentHandle = runtimeHandle;
+  runtimeHandle = null;
+
+  if (currentHandle) {
+    await releaseRuntimeHandle(currentHandle);
+  }
+
+  if (reason !== undefined) {
+    lastRuntimeSnapshot = cpuOnlyRuntimeSnapshot(reason, false);
   }
 }
 
@@ -353,42 +446,56 @@ function sessionOptionsForProviders(
   };
 }
 
-async function createSessionsWithAttempt(
-  model: ResolvedClipModel,
-  config: ClipRuntimeConfig,
-  attempt: ProviderAttempt,
-): Promise<{ textSession: ort.InferenceSession; imageSession: ort.InferenceSession }> {
-  const sessionOptions = sessionOptionsForProviders(config, attempt.providers);
-  let textSession: ort.InferenceSession | null = null;
-  let imageSession: ort.InferenceSession | null = null;
-  try {
-    textSession = await ort.InferenceSession.create(model.textModelPath, sessionOptions);
-    imageSession = await ort.InferenceSession.create(model.imageModelPath, sessionOptions);
-    return { textSession, imageSession };
-  } catch (error) {
-    await textSession?.release().catch(() => undefined);
-    await imageSession?.release().catch(() => undefined);
-    throw error;
-  }
+function runtimeWasInvalidated(handle: RuntimeHandle, invalidationToken: number): boolean {
+  return invalidationToken !== runtimeInvalidationToken || runtimeHandle !== handle;
 }
 
-async function createClipSessions(
-  model: ResolvedClipModel,
+async function releaseLoadedSessions(handle: RuntimeHandle): Promise<void> {
+  const textSession = handle.textSession;
+  const imageSession = handle.imageSession;
+  handle.textSession = null;
+  handle.imageSession = null;
+  handle.providerAttempt = null;
+  await textSession?.release().catch(() => undefined);
+  await imageSession?.release().catch(() => undefined);
+}
+
+async function releaseRuntimeHandle(handle: RuntimeHandle): Promise<void> {
+  await releaseLoadedSessions(handle);
+  handle.textRuntime = null;
+  handle.textRuntimePromise = null;
+  handle.imageRuntime = null;
+  handle.imageRuntimePromise = null;
+  handle.textSessionPromise = null;
+  handle.imageSessionPromise = null;
+}
+
+async function createSessionWithAttempt(
+  modelPath: string,
+  config: ClipRuntimeConfig,
+  attempt: ProviderAttempt,
+): Promise<ort.InferenceSession> {
+  return ort.InferenceSession.create(modelPath, sessionOptionsForProviders(config, attempt.providers));
+}
+
+async function createClipSession(
+  modelPath: string,
   config: ClipRuntimeConfig,
 ): Promise<{
-  textSession: ort.InferenceSession;
-  imageSession: ort.InferenceSession;
+  session: ort.InferenceSession;
+  attempt: ProviderAttempt;
   runtimeSnapshot: ClipRuntimeSnapshot;
 }> {
   const attempts = providerAttempts(config);
   let lastError: unknown = null;
   for (const [index, attempt] of attempts.entries()) {
     try {
-      const sessions = await createSessionsWithAttempt(model, config, attempt);
+      const session = await createSessionWithAttempt(modelPath, config, attempt);
       const fallbackDetail =
         index > 0 && lastError instanceof Error ? `原因：${lastError.message}` : null;
       return {
-        ...sessions,
+        session,
+        attempt,
         runtimeSnapshot: providerSnapshot(
           attempt.effectiveProvider,
           attempt.runtimeMode,
@@ -405,10 +512,7 @@ async function createClipSessions(
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function loadFamilyRuntime(
-  config: ClipRuntimeConfig,
-  model: ResolvedClipModel,
-): Promise<ChineseClipRuntime | FgClipRuntime> {
+async function loadTextRuntime(model: ResolvedClipModel): Promise<ClipTextRuntime> {
   if (model.manifest.family === "chinese_clip") {
     return {
       kind: "chinese_clip",
@@ -424,12 +528,8 @@ async function loadFamilyRuntime(
   }
 
   const tokenEmbedding = model.manifest.text.token_embedding;
-  const preprocess = model.manifest.image.preprocess;
-  if (!tokenEmbedding || !model.tokenEmbeddingPath || preprocess.kind !== "fgclip_patch_tokens") {
-    throw new Error("fg_clip 模型目录缺少 token embedding 或 vision position embedding。");
-  }
-  if (!model.visionPosEmbeddingPath) {
-    throw new Error("fg_clip 模型目录缺少 vision position embedding。");
+  if (!tokenEmbedding || !model.tokenEmbeddingPath) {
+    throw new Error("fg_clip 模型目录缺少 token embedding。");
   }
 
   const tokenEmbeddingDtype = tokenEmbedding.dtype === "f32" ? "f32" : "f16";
@@ -438,6 +538,37 @@ async function loadFamilyRuntime(
     tokenEmbeddingDtype,
     tokenEmbedding.embedding_dim,
   );
+  const tokenizerJson = JSON.parse(await fs.readFile(model.tokenizerPath, "utf8")) as object;
+  return {
+    kind: "fg_clip",
+    tokenizer: new HuggingFaceTokenizer(tokenizerJson, {}),
+    tokenEmbeddingPath: model.tokenEmbeddingPath,
+    tokenEmbeddingRows,
+    tokenEmbeddingDtype,
+    tokenEmbeddingDim: tokenEmbedding.embedding_dim,
+  };
+}
+
+async function loadImageRuntime(
+  config: ClipRuntimeConfig,
+  model: ResolvedClipModel,
+): Promise<ClipImageRuntime> {
+  if (model.manifest.family === "chinese_clip") {
+    return { kind: "chinese_clip" };
+  }
+
+  if (model.manifest.family !== "fg_clip") {
+    throw new Error(`当前 Electron 版本暂不支持 ${model.manifest.family}。`);
+  }
+
+  const preprocess = model.manifest.image.preprocess;
+  if (preprocess.kind !== "fgclip_patch_tokens") {
+    throw new Error("fg_clip 模型目录缺少 vision position embedding。");
+  }
+  if (!model.visionPosEmbeddingPath) {
+    throw new Error("fg_clip 模型目录缺少 vision position embedding。");
+  }
+
   const defaultMaxPatches = resolveFgClipMaxPatches(
     preprocess.default_max_patches ?? 0,
     config.fgclipMaxPatches,
@@ -451,20 +582,183 @@ async function loadFamilyRuntime(
     );
   }
 
-  const tokenizerJson = JSON.parse(await fs.readFile(model.tokenizerPath, "utf8")) as object;
   return {
     kind: "fg_clip",
-    tokenizer: new HuggingFaceTokenizer(tokenizerJson, {}),
-    tokenEmbeddingPath: model.tokenEmbeddingPath,
-    tokenEmbeddingRows,
-    tokenEmbeddingDtype,
-    tokenEmbeddingDim: tokenEmbedding.embedding_dim,
+    tokenEmbeddingDim: model.manifest.embedding_dim,
     defaultMaxPatches,
     patchSize: preprocess.patch_size ?? 0,
     basePosEmbedding,
     baseGridHeight: side,
     baseGridWidth: side,
   };
+}
+
+async function ensureTextRuntime(
+  handle: RuntimeHandle,
+  validation: ClipModelValidationResult,
+): Promise<ClipTextRuntime> {
+  if (handle.textRuntime) {
+    return handle.textRuntime;
+  }
+  if (handle.textRuntimePromise) {
+    return handle.textRuntimePromise;
+  }
+
+  const invalidationToken = runtimeInvalidationToken;
+  const loadPromise = (async () => {
+    const textRuntime = await loadTextRuntime(handle.model);
+    if (runtimeWasInvalidated(handle, invalidationToken)) {
+      throw new Error("视觉搜索文本运行时在加载期间已释放。");
+    }
+    return textRuntime;
+  })();
+  handle.textRuntimePromise = loadPromise;
+
+  try {
+    const textRuntime = await loadPromise;
+    if (handle.textRuntimePromise === loadPromise) {
+      handle.textRuntime = textRuntime;
+    }
+    return textRuntime;
+  } catch (error) {
+    if (handle.textRuntimePromise === loadPromise) {
+      lastRuntimeSnapshot = cpuOnlyRuntimeSnapshot(
+        error instanceof Error ? error.message : validation.message,
+        false,
+      );
+    }
+    throw error;
+  } finally {
+    if (handle.textRuntimePromise === loadPromise) {
+      handle.textRuntimePromise = null;
+    }
+  }
+}
+
+async function ensureImageRuntime(
+  handle: RuntimeHandle,
+  config: ClipRuntimeConfig,
+  validation: ClipModelValidationResult,
+): Promise<ClipImageRuntime> {
+  if (handle.imageRuntime) {
+    return handle.imageRuntime;
+  }
+  if (handle.imageRuntimePromise) {
+    return handle.imageRuntimePromise;
+  }
+
+  const invalidationToken = runtimeInvalidationToken;
+  const loadPromise = (async () => {
+    const imageRuntime = await loadImageRuntime(config, handle.model);
+    if (runtimeWasInvalidated(handle, invalidationToken)) {
+      throw new Error("视觉搜索图片运行时在加载期间已释放。");
+    }
+    return imageRuntime;
+  })();
+  handle.imageRuntimePromise = loadPromise;
+
+  try {
+    const imageRuntime = await loadPromise;
+    if (handle.imageRuntimePromise === loadPromise) {
+      handle.imageRuntime = imageRuntime;
+    }
+    return imageRuntime;
+  } catch (error) {
+    if (handle.imageRuntimePromise === loadPromise) {
+      lastRuntimeSnapshot = cpuOnlyRuntimeSnapshot(
+        error instanceof Error ? error.message : validation.message,
+        false,
+      );
+    }
+    throw error;
+  } finally {
+    if (handle.imageRuntimePromise === loadPromise) {
+      handle.imageRuntimePromise = null;
+    }
+  }
+}
+
+async function ensureSession(
+  handle: RuntimeHandle,
+  config: ClipRuntimeConfig,
+  kind: "text" | "image",
+): Promise<ort.InferenceSession> {
+  const currentSession = kind === "text" ? handle.textSession : handle.imageSession;
+  if (currentSession) {
+    return currentSession;
+  }
+
+  const currentPromise = kind === "text" ? handle.textSessionPromise : handle.imageSessionPromise;
+  if (currentPromise) {
+    return currentPromise;
+  }
+
+  const modelPath = kind === "text" ? handle.model.textModelPath : handle.model.imageModelPath;
+  const invalidationToken = runtimeInvalidationToken;
+  const loadPromise = (async () => {
+    if (handle.providerAttempt) {
+      try {
+        const session = await createSessionWithAttempt(modelPath, config, handle.providerAttempt);
+        if (runtimeWasInvalidated(handle, invalidationToken)) {
+          await session.release().catch(() => undefined);
+          throw new Error("视觉搜索会话在加载期间已释放。");
+        }
+        return session;
+      } catch {
+        await releaseLoadedSessions(handle);
+      }
+    }
+
+    const { session, attempt, runtimeSnapshot } = await createClipSession(modelPath, config);
+    if (runtimeWasInvalidated(handle, invalidationToken)) {
+      await session.release().catch(() => undefined);
+      throw new Error("视觉搜索会话在加载期间已释放。");
+    }
+    handle.providerAttempt = attempt;
+    lastRuntimeSnapshot = runtimeSnapshot;
+    return session;
+  })();
+
+  if (kind === "text") {
+    handle.textSessionPromise = loadPromise;
+  } else {
+    handle.imageSessionPromise = loadPromise;
+  }
+
+  try {
+    const session = await loadPromise;
+    if (kind === "text") {
+      if (handle.textSessionPromise === loadPromise) {
+        handle.textSession = session;
+      }
+    } else if (handle.imageSessionPromise === loadPromise) {
+      handle.imageSession = session;
+    }
+    return session;
+  } catch (error) {
+    if (kind === "text") {
+      if (handle.textSessionPromise === loadPromise) {
+        handle.textSession = null;
+      }
+    } else if (handle.imageSessionPromise === loadPromise) {
+      handle.imageSession = null;
+    }
+    if (!handle.textSession && !handle.imageSession) {
+      lastRuntimeSnapshot = cpuOnlyRuntimeSnapshot(
+        error instanceof Error ? error.message : String(error),
+        false,
+      );
+    }
+    throw error;
+  } finally {
+    if (kind === "text") {
+      if (handle.textSessionPromise === loadPromise) {
+        handle.textSessionPromise = null;
+      }
+    } else if (handle.imageSessionPromise === loadPromise) {
+      handle.imageSessionPromise = null;
+    }
+  }
 }
 
 function resolveIntraThreads(config: ClipRuntimeConfig): number | undefined {
@@ -548,7 +842,7 @@ function f16ToF32(bits: number): number {
 }
 
 async function gatherTokenEmbeddingRows(
-  runtime: FgClipRuntime,
+  runtime: FgClipTextRuntime,
   inputIds: Int32Array,
 ): Promise<Float32Array> {
   const rowBytes = (runtime.tokenEmbeddingDtype === "f16" ? 2 : 4) * runtime.tokenEmbeddingDim;
@@ -584,14 +878,11 @@ async function gatherTokenEmbeddingRows(
   return values;
 }
 
-function encodeFgClipTokenIds(runtime: RuntimeHandle, query: string): Int32Array {
-  if (runtime.familyRuntime.kind !== "fg_clip") {
-    throw new Error("当前模型不是 fg_clip。");
-  }
-  const encoded = runtime.familyRuntime.tokenizer.encode(query.toLowerCase(), {
+function encodeFgClipTokenIds(model: ResolvedClipModel, runtime: FgClipTextRuntime, query: string): Int32Array {
+  const encoded = runtime.tokenizer.encode(query.toLowerCase(), {
     add_special_tokens: true,
   });
-  const contextLength = runtime.model.manifest.text.context_length;
+  const contextLength = model.manifest.text.context_length;
   const inputIds = new Int32Array(contextLength);
   inputIds.fill(0);
   for (let index = 0; index < Math.min(contextLength, encoded.ids.length); index += 1) {
@@ -662,27 +953,29 @@ function intTensorForType(
   return new ort.Tensor("int32", values, dims);
 }
 
-async function encodeChineseClipText(runtime: RuntimeHandle, query: string): Promise<Float32Array> {
-  if (runtime.familyRuntime.kind !== "chinese_clip") {
-    throw new Error("当前模型不是 chinese_clip。");
-  }
-  if (runtime.model.manifest.text.input.kind !== "bert_like") {
+async function encodeChineseClipText(
+  model: ResolvedClipModel,
+  runtime: ChineseClipTextRuntime,
+  textSession: ort.InferenceSession,
+  query: string,
+): Promise<Float32Array> {
+  if (model.manifest.text.input.kind !== "bert_like") {
     throw new Error("chinese_clip 文本输入配置无效。");
   }
 
-  const encoded = runtime.familyRuntime.tokenizer.encode(query);
-  const textInput = runtime.model.manifest.text.input;
+  const encoded = runtime.tokenizer.encode(query);
+  const textInput = model.manifest.text.input;
   const inputIdsName = textInput.input_ids_name;
   const attentionMaskName = textInput.attention_mask_name;
   if (!inputIdsName || !attentionMaskName) {
     throw new Error("chinese_clip 文本输入名称配置无效。");
   }
-  const inputDims = [1, runtime.model.manifest.text.context_length] as const;
-  const inputIdsType = getSessionInputType(runtime.textSession, inputIdsName);
-  const attentionMaskType = getSessionInputType(runtime.textSession, attentionMaskName);
+  const inputDims = [1, model.manifest.text.context_length] as const;
+  const inputIdsType = getSessionInputType(textSession, inputIdsName);
+  const attentionMaskType = getSessionInputType(textSession, attentionMaskName);
   const tokenTypeIdsName = textInput.token_type_ids_name;
   const tokenTypeIdsType = tokenTypeIdsName
-    ? getSessionInputType(runtime.textSession, tokenTypeIdsName)
+    ? getSessionInputType(textSession, tokenTypeIdsName)
     : undefined;
 
   const feeds: Record<string, ort.Tensor> = {
@@ -693,48 +986,51 @@ async function encodeChineseClipText(runtime: RuntimeHandle, query: string): Pro
     feeds[tokenTypeIdsName] = intTensorForType(tokenTypeIdsType, encoded.tokenTypeIds, inputDims);
   }
 
-  const outputs = await runtime.textSession.run(feeds as ort.InferenceSession.FeedsType, [
-    runtime.model.manifest.text.output_name,
+  const outputs = await textSession.run(feeds as ort.InferenceSession.FeedsType, [
+    model.manifest.text.output_name,
   ]);
   return extractEmbeddingFromOutput(
-    outputs[runtime.model.manifest.text.output_name],
-    runtime.model.manifest.embedding_dim,
-    runtime.model.manifest.normalize_output !== false,
+    outputs[model.manifest.text.output_name],
+    model.manifest.embedding_dim,
+    model.manifest.normalize_output !== false,
   );
 }
 
-async function encodeFgClipText(runtime: RuntimeHandle, query: string): Promise<Float32Array> {
-  if (runtime.familyRuntime.kind !== "fg_clip") {
-    throw new Error("当前模型不是 fg_clip。");
-  }
-  const inputIds = encodeFgClipTokenIds(runtime, query);
-  const tokenEmbeds = await gatherTokenEmbeddingRows(runtime.familyRuntime, inputIds);
+async function encodeFgClipText(
+  model: ResolvedClipModel,
+  runtime: FgClipTextRuntime,
+  textSession: ort.InferenceSession,
+  query: string,
+): Promise<Float32Array> {
+  const inputIds = encodeFgClipTokenIds(model, runtime, query);
+  const tokenEmbeds = await gatherTokenEmbeddingRows(runtime, inputIds);
   const feeds: ort.InferenceSession.FeedsType = {
     token_embeds: new ort.Tensor("float32", tokenEmbeds, [
       1,
-      runtime.model.manifest.text.context_length,
-      runtime.familyRuntime.tokenEmbeddingDim,
+      model.manifest.text.context_length,
+      runtime.tokenEmbeddingDim,
     ]),
   };
-  const outputs = await runtime.textSession.run(feeds, [runtime.model.manifest.text.output_name]);
+  const outputs = await textSession.run(feeds, [model.manifest.text.output_name]);
   return extractEmbeddingFromOutput(
-    outputs[runtime.model.manifest.text.output_name],
-    runtime.model.manifest.embedding_dim,
-    runtime.model.manifest.normalize_output !== false,
+    outputs[model.manifest.text.output_name],
+    model.manifest.embedding_dim,
+    model.manifest.normalize_output !== false,
   );
 }
 
 async function encodeChineseClipImage(
-  runtime: RuntimeHandle,
+  model: ResolvedClipModel,
+  imageSession: ort.InferenceSession,
   filePath: string,
 ): Promise<Float32Array> {
-  const tensor = await preprocessChineseClipImage(filePath, runtime.model.manifest);
-  const preprocess = runtime.model.manifest.image.preprocess;
+  const tensor = await preprocessChineseClipImage(filePath, model.manifest);
+  const preprocess = model.manifest.image.preprocess;
   if (preprocess.kind !== "clip_image") {
     throw new Error("chinese_clip 图片预处理配置无效。");
   }
 
-  const inputName = runtime.imageSession.inputNames[0];
+  const inputName = imageSession.inputNames[0];
   const feeds: ort.InferenceSession.FeedsType = {
     [inputName]: new ort.Tensor("float32", tensor, [
       1,
@@ -743,20 +1039,22 @@ async function encodeChineseClipImage(
       preprocess.image_size ?? 0,
     ]),
   };
-  const outputs = await runtime.imageSession.run(feeds, [runtime.model.manifest.image.output_name]);
+  const outputs = await imageSession.run(feeds, [model.manifest.image.output_name]);
   return extractEmbeddingFromOutput(
-    outputs[runtime.model.manifest.image.output_name],
-    runtime.model.manifest.embedding_dim,
-    runtime.model.manifest.normalize_output !== false,
+    outputs[model.manifest.image.output_name],
+    model.manifest.embedding_dim,
+    model.manifest.normalize_output !== false,
   );
 }
 
-async function encodeFgClipImage(runtime: RuntimeHandle, filePath: string): Promise<Float32Array> {
-  if (runtime.familyRuntime.kind !== "fg_clip") {
-    throw new Error("当前模型不是 fg_clip。");
-  }
-  const inputs = await preprocessFgClipImage(filePath, runtime.familyRuntime);
-  const maskType = getSessionInputType(runtime.imageSession, "pixel_attention_mask");
+async function encodeFgClipImage(
+  model: ResolvedClipModel,
+  runtime: FgClipImageRuntimeHandle,
+  imageSession: ort.InferenceSession,
+  filePath: string,
+): Promise<Float32Array> {
+  const inputs = await preprocessFgClipImage(filePath, runtime);
+  const maskType = getSessionInputType(imageSession, "pixel_attention_mask");
   const feeds: ort.InferenceSession.FeedsType = {
     pixel_values: new ort.Tensor("float32", inputs.pixelValues, [
       1,
@@ -770,13 +1068,13 @@ async function encodeFgClipImage(runtime: RuntimeHandle, filePath: string): Prom
     pos_embed: new ort.Tensor("float32", inputs.posEmbed, [
       1,
       inputs.maxPatches,
-      runtime.model.manifest.embedding_dim,
+      model.manifest.embedding_dim,
     ]),
   };
-  const outputs = await runtime.imageSession.run(feeds, [runtime.model.manifest.image.output_name]);
+  const outputs = await imageSession.run(feeds, [model.manifest.image.output_name]);
   return extractEmbeddingFromOutput(
-    outputs[runtime.model.manifest.image.output_name],
-    runtime.model.manifest.embedding_dim,
-    runtime.model.manifest.normalize_output !== false,
+    outputs[model.manifest.image.output_name],
+    model.manifest.embedding_dim,
+    model.manifest.normalize_output !== false,
   );
 }

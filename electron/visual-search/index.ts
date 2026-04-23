@@ -11,6 +11,7 @@ import {
   getCachedClipRuntimeSnapshot,
   missingFilesForManifest,
   normalizeModelPath,
+  releaseClipRuntime,
   readFlatManifest,
   validateFlatClipManifest,
   type ClipModelValidationResult,
@@ -176,6 +177,10 @@ export async function encodeVisualSearchImage(
   filePath: string,
 ): Promise<Float32Array> {
   return encodeClipImage(config.runtime, validation, filePath);
+}
+
+export async function releaseVisualSearchRuntime(reason?: string | null): Promise<void> {
+  await releaseClipRuntime(reason);
 }
 
 export { embeddingToBuffer };

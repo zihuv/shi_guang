@@ -85,10 +85,10 @@ export const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
   autoVectorizeOnImport: false,
   processUnindexedOnly: true,
   runtime: {
-    device: "auto",
+    device: "cpu",
     providerPolicy: "interactive",
-    intraThreads: "auto",
-    fgclipMaxPatches: null,
+    intraThreads: 4,
+    fgclipMaxPatches: 256,
   },
 };
 
@@ -149,11 +149,16 @@ function resolveOptionalPositiveInteger(value: unknown): number | null {
 }
 
 function resolveOptionalFgclipMaxPatches(value: unknown): number | null {
-  const normalized = resolveOptionalPositiveInteger(value);
-  if (normalized == null) {
+  if (value === null) {
     return null;
   }
-  return [128, 256, 576, 784, 1024].includes(normalized) ? normalized : null;
+  const normalized = resolveOptionalPositiveInteger(value);
+  if (normalized == null) {
+    return DEFAULT_VISUAL_SEARCH_CONFIG.runtime.fgclipMaxPatches;
+  }
+  return [128, 256, 576, 784, 1024].includes(normalized)
+    ? normalized
+    : DEFAULT_VISUAL_SEARCH_CONFIG.runtime.fgclipMaxPatches;
 }
 
 function resolveVisualSearchRuntimeDevice(value: unknown): VisualSearchRuntimeDevice {

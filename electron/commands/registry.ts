@@ -64,10 +64,10 @@ import {
   removeThumbnailForFile,
 } from "../storage";
 import {
-  encodeVisualSearchText,
   getRecommendedVisualModelPath,
   validateVisualModelPath,
 } from "../visual-search";
+import { encodeVisualSearchTextInUtility } from "../visual-index-utility-service.js";
 import type { AppState, FileRecord, ImportTaskItem } from "../types";
 import {
   type CommandHandler,
@@ -184,7 +184,11 @@ export function createCommandRegistry(
         throw new Error(validation.message);
       }
 
-      const embedding = await encodeVisualSearchText(config, validation, naturalLanguageQuery);
+      const embedding = await encodeVisualSearchTextInUtility(
+        config,
+        validation,
+        naturalLanguageQuery,
+      );
       return searchFilesByVisualEmbedding(state.db, args, validation.modelId, embedding);
     },
     update_file_metadata: (args) =>

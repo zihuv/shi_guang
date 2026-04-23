@@ -18,10 +18,10 @@ const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
   autoVectorizeOnImport: false,
   processUnindexedOnly: true,
   runtime: {
-    device: "auto",
+    device: "cpu",
     providerPolicy: "interactive",
-    intraThreads: "auto",
-    fgclipMaxPatches: null,
+    intraThreads: 4,
+    fgclipMaxPatches: 256,
   },
 };
 
@@ -40,6 +40,20 @@ function resolvePositiveInteger(value: unknown): number | null {
   }
   const rounded = Math.round(parsed);
   return rounded > 0 ? rounded : null;
+}
+
+function resolveRuntimeThreads(value: unknown): VisualSearchRuntimeThreadConfig {
+  if (typeof value === "string" && value.trim().toLowerCase() === "auto") {
+    return "auto";
+  }
+  return resolvePositiveInteger(value) ?? DEFAULT_VISUAL_SEARCH_CONFIG.runtime.intraThreads;
+}
+
+function resolveRuntimeFgclipMaxPatches(value: unknown): number | null {
+  if (value === null) {
+    return null;
+  }
+  return resolvePositiveInteger(value) ?? DEFAULT_VISUAL_SEARCH_CONFIG.runtime.fgclipMaxPatches;
 }
 
 export function resolveVisualSearchConfig(raw: string | null): VisualSearchConfig {
@@ -65,10 +79,8 @@ export function resolveVisualSearchConfig(raw: string | null): VisualSearchConfi
         providerPolicy: isVisualSearchProviderPolicy(runtime.providerPolicy)
           ? runtime.providerPolicy
           : DEFAULT_VISUAL_SEARCH_CONFIG.runtime.providerPolicy,
-        intraThreads:
-          resolvePositiveInteger(runtime.intraThreads) ??
-          DEFAULT_VISUAL_SEARCH_CONFIG.runtime.intraThreads,
-        fgclipMaxPatches: resolvePositiveInteger(runtime.fgclipMaxPatches),
+        intraThreads: resolveRuntimeThreads(runtime.intraThreads),
+        fgclipMaxPatches: resolveRuntimeFgclipMaxPatches(runtime.fgclipMaxPatches),
       },
     };
   } catch {

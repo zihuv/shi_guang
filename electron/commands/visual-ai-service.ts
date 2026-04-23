@@ -23,13 +23,17 @@ import {
 import { canAnalyzeImage } from "../media";
 import {
   embeddingToBuffer,
-  encodeVisualSearchImage,
   getCachedVisualRuntimeSnapshot,
   resolveVisualSearchConfig,
   validateVisualModelPath,
   type VisualModelValidationResult,
   type VisualSearchConfig,
 } from "../visual-search";
+import {
+  encodeVisualSearchImageInUtility,
+  getVisualIndexUtilitySnapshot,
+  isVisualIndexUtilitySuspended,
+} from "../visual-index-utility-service.js";
 import type {
   AiMetadataTaskSnapshot,
   AppState,
@@ -39,6 +43,17 @@ import type {
 import { emit, taskId } from "./common";
 
 let autoVisualIndexQueue = Promise.resolve();
+
+function cancelVisualIndexEntry(
+  entry: { snapshot: VisualIndexTaskSnapshot; cancelled: boolean },
+  window: BrowserWindow | null,
+): void {
+  entry.cancelled = true;
+  entry.snapshot.status = "cancelled";
+  entry.snapshot.currentFileId = null;
+  entry.snapshot.currentFileName = null;
+  emit(window, "visual-index-task-updated", entry.snapshot.id);
+}
 
 export function loadVisualSearchConfig(state: AppState): VisualSearchConfig {
   return resolveVisualSearchConfig(getSetting(state.db, "visualSearch"));
@@ -57,7 +72,7 @@ async function indexVisualCandidate(
   validation: VisualModelValidationResult,
   candidate: NonNullable<ReturnType<typeof getVisualIndexCandidate>>,
 ): Promise<void> {
-  const embedding = await encodeVisualSearchImage(config, validation, candidate.file.path);
+  const embedding = await encodeVisualSearchImageInUtility(config, validation, candidate.file.path);
   upsertFileVisualEmbedding(state.db, {
     fileId: candidate.file.id,
     modelId: validation.modelId ?? "",
@@ -74,6 +89,10 @@ export async function maybeAutoIndexImportedFile(
   file: FileRecord,
   window: BrowserWindow | null,
 ): Promise<void> {
+  if (isVisualIndexUtilitySuspended()) {
+    return;
+  }
+
   const config = loadVisualSearchConfig(state);
   if (!config.enabled || !config.autoVectorizeOnImport) {
     return;
@@ -134,7 +153,17 @@ export async function getVisualStatus(state: AppState) {
   const counts = getVisualIndexCounts(state.db, modelId ?? "__visual_search_unconfigured__");
   const runtimeSnapshot =
     validation.valid && validation.normalizedModelPath
-      ? getCachedVisualRuntimeSnapshot(config, validation.normalizedModelPath)
+      ? (() => {
+          const mainRuntimeSnapshot = getCachedVisualRuntimeSnapshot(
+            config,
+            validation.normalizedModelPath,
+          );
+          const utilityRuntimeSnapshot = getVisualIndexUtilitySnapshot(
+            config,
+            validation.normalizedModelPath,
+          );
+          return utilityRuntimeSnapshot.runtimeLoaded ? utilityRuntimeSnapshot : mainRuntimeSnapshot;
+        })()
       : {
           runtimeLoaded: false,
           runtimeMode: "uninitialized" as const,
@@ -187,6 +216,9 @@ export async function runVisualIndexJob(
   if (!config.enabled) {
     throw new Error("请先在设置中启用本地自然语言搜索。");
   }
+  if (isVisualIndexUtilitySuspended()) {
+    throw new Error("应用已隐藏，视觉索引后台服务已暂停。");
+  }
 
   const validation = await loadVisualModelValidation(state, config);
   if (!validation.valid || !validation.modelId) {
@@ -237,6 +269,17 @@ export async function runVisualIndexJob(
       await indexVisualCandidate(state, config, validation, candidate);
       indexed += 1;
     } catch (error) {
+      if (entry?.cancelled || isVisualIndexUtilitySuspended()) {
+        if (entry) {
+          cancelVisualIndexEntry(entry, window);
+        }
+        return {
+          total: candidates.length,
+          indexed,
+          failed,
+          skipped: skipped + Math.max(0, candidates.length - processed),
+        };
+      }
       failed += 1;
       markFileVisualEmbeddingError(state.db, {
         fileId: candidate.file.id,
@@ -515,6 +558,15 @@ export function startAiMetadataTask(
     }
   })();
   return snapshot;
+}
+
+export function suspendVisualIndexing(state: AppState, window: BrowserWindow | null): void {
+  for (const entry of state.visualIndexTasks.values()) {
+    if (entry.cancelled) {
+      continue;
+    }
+    cancelVisualIndexEntry(entry, window);
+  }
 }
 
 export async function startVisualIndexTask(

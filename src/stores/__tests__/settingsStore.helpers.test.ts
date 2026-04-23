@@ -151,9 +151,30 @@ describe("settingsStore helpers", () => {
       autoVectorizeOnImport: false,
       processUnindexedOnly: true,
       runtime: {
-        device: "auto",
+        device: "cpu",
         providerPolicy: "interactive",
-        intraThreads: "auto",
+        intraThreads: 4,
+        fgclipMaxPatches: 256,
+      },
+    });
+  });
+
+  it("preserves explicit fg-clip patch default opt-out", () => {
+    expect(
+      resolveVisualSearchConfig({
+        runtime: {
+          fgclipMaxPatches: null,
+        },
+      }),
+    ).toEqual({
+      enabled: false,
+      modelPath: "",
+      autoVectorizeOnImport: false,
+      processUnindexedOnly: true,
+      runtime: {
+        device: "cpu",
+        providerPolicy: "interactive",
+        intraThreads: 4,
         fgclipMaxPatches: null,
       },
     });

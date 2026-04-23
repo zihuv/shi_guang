@@ -13,6 +13,12 @@ import {
   startCollectorServer,
   startLibrarySyncService,
 } from "./commands";
+import { suspendVisualIndexing } from "./commands/visual-ai-service.js";
+import { releaseVisualSearchRuntime } from "./visual-search/index.js";
+import {
+  setVisualIndexUtilitySuspended,
+  stopVisualIndexUtility,
+} from "./visual-index-utility-service.js";
 import {
   ensureStorageDirs,
   getDbPath,
@@ -300,6 +306,7 @@ async function resolveStartupIndexPath(appDataDir: string): Promise<string | nul
 }
 
 async function showMainWindow(): Promise<BrowserWindow> {
+  setVisualIndexUtilitySuspended(false);
   setDockVisibility(true);
 
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -365,6 +372,12 @@ function ensureTray(): Tray {
 }
 
 function moveWindowToBackground(window: BrowserWindow): void {
+  if (appState) {
+    suspendVisualIndexing(appState, window);
+  }
+  setVisualIndexUtilitySuspended(true);
+  stopVisualIndexUtility();
+  void releaseVisualSearchRuntime("应用已转入后台，视觉搜索运行时已释放。");
   ensureTray();
   setDockVisibility(false);
   window.setSkipTaskbar(true);
@@ -578,6 +591,9 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  setVisualIndexUtilitySuspended(true);
+  stopVisualIndexUtility();
+  void releaseVisualSearchRuntime("应用退出时已释放视觉搜索运行时。");
 });
 
 app.on("activate", () => {

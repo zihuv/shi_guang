@@ -24,8 +24,12 @@ export default defineConfig({
   main: {
     build: {
       lib: {
-        entry: path.resolve(__dirname, "electron/main.ts"),
+        entry: {
+          main: path.resolve(__dirname, "electron/main.ts"),
+          "visual-index-utility": path.resolve(__dirname, "electron/visual-index-utility.ts"),
+        },
         formats: ["cjs"],
+        fileName: (_format, entryName) => `${entryName}.cjs`,
       },
       rollupOptions: {
         external: externalDependencies,
