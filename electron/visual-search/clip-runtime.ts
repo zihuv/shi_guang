@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Tokenizer as HuggingFaceTokenizer } from "@huggingface/tokenizers";
 import * as ort from "onnxruntime-node";
-import { BertWordPieceTokenizer } from "./bert-wordpiece.js";
+import { BertWordPieceTokenizer } from "../bert-wordpiece.js";
 import {
   SUPPORTED_FGCLIP_PATCH_BUCKETS,
   preprocessChineseClipImage,
