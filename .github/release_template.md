@@ -20,15 +20,13 @@
         <tr>
             <td>Windows</td>
             <td>
-                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_x64.exe"><img src="https://img.shields.io/badge/Installer-x64-2d7d9a.svg?logo=windows"></a><br>
-                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_x64.zip"><img src="https://img.shields.io/badge/ZIP-x64-67b7d1.svg?logo=windows"></a>
+                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_x64.exe"><img src="https://img.shields.io/badge/Installer-x64-2d7d9a.svg?logo=windows"></a>
             </td>
         </tr>
         <tr>
             <td>macOS</td>
             <td>
-                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_arm64.dmg"><img src="https://img.shields.io/badge/DMG-Apple%20Silicon-%23000000.svg?logo=apple"></a><br>
-                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_arm64.zip"><img src="https://img.shields.io/badge/ZIP-Apple%20Silicon-%23666666.svg?logo=apple"></a>
+                <a href="https://github.com/zihuv/shiguang/releases/download/VERSION/shiguang_VERSION_arm64.dmg"><img src="https://img.shields.io/badge/DMG-Apple%20Silicon-%23000000.svg?logo=apple"></a>
             </td>
         </tr>
         <tr>
