@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, net, protocol } from "electron";
+import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, net, protocol, shell } from "electron";
 import log from "electron-log/main";
 import crypto from "node:crypto";
 import fssync from "node:fs";
@@ -408,6 +408,15 @@ function contentTypeForPath(filePath: string): string {
   return types[ext] ?? "application/octet-stream";
 }
 
+function isExternalHttpUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function registerFileProtocol(): void {
   protocol.handle("shiguang-file", async (request) => {
     const state = appState;
@@ -467,6 +476,24 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   });
   mainWindow = window;
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) {
+      void shell.openExternal(url);
+      return { action: "deny" };
+    }
+
+    return { action: "allow" };
+  });
+
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isExternalHttpUrl(url)) {
+      return;
+    }
+
+    event.preventDefault();
+    void shell.openExternal(url);
+  });
 
   window.on("close", (event) => {
     if (isQuitting) {

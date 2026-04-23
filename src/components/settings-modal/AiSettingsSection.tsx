@@ -28,7 +28,8 @@ import { Switch } from "@/components/ui/Switch";
 
 const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
   {
-    length: MAX_AI_BATCH_ANALYZE_CONCURRENCY - MIN_AI_BATCH_ANALYZE_CONCURRENCY + 1,
+    length:
+      MAX_AI_BATCH_ANALYZE_CONCURRENCY - MIN_AI_BATCH_ANALYZE_CONCURRENCY + 1,
   },
   (_, index) => MIN_AI_BATCH_ANALYZE_CONCURRENCY + index,
 );
@@ -64,7 +65,9 @@ function parseOptionalPositiveInteger(value: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function formatRequestedDeviceLabel(value: VisualIndexStatus["requestedDevice"]) {
+function formatRequestedDeviceLabel(
+  value: VisualIndexStatus["requestedDevice"],
+) {
   switch (value) {
     case "gpu":
       return "GPU";
@@ -90,7 +93,10 @@ function formatProviderPolicyLabel(value: VisualIndexStatus["providerPolicy"]) {
   }
 }
 
-function formatRuntimeModeLabel(value: VisualIndexStatus["runtimeMode"], runtimeLoaded: boolean) {
+function formatRuntimeModeLabel(
+  value: VisualIndexStatus["runtimeMode"],
+  runtimeLoaded: boolean,
+) {
   switch (value) {
     case "gpu_enabled":
       return "GPU 已启用";
@@ -143,7 +149,10 @@ interface AiSettingsSectionProps {
     field: K,
     value: AiServiceConfig[K],
   ) => void;
-  onTestAiEndpoint: (target: AiConfigTarget, endpointTarget: AiEndpointTarget) => void;
+  onTestAiEndpoint: (
+    target: AiConfigTarget,
+    endpointTarget: AiEndpointTarget,
+  ) => void;
   onSetAutoAnalyzeOnImport: (enabled: boolean) => void;
   onSetAiBatchAnalyzeConcurrency: (value: number) => void;
   onSetVisualSearchField: <K extends keyof VisualSearchConfig>(
@@ -200,7 +209,9 @@ function AiConfigCard({
           <Input
             id={baseUrlInputId}
             value={config.baseUrl}
-            onChange={(event) => onSetField(target, "baseUrl", event.target.value)}
+            onChange={(event) =>
+              onSetField(target, "baseUrl", event.target.value)
+            }
             placeholder="https://api.openai.com/v1"
           />
         </div>
@@ -216,7 +227,9 @@ function AiConfigCard({
             id={apiKeyInputId}
             type="password"
             value={config.apiKey}
-            onChange={(event) => onSetField(target, "apiKey", event.target.value)}
+            onChange={(event) =>
+              onSetField(target, "apiKey", event.target.value)
+            }
             placeholder="sk-..."
           />
         </div>
@@ -231,7 +244,9 @@ function AiConfigCard({
           <Input
             id={modelInputId}
             value={config.model}
-            onChange={(event) => onSetField(target, "model", event.target.value)}
+            onChange={(event) =>
+              onSetField(target, "model", event.target.value)
+            }
             placeholder={modelPlaceholder}
           />
         </div>
@@ -267,19 +282,29 @@ function FeatureToggle({
     <div className="py-3">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {title}
+          </p>
           {description ? (
-            <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{description}</p>
+            <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {description}
+            </p>
           ) : null}
         </div>
 
         <div className="flex shrink-0 items-center">
-          <Switch checked={enabled} onCheckedChange={onChange} aria-label={title} />
+          <Switch
+            checked={enabled}
+            onCheckedChange={onChange}
+            aria-label={title}
+          />
         </div>
       </div>
 
       {hint ? (
-        <div className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{hint}</div>
+        <div className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+          {hint}
+        </div>
       ) : null}
     </div>
   );
@@ -326,9 +351,13 @@ export function AiSettingsSection({
   const outdatedCount = visualIndexStatus?.outdatedCount ?? 0;
   const unindexedCount = pendingCount + failedCount + outdatedCount;
   const isVisualIndexRunning =
-    !!visualIndexTask && !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(visualIndexTask.status);
+    !!visualIndexTask &&
+    !TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(visualIndexTask.status);
   const visualIndexProgress = visualIndexTask?.total
-    ? Math.min(100, Math.round((visualIndexTask.processed / visualIndexTask.total) * 100))
+    ? Math.min(
+        100,
+        Math.round((visualIndexTask.processed / visualIndexTask.total) * 100),
+      )
     : 0;
   const visualIndexCountLabel = `${visualIndexTask?.processed ?? 0}/${visualIndexTask?.total ?? 0}`;
   const visualIndexActionLabel = visualSearch.processUnindexedOnly
@@ -341,7 +370,9 @@ export function AiSettingsSection({
         ? "正在处理未索引图片"
         : "正在重建视觉索引";
   const intraThreadsMode =
-    typeof visualSearch.runtime.intraThreads === "number" ? THREAD_MODE_CUSTOM : THREAD_MODE_AUTO;
+    typeof visualSearch.runtime.intraThreads === "number"
+      ? THREAD_MODE_CUSTOM
+      : THREAD_MODE_AUTO;
 
   const handleIntraThreadsModeChange = (value: string) => {
     if (value === THREAD_MODE_AUTO) {
@@ -386,7 +417,9 @@ export function AiSettingsSection({
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">AI 元数据分析</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          AI 元数据分析
+        </h3>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-w-0">
@@ -421,7 +454,9 @@ export function AiSettingsSection({
                   <Select
                     value={String(aiBatchAnalyzeConcurrency)}
                     displayValue={`${aiBatchAnalyzeConcurrency} 张`}
-                    onValueChange={(value) => onSetAiBatchAnalyzeConcurrency(Number(value))}
+                    onValueChange={(value) =>
+                      onSetAiBatchAnalyzeConcurrency(Number(value))
+                    }
                     className="w-24 shrink-0"
                     triggerClassName="h-9 rounded-lg border-gray-200 bg-white text-sm text-gray-700 dark:border-dark-border dark:bg-dark-bg dark:text-gray-200"
                   >
@@ -441,7 +476,9 @@ export function AiSettingsSection({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">本地自然语言搜索</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          本地自然语言搜索
+        </h3>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
           <div className="flex min-w-0 flex-col gap-5">
@@ -450,25 +487,33 @@ export function AiSettingsSection({
                 <FeatureToggle
                   title="启用自然语言搜索"
                   enabled={visualSearch.enabled}
-                  onChange={(enabled) => onSetVisualSearchField("enabled", enabled)}
+                  onChange={(enabled) =>
+                    onSetVisualSearchField("enabled", enabled)
+                  }
                 />
                 <FeatureToggle
                   title="导入后自动建立视觉索引"
                   enabled={visualSearch.autoVectorizeOnImport}
-                  onChange={(enabled) => onSetVisualSearchField("autoVectorizeOnImport", enabled)}
+                  onChange={(enabled) =>
+                    onSetVisualSearchField("autoVectorizeOnImport", enabled)
+                  }
                 />
               </div>
             </div>
 
             <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">模型目录</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                模型目录
+              </p>
 
               <div className="mt-3 flex flex-col gap-2">
                 <div className="flex flex-col gap-2 xl:flex-row">
                   <Input
                     id="visual-search-model-path"
                     value={visualSearch.modelPath}
-                    onChange={(event) => onSetVisualSearchField("modelPath", event.target.value)}
+                    onChange={(event) =>
+                      onSetVisualSearchField("modelPath", event.target.value)
+                    }
                     onBlur={() => onValidateModelDir()}
                     placeholder="选择包含 model_config.json 的模型目录"
                   />
@@ -492,22 +537,23 @@ export function AiSettingsSection({
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                <span>需包含 model_config.json</span>
                 <div className="flex flex-wrap gap-2">
                   <a
-                    href="https://github.com/zihuv/vl-embedding-test/releases"
+                    href="https://zihuv.github.io/shiguang/guide/visual-search.html"
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10"
                   >
-                    模型下载地址
+                    模型使用说明
                   </a>
                 </div>
               </div>
             </div>
 
             <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">运行时配置</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                运行时配置
+              </p>
 
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
@@ -521,11 +567,15 @@ export function AiSettingsSection({
                     value={visualSearch.runtime.device}
                     displayValue={
                       VISUAL_SEARCH_DEVICE_OPTIONS.find(
-                        (option) => option.value === visualSearch.runtime.device,
+                        (option) =>
+                          option.value === visualSearch.runtime.device,
                       )?.label ?? "自动"
                     }
                     onValueChange={(value) =>
-                      onSetVisualSearchRuntimeField("device", value as VisualSearchRuntimeDevice)
+                      onSetVisualSearchRuntimeField(
+                        "device",
+                        value as VisualSearchRuntimeDevice,
+                      )
                     }
                     className="w-full"
                     triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
@@ -551,7 +601,8 @@ export function AiSettingsSection({
                     value={visualSearch.runtime.providerPolicy}
                     displayValue={
                       VISUAL_SEARCH_PROVIDER_POLICY_OPTIONS.find(
-                        (option) => option.value === visualSearch.runtime.providerPolicy,
+                        (option) =>
+                          option.value === visualSearch.runtime.providerPolicy,
                       )?.label ?? "Interactive"
                     }
                     onValueChange={(value) =>
@@ -583,14 +634,20 @@ export function AiSettingsSection({
                   <div className="grid gap-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
                     <Select
                       value={intraThreadsMode}
-                      displayValue={intraThreadsMode === THREAD_MODE_AUTO ? "自动" : "自定义"}
+                      displayValue={
+                        intraThreadsMode === THREAD_MODE_AUTO
+                          ? "自动"
+                          : "自定义"
+                      }
                       onValueChange={handleIntraThreadsModeChange}
                       className="w-full"
                       triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
                     >
                       <SelectContent>
                         <SelectItem value={THREAD_MODE_AUTO}>自动</SelectItem>
-                        <SelectItem value={THREAD_MODE_CUSTOM}>自定义</SelectItem>
+                        <SelectItem value={THREAD_MODE_CUSTOM}>
+                          自定义
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <Input
@@ -599,7 +656,9 @@ export function AiSettingsSection({
                       min={1}
                       step={1}
                       value={customIntraThreadsInput}
-                      onChange={(event) => handleCustomIntraThreadsChange(event.target.value)}
+                      onChange={(event) =>
+                        handleCustomIntraThreadsChange(event.target.value)
+                      }
                       onBlur={handleCustomIntraThreadsBlur}
                       disabled={intraThreadsMode !== THREAD_MODE_CUSTOM}
                       placeholder={String(DEFAULT_CUSTOM_INTRA_THREADS)}
@@ -616,7 +675,8 @@ export function AiSettingsSection({
                   </label>
                   <Select
                     value={String(
-                      visualSearch.runtime.fgclipMaxPatches ?? RUNTIME_DEFAULT_SELECT_VALUE,
+                      visualSearch.runtime.fgclipMaxPatches ??
+                        RUNTIME_DEFAULT_SELECT_VALUE,
                     )}
                     displayValue={
                       visualSearch.runtime.fgclipMaxPatches
@@ -626,13 +686,17 @@ export function AiSettingsSection({
                     onValueChange={(value) =>
                       onSetVisualSearchRuntimeField(
                         "fgclipMaxPatches",
-                        value === RUNTIME_DEFAULT_SELECT_VALUE ? null : Number(value),
+                        value === RUNTIME_DEFAULT_SELECT_VALUE
+                          ? null
+                          : Number(value),
                       )
                     }
                     triggerClassName="h-[34px] rounded-[10px] border-gray-300/90 bg-white/70 text-[13px] text-gray-800 shadow-sm dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200"
                   >
                     <SelectContent>
-                      <SelectItem value={RUNTIME_DEFAULT_SELECT_VALUE}>默认</SelectItem>
+                      <SelectItem value={RUNTIME_DEFAULT_SELECT_VALUE}>
+                        默认
+                      </SelectItem>
                       {FGCLIP_MAX_PATCH_OPTIONS.map((value) => (
                         <SelectItem key={value} value={String(value)}>
                           {value}
@@ -647,7 +711,9 @@ export function AiSettingsSection({
 
           <div className="flex flex-col gap-5 xl:pl-4">
             <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">模型状态</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                模型状态
+              </p>
               <p
                 className={cn(
                   "mt-2 text-sm leading-5",
@@ -666,7 +732,8 @@ export function AiSettingsSection({
                   <span>{visualModelValidation.contextLength} 上下文</span>
                 </div>
               ) : null}
-              {!visualModelValidation?.valid && visualModelValidation?.missingFiles.length ? (
+              {!visualModelValidation?.valid &&
+              visualModelValidation?.missingFiles.length ? (
                 <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
                   缺少文件：{visualModelValidation.missingFiles.join("、")}
                 </p>
@@ -676,7 +743,9 @@ export function AiSettingsSection({
             <div>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">索引状态</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    索引状态
+                  </p>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     当前模型：{visualIndexStatus?.modelId ?? "未就绪"}
                   </p>
@@ -700,10 +769,16 @@ export function AiSettingsSection({
                 <span>过期 {outdatedCount}</span>
                 <span>未就绪 {unindexedCount}</span>
                 <span>
-                  设备 {formatRequestedDeviceLabel(visualIndexStatus?.requestedDevice ?? null)}
+                  设备{" "}
+                  {formatRequestedDeviceLabel(
+                    visualIndexStatus?.requestedDevice ?? null,
+                  )}
                 </span>
                 <span>
-                  策略 {formatProviderPolicyLabel(visualIndexStatus?.providerPolicy ?? null)}
+                  策略{" "}
+                  {formatProviderPolicyLabel(
+                    visualIndexStatus?.providerPolicy ?? null,
+                  )}
                 </span>
                 <span>
                   Provider{" "}
