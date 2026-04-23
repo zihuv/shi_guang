@@ -1,6 +1,7 @@
-import { defineConfig } from "rspress/config";
+import { defineConfig } from "@rspress/core";
 
 export default defineConfig({
+  root: "docs",
   title: "拾光",
   description: "为设计师而生的本地素材管理工具",
   outDir: ".rspress/build",
@@ -21,6 +22,7 @@ export default defineConfig({
         items: [
           { text: "快速开始", link: "/guide/getting-started" },
           { text: "核心能力", link: "/guide/core-features" },
+          { text: "自然语言搜索", link: "/guide/visual-search" },
           { text: "采集与数据", link: "/guide/collection-and-storage" },
         ],
       },
@@ -37,6 +39,7 @@ export default defineConfig({
           text: "核心功能",
           items: [
             { text: "核心能力", link: "/guide/core-features" },
+            { text: "自然语言搜索", link: "/guide/visual-search" },
           ],
         },
         {
