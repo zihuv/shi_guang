@@ -74,7 +74,10 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
     <div className="grid min-h-7 grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3 py-0.5">
       <span className={cn(appPanelMetaClass, "leading-5")}>{label}</span>
       <div
-        className={cn(appPanelValueClass, "min-w-0 text-right text-[12px] font-medium leading-5")}
+        className={cn(
+          appPanelValueClass,
+          "min-w-0 whitespace-nowrap text-right text-[12px] font-medium leading-5",
+        )}
       >
         {value}
       </div>
