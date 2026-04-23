@@ -117,10 +117,10 @@ function PanelResizeHandle({
       onMouseDown={onMouseDown}
     >
       <div
-        className={`h-full w-px transition-colors ${
+        className={`my-auto h-8 w-[3px] rounded-full transition-colors ${
           isActive
-            ? "bg-blue-400 dark:bg-blue-500"
-            : "bg-gray-200 group-hover:bg-gray-300 dark:bg-dark-border dark:group-hover:bg-gray-500"
+            ? "bg-blue-400/80 dark:bg-blue-500/80"
+            : "bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/12"
         }`}
       />
     </div>

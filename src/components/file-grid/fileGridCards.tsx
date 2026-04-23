@@ -43,9 +43,9 @@ const MAX_VISIBLE_TAGS = 3;
 const LIST_MAX_VISIBLE_TAGS = 2;
 const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"];
 const FILE_CARD_BASE_CLASS =
-  "file-card group relative flex cursor-pointer flex-col overflow-hidden rounded-[14px] px-1 pb-1 transition-colors duration-75";
+  "file-card group relative flex cursor-pointer flex-col transition-colors duration-75";
 const FILE_CARD_PREVIEW_CLASS =
-  "relative overflow-hidden rounded-[12px] bg-gray-100 shadow-[0_12px_28px_rgba(15,23,42,0.09)] dark:bg-dark-bg dark:shadow-[0_14px_28px_rgba(0,0,0,0.26)]";
+  "relative overflow-hidden rounded-[16px] bg-black/[0.04] transition-colors duration-75 dark:bg-white/[0.045]";
 const FILE_CARD_NAME_CLASS =
   "app-text-clamp-2 break-all text-[12px] font-medium leading-[1.35] text-gray-800 dark:text-gray-100";
 const FILE_CARD_META_CLASS = "truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400";
@@ -772,14 +772,21 @@ export function FileCard({
             FILE_CARD_BASE_CLASS,
             "h-full",
             isMultiSelected
-              ? "bg-primary-500/[0.08] ring-2 ring-primary-500/70 shadow-[0_14px_32px_rgba(59,130,246,0.14)] dark:bg-primary-500/12 dark:shadow-[0_18px_34px_rgba(0,0,0,0.3)]"
+              ? "text-gray-900 dark:text-gray-100"
               : isSelected
-                ? "bg-white/35 ring-2 ring-primary-400/70 shadow-[0_12px_28px_rgba(59,130,246,0.1)] dark:bg-white/[0.04] dark:ring-primary-700 dark:shadow-[0_16px_32px_rgba(0,0,0,0.28)]"
-                : "hover:bg-white/20 active:bg-white/24 dark:hover:bg-white/[0.03] dark:active:bg-white/[0.05]",
+                ? "text-gray-900 dark:text-gray-100"
+                : "hover:text-gray-900 dark:hover:text-gray-100",
           )}
         >
           <div
-            className={FILE_CARD_PREVIEW_CLASS}
+            className={cn(
+              FILE_CARD_PREVIEW_CLASS,
+              isMultiSelected
+                ? "ring-[2.5px] ring-primary-500/80 shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:ring-primary-500/85 dark:shadow-[0_14px_30px_rgba(0,0,0,0.24)]"
+                : isSelected
+                  ? "ring-[2.5px] ring-primary-400/75 shadow-[0_8px_22px_rgba(59,130,246,0.1)] dark:ring-primary-500/80 dark:shadow-[0_12px_26px_rgba(0,0,0,0.22)]"
+                  : "hover:bg-black/[0.055] dark:hover:bg-white/[0.06]",
+            )}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
           >
             <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
@@ -812,7 +819,7 @@ export function FileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col px-1.5 pb-0.5 pt-2"
+            className="flex min-h-0 flex-1 flex-col px-0.5 pb-0.5 pt-2"
             style={{ minHeight: `${footerHeight}px` }}
           >
             {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
@@ -912,13 +919,23 @@ export function AdaptiveFileCard({
           className={cn(
             FILE_CARD_BASE_CLASS,
             isMultiSelected
-              ? "bg-primary-500/[0.08] ring-2 ring-primary-500/70 shadow-[0_14px_32px_rgba(59,130,246,0.14)] dark:bg-primary-500/12 dark:shadow-[0_18px_34px_rgba(0,0,0,0.3)]"
+              ? "text-gray-900 dark:text-gray-100"
               : isSelected
-                ? "bg-white/35 ring-2 ring-primary-400/70 shadow-[0_12px_28px_rgba(59,130,246,0.1)] dark:bg-white/[0.04] dark:ring-primary-700 dark:shadow-[0_16px_32px_rgba(0,0,0,0.28)]"
-                : "hover:bg-white/20 active:bg-white/24 dark:hover:bg-white/[0.03] dark:active:bg-white/[0.05]",
+                ? "text-gray-900 dark:text-gray-100"
+                : "hover:text-gray-900 dark:hover:text-gray-100",
           )}
         >
-          <div className={FILE_CARD_PREVIEW_CLASS} style={{ paddingBottom: aspectRatio }}>
+          <div
+            className={cn(
+              FILE_CARD_PREVIEW_CLASS,
+              isMultiSelected
+                ? "ring-[2.5px] ring-primary-500/80 shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:ring-primary-500/85 dark:shadow-[0_14px_30px_rgba(0,0,0,0.24)]"
+                : isSelected
+                  ? "ring-[2.5px] ring-primary-400/75 shadow-[0_8px_22px_rgba(59,130,246,0.1)] dark:ring-primary-500/80 dark:shadow-[0_12px_26px_rgba(0,0,0,0.22)]"
+                  : "hover:bg-black/[0.055] dark:hover:bg-white/[0.06]",
+            )}
+            style={{ paddingBottom: aspectRatio }}
+          >
             <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
             {showLoadingPreview && !thumbHashPlaceholderSrc ? (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -949,7 +966,7 @@ export function AdaptiveFileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col px-1.5 pb-0.5 pt-2"
+            className="flex min-h-0 flex-1 flex-col px-0.5 pb-0.5 pt-2"
             style={{ minHeight: `${footerHeight}px` }}
           >
             {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
@@ -1034,16 +1051,16 @@ export function FileRow({
           onMouseDownCapture={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
-            "file-card relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-[14px] p-2.5 transition-colors duration-75",
+            "file-card relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-[16px] p-2.5 transition-colors duration-100",
             isMultiSelected
-              ? "bg-primary-50 dark:bg-primary-900/20"
+              ? "bg-primary-50/80 dark:bg-primary-900/18"
               : isSelected
-                ? "bg-primary-100 dark:bg-primary-900/30 ring-1 ring-inset ring-primary-300 dark:ring-primary-700"
-                : "hover:bg-gray-100 active:bg-gray-100/90 dark:hover:bg-dark-border dark:active:bg-dark-border/90",
+                ? "bg-primary-50/90 ring-[1.5px] ring-inset ring-primary-300/90 dark:bg-primary-900/22 dark:ring-primary-600"
+                : "hover:bg-black/[0.04] active:bg-black/[0.05] dark:hover:bg-white/[0.045] dark:active:bg-white/[0.06]",
           )}
         >
           <div
-            className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gray-100 dark:bg-dark-bg"
+            className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-black/[0.04] dark:bg-white/[0.05]"
             style={{ height: `${thumbnailSize}px`, width: `${thumbnailSize}px` }}
           >
             <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-80 blur-xl" />

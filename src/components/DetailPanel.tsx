@@ -71,12 +71,12 @@ function PanelActionButton({
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex min-h-7 items-center justify-between gap-3 py-0.5">
-      <span className={cn(appPanelMetaClass, "leading-5")}>{label}</span>
+    <div className="flex min-h-7 items-center gap-3 py-0.5">
+      <span className={cn(appPanelMetaClass, "w-[72px] flex-shrink-0 leading-5")}>{label}</span>
       <span
         className={cn(
           appPanelValueClass,
-          "max-w-[60%] text-right text-[12px] font-medium leading-5",
+          "min-w-0 flex-1 whitespace-nowrap text-right text-[12px] font-medium leading-5",
         )}
       >
         {value}
@@ -194,7 +194,7 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 
       <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-4 pb-5 pt-5 [&>*]:shrink-0">
         <div className="mb-6 flex flex-col items-center gap-4 text-center">
-          <div className="flex size-24 items-center justify-center rounded-[28px] bg-yellow-400/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] dark:bg-yellow-500/14 dark:shadow-none">
+          <div className="flex size-24 items-center justify-center rounded-[28px] bg-yellow-400/10 dark:bg-yellow-500/12">
             <svg className="h-11 w-11 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
               <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
             </svg>
@@ -580,7 +580,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 pb-5 pt-4 [&>*]:shrink-0">
         {/* Preview image */}
-        <div className="relative w-full shrink-0 aspect-video overflow-hidden rounded-[18px] bg-gray-100 shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:bg-dark-bg dark:shadow-[0_16px_30px_rgba(0,0,0,0.24)]">
+        <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-[20px] bg-black/[0.045] dark:bg-white/[0.045]">
           {usesThumbnailPreview ? (
             <div
               onDoubleClick={
@@ -681,7 +681,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
         {/* 色彩分布进度条 */}
         {file.colorDistribution && file.colorDistribution.length > 0 && (
-          <div className="h-3 w-full">
+          <div className="h-3 w-full overflow-hidden rounded-full bg-black/[0.035] dark:bg-white/[0.04]">
             <div className="flex w-full h-full">
               {file.colorDistribution.map((colorInfo, index) => (
                 <div

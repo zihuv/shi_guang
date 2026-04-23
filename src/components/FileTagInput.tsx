@@ -235,7 +235,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
       }}
     >
       <div
-        className="flex min-h-[34px] w-full cursor-text flex-wrap items-center gap-1 rounded-[10px] border border-gray-300/90 bg-white/70 px-2 py-1 text-[13px] text-gray-800 shadow-sm transition-[border-color,box-shadow,background-color] focus-within:border-transparent focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500 dark:border-gray-600 dark:bg-dark-bg/60 dark:text-gray-200 dark:focus-within:bg-dark-surface"
+        className="flex min-h-[34px] w-full cursor-text flex-wrap items-center gap-1 rounded-[12px] border border-transparent bg-black/[0.035] px-2 py-1 text-[13px] text-gray-800 transition-[border-color,box-shadow,background-color,color] focus-within:border-primary-500/35 focus-within:bg-black/[0.05] focus-within:ring-2 focus-within:ring-primary-500/18 dark:bg-white/[0.05] dark:text-gray-200 dark:focus-within:border-primary-500/40 dark:focus-within:bg-white/[0.07]"
         onClick={() => inputRef.current?.focus()}
       >
         {fileTags.map((tag) => (
@@ -300,7 +300,7 @@ export default function FileTagInput({ fileId, fileTags }: FileTagInputProps) {
         <div
           id={listboxId}
           role="listbox"
-          className="absolute z-20 mt-1 w-full overflow-hidden rounded-[12px] border border-gray-200 bg-white shadow-xl dark:border-dark-border dark:bg-dark-surface"
+          className="absolute z-20 mt-1 w-full overflow-hidden rounded-[14px] bg-white/96 shadow-[0_14px_32px_rgba(15,23,42,0.12)] backdrop-blur dark:bg-dark-surface/96"
         >
           {suggestionItems.map((item, index) => {
             const isActive = index === activeSuggestionIndex;

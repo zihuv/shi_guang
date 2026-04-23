@@ -122,7 +122,7 @@ export function FileGridToolbar({
   };
 
   return (
-    <div className="relative z-20 bg-white/30 backdrop-blur-xl dark:bg-white/[0.02]">
+    <div className="relative z-20 bg-transparent">
       <div className="flex h-10 items-center justify-between gap-3 px-4">
         <div className="min-w-0">
           <span className="truncate text-[12px] text-gray-500 dark:text-gray-400">
@@ -181,7 +181,7 @@ export function FileGridToolbar({
             {openToolbarMenu === "sort" && !sortLocked && (
               <div
                 ref={sortMenuRef}
-                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-black/5 bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
+                className="absolute right-0 top-10 z-30 w-52 rounded-2xl bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
               >
                 <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">排序方式</div>
                 {SORT_DIRECTION_OPTIONS.map((option) => {
@@ -260,7 +260,7 @@ export function FileGridToolbar({
             {openToolbarMenu === "info" && (
               <div
                 ref={infoMenuRef}
-                className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-black/5 bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
+                className="absolute right-0 top-10 z-30 w-52 rounded-2xl bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
               >
                 <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">信息显示</div>
                 {INFO_FIELD_OPTIONS.map((option) => {
@@ -311,7 +311,7 @@ export function FileGridToolbar({
             {openToolbarMenu === "layout" && (
               <div
                 ref={layoutMenuRef}
-                className="absolute right-0 top-10 z-30 w-44 rounded-xl border border-black/5 bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
+                className="absolute right-0 top-10 z-30 w-44 rounded-2xl bg-white/98 p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]"
               >
                 <div className="app-kicker px-3 pb-1 pt-2 text-gray-400">布局</div>
                 {VIEW_MODE_OPTIONS.map((option) => {
@@ -386,7 +386,7 @@ export function FileGridPagination({
   }
 
   return (
-    <div className="flex items-center justify-center gap-2 py-2 shadow-[inset_0_1px_0_rgba(15,23,42,0.05)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+    <div className="flex items-center justify-center gap-2 py-2">
       <button
         onClick={() => setPage(1)}
         disabled={page <= 1}
@@ -452,7 +452,7 @@ export function FileGridSelectionBar({
   }
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 transform flex-wrap items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white/96 px-4 py-2 shadow-xl backdrop-blur dark:border-dark-border dark:bg-dark-surface/96">
+    <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 transform flex-wrap items-center justify-center gap-3 rounded-2xl bg-white/96 px-4 py-2 shadow-xl backdrop-blur dark:bg-dark-surface/96">
       <span className="whitespace-nowrap text-[13px] font-medium text-gray-700 dark:text-gray-200">
         已选择 {selectedCount} 个文件
       </span>

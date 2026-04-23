@@ -253,7 +253,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
               </button>
 
               {isLibraryMenuOpen ? (
-                <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-[22rem] rounded-xl border border-black/10 bg-white/96 p-2 shadow-[0_14px_32px_rgba(0,0,0,0.12)] backdrop-blur dark:border-white/10 dark:bg-[#171717]/96">
+                <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-[22rem] rounded-2xl bg-white/96 p-2 shadow-[0_14px_32px_rgba(0,0,0,0.12)] backdrop-blur dark:bg-[#171717]/96">
                   <div className="rounded-lg px-2.5 py-2">
                     <div className="flex items-center gap-2 text-[13px] font-medium text-gray-900 dark:text-gray-100">
                       <span className="truncate">{currentLibraryName}</span>
@@ -334,7 +334,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
               placeholder="搜索图片，支持中文自然语言..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 rounded-xl border-gray-200/90 bg-white/80 pl-9 shadow-none dark:border-dark-border dark:bg-dark-bg/50"
+              className="h-9 rounded-[14px] bg-black/[0.035] pl-9 dark:bg-white/[0.05]"
             />
           </div>
         </div>
@@ -342,7 +342,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
         <div className="ml-auto flex items-center gap-1.5">
           {isAiAnalyzing && (
             <div
-              className="hidden min-w-[124px] items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50/80 px-2.5 py-1 sm:flex dark:border-amber-900/40 dark:bg-amber-950/20"
+              className="hidden min-w-[124px] items-center gap-2 rounded-full bg-amber-50/75 px-2.5 py-1 sm:flex dark:bg-amber-950/20"
               role="status"
               aria-live="polite"
               aria-label={`AI 分析进度 ${aiCountLabel}`}
@@ -371,7 +371,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
 
           {isImporting && (
             <div
-              className="hidden min-w-[96px] items-center gap-2 rounded-full border border-blue-200/80 bg-blue-50/80 px-2.5 py-1 sm:flex dark:border-blue-900/40 dark:bg-blue-950/20"
+              className="hidden min-w-[96px] items-center gap-2 rounded-full bg-blue-50/75 px-2.5 py-1 sm:flex dark:bg-blue-950/20"
               role="status"
               aria-live="polite"
               aria-label={`导入进度 ${importCountLabel}`}
