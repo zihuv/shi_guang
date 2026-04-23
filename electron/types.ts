@@ -85,17 +85,29 @@ export interface PaginatedFiles {
 }
 
 export interface BinaryImageImportItem {
-  bytes: Uint8Array;
+  bytes?: Uint8Array;
   ext: string;
+  sourcePath?: string;
+  rating?: number;
+  description?: string;
+  sourceUrl?: string;
+  tagIds?: number[];
 }
 
 export interface ImportTaskItem {
   kind?: string;
   path?: string;
+  sourcePath?: string;
   base64Data?: string;
   base64_data?: string;
   bytes?: Uint8Array;
   ext?: string;
+  rating?: number;
+  description?: string;
+  sourceUrl?: string;
+  source_url?: string;
+  tagIds?: number[];
+  tag_ids?: number[];
 }
 
 export interface ImportTaskItemResult {

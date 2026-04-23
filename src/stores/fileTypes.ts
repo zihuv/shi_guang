@@ -68,8 +68,13 @@ export interface SmartCollectionStats {
 }
 
 export interface BinaryImageImportItem {
-  bytes: Uint8Array;
+  bytes?: Uint8Array;
   ext: string;
+  sourcePath?: string;
+  rating?: number;
+  description?: string;
+  sourceUrl?: string;
+  tagIds?: number[];
 }
 
 export interface ImportTaskItemResult {

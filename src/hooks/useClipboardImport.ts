@@ -24,6 +24,13 @@ export function useClipboardImport(
         return;
       }
 
+      const importedItems = window.shiguang?.clipboard.readImportedImageItems();
+      if (importedItems && importedItems.length > 0) {
+        event.preventDefault();
+        await importBinaryImages(importedItems);
+        return;
+      }
+
       const items = event.clipboardData?.items;
       if (!items) {
         const image = window.shiguang?.clipboard.readImageData();

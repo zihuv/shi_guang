@@ -54,6 +54,30 @@ function decodeBase64ToBytes(base64Data: string) {
   return Uint8Array.from(atob(base64Data), (char) => char.charCodeAt(0));
 }
 
+function toImportTaskItem(item: BinaryImageImportItem) {
+  if (item.sourcePath) {
+    return {
+      kind: "clipboard_file",
+      sourcePath: item.sourcePath,
+      ext: item.ext,
+      rating: item.rating,
+      description: item.description,
+      sourceUrl: item.sourceUrl,
+      tagIds: item.tagIds,
+    };
+  }
+
+  return {
+    kind: "binary_image",
+    bytes: item.bytes ?? new Uint8Array(),
+    ext: item.ext,
+    rating: item.rating,
+    description: item.description,
+    sourceUrl: item.sourceUrl,
+    tagIds: item.tagIds,
+  };
+}
+
 async function waitForImportTask(taskId: string, onUpdate: (task: ImportTaskSnapshot) => void) {
   let unlisten: (() => void) | null = null;
   let fallbackTimer: ReturnType<typeof setInterval> | null = null;
@@ -237,11 +261,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
 
     try {
       const task = await startImportTask({
-        items: items.map((item) => ({
-          kind: "binary_image",
-          bytes: item.bytes,
-          ext: item.ext,
-        })),
+        items: items.map(toImportTaskItem),
         folderId: selectedFolderId,
       });
       set({ importTask: task });

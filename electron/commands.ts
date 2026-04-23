@@ -8,6 +8,7 @@ import fssync from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import sharp from "sharp";
+import { serializeClipboardImportedImageItems, SHIGUANG_CLIPBOARD_FORMAT } from "./clipboard";
 import {
   addIndexPath,
   addTagToFile,
@@ -559,6 +560,7 @@ async function importBytes(
     rating?: number;
     description?: string;
     sourceUrl?: string;
+    tagIds?: number[];
   },
 ): Promise<FileRecord> {
   const detectedExt = detectExtensionFromBytes(request.bytes);
@@ -595,6 +597,9 @@ async function importBytes(
     thumbHash,
     contentHash: await computeVisualContentHash(targetPath),
   });
+  for (const tagId of new Set(request.tagIds ?? [])) {
+    addTagToFile(state.db, fileId, tagId);
+  }
   return getFileById(state.db, fileId) as FileRecord;
 }
 
@@ -620,6 +625,36 @@ async function importFilePath(
     fallbackExt: path.extname(sourcePath),
     createdAt: timestampFromStats(stats, "birthtime"),
     modifiedAt: timestampFromStats(stats, "mtime"),
+  });
+}
+
+async function importClipboardFile(
+  state: AppState,
+  request: {
+    sourcePath: string;
+    folderId: number | null;
+    ext?: string;
+    rating?: number;
+    description?: string;
+    sourceUrl?: string;
+    tagIds?: number[];
+  },
+): Promise<FileRecord> {
+  const stats = await fs.stat(request.sourcePath);
+  if (!stats.isFile()) {
+    throw new Error("Clipboard source file does not exist");
+  }
+
+  return importBytes(state, {
+    bytes: await fs.readFile(request.sourcePath),
+    folderId: request.folderId,
+    fallbackExt: request.ext ?? path.extname(request.sourcePath),
+    createdAt: timestampFromStats(stats, "birthtime"),
+    modifiedAt: timestampFromStats(stats, "mtime"),
+    rating: request.rating,
+    description: request.description,
+    sourceUrl: request.sourceUrl,
+    tagIds: request.tagIds,
   });
 }
 
@@ -711,6 +746,9 @@ function importTaskSource(item: ImportTaskItem): string {
   if (item.kind === "binary_image") {
     return `clipboard.${item.ext ?? "png"}`;
   }
+  if (item.kind === "clipboard_file") {
+    return String(item.sourcePath ?? item.path ?? "");
+  }
   return String(item.path ?? "");
 }
 
@@ -747,8 +785,40 @@ async function runImportTask(
                 folderId: entry.folderId,
                 fallbackExt: item.ext,
                 namePrefix: "paste",
+                rating: typeof item.rating === "number" ? item.rating : undefined,
+                description: typeof item.description === "string" ? item.description : undefined,
+                sourceUrl:
+                  typeof item.sourceUrl === "string"
+                    ? item.sourceUrl
+                    : typeof item.source_url === "string"
+                      ? item.source_url
+                      : undefined,
+                tagIds: Array.isArray(item.tagIds)
+                  ? item.tagIds.filter((tagId): tagId is number => Number.isInteger(tagId))
+                  : Array.isArray(item.tag_ids)
+                    ? item.tag_ids.filter((tagId): tagId is number => Number.isInteger(tagId))
+                    : undefined,
               })
-            : await importFilePath(state, String(item.path ?? ""), entry.folderId);
+            : item.kind === "clipboard_file"
+              ? await importClipboardFile(state, {
+                  sourcePath: String(item.sourcePath ?? item.path ?? ""),
+                  folderId: entry.folderId,
+                  ext: item.ext,
+                  rating: typeof item.rating === "number" ? item.rating : undefined,
+                  description: typeof item.description === "string" ? item.description : undefined,
+                  sourceUrl:
+                    typeof item.sourceUrl === "string"
+                      ? item.sourceUrl
+                      : typeof item.source_url === "string"
+                        ? item.source_url
+                        : undefined,
+                  tagIds: Array.isArray(item.tagIds)
+                    ? item.tagIds.filter((tagId): tagId is number => Number.isInteger(tagId))
+                    : Array.isArray(item.tag_ids)
+                      ? item.tag_ids.filter((tagId): tagId is number => Number.isInteger(tagId))
+                      : undefined,
+                })
+              : await importFilePath(state, String(item.path ?? ""), entry.folderId);
       entry.snapshot.successCount += 1;
       entry.snapshot.results.push({ index, status: "completed", source, error: null, file });
       postImport(state, window, file);
@@ -2240,10 +2310,20 @@ export function registerIpcHandlers(
             image,
             text: files[0].path,
           });
+          clipboard.writeBuffer(
+            SHIGUANG_CLIPBOARD_FORMAT,
+            serializeClipboardImportedImageItems(files),
+          );
           return;
         }
       }
       clipboard.writeText(paths.join("\n"));
+      if (files.length > 0) {
+        clipboard.writeBuffer(
+          SHIGUANG_CLIPBOARD_FORMAT,
+          serializeClipboardImportedImageItems(files),
+        );
+      }
     },
     start_drag_files: (args, window) => {
       const paths = numberArrayArg(args, "fileIds", "file_ids")
@@ -2362,6 +2442,7 @@ async function copyOneFile(
     rating: file.rating,
     description: file.description,
     sourceUrl: file.sourceUrl,
+    tagIds: file.tags.map((tag) => tag.id),
   });
   postImport(state, window, imported);
 }

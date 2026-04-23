@@ -1,4 +1,5 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
+import { deserializeClipboardImportedImageItems, SHIGUANG_CLIPBOARD_FORMAT } from "./clipboard";
 
 const eventChannels = new Set([
   "file-imported",
@@ -39,6 +40,8 @@ contextBridge.exposeInMainWorld("shiguang", {
   clipboard: {
     readText: () => clipboard.readText(),
     writeText: (text: string) => clipboard.writeText(text),
+    readImportedImageItems: () =>
+      deserializeClipboardImportedImageItems(clipboard.readBuffer(SHIGUANG_CLIPBOARD_FORMAT)),
     readImageData: () => {
       const image = clipboard.readImage();
       if (image.isEmpty()) {
