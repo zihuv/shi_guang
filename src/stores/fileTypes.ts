@@ -28,6 +28,22 @@ export interface FileItem {
   missingAt?: string | null;
 }
 
+export interface TrashFolderItem {
+  kind: "folder";
+  id: number;
+  name: string;
+  path: string;
+  deletedAt: string;
+  fileCount: number;
+  subfolderCount: number;
+}
+
+export interface TrashFileItem extends FileItem {
+  kind: "file";
+}
+
+export type TrashItem = TrashFileItem | TrashFolderItem;
+
 export interface PaginatedFilesResponse {
   files: FileItem[];
   total: number;
@@ -139,3 +155,8 @@ export const parseFile = (file: FileItem): FileItem => ({
 });
 
 export const parseFileList = (files: FileItem[]): FileItem[] => files.map(parseFile);
+
+export const parseTrashItem = (item: TrashItem): TrashItem =>
+  item.kind === "file" ? ({ ...parseFile(item), kind: "file" } as TrashFileItem) : item;
+
+export const parseTrashItemList = (items: TrashItem[]): TrashItem[] => items.map(parseTrashItem);

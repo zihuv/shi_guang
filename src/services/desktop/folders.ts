@@ -9,6 +9,14 @@ export interface FolderSummary {
   created_at: string;
 }
 
+export interface DeleteFolderResult {
+  folderId: number;
+  folderName: string;
+  folderPath: string;
+  removedFileCount: number;
+  movedToTrash: boolean;
+}
+
 export function getFolderTree() {
   return invokeDesktop<FolderNode[]>("get_folder_tree");
 }
@@ -22,7 +30,7 @@ export function createFolder(args: { name: string; parentId: number | null }) {
 }
 
 export function deleteFolder(id: number) {
-  return invokeDesktop<void>("delete_folder", { id });
+  return invokeDesktop<DeleteFolderResult | null>("delete_folder", { id });
 }
 
 export function renameFolder(args: { id: number; name: string }) {

@@ -6,6 +6,7 @@ import {
   type ButtonHTMLAttributes,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { type FileItem, getNameWithoutExt } from "@/stores/fileTypes";
 import { useFolderStore, FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -133,10 +134,22 @@ export default function DetailPanel({ width }: DetailPanelProps) {
 
 function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: number }) {
   const { deleteFolder: deleteFolderFn } = useFolderStore();
+  const selectedFolderId = useFolderStore((state) => state.selectedFolderId);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleDelete = async () => {
-    await deleteFolderFn(folder.id);
+    const result = await deleteFolderFn(folder.id);
+    if (result?.movedToTrash) {
+      await useTrashStore.getState().addFolderDeleteToUndoStack({
+        folderId: result.folderId,
+        folderName: result.folderName,
+        folderPath: result.folderPath,
+        shouldSelectOnUndo: selectedFolderId === folder.id,
+      });
+      toast.success(`已删除文件夹“${result.folderName}”，可在回收站恢复或按 Cmd/Ctrl+Z 撤回。`);
+    } else if (result) {
+      toast.success(`已删除文件夹“${result.folderName}”。`);
+    }
     setShowDeleteConfirm(false);
   };
 

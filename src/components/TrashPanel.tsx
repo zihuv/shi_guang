@@ -1,33 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTrashStore } from "@/stores/trashStore";
 import { Button } from "@/components/ui/Button";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
-import { AlertTriangle, RotateCcw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Folder, RotateCcw, Trash2, X } from "lucide-react";
 import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
+import type { TrashFileItem, TrashFolderItem, TrashItem } from "@/stores/fileTypes";
 
-interface TrashFileItemProps {
-  file: {
-    id: number;
-    name: string;
-    ext: string;
-    size: number;
-    path: string;
-    deletedAt?: string | null;
-  };
+interface TrashCardProps {
+  item: TrashItem;
   isSelected: boolean;
   onToggleSelect: () => void;
   formatFileSize: (bytes: number) => string;
   formatDate: (dateStr: string | null | undefined) => string;
 }
 
-function TrashFileItem({
+interface TrashFileCardProps {
+  file: TrashFileItem;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  formatFileSize: (bytes: number) => string;
+  formatDate: (dateStr: string | null | undefined) => string;
+}
+
+function TrashFileCard({
   file,
   isSelected,
   onToggleSelect,
   formatFileSize,
   formatDate,
-}: TrashFileItemProps) {
+}: TrashFileCardProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const previewType = getFilePreviewMode(file.ext);
@@ -116,56 +118,147 @@ function TrashFileItem({
   );
 }
 
+interface TrashFolderCardProps {
+  folder: TrashFolderItem;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  formatDate: (dateStr: string | null | undefined) => string;
+}
+
+function TrashFolderCard({ folder, isSelected, onToggleSelect, formatDate }: TrashFolderCardProps) {
+  return (
+    <button
+      type="button"
+      className={`relative flex min-h-[250px] flex-col rounded-2xl border p-4 text-left transition-colors ${
+        isSelected
+          ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
+          : "border-gray-200 bg-white hover:border-gray-300 dark:border-dark-border dark:bg-dark-surface"
+      }`}
+      onClick={onToggleSelect}
+    >
+      <div className="flex aspect-square items-center justify-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10 dark:text-amber-300">
+        <Folder className="h-16 w-16" />
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <p
+          className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100"
+          title={folder.name}
+        >
+          {folder.name}
+        </p>
+        <p className="line-clamp-2 min-h-[36px] text-[12px] text-gray-500 dark:text-gray-400">
+          {folder.path}
+        </p>
+        <p className="text-[12px] text-gray-500 dark:text-gray-400">
+          {folder.fileCount} 个文件
+          {folder.subfolderCount > 0 ? ` · ${folder.subfolderCount} 个子文件夹` : ""}
+        </p>
+        <p className="text-[12px] text-gray-400 dark:text-gray-500">
+          删除于 {formatDate(folder.deletedAt)}
+        </p>
+      </div>
+
+      {isSelected && (
+        <div className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-xs text-white">
+          ✓
+        </div>
+      )}
+    </button>
+  );
+}
+
+function TrashCard(props: TrashCardProps) {
+  return props.item.kind === "folder" ? (
+    <TrashFolderCard
+      folder={props.item}
+      isSelected={props.isSelected}
+      onToggleSelect={props.onToggleSelect}
+      formatDate={props.formatDate}
+    />
+  ) : (
+    <TrashFileCard
+      file={props.item}
+      isSelected={props.isSelected}
+      onToggleSelect={props.onToggleSelect}
+      formatFileSize={props.formatFileSize}
+      formatDate={props.formatDate}
+    />
+  );
+}
+
+function selectionKey(item: TrashItem) {
+  return `${item.kind}:${item.id}`;
+}
+
 export default function TrashPanel() {
-  const trashFiles = useTrashStore((state) => state.trashFiles);
+  const trashItems = useTrashStore((state) => state.trashItems);
   const trashCount = useTrashStore((state) => state.trashCount);
-  const loadTrashFiles = useTrashStore((state) => state.loadTrashFiles);
+  const loadTrashItems = useTrashStore((state) => state.loadTrashItems);
   const loadTrashCount = useTrashStore((state) => state.loadTrashCount);
   const restoreFiles = useTrashStore((state) => state.restoreFiles);
+  const restoreFolders = useTrashStore((state) => state.restoreFolders);
   const permanentDeleteFiles = useTrashStore((state) => state.permanentDeleteFiles);
+  const permanentDeleteFolders = useTrashStore((state) => state.permanentDeleteFolders);
   const emptyTrash = useTrashStore((state) => state.emptyTrash);
 
-  const [selectedTrashFiles, setSelectedTrashFiles] = useState<number[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
 
   useEffect(() => {
-    void loadTrashFiles();
+    void loadTrashItems();
     void loadTrashCount();
-  }, [loadTrashCount, loadTrashFiles]);
+  }, [loadTrashCount, loadTrashItems]);
 
-  const handleToggleSelect = (fileId: number) => {
-    setSelectedTrashFiles((current) =>
-      current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId],
+  const selectedItems = useMemo(
+    () => trashItems.filter((item) => selectedKeys.includes(selectionKey(item))),
+    [selectedKeys, trashItems],
+  );
+  const selectedFileIds = selectedItems
+    .filter((item): item is TrashFileItem => item.kind === "file")
+    .map((item) => item.id);
+  const selectedFolderIds = selectedItems
+    .filter((item): item is TrashFolderItem => item.kind === "folder")
+    .map((item) => item.id);
+
+  const handleToggleSelect = (item: TrashItem) => {
+    const key = selectionKey(item);
+    setSelectedKeys((current) =>
+      current.includes(key) ? current.filter((value) => value !== key) : [...current, key],
     );
   };
 
   const handleSelectAll = () => {
-    if (selectedTrashFiles.length === trashFiles.length) {
-      setSelectedTrashFiles([]);
+    if (selectedKeys.length === trashItems.length) {
+      setSelectedKeys([]);
       return;
     }
-    setSelectedTrashFiles(trashFiles.map((file) => file.id));
+    setSelectedKeys(trashItems.map(selectionKey));
   };
 
   const handleRestoreSelected = async () => {
-    if (selectedTrashFiles.length === 0) {
-      return;
+    if (selectedFileIds.length > 0) {
+      await restoreFiles(selectedFileIds);
     }
-    await restoreFiles(selectedTrashFiles);
-    setSelectedTrashFiles([]);
+    if (selectedFolderIds.length > 0) {
+      await restoreFolders(selectedFolderIds);
+    }
+    setSelectedKeys([]);
   };
 
   const handlePermanentDeleteSelected = async () => {
-    if (selectedTrashFiles.length === 0) {
-      return;
+    if (selectedFolderIds.length > 0) {
+      await permanentDeleteFolders(selectedFolderIds);
     }
-    await permanentDeleteFiles(selectedTrashFiles);
-    setSelectedTrashFiles([]);
+    if (selectedFileIds.length > 0) {
+      await permanentDeleteFiles(selectedFileIds);
+    }
+    setSelectedKeys([]);
   };
 
   const handleEmptyTrash = async () => {
     await emptyTrash();
-    setSelectedTrashFiles([]);
+    setSelectedKeys([]);
     setShowEmptyConfirm(false);
   };
 
@@ -194,20 +287,20 @@ export default function TrashPanel() {
           <div className="min-w-0">
             <h2 className="text-[16px] font-semibold text-gray-900 dark:text-gray-100">回收站</h2>
             <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-              共 {trashCount} 个文件，可恢复或永久删除。
+              共 {trashCount} 个项目，可恢复或永久删除。
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={handleSelectAll} disabled={trashFiles.length === 0}>
-              {selectedTrashFiles.length === trashFiles.length && trashFiles.length > 0
+            <Button variant="outline" onClick={handleSelectAll} disabled={trashItems.length === 0}>
+              {selectedKeys.length === trashItems.length && trashItems.length > 0
                 ? "取消全选"
                 : "全选"}
             </Button>
             <Button
               variant="outline"
               onClick={() => void handleRestoreSelected()}
-              disabled={selectedTrashFiles.length === 0}
+              disabled={selectedKeys.length === 0}
             >
               <RotateCcw className="mr-1 h-4 w-4" />
               恢复
@@ -215,7 +308,7 @@ export default function TrashPanel() {
             <Button
               variant="outline"
               onClick={() => void handlePermanentDeleteSelected()}
-              disabled={selectedTrashFiles.length === 0}
+              disabled={selectedKeys.length === 0}
               className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
             >
               <X className="mr-1 h-4 w-4" />
@@ -224,7 +317,7 @@ export default function TrashPanel() {
             <Button
               variant="outline"
               onClick={() => setShowEmptyConfirm(true)}
-              disabled={trashFiles.length === 0}
+              disabled={trashItems.length === 0}
               className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
             >
               <Trash2 className="mr-1 h-4 w-4" />
@@ -234,24 +327,24 @@ export default function TrashPanel() {
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-5">
-          {trashFiles.length === 0 ? (
+          {trashItems.length === 0 ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-3xl border border-dashed border-gray-200 text-center dark:border-dark-border">
               <Trash2 className="h-14 w-14 text-gray-300 dark:text-gray-600" />
               <h3 className="mt-5 text-[18px] font-semibold text-gray-900 dark:text-gray-100">
                 回收站为空
               </h3>
               <p className="mt-2 text-[13px] text-gray-500 dark:text-gray-400">
-                删除的素材会先进入这里，方便你恢复。
+                删除的文件和文件夹会先进入这里，方便你恢复。
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
-              {trashFiles.map((file) => (
-                <TrashFileItem
-                  key={file.id}
-                  file={file}
-                  isSelected={selectedTrashFiles.includes(file.id)}
-                  onToggleSelect={() => handleToggleSelect(file.id)}
+              {trashItems.map((item) => (
+                <TrashCard
+                  key={selectionKey(item)}
+                  item={item}
+                  isSelected={selectedKeys.includes(selectionKey(item))}
+                  onToggleSelect={() => handleToggleSelect(item)}
                   formatFileSize={formatFileSize}
                   formatDate={formatDate}
                 />
@@ -278,9 +371,9 @@ export default function TrashPanel() {
           </DialogHeader>
           <div className="py-4">
             <p className="text-gray-700 dark:text-gray-300">
-              确定要清空回收站吗？此操作不可恢复，所有文件将被永久删除。
+              确定要清空回收站吗？此操作不可恢复，所有文件和文件夹将被永久删除。
             </p>
-            <p className="mt-2 text-sm text-gray-500">回收站中共有 {trashFiles.length} 个文件</p>
+            <p className="mt-2 text-sm text-gray-500">回收站中共有 {trashItems.length} 个项目</p>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowEmptyConfirm(false)}>

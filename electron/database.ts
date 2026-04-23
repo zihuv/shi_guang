@@ -11,6 +11,8 @@ import type {
   PaginatedFiles,
   SmartCollectionStats,
   TagRecord,
+  TrashFolderRecord,
+  TrashItemRecord,
 } from "./types";
 
 export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
@@ -52,6 +54,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
       created_at TEXT NOT NULL,
       is_system INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
+      deleted_at TEXT DEFAULT NULL,
       sync_id TEXT NOT NULL UNIQUE,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
@@ -114,6 +117,15 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
     CREATE TABLE IF NOT EXISTS index_paths (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS folder_trash_entries (
+      folder_id INTEGER PRIMARY KEY,
+      temp_path TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      file_count INTEGER NOT NULL DEFAULT 0,
+      subfolder_count INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS file_visual_embeddings (
@@ -181,6 +193,7 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
     CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
     CREATE INDEX IF NOT EXISTS idx_folders_parent_sort_order ON folders(parent_id, sort_order, name);
     CREATE INDEX IF NOT EXISTS idx_folders_sync_id ON folders(sync_id);
+    CREATE INDEX IF NOT EXISTS idx_folder_trash_entries_deleted_at ON folder_trash_entries(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_tags_parent_id ON tags(parent_id);
     CREATE INDEX IF NOT EXISTS idx_tags_parent_sort_order ON tags(parent_id, sort_order, name);
     CREATE INDEX IF NOT EXISTS idx_tags_sync_id ON tags(sync_id);
@@ -200,13 +213,29 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
   if (!fileColumns.includes("last_accessed_at")) {
     db.exec("ALTER TABLE files ADD COLUMN last_accessed_at TEXT DEFAULT NULL");
   }
+  const folderColumns = (
+    db.prepare("PRAGMA table_info(folders)").all() as Array<{ name: string }>
+  ).map((column) => column.name);
+  if (!folderColumns.includes("deleted_at")) {
+    db.exec("ALTER TABLE folders ADD COLUMN deleted_at TEXT DEFAULT NULL");
+  }
   db.exec(`
+    CREATE TABLE IF NOT EXISTS folder_trash_entries (
+      folder_id INTEGER PRIMARY KEY,
+      temp_path TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      file_count INTEGER NOT NULL DEFAULT 0,
+      subfolder_count INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+    );
     DROP INDEX IF EXISTS idx_files_active_order;
     DROP INDEX IF EXISTS idx_files_folder_active_order;
     CREATE INDEX IF NOT EXISTS idx_files_active_order ON files(deleted_at, missing_at, imported_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_files_folder_active_order ON files(folder_id, deleted_at, missing_at, imported_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_files_missing_at ON files(missing_at);
     CREATE INDEX IF NOT EXISTS idx_files_last_accessed_at ON files(last_accessed_at);
+    CREATE INDEX IF NOT EXISTS idx_folders_deleted_at ON folders(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_folder_trash_entries_deleted_at ON folder_trash_entries(deleted_at);
   `);
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')").run();
@@ -246,6 +275,7 @@ type FolderRow = {
   created_at: string;
   is_system: number;
   sort_order: number;
+  deleted_at?: string | null;
 };
 
 function toFile(row: FileRow, tags: TagRecord[] = []): FileRecord {
@@ -284,6 +314,7 @@ function toFolder(row: FolderRow): FolderRecord {
     created_at: row.created_at,
     isSystem: row.is_system === 1,
     sortOrder: row.sort_order,
+    deletedAt: row.deleted_at ?? null,
   };
 }
 
@@ -1306,32 +1337,52 @@ export function updateFileThumbHash(
   db.prepare("UPDATE files SET thumb_hash = ? WHERE id = ?").run(thumbHash, fileId);
 }
 
-export function getAllFolders(db: Database.Database): FolderRecord[] {
+export function getAllFoldersIncludingDeleted(db: Database.Database): FolderRecord[] {
   return (
     db
       .prepare(
-        "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders ORDER BY sort_order ASC, created_at ASC",
+        "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders ORDER BY sort_order ASC, created_at ASC",
       )
       .all() as FolderRow[]
   ).map(toFolder);
 }
 
-export function getFolderById(db: Database.Database, id: number): FolderRecord | null {
+export function getAllFolders(db: Database.Database): FolderRecord[] {
+  return getAllFoldersIncludingDeleted(db).filter((folder) => !folder.deletedAt);
+}
+
+export function getFolderByIdIncludingDeleted(
+  db: Database.Database,
+  id: number,
+): FolderRecord | null {
   const row = db
     .prepare(
-      "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE id = ?",
+      "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders WHERE id = ?",
     )
     .get(id) as FolderRow | undefined;
   return row ? toFolder(row) : null;
 }
 
-export function getFolderByPath(db: Database.Database, folderPath: string): FolderRecord | null {
+export function getFolderById(db: Database.Database, id: number): FolderRecord | null {
+  const folder = getFolderByIdIncludingDeleted(db, id);
+  return folder && !folder.deletedAt ? folder : null;
+}
+
+export function getFolderByPathIncludingDeleted(
+  db: Database.Database,
+  folderPath: string,
+): FolderRecord | null {
   const row = db
     .prepare(
-      "SELECT id, path, name, parent_id, created_at, is_system, sort_order FROM folders WHERE REPLACE(path, '\\\\', '/') = ?",
+      "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders WHERE REPLACE(path, '\\\\', '/') = ?",
     )
     .get(folderPath.replace(/\\/g, "/")) as FolderRow | undefined;
   return row ? toFolder(row) : null;
+}
+
+export function getFolderByPath(db: Database.Database, folderPath: string): FolderRecord | null {
+  const folder = getFolderByPathIncludingDeleted(db, folderPath);
+  return folder && !folder.deletedAt ? folder : null;
 }
 
 export function createFolderRecord(
@@ -1688,6 +1739,106 @@ export function permanentDeleteFileRecord(db: Database.Database, fileId: number)
   db.prepare("DELETE FROM files WHERE id = ?").run(fileId);
 }
 
+export interface FolderTrashEntryRecord {
+  folderId: number;
+  tempPath: string;
+  deletedAt: string;
+  fileCount: number;
+  subfolderCount: number;
+}
+
+export function createFolderTrashEntry(
+  db: Database.Database,
+  input: {
+    folderId: number;
+    tempPath: string;
+    deletedAt: string;
+    fileCount: number;
+    subfolderCount: number;
+  },
+): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO folder_trash_entries
+       (folder_id, temp_path, deleted_at, file_count, subfolder_count)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(input.folderId, input.tempPath, input.deletedAt, input.fileCount, input.subfolderCount);
+}
+
+export function getFolderTrashEntry(
+  db: Database.Database,
+  folderId: number,
+): FolderTrashEntryRecord | null {
+  const row = db
+    .prepare(
+      `SELECT folder_id, temp_path, deleted_at, file_count, subfolder_count
+       FROM folder_trash_entries
+       WHERE folder_id = ?`,
+    )
+    .get(folderId) as
+    | {
+        folder_id: number;
+        temp_path: string;
+        deleted_at: string;
+        file_count: number;
+        subfolder_count: number;
+      }
+    | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    folderId: row.folder_id,
+    tempPath: row.temp_path,
+    deletedAt: row.deleted_at,
+    fileCount: row.file_count,
+    subfolderCount: row.subfolder_count,
+  };
+}
+
+export function deleteFolderTrashEntry(db: Database.Database, folderId: number): void {
+  db.prepare("DELETE FROM folder_trash_entries WHERE folder_id = ?").run(folderId);
+}
+
+export function adjustFolderTrashEntryFileCount(
+  db: Database.Database,
+  folderId: number,
+  delta: number,
+): void {
+  db.prepare(
+    `UPDATE folder_trash_entries
+     SET file_count = MAX(file_count + ?, 0)
+     WHERE folder_id = ?`,
+  ).run(delta, folderId);
+}
+
+export function getTrashFolders(db: Database.Database): TrashFolderRecord[] {
+  return (
+    db
+      .prepare(
+        `SELECT f.id, f.path, f.name, f.deleted_at, te.file_count, te.subfolder_count
+         FROM folders f
+         INNER JOIN folder_trash_entries te ON te.folder_id = f.id
+         WHERE f.deleted_at IS NOT NULL
+         ORDER BY te.deleted_at DESC, f.id ASC`,
+      )
+      .all() as Array<{
+      id: number;
+      path: string;
+      name: string;
+      deleted_at: string;
+      file_count: number;
+      subfolder_count: number;
+    }>
+  ).map((row) => ({
+    id: row.id,
+    path: row.path,
+    name: row.name,
+    deletedAt: row.deleted_at,
+    fileCount: row.file_count,
+    subfolderCount: row.subfolder_count,
+  }));
+}
+
 export function getTrashFiles(db: Database.Database): FileRecord[] {
   const rows = db
     .prepare("SELECT * FROM files WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id ASC")
@@ -1695,12 +1846,27 @@ export function getTrashFiles(db: Database.Database): FileRecord[] {
   return attachTags(db, rows);
 }
 
+export function getTrashItems(db: Database.Database): TrashItemRecord[] {
+  return [
+    ...getTrashFolders(db).map((folder) => ({ ...folder, kind: "folder" as const })),
+    ...getTrashFiles(db).map((file) => ({ ...file, kind: "file" as const })),
+  ].sort((left, right) => {
+    const leftDeletedAt = left.deletedAt ?? "";
+    const rightDeletedAt = right.deletedAt ?? "";
+    return rightDeletedAt.localeCompare(leftDeletedAt) || left.id - right.id;
+  });
+}
+
 export function getTrashCount(db: Database.Database): number {
-  return (
+  const fileCount = (
     db.prepare("SELECT COUNT(*) AS count FROM files WHERE deleted_at IS NOT NULL").get() as {
       count: number;
     }
   ).count;
+  const folderCount = (
+    db.prepare("SELECT COUNT(*) AS count FROM folder_trash_entries").get() as { count: number }
+  ).count;
+  return fileCount + folderCount;
 }
 
 export function getDeleteMode(db: Database.Database): boolean {
@@ -1722,6 +1888,70 @@ export function reorderFolders(db: Database.Database, folderIds: number[]): void
 
 export function deleteFolderRecord(db: Database.Database, folderId: number): void {
   db.prepare("DELETE FROM folders WHERE id = ?").run(folderId);
+}
+
+export function softDeleteFolderSubtree(
+  db: Database.Database,
+  folderPath: string,
+  deletedAt: string,
+): void {
+  db.prepare(
+    "UPDATE folders SET deleted_at = ? WHERE REPLACE(path, '\\\\', '/') = ? OR REPLACE(path, '\\\\', '/') LIKE ?",
+  ).run(deletedAt, folderPath.replace(/\\/g, "/"), `${folderPath.replace(/\\/g, "/")}/%`);
+}
+
+export function restoreFolderSubtreeRecords(
+  db: Database.Database,
+  input: {
+    folderId: number;
+    originalPath: string;
+    restoredPath: string;
+    rootParentId: number | null;
+  },
+): void {
+  const normalizedOriginal = input.originalPath.replace(/\\/g, "/");
+  const normalizedRestored = input.restoredPath.replace(/\\/g, "/");
+  const now = currentTimestamp();
+  const transaction = db.transaction(() => {
+    const folders = db.prepare("SELECT id, path FROM folders").all() as Array<{
+      id: number;
+      path: string;
+    }>;
+    for (const folder of folders) {
+      if (!pathHasPrefix(folder.path, normalizedOriginal)) {
+        continue;
+      }
+      const nextPath =
+        replacePathPrefix(folder.path, normalizedOriginal, normalizedRestored) ?? folder.path;
+      if (folder.id === input.folderId) {
+        db.prepare(
+          "UPDATE folders SET path = ?, name = ?, parent_id = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
+        ).run(nextPath, path.basename(nextPath), input.rootParentId, now, folder.id);
+        continue;
+      }
+      db.prepare(
+        "UPDATE folders SET path = ?, name = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
+      ).run(nextPath, path.basename(nextPath), now, folder.id);
+    }
+
+    const files = db.prepare("SELECT id, path FROM files").all() as Array<{
+      id: number;
+      path: string;
+    }>;
+    for (const file of files) {
+      if (!pathHasPrefix(file.path, normalizedOriginal)) {
+        continue;
+      }
+      const nextPath =
+        replacePathPrefix(file.path, normalizedOriginal, normalizedRestored) ?? file.path;
+      db.prepare("UPDATE files SET path = ?, name = ?, missing_at = NULL WHERE id = ?").run(
+        nextPath,
+        path.basename(nextPath),
+        file.id,
+      );
+    }
+  });
+  transaction();
 }
 
 export function clearFilesFolderId(db: Database.Database, folderIds: number[]): void {

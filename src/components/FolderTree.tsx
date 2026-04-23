@@ -9,10 +9,10 @@ import {
 } from "@/hooks/useTreeKeyboardNavigation";
 import { requestFocusFirstFile } from "@/lib/libraryNavigation";
 import { appPanelTitleClass, appTreeRowClass } from "@/lib/ui";
-import { deleteFolder } from "@/services/desktop/folders";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useNavigationStore } from "@/stores/navigationStore";
+import { useTrashStore } from "@/stores/trashStore";
 import { Button } from "@/components/ui/Button";
 import { FolderDialogs } from "@/components/folder-tree/FolderDialogs";
 import { FolderItem } from "@/components/folder-tree/FolderItem";
@@ -41,6 +41,29 @@ function replaceFolderChildren(
     }
     return item;
   });
+}
+
+function findFolderById(items: FolderNode[], targetId: number): FolderNode | null {
+  for (const item of items) {
+    if (item.id === targetId) {
+      return item;
+    }
+    const nested = findFolderById(item.children, targetId);
+    if (nested) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+function pathHasPrefix(candidate: string, prefix: string) {
+  const normalize = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedCandidate = normalize(candidate);
+  const normalizedPrefix = normalize(prefix);
+  return (
+    normalizedCandidate === normalizedPrefix ||
+    normalizedCandidate.startsWith(`${normalizedPrefix}/`)
+  );
 }
 
 function reorderSiblings(
@@ -84,8 +107,8 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
     selectedFolderId,
     expandedFolderIds,
     isLoading,
-    loadFolders,
     createFolder,
+    deleteFolder,
     selectFolder,
     setNewFolderName,
     newFolderName,
@@ -399,25 +422,29 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
     if (!deleteConfirm) return;
 
     const deletedId = deleteConfirm.id;
+    const selectedFolder =
+      selectedFolderId !== null ? findFolderById(folders, selectedFolderId) : null;
+    const shouldSelectOnUndo = Boolean(
+      selectedFolder && pathHasPrefix(selectedFolder.path, deleteConfirm.path),
+    );
     setDeleteConfirm(null);
 
-    await deleteFolder(deletedId);
-    await loadFolders();
-
-    if (selectedFolderId !== deletedId) {
+    const result = await deleteFolder(deletedId);
+    if (!result) {
       return;
     }
 
-    const nextFolders = useFolderStore.getState().folders;
-    if (nextFolders.length > 0) {
-      const firstFolder = nextFolders[0];
-      selectFolder(firstFolder.id);
-      await loadFilesInFolder(firstFolder.id);
-      return;
+    if (result.movedToTrash) {
+      await useTrashStore.getState().addFolderDeleteToUndoStack({
+        folderId: result.folderId,
+        folderName: result.folderName,
+        folderPath: result.folderPath,
+        shouldSelectOnUndo,
+      });
+      toast.success(`已删除文件夹“${result.folderName}”，可在回收站恢复或按 Cmd/Ctrl+Z 撤回。`);
+    } else {
+      toast.success(`已删除文件夹“${result.folderName}”。`);
     }
-
-    selectFolder(null);
-    await loadFilesInFolder(null);
   };
 
   return (

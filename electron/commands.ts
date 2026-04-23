@@ -11,14 +11,14 @@ import sharp from "sharp";
 import {
   addIndexPath,
   addTagToFile,
-  attachTags,
   BROWSER_COLLECTION_FOLDER_NAME,
   BROWSER_COLLECTION_FOLDER_SORT_ORDER,
-  clearFilesFolderId,
+  adjustFolderTrashEntryFileCount,
+  createFolderTrashEntry,
   createFolderRecord,
   createTag,
   currentTimestamp,
-  deleteFileByPath,
+  deleteFolderTrashEntry,
   deleteFolderRecord,
   deleteTag,
   findMoveCandidateByContentHash,
@@ -28,22 +28,27 @@ import {
   getFileByPath,
   getAllFiles,
   getAllFolders,
+  getAllFoldersIncludingDeleted,
   getAllTags,
   getDeleteMode,
   getFilesInFolder,
   getFolderById,
+  getFolderByIdIncludingDeleted,
   getFolderByPath,
+  getFolderTrashEntry,
   getFolderTree,
   getIndexPaths,
   getSetting,
   getSmartCollectionStats,
   getOrCreateFolder,
+  getTrashItems,
   getUnindexedVisualIndexCandidates,
   getVisualIndexCandidate,
   getVisualIndexCandidates,
   getVisualIndexCounts,
   getTrashCount,
   getTrashFiles,
+  getTrashFolders,
   isFileUnchanged,
   markFileVisualEmbeddingError,
   markFileMissingByPath,
@@ -57,11 +62,13 @@ import {
   reorderTags,
   renameFolder,
   resolveAvailableTargetPath,
+  restoreFolderSubtreeRecords,
   restoreFileRecord,
   searchFiles,
   searchFilesByVisualEmbedding,
   setDeleteMode,
   setSetting,
+  softDeleteFolderSubtree,
   softDeleteFile,
   touchFileLastAccessed,
   updateFileBasicInfo,
@@ -98,7 +105,7 @@ import {
   rememberRecentIndexPaths,
   removeThumbnailForFile,
 } from "./storage";
-import { isHiddenName, pathHasPrefix } from "./path-utils";
+import { isHiddenName, pathHasPrefix, replacePathPrefix } from "./path-utils";
 import { decideThumbnailGeneration, isVideoThumbnailExt } from "./thumbnail";
 import {
   classifyExistingPathSync,
@@ -167,6 +174,7 @@ let librarySyncScanTimer: NodeJS.Timeout | null = null;
 let lastLibrarySyncScanAt = 0;
 const pendingLibraryUnlinks = new Map<string, NodeJS.Timeout>();
 const pendingLibraryChanges = new Map<string, NodeJS.Timeout>();
+const DELETED_FOLDER_HOLDING_DIR_NAME = "deleted-folders-pending";
 
 interface LibrarySyncSummary {
   added: number;
@@ -281,6 +289,110 @@ function numberArrayArg(args: Record<string, unknown>, ...keys: string[]): numbe
 
 function taskId(): string {
   return Date.now().toString(16) + crypto.randomBytes(4).toString("hex");
+}
+
+function getDeletedFolderHoldingDir(appDataDir: string): string {
+  return path.join(appDataDir, DELETED_FOLDER_HOLDING_DIR_NAME);
+}
+
+export async function ensureDeletedFolderHoldingDir(appDataDir: string): Promise<string> {
+  const dir = getDeletedFolderHoldingDir(appDataDir);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+function getFilesUnderFolderPath(
+  db: AppState["db"],
+  folderPath: string,
+): Array<{ id: number; path: string; contentHash: string | null }> {
+  const rows = db.prepare("SELECT id, path, content_hash FROM files").all() as Array<{
+    id: number;
+    path: string;
+    content_hash: string | null;
+  }>;
+  return rows
+    .filter((row) => pathHasPrefix(row.path, folderPath))
+    .map((row) => ({
+      id: row.id,
+      path: row.path,
+      contentHash: row.content_hash ?? null,
+    }));
+}
+
+function getFoldersUnderFolderPath(
+  db: AppState["db"],
+  folderPath: string,
+  includeDeleted = false,
+): FolderRecord[] {
+  const folders = includeDeleted ? getAllFoldersIncludingDeleted(db) : getAllFolders(db);
+  return folders.filter((folder) => pathHasPrefix(folder.path, folderPath));
+}
+
+function findTrashedFolderForPath(
+  state: AppState,
+  filePath: string,
+): {
+  folderId: number;
+  originalPath: string;
+  tempPath: string;
+  sourcePath: string;
+} | null {
+  const rows = state.db
+    .prepare(
+      `SELECT f.id, f.path, te.temp_path
+     FROM folders f
+     INNER JOIN folder_trash_entries te ON te.folder_id = f.id
+     WHERE f.deleted_at IS NOT NULL`,
+    )
+    .all() as Array<{ id: number; path: string; temp_path: string }>;
+  for (const row of rows) {
+    const sourcePath = replacePathPrefix(filePath, row.path, row.temp_path);
+    if (sourcePath) {
+      return {
+        folderId: row.id,
+        originalPath: row.path,
+        tempPath: row.temp_path,
+        sourcePath,
+      };
+    }
+  }
+  return null;
+}
+
+function normalizeFolderRestoreName(name: string, suffix?: number): string {
+  if (!suffix || suffix <= 1) {
+    return `${name} (已恢复)`;
+  }
+  return `${name} (已恢复 ${suffix})`;
+}
+
+function resolveAvailableFolderRestorePath(indexPath: string, originalPath: string): string {
+  const originalParent = path.dirname(originalPath);
+  const originalName = path.basename(originalPath);
+  const restoreParent = pathHasPrefix(originalParent, indexPath) ? originalParent : indexPath;
+
+  const direct = path.join(restoreParent, originalName);
+  if (!fssync.existsSync(direct)) {
+    return direct;
+  }
+
+  for (let attempt = 1; attempt < 1000; attempt += 1) {
+    const candidate = path.join(restoreParent, normalizeFolderRestoreName(originalName, attempt));
+    if (!fssync.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error("无法为恢复的文件夹找到可用路径");
+}
+
+async function moveDirectoryWithFallback(from: string, to: string): Promise<void> {
+  try {
+    await fs.rename(from, to);
+  } catch {
+    await fs.cp(from, to, { recursive: true });
+    await fs.rm(from, { recursive: true, force: true });
+  }
 }
 
 function timestampFromStats(stats: fssync.Stats, key: "birthtime" | "mtime"): string {
@@ -847,6 +959,60 @@ async function scanIndexPath(
     }
   }
   return summary.added;
+}
+
+async function permanentlyDeleteTrashedFolder(
+  state: AppState,
+  folderId: number,
+): Promise<{ removedFileCount: number }> {
+  const folder = getFolderByIdIncludingDeleted(state.db, folderId);
+  const trashEntry = getFolderTrashEntry(state.db, folderId);
+  if (!folder || !trashEntry) {
+    return { removedFileCount: 0 };
+  }
+
+  const affectedFiles = getFilesUnderFolderPath(state.db, folder.path);
+  for (const file of affectedFiles) {
+    await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
+    permanentDeleteFileRecord(state.db, file.id);
+  }
+
+  deleteFolderTrashEntry(state.db, folderId);
+  deleteFolderRecord(state.db, folderId);
+  await fs.rm(trashEntry.tempPath, { recursive: true, force: true }).catch(() => undefined);
+  return { removedFileCount: affectedFiles.length };
+}
+
+async function restoreTrashedFolder(
+  state: AppState,
+  folderId: number,
+): Promise<{ restoredPath: string; originalPath: string }> {
+  const folder = getFolderByIdIncludingDeleted(state.db, folderId);
+  const trashEntry = getFolderTrashEntry(state.db, folderId);
+  if (!folder || !trashEntry) {
+    throw new Error("找不到已删除的文件夹");
+  }
+
+  const indexPath = getIndexPaths(state.db)[0] ?? state.indexPath;
+  const restoredPath = resolveAvailableFolderRestorePath(indexPath, folder.path);
+  await fs.mkdir(path.dirname(restoredPath), { recursive: true });
+  await moveDirectoryWithFallback(trashEntry.tempPath, restoredPath);
+  const restoredParentId = getOrCreateFolder(
+    state.db,
+    path.dirname(restoredPath),
+    getIndexPaths(state.db),
+  );
+  restoreFolderSubtreeRecords(state.db, {
+    folderId,
+    originalPath: folder.path,
+    restoredPath,
+    rootParentId: restoredParentId,
+  });
+  deleteFolderTrashEntry(state.db, folderId);
+  return {
+    restoredPath,
+    originalPath: folder.path,
+  };
 }
 
 function queueLibrarySyncTask(task: () => Promise<void>): void {
@@ -1862,24 +2028,61 @@ export function registerIpcHandlers(
     delete_folder: async (args) => {
       const id = numberArg(args, "id");
       const folder = getFolderById(state.db, id);
-      if (!folder) return;
+      if (!folder) return null;
       if (folder.isSystem) throw new Error("Cannot delete system folder");
-      const allFolders = getAllFolders(state.db);
-      const childIds = allFolders
-        .filter((item) => item.id !== id && pathHasPrefix(item.path, folder.path))
-        .map((item) => item.id);
-      clearFilesFolderId(state.db, [id, ...childIds]);
-      for (const file of attachTags(
-        state.db,
-        state.db.prepare("SELECT * FROM files").all() as never,
-      )) {
-        if (pathHasPrefix(file.path, folder.path)) {
-          await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
-          deleteFileByPath(state.db, file.path);
+      const affectedFiles = getFilesUnderFolderPath(state.db, folder.path);
+      const useTrash = getDeleteMode(state.db);
+
+      if (!useTrash || !fssync.existsSync(folder.path)) {
+        if (fssync.existsSync(folder.path)) {
+          await fs.rm(folder.path, { recursive: true, force: true }).catch(() => undefined);
         }
+        for (const file of affectedFiles) {
+          await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
+          permanentDeleteFileRecord(state.db, file.id);
+        }
+        deleteFolderRecord(state.db, id);
+        return {
+          folderId: id,
+          folderName: folder.name,
+          folderPath: folder.path,
+          removedFileCount: affectedFiles.length,
+          movedToTrash: false,
+        };
       }
-      deleteFolderRecord(state.db, id);
-      await fs.rm(folder.path, { recursive: true, force: true });
+
+      const holdingDir = await ensureDeletedFolderHoldingDir(state.appDataDir);
+      const tempPath = path.join(
+        holdingDir,
+        `folder-trash-${taskId()}-${path.basename(folder.path)}`,
+      );
+      await moveDirectoryWithFallback(folder.path, tempPath);
+
+      const deletedAt = currentTimestamp();
+      const subfolderCount = Math.max(
+        getFoldersUnderFolderPath(state.db, folder.path).length - 1,
+        0,
+      );
+      state.db.transaction(() => {
+        createFolderTrashEntry(state.db, {
+          folderId: id,
+          tempPath,
+          deletedAt,
+          fileCount: affectedFiles.length,
+          subfolderCount,
+        });
+        softDeleteFolderSubtree(state.db, folder.path, deletedAt);
+        for (const file of affectedFiles) {
+          state.db.prepare("UPDATE files SET missing_at = ? WHERE id = ?").run(deletedAt, file.id);
+        }
+      })();
+      return {
+        folderId: id,
+        folderName: folder.name,
+        folderPath: folder.path,
+        removedFileCount: affectedFiles.length,
+        movedToTrash: true,
+      };
     },
     rename_folder: (args) => renameFolder(state.db, numberArg(args, "id"), stringArg(args, "name")),
     move_folder: (args) =>
@@ -1944,10 +2147,26 @@ export function registerIpcHandlers(
         await deleteFileCommand(state, fileId);
     },
     get_trash_files: () => getTrashFiles(state.db),
-    restore_file: (args) => restoreOneFile(state, numberArg(args, "fileId", "file_id")),
+    get_trash_items: () => getTrashItems(state.db),
+    restore_file: async (args) => {
+      const result = await restoreOneFile(state, numberArg(args, "fileId", "file_id"));
+      return { movedToUnclassifiedCount: result.movedToUnclassified ? 1 : 0 };
+    },
     restore_files: async (args) => {
+      let movedToUnclassifiedCount = 0;
       for (const fileId of numberArrayArg(args, "fileIds", "file_ids"))
-        await restoreOneFile(state, fileId);
+        movedToUnclassifiedCount += (await restoreOneFile(state, fileId)).movedToUnclassified
+          ? 1
+          : 0;
+      return { movedToUnclassifiedCount };
+    },
+    restore_folder: (args) => restoreTrashedFolder(state, numberArg(args, "folderId", "folder_id")),
+    restore_folders: async (args) => {
+      const results = [];
+      for (const folderId of numberArrayArg(args, "folderIds", "folder_ids")) {
+        results.push(await restoreTrashedFolder(state, folderId));
+      }
+      return results;
     },
     permanent_delete_file: (args) =>
       permanentDeleteOneFile(state, numberArg(args, "fileId", "file_id")),
@@ -1955,7 +2174,15 @@ export function registerIpcHandlers(
       for (const fileId of numberArrayArg(args, "fileIds", "file_ids"))
         await permanentDeleteOneFile(state, fileId);
     },
+    permanent_delete_folder: (args) =>
+      permanentlyDeleteTrashedFolder(state, numberArg(args, "folderId", "folder_id")),
+    permanent_delete_folders: async (args) => {
+      for (const folderId of numberArrayArg(args, "folderIds", "folder_ids"))
+        await permanentlyDeleteTrashedFolder(state, folderId);
+    },
     empty_trash: async () => {
+      for (const folder of getTrashFolders(state.db))
+        await permanentlyDeleteTrashedFolder(state, folder.id);
       for (const file of getTrashFiles(state.db)) await permanentDeleteOneFile(state, file.id);
     },
     get_delete_mode: () => getDeleteMode(state.db),
@@ -2149,24 +2376,66 @@ async function deleteFileCommand(state: AppState, fileId: number): Promise<void>
   }
 }
 
-async function restoreOneFile(state: AppState, fileId: number): Promise<void> {
+async function restoreOneFile(
+  state: AppState,
+  fileId: number,
+): Promise<{ movedToUnclassified: boolean }> {
   const file = getFileById(state.db, fileId);
-  if (!file) return;
+  if (!file) {
+    return { movedToUnclassified: false };
+  }
+
+  const trashedFolder = findTrashedFolderForPath(state, file.path);
+  if (trashedFolder) {
+    const root = getIndexPaths(state.db)[0] ?? state.indexPath;
+    const targetPath = await resolveAvailableTargetPath(
+      state.db,
+      file.path,
+      root,
+      fileId,
+      "restored",
+      false,
+    );
+    if (fssync.existsSync(trashedFolder.sourcePath)) {
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await moveFileWithFallback(trashedFolder.sourcePath, targetPath);
+    }
+    adjustFolderTrashEntryFileCount(state.db, trashedFolder.folderId, -1);
+    updateFilePathAndFolder(state.db, fileId, targetPath, null);
+    restoreFileRecord(state.db, fileId);
+    return { movedToUnclassified: true };
+  }
+
+  let movedToUnclassified = false;
   if (file.folderId !== null && !getFolderById(state.db, file.folderId)) {
     const root = getIndexPaths(state.db)[0] ?? state.indexPath;
-    const targetPath = path.join(root, path.basename(file.path));
+    const targetPath = await resolveAvailableTargetPath(
+      state.db,
+      file.path,
+      root,
+      fileId,
+      "restored",
+      false,
+    );
     if (fssync.existsSync(file.path) && path.resolve(file.path) !== path.resolve(targetPath)) {
       await moveFileWithFallback(file.path, targetPath);
     }
     updateFilePathAndFolder(state.db, fileId, targetPath, null);
+    movedToUnclassified = true;
   }
   restoreFileRecord(state.db, fileId);
+  return { movedToUnclassified };
 }
 
 async function permanentDeleteOneFile(state: AppState, fileId: number): Promise<void> {
   const file = getFileById(state.db, fileId);
   if (!file) return;
   await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
+  const trashedFolder = findTrashedFolderForPath(state, file.path);
+  if (trashedFolder && fssync.existsSync(trashedFolder.sourcePath)) {
+    await fs.rm(trashedFolder.sourcePath, { force: true }).catch(() => undefined);
+    adjustFolderTrashEntryFileCount(state.db, trashedFolder.folderId, -1);
+  }
   permanentDeleteFileRecord(state.db, fileId);
   await fs.rm(file.path, { force: true }).catch(() => undefined);
 }

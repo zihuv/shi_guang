@@ -48,6 +48,7 @@ export interface FolderRecord {
   created_at: string;
   isSystem: boolean;
   sortOrder: number;
+  deletedAt: string | null;
 }
 
 export interface FolderTreeNode {
@@ -60,6 +61,19 @@ export interface FolderTreeNode {
   sortOrder?: number;
   parentId?: number | null;
 }
+
+export interface TrashFolderRecord {
+  id: number;
+  path: string;
+  name: string;
+  deletedAt: string;
+  fileCount: number;
+  subfolderCount: number;
+}
+
+export type TrashItemRecord =
+  | (FileRecord & { kind: "file" })
+  | (TrashFolderRecord & { kind: "folder" });
 
 export interface PaginatedFiles {
   files: FileRecord[];

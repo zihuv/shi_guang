@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openDatabase } from "./database";
 import {
+  ensureDeletedFolderHoldingDir,
   registerIpcHandlers,
   requestLibrarySyncScan,
   startCollectorServer,
@@ -421,6 +422,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
 
 async function bootstrap(): Promise<void> {
   const appDataDir = app.getPath("userData");
+  await ensureDeletedFolderHoldingDir(appDataDir);
   const indexPath = await resolveStartupIndexPath(appDataDir);
   if (!indexPath) {
     app.quit();

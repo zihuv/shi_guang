@@ -7,6 +7,7 @@ import {
   moveFolder as moveFolderDesktop,
   reorderFolders as reorderFoldersDesktop,
   renameFolder,
+  type DeleteFolderResult,
   type FolderSummary,
 } from "@/services/desktop/folders";
 import { useLibraryQueryStore } from "./libraryQueryStore";
@@ -31,6 +32,16 @@ const removeHiddenFolders = (folders: FolderNode[]): FolderNode[] =>
       children: removeHiddenFolders(folder.children || []),
     }));
 
+const pathHasPrefix = (candidate: string, prefix: string) => {
+  const normalize = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedCandidate = normalize(candidate);
+  const normalizedPrefix = normalize(prefix);
+  return (
+    normalizedCandidate === normalizedPrefix ||
+    normalizedCandidate.startsWith(`${normalizedPrefix}/`)
+  );
+};
+
 interface FolderStore {
   folders: FolderNode[];
   selectedFolderId: number | null;
@@ -47,7 +58,7 @@ interface FolderStore {
   selectFolder: (folderId: number | null) => void;
   toggleFolder: (folderId: number) => void;
   createFolder: (name: string, parentId: number | null) => Promise<FolderSummary>;
-  deleteFolder: (id: number) => Promise<void>;
+  deleteFolder: (id: number) => Promise<DeleteFolderResult | null>;
   renameFolder: (id: number, name: string) => Promise<void>;
   moveFile: (fileId: number, targetFolderId: number | null) => Promise<void>;
   moveFolder: (
@@ -143,11 +154,43 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   deleteFolder: async (id) => {
     try {
-      await deleteFolder(id);
+      const deletingFolder = get()
+        .folders.flatMap(function flatten(folder): FolderNode[] {
+          return [folder, ...folder.children.flatMap(flatten)];
+        })
+        .find((folder) => folder.id === id);
+      const selectedFolder = get()
+        .folders.flatMap(function flatten(folder): FolderNode[] {
+          return [folder, ...folder.children.flatMap(flatten)];
+        })
+        .find((folder) => folder.id === get().selectedFolderId);
+      const shouldReselect = Boolean(
+        selectedFolder && deletingFolder && pathHasPrefix(selectedFolder.path, deletingFolder.path),
+      );
+
+      const result = await deleteFolder(id);
       await get().loadFolders();
       await useSmartCollectionStore.getState().loadStats();
+
+      if (shouldReselect) {
+        const nextFolders = get().folders;
+        const libraryStore = useLibraryQueryStore.getState();
+        if (nextFolders.length > 0) {
+          const firstFolder = nextFolders[0];
+          get().selectFolder(firstFolder.id);
+          libraryStore.setSelectedFolderId(firstFolder.id);
+          await libraryStore.loadFilesInFolder(firstFolder.id);
+        } else {
+          get().selectFolder(null);
+          libraryStore.setSelectedFolderId(null);
+          await libraryStore.loadFilesInFolder(null);
+        }
+      }
+
+      return result;
     } catch (e) {
       console.error("Failed to delete folder:", e);
+      return null;
     }
   },
 

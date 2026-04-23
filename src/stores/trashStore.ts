@@ -1,64 +1,152 @@
+import { toast } from "sonner";
 import { create } from "zustand";
 import {
   deleteFile,
   deleteFiles,
   emptyTrash,
   getTrashCount,
-  getTrashFiles,
+  getTrashItems,
   permanentDeleteFile,
   permanentDeleteFiles,
+  permanentDeleteFolder,
+  permanentDeleteFolders,
   restoreFile,
   restoreFiles,
+  restoreFolder,
+  restoreFolders,
+  type RestoreFilesResult,
 } from "@/services/desktop/trash";
-import { parseFileList, type FileItem } from "@/stores/fileTypes";
-import { useFolderStore } from "@/stores/folderStore";
+import { parseTrashItemList, type TrashItem } from "@/stores/fileTypes";
+import { type FolderNode, useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 
-interface UndoAction {
+interface FileDeleteUndoAction {
   type: "delete";
   fileIds: number[];
   timestamp: number;
 }
 
+interface FolderDeleteUndoAction {
+  type: "delete_folder";
+  folderId: number;
+  folderName: string;
+  folderPath: string;
+  shouldSelectOnUndo: boolean;
+  timestamp: number;
+}
+
+type UndoAction = FileDeleteUndoAction | FolderDeleteUndoAction;
+
 interface TrashStore {
-  trashFiles: FileItem[];
+  trashItems: TrashItem[];
   trashCount: number;
   undoStack: UndoAction[];
-  addToUndoStack: (fileIds: number[]) => void;
+  addFileDeleteToUndoStack: (fileIds: number[]) => Promise<void>;
+  addFolderDeleteToUndoStack: (action: {
+    folderId: number;
+    folderName: string;
+    folderPath: string;
+    shouldSelectOnUndo: boolean;
+  }) => Promise<void>;
   undo: () => Promise<void>;
-  clearUndoStack: () => void;
+  clearUndoStack: () => Promise<void>;
   deleteFile: (fileId: number) => Promise<void>;
   deleteFiles: (fileIds: number[]) => Promise<void>;
-  loadTrashFiles: () => Promise<void>;
+  loadTrashItems: () => Promise<void>;
   restoreFile: (fileId: number) => Promise<void>;
   restoreFiles: (fileIds: number[]) => Promise<void>;
+  restoreFolder: (folderId: number) => Promise<void>;
+  restoreFolders: (folderIds: number[]) => Promise<void>;
   permanentDeleteFile: (fileId: number) => Promise<void>;
   permanentDeleteFiles: (fileIds: number[]) => Promise<void>;
+  permanentDeleteFolder: (folderId: number) => Promise<void>;
+  permanentDeleteFolders: (folderIds: number[]) => Promise<void>;
   emptyTrash: () => Promise<void>;
   loadTrashCount: () => Promise<void>;
 }
 
 async function refreshCurrentLibraryState() {
+  await useFolderStore.getState().loadFolders();
   const selectedFolderId = useLibraryQueryStore.getState().selectedFolderId;
   await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId);
-  await useFolderStore.getState().loadFolders();
   await useSmartCollectionStore.getState().loadStats();
 }
 
+function findFolderByPath(folders: FolderNode[], folderPath: string): FolderNode | null {
+  for (const folder of folders) {
+    if (folder.path === folderPath) {
+      return folder;
+    }
+    const nested = findFolderByPath(folder.children, folderPath);
+    if (nested) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+async function refreshAfterRestoreFolder(restoredPath: string, shouldSelectOnUndo: boolean) {
+  await useFolderStore.getState().loadFolders();
+  await useSmartCollectionStore.getState().loadStats();
+  const libraryStore = useLibraryQueryStore.getState();
+  const folderStore = useFolderStore.getState();
+
+  if (shouldSelectOnUndo) {
+    const restoredFolder = findFolderByPath(folderStore.folders, restoredPath);
+    if (restoredFolder) {
+      folderStore.selectFolder(restoredFolder.id);
+      libraryStore.setSelectedFolderId(restoredFolder.id);
+      await libraryStore.loadFilesInFolder(restoredFolder.id);
+      return;
+    }
+  }
+
+  await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId);
+}
+
+function notifyRestoreResult(result: RestoreFilesResult, restoredCount: number) {
+  if (result.movedToUnclassifiedCount <= 0) {
+    return;
+  }
+  if (restoredCount === 1) {
+    toast.success("原文件夹不存在，已恢复到未分类。");
+    return;
+  }
+  toast.success(`${result.movedToUnclassifiedCount} 个文件因原文件夹不存在，已恢复到未分类。`);
+}
+
+async function refreshTrashState(store: TrashStore) {
+  await store.loadTrashItems();
+  await store.loadTrashCount();
+}
+
 export const useTrashStore = create<TrashStore>((set, get) => ({
-  trashFiles: [],
+  trashItems: [],
   trashCount: 0,
   undoStack: [],
 
-  addToUndoStack: (fileIds) => {
+  addFileDeleteToUndoStack: async (fileIds) => {
     const { undoStack } = get();
     const nextStack = [...undoStack, { type: "delete" as const, fileIds, timestamp: Date.now() }];
-    if (nextStack.length > 50) {
-      nextStack.shift();
-    }
-    set({ undoStack: nextStack });
+    set({ undoStack: nextStack.slice(-50) });
+  },
+
+  addFolderDeleteToUndoStack: async ({ folderId, folderName, folderPath, shouldSelectOnUndo }) => {
+    const { undoStack } = get();
+    const nextStack = [
+      ...undoStack,
+      {
+        type: "delete_folder" as const,
+        folderId,
+        folderName,
+        folderPath,
+        shouldSelectOnUndo,
+        timestamp: Date.now(),
+      },
+    ];
+    set({ undoStack: nextStack.slice(-50) });
   },
 
   undo: async () => {
@@ -69,19 +157,31 @@ export const useTrashStore = create<TrashStore>((set, get) => ({
 
     const lastAction = undoStack[undoStack.length - 1];
     if (lastAction.type === "delete") {
-      await restoreFiles(lastAction.fileIds);
+      const result = await restoreFiles(lastAction.fileIds);
+      notifyRestoreResult(result, lastAction.fileIds.length);
       await refreshCurrentLibraryState();
-      await get().loadTrashCount();
+      await refreshTrashState(get());
+    } else {
+      const result = await restoreFolder(lastAction.folderId);
+      await refreshAfterRestoreFolder(result.restoredPath, lastAction.shouldSelectOnUndo);
+      await refreshTrashState(get());
+      toast.success(
+        result.restoredPath === result.originalPath
+          ? `已恢复文件夹“${lastAction.folderName}”。`
+          : `已恢复文件夹“${lastAction.folderName}”，并放回可用位置。`,
+      );
     }
 
     set({ undoStack: undoStack.slice(0, -1) });
   },
 
-  clearUndoStack: () => set({ undoStack: [] }),
+  clearUndoStack: async () => {
+    set({ undoStack: [] });
+  },
 
   deleteFile: async (fileId) => {
     await deleteFile(fileId);
-    get().addToUndoStack([fileId]);
+    await get().addFileDeleteToUndoStack([fileId]);
     useSelectionStore.getState().setSelectedFile(null);
     await refreshCurrentLibraryState();
     await get().loadTrashCount();
@@ -89,55 +189,81 @@ export const useTrashStore = create<TrashStore>((set, get) => ({
 
   deleteFiles: async (fileIds) => {
     await deleteFiles(fileIds);
-    get().addToUndoStack(fileIds);
+    await get().addFileDeleteToUndoStack(fileIds);
     useSelectionStore.getState().clearSelection();
     useSelectionStore.getState().setSelectedFile(null);
     await refreshCurrentLibraryState();
     await get().loadTrashCount();
   },
 
-  loadTrashFiles: async () => {
+  loadTrashItems: async () => {
     try {
-      const files = await getTrashFiles();
-      set({ trashFiles: parseFileList(files) });
+      const items = await getTrashItems();
+      set({ trashItems: parseTrashItemList(items) });
     } catch (error) {
-      console.error("Failed to load trash files:", error);
+      console.error("Failed to load trash items:", error);
     }
   },
 
   restoreFile: async (fileId) => {
-    await restoreFile(fileId);
-    await get().loadTrashFiles();
-    await get().loadTrashCount();
+    const result = await restoreFile(fileId);
+    notifyRestoreResult(result, 1);
     await refreshCurrentLibraryState();
+    await refreshTrashState(get());
   },
 
   restoreFiles: async (fileIds) => {
-    await restoreFiles(fileIds);
-    await get().loadTrashFiles();
-    await get().loadTrashCount();
+    const result = await restoreFiles(fileIds);
+    notifyRestoreResult(result, fileIds.length);
     await refreshCurrentLibraryState();
+    await refreshTrashState(get());
+  },
+
+  restoreFolder: async (folderId) => {
+    const result = await restoreFolder(folderId);
+    await refreshAfterRestoreFolder(result.restoredPath, false);
+    await refreshTrashState(get());
+  },
+
+  restoreFolders: async (folderIds) => {
+    const results = await restoreFolders(folderIds);
+    const lastResult = results.length > 0 ? results[results.length - 1] : null;
+    if (lastResult) {
+      await refreshAfterRestoreFolder(lastResult.restoredPath, false);
+    } else {
+      await refreshCurrentLibraryState();
+    }
+    await refreshTrashState(get());
   },
 
   permanentDeleteFile: async (fileId) => {
     await permanentDeleteFile(fileId);
-    await get().loadTrashFiles();
-    await get().loadTrashCount();
+    await refreshTrashState(get());
     await useSmartCollectionStore.getState().loadStats();
   },
 
   permanentDeleteFiles: async (fileIds) => {
     await permanentDeleteFiles(fileIds);
-    await get().loadTrashFiles();
-    await get().loadTrashCount();
+    await refreshTrashState(get());
     await useSmartCollectionStore.getState().loadStats();
+  },
+
+  permanentDeleteFolder: async (folderId) => {
+    await permanentDeleteFolder(folderId);
+    await refreshTrashState(get());
+    await refreshCurrentLibraryState();
+  },
+
+  permanentDeleteFolders: async (folderIds) => {
+    await permanentDeleteFolders(folderIds);
+    await refreshTrashState(get());
+    await refreshCurrentLibraryState();
   },
 
   emptyTrash: async () => {
     await emptyTrash();
-    await get().loadTrashFiles();
-    await get().loadTrashCount();
-    await useSmartCollectionStore.getState().loadStats();
+    await refreshTrashState(get());
+    await refreshCurrentLibraryState();
   },
 
   loadTrashCount: async () => {

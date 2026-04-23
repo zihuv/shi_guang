@@ -186,7 +186,7 @@ export function FolderDialogs({
             <AlertDialogTitle>确认删除</AlertDialogTitle>
             <AlertDialogDescription>
               确定要删除文件夹 "{deleteConfirm?.name}"
-              吗？删除后文件夹中的文件不会被删除，但会变成未分类状态。
+              吗？文件夹会进入应用内回收站，可稍后恢复，也可在当前会话中通过 Cmd/Ctrl+Z 撤回。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
