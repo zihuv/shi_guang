@@ -83,7 +83,7 @@ export function FileGridViewport({
   return (
     <div
       ref={scrollParentRef}
-      className="relative flex-1 overflow-auto p-3 select-none focus:outline-none"
+      className="relative flex-1 overflow-x-hidden overflow-y-auto p-3 select-none focus:outline-none"
       tabIndex={0}
       onMouseDown={handleSelectionStart}
       onWheel={handleViewportWheel}
@@ -135,6 +135,7 @@ export function FileGridViewport({
                 className="absolute left-0 top-0"
                 style={{
                   width: `${gridTrackWidth}px`,
+                  maxWidth: "100%",
                   height: `${gridRowHeight}px`,
                   transform: `translateY(${rowIndex * gridRowSpan}px)`,
                 }}

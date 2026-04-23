@@ -30,10 +30,8 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDesktopImportListeners } from "@/hooks/useDesktopImportListeners";
 import { useNavigationStore } from "@/stores/navigationStore";
 
-const PANEL_RESIZER_WIDTH = 11;
-const PANEL_RESIZER_LAYOUT_WIDTH = 1;
-const PANEL_RESIZER_MARGIN = (PANEL_RESIZER_WIDTH - PANEL_RESIZER_LAYOUT_WIDTH) / 2;
-const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_LAYOUT_WIDTH * 2;
+const PANEL_RESIZER_WIDTH = 8;
+const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_WIDTH * 2;
 const MIN_MAIN_PANEL_WIDTH = 240;
 const MIN_RENDERED_SIDEBAR_WIDTH = 72;
 const MIN_RENDERED_DETAIL_PANEL_WIDTH = 120;
@@ -109,15 +107,11 @@ function PanelResizeHandle({
       aria-label={ariaLabel}
       aria-orientation="vertical"
       className="group relative z-10 flex flex-shrink-0 cursor-col-resize items-stretch justify-center select-none"
-      style={{
-        width: PANEL_RESIZER_WIDTH,
-        marginLeft: -PANEL_RESIZER_MARGIN,
-        marginRight: -PANEL_RESIZER_MARGIN,
-      }}
+      style={{ width: PANEL_RESIZER_WIDTH }}
       onMouseDown={onMouseDown}
     >
       <div
-        className={`my-auto h-8 w-[3px] rounded-full transition-colors ${
+        className={`my-auto h-8 w-[2px] rounded-full transition-colors ${
           isActive
             ? "bg-blue-400/80 dark:bg-blue-500/80"
             : "bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/12"

@@ -71,16 +71,13 @@ function PanelActionButton({
 
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex min-h-7 items-center gap-3 py-0.5">
-      <span className={cn(appPanelMetaClass, "w-[72px] flex-shrink-0 leading-5")}>{label}</span>
-      <span
-        className={cn(
-          appPanelValueClass,
-          "min-w-0 flex-1 whitespace-nowrap text-right text-[12px] font-medium leading-5",
-        )}
+    <div className="grid min-h-7 grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3 py-0.5">
+      <span className={cn(appPanelMetaClass, "leading-5")}>{label}</span>
+      <div
+        className={cn(appPanelValueClass, "min-w-0 text-right text-[12px] font-medium leading-5")}
       >
         {value}
-      </span>
+      </div>
     </div>
   );
 }
