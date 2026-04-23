@@ -61,6 +61,9 @@ export function FolderDialogs({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>创建文件夹</DialogTitle>
+            <DialogDescription className="sr-only">
+              输入文件夹名称后，会在当前层级创建新的文件夹。
+            </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input
@@ -144,6 +147,9 @@ export function FolderDialogs({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>重命名文件夹</DialogTitle>
+            <DialogDescription className="sr-only">
+              修改文件夹名称，不会影响其中已有内容。
+            </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input

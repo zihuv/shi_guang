@@ -419,9 +419,11 @@ export default function TagPanel() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{addingParent ? "创建子标签" : "创建标签"}</DialogTitle>
-            {addingParent && (
-              <DialogDescription>在 “{addingParent.name}” 下创建子标签</DialogDescription>
-            )}
+            <DialogDescription>
+              {addingParent
+                ? `在 “${addingParent.name}” 下创建子标签。`
+                : "输入标签名称并选择颜色。"}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-4">
             <Input
@@ -476,6 +478,9 @@ export default function TagPanel() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑标签</DialogTitle>
+            <DialogDescription className="sr-only">
+              修改标签名称或颜色，已关联素材会同步更新。
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-4">
             <Input

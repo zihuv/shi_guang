@@ -11,7 +11,13 @@ import {
 } from "@/lib/shortcuts";
 import { useSettingsStore, type AiConfigTarget } from "@/stores/settingsStore";
 import { useVisualIndexTaskStore } from "@/stores/visualIndexTaskStore";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import { AiSettingsSection } from "@/components/settings-modal/AiSettingsSection";
 import { GeneralSettingsSection } from "@/components/settings-modal/GeneralSettingsSection";
 import { SettingsSidebar, type SettingsSection } from "@/components/settings-modal/SettingsSidebar";
@@ -197,6 +203,9 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         <DialogHeader className="shrink-0">
           <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
             <DialogTitle className="text-base">设置</DialogTitle>
+            <DialogDescription className="sr-only">
+              管理索引目录、界面外观、AI 能力与快捷键设置。
+            </DialogDescription>
           </div>
         </DialogHeader>
 

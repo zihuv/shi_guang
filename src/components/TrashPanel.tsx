@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useTrashStore } from "@/stores/trashStore";
 import { Button } from "@/components/ui/Button";
 import FileTypeIcon from "@/components/FileTypeIcon";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import { AlertTriangle, Folder, RotateCcw, Trash2, X } from "lucide-react";
 import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
 import type { TrashFileItem, TrashFolderItem, TrashItem } from "@/stores/fileTypes";
@@ -368,11 +374,11 @@ export default function TrashPanel() {
               <AlertTriangle className="h-5 w-5" />
               确认清空回收站
             </DialogTitle>
+            <DialogDescription>
+              此操作会永久删除回收站中的全部文件和文件夹，无法恢复。
+            </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <p className="text-gray-700 dark:text-gray-300">
-              确定要清空回收站吗？此操作不可恢复，所有文件和文件夹将被永久删除。
-            </p>
             <p className="mt-2 text-sm text-gray-500">回收站中共有 {trashItems.length} 个项目</p>
           </div>
           <div className="flex justify-end gap-2">
