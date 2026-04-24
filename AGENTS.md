@@ -39,6 +39,14 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 - Use Tailwind utilities in JSX and shared class helpers such as `src/lib/utils.ts`.
 - Refactor large files only when it helps the requested change.
 
+## UI Design
+
+- Keep the overall UI simple, quiet, and focused; avoid visual noise that does not support the user task.
+- Do not overuse borders, dividers, outlines, or decorative lines. Prefer spacing, alignment, and subtle background differences to separate content.
+- Do not wrap everything in cards. Use cards only when grouping repeated, self-contained items or when a framed surface is truly needed.
+- Do not put unrelated explanatory copy directly on the page. Avoid visible instructions, feature descriptions, or design rationale unless they are essential to the workflow.
+- Preserve a clean visual style across new screens and components, with restrained density, typography, color, and hierarchy.
+
 ## Engineering Principles
 
 - Think from first principles: clarify the underlying user need, runtime constraints, and data flow before choosing an implementation.
