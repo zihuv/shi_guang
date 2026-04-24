@@ -12,11 +12,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/AlertDialog";
-import { AlertTriangle, Folder, RotateCcw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Folder, RotateCcw, Trash2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
 import type { TrashFileItem, TrashFolderItem, TrashItem } from "@/stores/fileTypes";
 
-interface TrashCardProps {
+interface TrashRowProps {
   item: TrashItem;
   isSelected: boolean;
   onToggleSelect: () => void;
@@ -24,7 +25,7 @@ interface TrashCardProps {
   formatDate: (dateStr: string | null | undefined) => string;
 }
 
-interface TrashFileCardProps {
+interface TrashFileRowProps {
   file: TrashFileItem;
   isSelected: boolean;
   onToggleSelect: () => void;
@@ -32,13 +33,29 @@ interface TrashFileCardProps {
   formatDate: (dateStr: string | null | undefined) => string;
 }
 
-function TrashFileCard({
+function SelectionMark({ isSelected }: { isSelected: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex size-5 flex-shrink-0 items-center justify-center rounded-full transition-colors",
+        isSelected
+          ? "bg-primary-600 text-white"
+          : "bg-black/[0.06] text-transparent dark:bg-white/[0.08]",
+      )}
+      aria-hidden="true"
+    >
+      <Check className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
+function TrashFileRow({
   file,
   isSelected,
   onToggleSelect,
   formatFileSize,
   formatDate,
-}: TrashFileCardProps) {
+}: TrashFileRowProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const previewType = getFilePreviewMode(file.ext);
@@ -81,112 +98,110 @@ function TrashFileCard({
   return (
     <button
       type="button"
-      className={`relative overflow-hidden rounded-2xl border text-left transition-colors ${
+      className={cn(
+        "grid min-h-[64px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors",
         isSelected
-          ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
-          : "border-gray-200 bg-white hover:border-gray-300 dark:border-dark-border dark:bg-dark-surface"
-      }`}
+          ? "bg-primary-50/80 dark:bg-primary-500/12"
+          : "hover:bg-black/[0.035] dark:hover:bg-white/[0.055]",
+      )}
+      aria-pressed={isSelected}
       onClick={onToggleSelect}
     >
-      <div className="aspect-square overflow-hidden bg-gray-100 dark:bg-dark-bg">
-        {imageSrc && !imageError ? (
-          <img
-            src={imageSrc}
-            alt={file.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-            <FileTypeIcon ext={file.ext} className="h-10 w-10" />
-            <span className="text-xs font-medium text-gray-400">{file.ext.toUpperCase()}</span>
-          </div>
-        )}
-      </div>
+      <SelectionMark isSelected={isSelected} />
 
-      <div className="space-y-1 px-3 py-3">
-        <p
-          className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100"
-          title={file.name}
-        >
-          {file.name}
-        </p>
-        <p className="text-[12px] text-gray-500 dark:text-gray-400">{formatFileSize(file.size)}</p>
-        <p className="text-[12px] text-gray-400 dark:text-gray-500">
-          删除于 {formatDate(file.deletedAt)}
-        </p>
-      </div>
-
-      {isSelected && (
-        <div className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-xs text-white">
-          ✓
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex size-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/[0.045] dark:bg-white/[0.06]">
+          {imageSrc && !imageError ? (
+            <img
+              src={imageSrc}
+              alt={file.name}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <FileTypeIcon ext={file.ext} className="h-6 w-6" />
+          )}
         </div>
-      )}
+
+        <div className="min-w-0">
+          <p
+            className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100"
+            title={file.name}
+          >
+            {file.name}
+          </p>
+          <p className="mt-1 truncate text-[12px] text-gray-500 dark:text-gray-400">
+            {file.ext.toUpperCase()} · {formatFileSize(file.size)}
+          </p>
+        </div>
+      </div>
+
+      <span className="hidden whitespace-nowrap text-[12px] text-gray-400 dark:text-gray-500 sm:inline">
+        {formatDate(file.deletedAt)}
+      </span>
     </button>
   );
 }
 
-interface TrashFolderCardProps {
+interface TrashFolderRowProps {
   folder: TrashFolderItem;
   isSelected: boolean;
   onToggleSelect: () => void;
   formatDate: (dateStr: string | null | undefined) => string;
 }
 
-function TrashFolderCard({ folder, isSelected, onToggleSelect, formatDate }: TrashFolderCardProps) {
+function TrashFolderRow({ folder, isSelected, onToggleSelect, formatDate }: TrashFolderRowProps) {
   return (
     <button
       type="button"
-      className={`relative flex min-h-[250px] flex-col rounded-2xl border p-4 text-left transition-colors ${
+      className={cn(
+        "grid min-h-[64px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors",
         isSelected
-          ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
-          : "border-gray-200 bg-white hover:border-gray-300 dark:border-dark-border dark:bg-dark-surface"
-      }`}
+          ? "bg-primary-50/80 dark:bg-primary-500/12"
+          : "hover:bg-black/[0.035] dark:hover:bg-white/[0.055]",
+      )}
+      aria-pressed={isSelected}
       onClick={onToggleSelect}
     >
-      <div className="flex aspect-square items-center justify-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-500/10 dark:text-amber-300">
-        <Folder className="h-16 w-16" />
-      </div>
+      <SelectionMark isSelected={isSelected} />
 
-      <div className="mt-4 space-y-2">
-        <p
-          className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100"
-          title={folder.name}
-        >
-          {folder.name}
-        </p>
-        <p className="line-clamp-2 min-h-[36px] text-[12px] text-gray-500 dark:text-gray-400">
-          {folder.path}
-        </p>
-        <p className="text-[12px] text-gray-500 dark:text-gray-400">
-          {folder.fileCount} 个文件
-          {folder.subfolderCount > 0 ? ` · ${folder.subfolderCount} 个子文件夹` : ""}
-        </p>
-        <p className="text-[12px] text-gray-400 dark:text-gray-500">
-          删除于 {formatDate(folder.deletedAt)}
-        </p>
-      </div>
-
-      {isSelected && (
-        <div className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-xs text-white">
-          ✓
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex size-12 flex-shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500 dark:bg-amber-400/10 dark:text-amber-300">
+          <Folder className="h-6 w-6" />
         </div>
-      )}
+
+        <div className="min-w-0">
+          <p
+            className="truncate text-[13px] font-medium text-gray-800 dark:text-gray-100"
+            title={folder.name}
+          >
+            {folder.name}
+          </p>
+          <p className="mt-1 truncate text-[12px] text-gray-500 dark:text-gray-400">
+            文件夹 · {folder.fileCount} 个文件
+            {folder.subfolderCount > 0 ? ` · ${folder.subfolderCount} 个子文件夹` : ""}
+          </p>
+        </div>
+      </div>
+
+      <span className="hidden whitespace-nowrap text-[12px] text-gray-400 dark:text-gray-500 sm:inline">
+        {formatDate(folder.deletedAt)}
+      </span>
     </button>
   );
 }
 
-function TrashCard(props: TrashCardProps) {
+function TrashRow(props: TrashRowProps) {
   return props.item.kind === "folder" ? (
-    <TrashFolderCard
+    <TrashFolderRow
       folder={props.item}
       isSelected={props.isSelected}
       onToggleSelect={props.onToggleSelect}
       formatDate={props.formatDate}
     />
   ) : (
-    <TrashFileCard
+    <TrashFileRow
       file={props.item}
       isSelected={props.isSelected}
       onToggleSelect={props.onToggleSelect}
@@ -337,16 +352,14 @@ export default function TrashPanel() {
   return (
     <>
       <div className="flex h-full min-h-0 flex-col bg-white dark:bg-dark-bg">
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-border">
-          <div className="min-w-0">
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <div className="flex min-w-0 items-baseline gap-2">
             <h2 className="text-[16px] font-semibold text-gray-900 dark:text-gray-100">回收站</h2>
-            <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-              共 {trashCount} 个项目，可恢复或永久删除。
-            </p>
+            <span className="text-[12px] text-gray-400 dark:text-gray-500">{trashCount} 项</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={handleSelectAll} disabled={trashItems.length === 0}>
+            <Button variant="ghost" onClick={handleSelectAll} disabled={trashItems.length === 0}>
               {selectedKeys.length === trashItems.length && trashItems.length > 0
                 ? "取消全选"
                 : "全选"}
@@ -380,21 +393,18 @@ export default function TrashPanel() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-5 py-5">
+        <div className="flex-1 overflow-auto px-5 pb-5">
           {trashItems.length === 0 ? (
-            <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-3xl border border-dashed border-gray-200 text-center dark:border-dark-border">
-              <Trash2 className="h-14 w-14 text-gray-300 dark:text-gray-600" />
-              <h3 className="mt-5 text-[18px] font-semibold text-gray-900 dark:text-gray-100">
+            <div className="flex h-full min-h-[320px] flex-col items-center justify-center text-center">
+              <Trash2 className="h-12 w-12 text-gray-300 dark:text-gray-600" />
+              <h3 className="mt-4 text-[16px] font-medium text-gray-700 dark:text-gray-300">
                 回收站为空
               </h3>
-              <p className="mt-2 text-[13px] text-gray-500 dark:text-gray-400">
-                删除的文件和文件夹会先进入这里，方便你恢复。
-              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="space-y-1">
               {trashItems.map((item) => (
-                <TrashCard
+                <TrashRow
                   key={selectionKey(item)}
                   item={item}
                   isSelected={selectedKeys.includes(selectionKey(item))}
