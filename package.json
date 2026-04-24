@@ -13,6 +13,8 @@
     "electron:dev": "electron-vite dev",
     "build": "tsc && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
+    "prepare": "husky",
+    "precommit": "lint-staged",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never",
     "dist:mac": "npm run build && electron-builder --mac --publish never",
@@ -64,6 +66,8 @@
     "electron": "^39.2.7",
     "electron-builder": "^26.0.12",
     "electron-vite": "6.0.0-beta.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "lucide-react": "^1.7.0",
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0",
@@ -77,6 +81,15 @@
     "vite": "^8.0.4",
     "vitest": "^4.1.5",
     "zustand": "^5.0.12"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,cjs,mjs}": [
+      "oxfmt",
+      "oxlint --react-plugin --fix --no-error-on-unmatched-pattern"
+    ],
+    "*.html": [
+      "oxfmt"
+    ]
   },
   "build": {
     "appId": "com.zihuv.shiguang",
