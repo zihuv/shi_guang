@@ -9,7 +9,6 @@ import {
   Search,
   SlidersHorizontal,
   Star,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
@@ -51,15 +50,10 @@ const RATING_OPTIONS = [
 ];
 
 const SELECT_TRIGGER_CLASS_NAME =
-  "!h-auto !min-h-0 !rounded-none !border-transparent !bg-transparent !px-0 !py-0 !text-[13px] !font-medium !text-gray-600 !shadow-none hover:!border-transparent hover:!bg-transparent dark:!text-gray-300";
+  "!h-7 !min-h-0 !justify-start !gap-0.5 !rounded-none !border-transparent !bg-transparent !px-0 !py-0 !text-[12px] !font-medium !text-gray-700 !shadow-none hover:!border-transparent hover:!bg-transparent dark:!text-gray-200 [&_svg]:!ml-0";
 
 const INLINE_INPUT_CLASS_NAME =
-  "h-8 rounded-full border-transparent bg-transparent px-0 text-[12px] text-gray-700 shadow-none placeholder:text-gray-400 focus:border-transparent focus:bg-transparent focus:ring-0 dark:text-gray-200";
-
-function getColorDisplay(color: string | null) {
-  if (!color) return "颜色";
-  return PRESET_COLORS.find((item) => item.value === color)?.name ?? "颜色";
-}
+  "h-7 rounded-none border-transparent bg-transparent px-0 text-[12px] text-gray-700 shadow-none placeholder:text-gray-400 focus:border-transparent focus:bg-transparent focus:ring-0 dark:text-gray-200";
 
 function getFileTypeDisplay(type: string) {
   return FILE_TYPES.find((item) => item.value === type)?.label ?? "全部类型";
@@ -69,31 +63,9 @@ function getRatingDisplay(rating: number) {
   return RATING_OPTIONS.find((item) => Number(item.value) === rating)?.label ?? "评分";
 }
 
-function formatSizeBadge(criteriaMin: number | null, criteriaMax: number | null) {
-  const formatMegabytes = (value: number) => `${value} MB`;
-  if (criteriaMin !== null && criteriaMax !== null) {
-    return `${formatMegabytes(criteriaMin)} - ${formatMegabytes(criteriaMax)}`;
-  }
-  if (criteriaMin !== null) {
-    return `>= ${formatMegabytes(criteriaMin)}`;
-  }
-  if (criteriaMax !== null) {
-    return `<= ${formatMegabytes(criteriaMax)}`;
-  }
-  return "大小";
-}
-
-function formatDateBadge(start: string | null, end: string | null) {
-  if (start && end) {
-    return `${start} 至 ${end}`;
-  }
-  if (start) {
-    return `${start} 起`;
-  }
-  if (end) {
-    return `${end} 前`;
-  }
-  return "时间";
+function getColorDisplay(color: string | null) {
+  if (!color) return "全部";
+  return PRESET_COLORS.find((item) => item.value === color)?.name ?? "颜色";
 }
 
 export default function FilterPanel() {
@@ -113,6 +85,7 @@ export default function FilterPanel() {
   const resetPage = useLibraryQueryStore((state) => state.resetPage);
   const flatTags = useTagStore((state) => state.flatTags);
   const didMountRef = useRef(false);
+  const colorMenuRef = useRef<HTMLDivElement>(null);
 
   const activeCount = getActiveFilterCount(criteria);
   const hasAdvancedFilters = Boolean(
@@ -128,7 +101,7 @@ export default function FilterPanel() {
     criteria.sizeRange.min !== null || criteria.sizeRange.max !== null,
   ].filter(Boolean).length;
   const [showAdvanced, setShowAdvanced] = useState(hasAdvancedFilters);
-  const [showColorTray, setShowColorTray] = useState(Boolean(criteria.dominantColor));
+  const [showColorMenu, setShowColorMenu] = useState(false);
 
   const criteriaKey = useMemo(
     () =>
@@ -161,10 +134,19 @@ export default function FilterPanel() {
   }, [hasAdvancedFilters]);
 
   useEffect(() => {
-    if (criteria.dominantColor) {
-      setShowColorTray(true);
+    if (!showColorMenu) {
+      return;
     }
-  }, [criteria.dominantColor]);
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!colorMenuRef.current?.contains(event.target as Node)) {
+        setShowColorMenu(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [showColorMenu]);
 
   const tagDisplay =
     criteria.tagIds.length === 0
@@ -174,25 +156,72 @@ export default function FilterPanel() {
         : `${criteria.tagIds.length} 个标签`;
 
   return (
-    <div className="flex w-full flex-col gap-3 pb-1 text-gray-900 dark:text-gray-100">
+    <div className="flex w-full flex-col gap-2 pb-1 text-gray-900 dark:text-gray-100">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
-          <ToolbarButton
-            icon={Palette}
-            label="颜色"
-            active={showColorTray || Boolean(criteria.dominantColor)}
-            trailing={
-              criteria.dominantColor ? (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          <div ref={colorMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setShowColorMenu((current) => !current)}
+              aria-pressed={Boolean(criteria.dominantColor)}
+              aria-expanded={showColorMenu}
+              aria-label={`颜色：${getColorDisplay(criteria.dominantColor)}`}
+              title={`颜色：${getColorDisplay(criteria.dominantColor)}`}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors",
+                criteria.dominantColor
+                  ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
+                  : "text-gray-500 hover:bg-gray-100/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.05] dark:hover:text-gray-100",
+              )}
+            >
+              <Palette className="h-3.5 w-3.5 shrink-0" />
+              {criteria.dominantColor ? (
                 <span
                   className="h-2.5 w-2.5 rounded-full border border-black/10"
                   style={{ backgroundColor: criteria.dominantColor }}
                 />
-              ) : null
-            }
-            onClick={() => setShowColorTray((current) => !current)}
-          />
+              ) : null}
+              <span className="font-medium text-gray-700 dark:text-gray-200">
+                {getColorDisplay(criteria.dominantColor)}
+              </span>
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", showColorMenu && "rotate-180")}
+              />
+            </button>
 
-          <ToolbarSelectField icon={Bookmark} label="标签" active={criteria.tagIds.length > 0}>
+            {showColorMenu && (
+              <div className="absolute left-0 top-9 z-30 w-[210px] rounded-xl bg-white/98 p-2 shadow-[0_14px_36px_rgba(15,23,42,0.14)] backdrop-blur dark:bg-dark-surface/98 dark:shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
+                <div className="grid grid-cols-6 gap-1">
+                  <ColorButton
+                    active={criteria.dominantColor === null}
+                    className="col-span-2 w-full"
+                    label="全部颜色"
+                    onClick={() => {
+                      setDominantColor(null);
+                      setShowColorMenu(false);
+                    }}
+                  >
+                    全部
+                  </ColorButton>
+                  {PRESET_COLORS.map((color) => (
+                    <ColorButton
+                      key={color.value}
+                      active={criteria.dominantColor === color.value}
+                      className="justify-self-center"
+                      color={color.value}
+                      label={color.name}
+                      onClick={() => {
+                        setDominantColor(color.value);
+                        setShowColorMenu(false);
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <CompactField icon={Bookmark} label="标签" active={criteria.tagIds.length > 0}>
             <Select
               value={criteria.tagIds.length === 1 ? criteria.tagIds[0].toString() : "all"}
               displayValue={criteria.tagIds.length > 0 ? tagDisplay : "全部"}
@@ -203,7 +232,7 @@ export default function FilterPanel() {
                 }
                 toggleTag(Number(value));
               }}
-              className="min-w-[72px] max-w-[180px]"
+              className="max-w-[180px]"
               triggerClassName={SELECT_TRIGGER_CLASS_NAME}
             >
               <SelectContent>
@@ -224,9 +253,9 @@ export default function FilterPanel() {
                 ))}
               </SelectContent>
             </Select>
-          </ToolbarSelectField>
+          </CompactField>
 
-          <ToolbarSelectField icon={FileCode2} label="格式" active={criteria.fileType !== "all"}>
+          <CompactField icon={FileCode2} label="格式" active={criteria.fileType !== "all"}>
             <Select
               value={criteria.fileType}
               displayValue={
@@ -235,7 +264,7 @@ export default function FilterPanel() {
               onValueChange={(value) =>
                 setFileType(value as "all" | "image" | "video" | "document")
               }
-              className="min-w-[56px]"
+              className="max-w-[120px]"
               triggerClassName={SELECT_TRIGGER_CLASS_NAME}
             >
               <SelectContent>
@@ -246,14 +275,14 @@ export default function FilterPanel() {
                 ))}
               </SelectContent>
             </Select>
-          </ToolbarSelectField>
+          </CompactField>
 
-          <ToolbarSelectField icon={Star} label="评分" active={criteria.minRating > 0}>
+          <CompactField icon={Star} label="评分" active={criteria.minRating > 0}>
             <Select
               value={String(criteria.minRating)}
               displayValue={criteria.minRating > 0 ? getRatingDisplay(criteria.minRating) : "全部"}
               onValueChange={(value) => setMinRating(Number(value))}
-              className="min-w-[56px]"
+              className="max-w-[120px]"
               triggerClassName={SELECT_TRIGGER_CLASS_NAME}
             >
               <SelectContent>
@@ -264,74 +293,69 @@ export default function FilterPanel() {
                 ))}
               </SelectContent>
             </Select>
-          </ToolbarSelectField>
+          </CompactField>
 
-          <ToolbarButton
-            icon={SlidersHorizontal}
-            label="更多"
-            active={showAdvanced || hasAdvancedFilters}
-            valueLabel={advancedFilterCount > 0 ? `${advancedFilterCount}` : null}
-            trailing={
-              <ChevronDown
-                className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-180")}
-              />
-            }
+          <button
+            type="button"
             onClick={() => setShowAdvanced((current) => !current)}
-            ariaExpanded={showAdvanced}
-          />
+            aria-pressed={showAdvanced || hasAdvancedFilters}
+            aria-expanded={showAdvanced}
+            aria-label="更多筛选"
+            title="更多筛选"
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors",
+              showAdvanced || hasAdvancedFilters
+                ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
+                : "text-gray-500 hover:bg-gray-100/80 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100",
+            )}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+            {advancedFilterCount > 0 ? (
+              <span className="rounded bg-gray-200 px-1 text-[10px] font-medium leading-4 text-gray-600 dark:bg-white/10 dark:text-gray-300">
+                {advancedFilterCount}
+              </span>
+            ) : null}
+            <ChevronDown
+              className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-180")}
+            />
+          </button>
         </div>
 
         <button
           type="button"
           onClick={clearFilters}
           disabled={activeCount === 0}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12px] text-gray-500 transition-colors hover:bg-gray-100/80 hover:text-gray-800 disabled:cursor-default disabled:opacity-35 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100"
+          title="清空筛选"
+          aria-label="清空筛选"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] text-gray-500 transition-colors hover:bg-gray-100/80 hover:text-gray-800 disabled:cursor-default disabled:opacity-35 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100"
         >
           <RotateCcw className="h-3.5 w-3.5" />
-          清空
         </button>
       </div>
 
-      {showColorTray && (
-        <div className="flex flex-wrap items-center gap-1.5 pl-1">
-          <ColorButton
-            active={criteria.dominantColor === null}
-            label="全部颜色"
-            onClick={() => setDominantColor(null)}
-          >
-            全部
-          </ColorButton>
-          {PRESET_COLORS.map((color) => (
-            <ColorButton
-              key={color.value}
-              active={criteria.dominantColor === color.value}
-              color={color.value}
-              label={color.name}
-              onClick={() => setDominantColor(color.value)}
-            />
-          ))}
-        </div>
-      )}
-
       {showAdvanced && (
-        <div className="flex flex-wrap items-center gap-2 pl-1">
-          <InlineField icon={Search} label="关键词">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <InlineField icon={Search} label="关键词" active={Boolean(criteria.keyword.trim())}>
             <Input
               value={criteria.keyword}
               onChange={(event) => setKeyword(event.target.value)}
               placeholder="备注 / 来源"
-              className="min-w-[160px] sm:min-w-[180px]"
+              className="min-w-[150px] sm:min-w-[170px]"
             />
           </InlineField>
 
-          <InlineField icon={CalendarRange} label="时间">
+          <InlineField
+            icon={CalendarRange}
+            label="时间"
+            active={Boolean(criteria.dateRange.start || criteria.dateRange.end)}
+          >
             <Input
               type="date"
               value={criteria.dateRange.start ?? ""}
               onChange={(event) =>
                 setDateRange({ ...criteria.dateRange, start: event.target.value || null })
               }
-              className="min-w-[132px]"
+              className="w-[126px]"
             />
             <span className="text-[12px] text-gray-400">至</span>
             <Input
@@ -340,11 +364,15 @@ export default function FilterPanel() {
               onChange={(event) =>
                 setDateRange({ ...criteria.dateRange, end: event.target.value || null })
               }
-              className="min-w-[132px]"
+              className="w-[126px]"
             />
           </InlineField>
 
-          <InlineField icon={FileCode2} label="大小">
+          <InlineField
+            icon={FileCode2}
+            label="大小"
+            active={criteria.sizeRange.min !== null || criteria.sizeRange.max !== null}
+          >
             <Input
               type="number"
               min={0}
@@ -356,7 +384,7 @@ export default function FilterPanel() {
                 })
               }
               placeholder="最小 MB"
-              className="w-[88px]"
+              className="w-[82px]"
             />
             <span className="text-[12px] text-gray-400">-</span>
             <Input
@@ -370,59 +398,17 @@ export default function FilterPanel() {
                 })
               }
               placeholder="最大 MB"
-              className="w-[88px]"
+              className="w-[82px]"
             />
           </InlineField>
+
+          {activeCount > 0 ? (
+            <span className="px-1 text-[12px] text-gray-400 dark:text-gray-500">
+              已筛选 {activeCount} 项
+            </span>
+          ) : null}
         </div>
       )}
-
-      {activeCount > 0 ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pl-1 text-[12px] text-gray-500 dark:text-gray-400">
-          <span className="text-gray-400 dark:text-gray-500">已选</span>
-
-          {criteria.fileType !== "all" && (
-            <FilterChip onRemove={() => setFileType("all")}>
-              {getFileTypeDisplay(criteria.fileType)}
-            </FilterChip>
-          )}
-
-          {criteria.tagIds.length > 0 && (
-            <FilterChip onRemove={() => setTagIds([])}>{tagDisplay}</FilterChip>
-          )}
-
-          {criteria.dominantColor && (
-            <FilterChip onRemove={() => setDominantColor(null)}>
-              <span
-                className="h-2.5 w-2.5 rounded-full border border-black/10"
-                style={{ backgroundColor: criteria.dominantColor }}
-              />
-              {getColorDisplay(criteria.dominantColor)}
-            </FilterChip>
-          )}
-
-          {criteria.keyword.trim() && (
-            <FilterChip onRemove={() => setKeyword("")}>{criteria.keyword}</FilterChip>
-          )}
-
-          {(criteria.dateRange.start || criteria.dateRange.end) && (
-            <FilterChip onRemove={() => setDateRange({ start: null, end: null })}>
-              {formatDateBadge(criteria.dateRange.start, criteria.dateRange.end)}
-            </FilterChip>
-          )}
-
-          {(criteria.sizeRange.min !== null || criteria.sizeRange.max !== null) && (
-            <FilterChip onRemove={() => setSizeRange({ min: null, max: null })}>
-              {formatSizeBadge(criteria.sizeRange.min, criteria.sizeRange.max)}
-            </FilterChip>
-          )}
-
-          {criteria.minRating > 0 && (
-            <FilterChip onRemove={() => setMinRating(0)}>
-              {getRatingDisplay(criteria.minRating)}
-            </FilterChip>
-          )}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -430,12 +416,14 @@ export default function FilterPanel() {
 function ColorButton({
   active,
   children,
+  className,
   color,
   label,
   onClick,
 }: {
   active: boolean;
   children?: ReactNode;
+  className?: string;
   color?: string;
   label: string;
   onClick: () => void;
@@ -448,13 +436,12 @@ function ColorButton({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        "flex items-center justify-center rounded-full border transition-all",
+        "flex h-6 items-center justify-center rounded-md border transition-colors",
         active
           ? "border-gray-900 bg-gray-900 text-white dark:border-gray-200 dark:bg-gray-100 dark:text-gray-900"
-          : "border-transparent hover:bg-gray-100/80 dark:hover:bg-white/[0.06]",
-        color
-          ? "h-7 w-7 bg-transparent p-1"
-          : "h-7 px-2.5 text-[11px] font-medium text-gray-600 dark:text-gray-300",
+          : "border-transparent text-gray-500 hover:bg-gray-100/80 dark:text-gray-400 dark:hover:bg-white/[0.06]",
+        color ? "w-6 bg-transparent p-1" : "px-1.5 text-[11px] font-medium",
+        className,
       )}
     >
       {color ? (
@@ -472,60 +459,7 @@ function ColorButton({
   );
 }
 
-function FilterChip({ children, onRemove }: { children: ReactNode; onRemove: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onRemove}
-      className="inline-flex items-center gap-1 text-[12px] transition-colors hover:text-gray-900 dark:hover:text-gray-100"
-    >
-      {children}
-      <X className="h-3 w-3" />
-    </button>
-  );
-}
-
-function ToolbarButton({
-  active,
-  ariaExpanded,
-  icon: Icon,
-  label,
-  onClick,
-  trailing,
-  valueLabel,
-}: {
-  active: boolean;
-  ariaExpanded?: boolean;
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  trailing?: ReactNode;
-  valueLabel?: string | null;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      aria-expanded={ariaExpanded}
-      className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors",
-        active
-          ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
-          : "text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-gray-100",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span>{label}</span>
-      {valueLabel ? (
-        <span className="max-w-[120px] truncate text-gray-400">{valueLabel}</span>
-      ) : null}
-      {trailing}
-    </button>
-  );
-}
-
-function ToolbarSelectField({
+function CompactField({
   active,
   children,
   icon: Icon,
@@ -538,33 +472,42 @@ function ToolbarSelectField({
 }) {
   return (
     <div
+      title={label}
+      aria-label={label}
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors",
+        "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors",
         active
           ? "bg-gray-100 text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
-          : "text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-gray-100",
+          : "text-gray-500 hover:bg-gray-100/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.05] dark:hover:text-gray-100",
       )}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span>{label}</span>
       {children}
     </div>
   );
 }
 
 function InlineField({
+  active,
   children,
   icon: Icon,
   label,
 }: {
+  active: boolean;
   children: ReactNode;
   icon: LucideIcon;
   label: string;
 }) {
   return (
-    <div className="inline-flex min-h-8 items-center gap-2 rounded-full bg-gray-100/75 px-3 py-1 dark:bg-white/[0.05]">
+    <div
+      title={label}
+      aria-label={label}
+      className={cn(
+        "inline-flex min-h-8 items-center gap-2 rounded-lg px-2 py-0.5 transition-colors",
+        active ? "bg-gray-100 dark:bg-white/[0.08]" : "bg-gray-100/60 dark:bg-white/[0.04]",
+      )}
+    >
       <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-      <span className="text-[12px] text-gray-500 dark:text-gray-400">{label}</span>
       <div className="flex flex-wrap items-center gap-2">
         {Array.isArray(children)
           ? children.map((child, index) =>
