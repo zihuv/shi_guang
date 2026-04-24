@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "拾光采集器",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "右键图片发送到拾光桌面应用",
   "permissions": [
     "contextMenus",
