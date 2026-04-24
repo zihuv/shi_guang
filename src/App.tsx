@@ -30,8 +30,8 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDesktopImportListeners } from "@/hooks/useDesktopImportListeners";
 import { useNavigationStore } from "@/stores/navigationStore";
 
-const PANEL_RESIZER_WIDTH = 8;
-const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_WIDTH * 2;
+const PANEL_RESIZER_LAYOUT_WIDTH = 0;
+const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_LAYOUT_WIDTH * 2;
 const MIN_MAIN_PANEL_WIDTH = 240;
 const MIN_RENDERED_SIDEBAR_WIDTH = 72;
 const MIN_RENDERED_DETAIL_PANEL_WIDTH = 120;
@@ -106,17 +106,19 @@ function PanelResizeHandle({
       role="separator"
       aria-label={ariaLabel}
       aria-orientation="vertical"
-      className="group relative z-10 flex flex-shrink-0 cursor-col-resize items-stretch justify-center select-none"
-      style={{ width: PANEL_RESIZER_WIDTH }}
+      className="group relative z-10 flex flex-shrink-0 select-none"
+      style={{ width: PANEL_RESIZER_LAYOUT_WIDTH }}
       onMouseDown={onMouseDown}
     >
-      <div
-        className={`my-auto h-8 w-[2px] rounded-full transition-colors ${
-          isActive
-            ? "bg-blue-400/80 dark:bg-blue-500/80"
-            : "bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/12"
-        }`}
-      />
+      <div className="absolute -left-1 top-0 flex h-full w-2 cursor-col-resize items-stretch justify-center">
+        <div
+          className={`my-auto h-8 w-[2px] rounded-full transition-colors ${
+            isActive
+              ? "bg-blue-400/80 dark:bg-blue-500/80"
+              : "bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/12"
+          }`}
+        />
+      </div>
     </div>
   );
 }

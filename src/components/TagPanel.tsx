@@ -37,7 +37,7 @@ import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { collectTagIds, flattenTagTree, type Tag, useTagStore } from "@/stores/tagStore";
-import { Plus, Search, Tag as TagIcon } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 
 export default function TagPanel() {
   const tags = useTagStore((state) => state.tags);
@@ -300,7 +300,7 @@ export default function TagPanel() {
 
   return (
     <div className={appPanelClass}>
-      <div className={`${appPanelHeaderClass} border-b border-[color:var(--app-border)]`}>
+      <div className={appPanelHeaderClass}>
         <h2 className={appPanelTitleClass}>标签管理</h2>
         <Button variant="outline" size="sm" onClick={() => openAddDialog()}>
           <Plus className="h-3.5 w-3.5" />
@@ -308,9 +308,9 @@ export default function TagPanel() {
         </Button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <section className="flex min-h-0 w-[300px] flex-shrink-0 flex-col border-r border-[color:var(--app-border)]">
-          <div className="border-b border-[color:var(--app-border)] px-3 py-2">
+      <div className="flex min-h-0 flex-1 gap-5 px-3 pb-3">
+        <section className="flex min-h-0 w-[300px] flex-shrink-0 flex-col">
+          <div className="pb-4">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
               <Input
@@ -324,11 +324,11 @@ export default function TagPanel() {
 
           <div
             ref={panelRef}
-            className="flex-1 overflow-auto p-2.5 focus:outline-none"
+            className="flex-1 overflow-auto focus:outline-none"
             tabIndex={0}
             onKeyDown={handlePanelKeyDown}
           >
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
               {filteredTags.map((tag) => (
                 <TagItem
                   key={tag.id}
@@ -364,40 +364,39 @@ export default function TagPanel() {
           </div>
         </section>
 
-        <section className="flex min-h-0 flex-1 flex-col">
+        <section className="flex min-h-0 flex-1 flex-col" aria-label="标签详情">
           {selectedTag ? (
             <>
-              <div className="flex h-[44px] items-center gap-2 border-b border-[color:var(--app-border)] px-4">
-                <TagIcon className="h-4 w-4 flex-shrink-0" style={{ color: selectedTag.color }} />
+              <div className="flex min-h-[44px] items-center gap-3 px-1">
+                <span
+                  className="size-2.5 flex-shrink-0 rounded-full"
+                  style={{ backgroundColor: selectedTag.color }}
+                />
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 items-baseline gap-2">
                     <h3 className="truncate text-[13px] font-semibold text-gray-800 dark:text-gray-100">
                       {selectedTag.name}
                     </h3>
-                    <span
-                      className="h-2 w-2 flex-shrink-0 rounded-full"
-                      style={{ backgroundColor: selectedTag.color }}
-                    />
-                  </div>
-                  <div className={appPanelMetaClass}>
-                    {selectedTag.count} 个素材 · {selectedTagChildren.length} 个子标签
+                    <span className={appPanelMetaClass}>
+                      {selectedTag.count} 素材 / {selectedTagChildren.length} 子标签
+                    </span>
                   </div>
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+              <div className="min-h-0 flex-1 overflow-auto pt-1">
                 {selectedTagChildren.length > 0 ? (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-0.5">
                     {selectedTagChildren.map((child) => (
                       <button
                         key={child.id}
                         type="button"
                         onClick={() => handleChildTagClick(child)}
                         onDoubleClick={() => handleChildTagDoubleClick(child)}
-                        className={`${appTreeRowClass} hover:bg-gray-100 dark:hover:bg-dark-border`}
+                        className={`${appTreeRowClass} cursor-pointer hover:bg-black/[0.045] dark:hover:bg-white/[0.06]`}
                       >
                         <span
-                          className="h-3 w-3 flex-shrink-0 rounded-full"
+                          className="size-2.5 flex-shrink-0 rounded-full"
                           style={{ backgroundColor: child.color }}
                         />
                         <span className="flex-1 truncate text-left text-gray-700 dark:text-gray-300">
@@ -407,17 +406,11 @@ export default function TagPanel() {
                       </button>
                     ))}
                   </div>
-                ) : (
-                  <div className="px-2.5 py-2 text-[12px] text-gray-400 dark:text-gray-500">
-                    暂无子标签
-                  </div>
-                )}
+                ) : null}
               </div>
             </>
           ) : (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="text-[12px] text-gray-400 dark:text-gray-500">选择标签</div>
-            </div>
+            <div className="flex-1" />
           )}
         </section>
       </div>
@@ -436,7 +429,7 @@ export default function TagPanel() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{addingParent ? "创建子标签" : "创建标签"}</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="sr-only">
               {addingParent
                 ? `在 “${addingParent.name}” 下创建子标签。`
                 : "输入标签名称并选择颜色。"}
@@ -456,9 +449,10 @@ export default function TagPanel() {
                   key={color}
                   type="button"
                   onClick={() => setSelectedColor(color)}
+                  aria-label={`选择颜色 ${color}`}
                   className={cn(
-                    "h-6 w-6 rounded-full transition-transform",
-                    selectedColor === color && "scale-110 ring-2 ring-gray-400 ring-offset-2",
+                    "size-6 rounded-full transition-[box-shadow]",
+                    selectedColor === color && "ring-2 ring-gray-400 ring-offset-2",
                   )}
                   style={{ backgroundColor: color }}
                 />
@@ -513,9 +507,10 @@ export default function TagPanel() {
                   key={color}
                   type="button"
                   onClick={() => setEditColor(color)}
+                  aria-label={`选择颜色 ${color}`}
                   className={cn(
-                    "h-6 w-6 rounded-full transition-transform",
-                    editColor === color && "scale-110 ring-2 ring-gray-400 ring-offset-2",
+                    "size-6 rounded-full transition-[box-shadow]",
+                    editColor === color && "ring-2 ring-gray-400 ring-offset-2",
                   )}
                   style={{ backgroundColor: color }}
                 />
@@ -559,10 +554,7 @@ export default function TagPanel() {
             <Button variant="outline" onClick={() => setDeletingTag(null)}>
               取消
             </Button>
-            <Button
-              onClick={() => void confirmDeleteTag()}
-              className="bg-red-600 text-white hover:bg-red-700"
-            >
+            <Button variant="destructive" onClick={() => void confirmDeleteTag()}>
               删除
             </Button>
           </div>

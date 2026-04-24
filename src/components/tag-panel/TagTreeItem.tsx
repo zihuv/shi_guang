@@ -19,7 +19,7 @@ import {
 import { appPanelMetaClass, appTreeRowClass } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { flattenTagTree, type Tag, useTagStore } from "@/stores/tagStore";
-import { Bookmark, ChevronRight, Move, Pencil, Plus, Tag as TagIcon, Trash2 } from "lucide-react";
+import { Bookmark, ChevronRight, Move, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   findTagParentId,
   findTagSiblings,
@@ -124,8 +124,8 @@ export function TagItem({
               isDragging
                 ? "opacity-50"
                 : isSelected
-                  ? "bg-primary-100 dark:bg-primary-900/30"
-                  : "hover:bg-gray-100 dark:hover:bg-dark-border",
+                  ? "bg-black/[0.055] text-gray-900 dark:bg-white/[0.08] dark:text-gray-100"
+                  : "hover:bg-black/[0.045] dark:hover:bg-white/[0.06]",
             )}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
             onClick={() => {
@@ -141,7 +141,7 @@ export function TagItem({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-5 w-5 p-0"
+                className="size-5 p-0"
                 onClick={(event) => {
                   event.stopPropagation();
                   onToggle(tag.id);
@@ -149,16 +149,19 @@ export function TagItem({
               >
                 <ChevronRight
                   className={cn(
-                    "h-3 w-3 text-gray-500 transition-transform",
+                    "size-3 text-gray-500 transition-transform",
                     isExpanded && "rotate-90",
                   )}
                 />
               </Button>
             ) : (
-              <span className="w-5" />
+              <span className="size-5" />
             )}
 
-            <TagIcon className="h-4 w-4 flex-shrink-0" style={{ color: tag.color }} />
+            <span
+              className="size-2.5 flex-shrink-0 rounded-full"
+              style={{ backgroundColor: tag.color }}
+            />
             <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{tag.name}</span>
             {tag.count > 0 && (
               <span className={`${appPanelMetaClass} tabular-nums`}>{tag.count}</span>
@@ -168,16 +171,16 @@ export function TagItem({
 
         <ContextMenuContent>
           <ContextMenuItem onSelect={() => onViewFiles(tag)}>
-            <Bookmark className="mr-2 h-4 w-4" />
+            <Bookmark className="mr-2 size-4" />
             查看素材
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => onAddChild(tag)}>
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-2 size-4" />
             创建子标签
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onEdit(tag)}>
-            <Pencil className="mr-2 h-4 w-4" />
+            <Pencil className="mr-2 size-4" />
             重命名
           </ContextMenuItem>
           <MoveTagMenu tag={tag} />
@@ -186,7 +189,7 @@ export function TagItem({
             onSelect={() => onDelete(tag)}
             className="text-red-600 dark:text-red-400"
           >
-            <Trash2 className="mr-2 h-4 w-4" />
+            <Trash2 className="mr-2 size-4" />
             删除
           </ContextMenuItem>
         </ContextMenuContent>
@@ -259,7 +262,7 @@ function MoveTagMenu({ tag }: { tag: Tag }) {
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
-        <Move className="mr-2 h-4 w-4" />
+        <Move className="mr-2 size-4" />
         移动到
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
