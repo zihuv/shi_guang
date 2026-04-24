@@ -343,7 +343,9 @@ function scheduleClipRuntimeRelease(runtimeKey: string): void {
   runtimeReleaseTimer.unref?.();
 }
 
-export async function releaseClipRuntime(reason: string | null = "视觉搜索运行时已释放。"): Promise<void> {
+export async function releaseClipRuntime(
+  reason: string | null = "视觉搜索运行时已释放。",
+): Promise<void> {
   clearClipRuntimeReleaseTimer();
   runtimeInvalidationToken += 1;
   runtimePromise = null;
@@ -475,7 +477,10 @@ async function createSessionWithAttempt(
   config: ClipRuntimeConfig,
   attempt: ProviderAttempt,
 ): Promise<ort.InferenceSession> {
-  return ort.InferenceSession.create(modelPath, sessionOptionsForProviders(config, attempt.providers));
+  return ort.InferenceSession.create(
+    modelPath,
+    sessionOptionsForProviders(config, attempt.providers),
+  );
 }
 
 async function createClipSession(
@@ -878,7 +883,11 @@ async function gatherTokenEmbeddingRows(
   return values;
 }
 
-function encodeFgClipTokenIds(model: ResolvedClipModel, runtime: FgClipTextRuntime, query: string): Int32Array {
+function encodeFgClipTokenIds(
+  model: ResolvedClipModel,
+  runtime: FgClipTextRuntime,
+  query: string,
+): Int32Array {
   const encoded = runtime.tokenizer.encode(query.toLowerCase(), {
     add_special_tokens: true,
   });

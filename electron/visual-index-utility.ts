@@ -46,10 +46,7 @@ type UtilityProcessWithParentPort = NodeJS.Process & {
 
 const parentPort = (process as UtilityProcessWithParentPort).parentPort;
 
-function getRuntimeSnapshot(
-  config: VisualSearchConfig,
-  validation: VisualModelValidationResult,
-) {
+function getRuntimeSnapshot(config: VisualSearchConfig, validation: VisualModelValidationResult) {
   if (!validation.normalizedModelPath) {
     return {
       runtimeLoaded: false,

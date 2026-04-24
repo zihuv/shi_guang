@@ -162,7 +162,9 @@ export async function getVisualStatus(state: AppState) {
             config,
             validation.normalizedModelPath,
           );
-          return utilityRuntimeSnapshot.runtimeLoaded ? utilityRuntimeSnapshot : mainRuntimeSnapshot;
+          return utilityRuntimeSnapshot.runtimeLoaded
+            ? utilityRuntimeSnapshot
+            : mainRuntimeSnapshot;
         })()
       : {
           runtimeLoaded: false,

@@ -2,10 +2,7 @@ import { utilityProcess, type UtilityProcess } from "electron";
 import log from "electron-log/main";
 import crypto from "node:crypto";
 import path from "node:path";
-import {
-  createClipRuntimeKey,
-  type ClipRuntimeSnapshot,
-} from "./visual-search/clip-runtime.js";
+import { createClipRuntimeKey, type ClipRuntimeSnapshot } from "./visual-search/clip-runtime.js";
 import type { VisualModelValidationResult, VisualSearchConfig } from "./visual-search/index.js";
 
 const VISUAL_INDEX_UTILITY_IDLE_MS = 15_000;
@@ -141,9 +138,7 @@ function attachVisualIndexUtilityListeners(child: UtilityProcess): void {
 
   child.on("exit", (code) => {
     const reason =
-      code === 0
-        ? "视觉索引后台进程已退出。"
-        : `视觉索引后台进程异常退出（code=${code}）。`;
+      code === 0 ? "视觉索引后台进程已退出。" : `视觉索引后台进程异常退出（code=${code}）。`;
     resetVisualIndexUtility(reason);
   });
 

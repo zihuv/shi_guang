@@ -32,6 +32,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/ContextMenu";
+import { cn } from "@/lib/utils";
 import type { DragPosition, RegisterTreeItem } from "./types";
 import {
   INTERNAL_FILE_DRAG_MIME,
@@ -86,6 +87,7 @@ export function FolderItem({
   const isBeingDragged = activeId === folder.id;
   const isExternalDragTarget = dragOverFolderId === folder.id;
   const canDrag = !isSystemFolder;
+  const folderRowPaddingLeft = depth * 12 + 8;
 
   const draggableRef = useRef<HTMLDivElement>(null);
 
@@ -355,7 +357,7 @@ export function FolderItem({
       {showInsertLineBefore && canDrag && (
         <div
           className="relative my-0.5 h-0.5 rounded-full bg-blue-500"
-          style={{ marginLeft: `${depth * 12 + 8}px` }}
+          style={{ marginLeft: `${folderRowPaddingLeft}px` }}
         >
           <div className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-blue-500" />
         </div>
@@ -369,18 +371,19 @@ export function FolderItem({
               registerKeyboardItem(folder.id, element);
             }}
             data-folder-id={folder.id}
-            className={`${appTreeRowClass} ${
-              isBeingDragged ? "opacity-50" : canDrag ? "cursor-pointer" : "cursor-default"
-            } ${
+            className={cn(
+              appTreeRowClass,
+              "h-8 gap-1.5 pr-2 text-gray-700 outline-none dark:text-gray-300",
+              isBeingDragged ? "opacity-50" : canDrag ? "cursor-pointer" : "cursor-default",
               isSelected
-                ? "bg-primary-100 dark:bg-primary-900/30"
+                ? "bg-black/[0.055] text-gray-900 ring-1 ring-inset ring-black/[0.045] dark:bg-white/[0.075] dark:text-gray-100 dark:ring-white/[0.06]"
                 : isExternalDragTarget
-                  ? "bg-emerald-100 dark:bg-emerald-900/30 ring-2 ring-emerald-400 dark:ring-emerald-600"
+                  ? "bg-emerald-100 text-emerald-900 ring-1 ring-inset ring-emerald-300 dark:bg-emerald-900/25 dark:text-emerald-100 dark:ring-emerald-600/80"
                   : isNestingTarget
-                    ? "bg-blue-100 dark:bg-blue-900/30 ring-2 ring-blue-400 dark:ring-blue-600"
-                    : "hover:bg-gray-100 dark:hover:bg-dark-border"
-            }`}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+                    ? "bg-primary-100 text-primary-900 ring-1 ring-inset ring-primary-300 dark:bg-primary-900/25 dark:text-primary-100 dark:ring-primary-600/80"
+                    : "hover:bg-black/[0.04] dark:hover:bg-white/[0.055]",
+            )}
+            style={{ paddingLeft: `${folderRowPaddingLeft}px` }}
             onClick={() => {
               focusTree();
               void onSelectFolder(folder.id);
@@ -394,32 +397,47 @@ export function FolderItem({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-5 w-5 p-0"
+                className="h-5 w-5 flex-shrink-0 p-0"
                 onClick={(event) => {
                   event.stopPropagation();
                   toggleFolder(folder.id);
                 }}
               >
                 <ChevronRight
-                  className={`h-3 w-3 text-gray-500 transition-transform ${
+                  className={`h-3.5 w-3.5 text-gray-400 transition-transform dark:text-gray-500 ${
                     isExpanded ? "rotate-90" : ""
                   }`}
                 />
               </Button>
             ) : (
-              <span className="w-5" />
+              <span className="h-5 w-5 flex-shrink-0" />
             )}
 
             {folder.name === "浏览器采集" || folder.isSystem ? (
-              <Globe className="h-4 w-4 flex-shrink-0 text-blue-500" />
+              <Globe className="h-[17px] w-[17px] flex-shrink-0 text-primary-500 dark:text-primary-400" />
             ) : (
-              <FolderIcon className="h-4 w-4 flex-shrink-0 text-yellow-500" />
+              <FolderIcon
+                className={cn(
+                  "h-[17px] w-[17px] flex-shrink-0",
+                  isSelected
+                    ? "text-amber-500 dark:text-amber-300"
+                    : "text-amber-500/90 dark:text-amber-400/90",
+                )}
+              />
             )}
 
-            <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{folder.name}</span>
+            <span className="min-w-0 flex-1 truncate text-left font-medium">{folder.name}</span>
 
             {folder.fileCount > 0 && (
-              <span className={`${appPanelMetaClass} tabular-nums`}>{folder.fileCount}</span>
+              <span
+                className={cn(
+                  appPanelMetaClass,
+                  "ml-2 min-w-[1.5rem] text-right tabular-nums",
+                  isSelected && "text-gray-600 dark:text-gray-300",
+                )}
+              >
+                {folder.fileCount}
+              </span>
             )}
           </div>
         </ContextMenuTrigger>
@@ -464,7 +482,14 @@ export function FolderItem({
                     paddingLeft: `${(target.sortOrder === -1 ? 0 : target.sortOrder) * 12 + 8}px`,
                   }}
                 >
-                  {target.sortOrder === -1 ? `📁 ${target.name}` : target.name}
+                  {target.sortOrder === -1 ? (
+                    <>
+                      <FolderIcon className="mr-2 h-4 w-4 text-amber-500" />
+                      {target.name}
+                    </>
+                  ) : (
+                    target.name
+                  )}
                 </ContextMenuItem>
               ))}
             </ContextMenuSubContent>
@@ -478,7 +503,7 @@ export function FolderItem({
       </ContextMenu>
 
       {hasChildren && isExpanded && (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-0.5">
           {folder.children.map((child) => (
             <FolderItem
               key={child.id}
@@ -499,7 +524,7 @@ export function FolderItem({
       {showInsertLineAfter && canDrag && (
         <div
           className="relative my-0.5 h-0.5 rounded-full bg-blue-500"
-          style={{ marginLeft: `${depth * 12 + 8}px` }}
+          style={{ marginLeft: `${folderRowPaddingLeft}px` }}
         >
           <div className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-blue-500" />
         </div>

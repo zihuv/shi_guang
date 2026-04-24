@@ -8,7 +8,8 @@ import {
   useTreeKeyboardNavigation,
 } from "@/hooks/useTreeKeyboardNavigation";
 import { requestFocusFirstFile } from "@/lib/libraryNavigation";
-import { appPanelTitleClass, appTreeRowClass } from "@/lib/ui";
+import { appIconButtonClass, appSectionLabelClass, appTreeRowClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useNavigationStore } from "@/stores/navigationStore";
@@ -451,13 +452,11 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
     <div className="flex flex-col">
       {showHeader && (
         <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
-          <h2 className={`${appPanelTitleClass} text-[12px] text-gray-500 dark:text-gray-400`}>
-            文件夹
-          </h2>
+          <h2 className={cn(appSectionLabelClass, "mb-0")}>文件夹</h2>
           <Button
             variant="ghost"
             size="icon"
-            className="rounded-lg"
+            className={cn(appIconButtonClass, "size-7 rounded-lg")}
             onClick={() => setIsAdding(true)}
             title="在当前素材库根目录创建文件夹"
             aria-label="创建文件夹"
@@ -470,7 +469,7 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
       <div
         id="folder-tree-container"
         ref={treeContainerRef}
-        className="relative flex-1 overflow-auto p-2.5 focus:outline-none"
+        className="relative flex-1 overflow-auto px-2.5 pb-2 pt-0 focus:outline-none"
         tabIndex={0}
         onKeyDown={handleTreeKeyDown}
       >
@@ -493,15 +492,17 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
             </svg>
           </div>
         ) : (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-0.5">
             {showAllFilesRow && (
               <div
                 ref={(element) => registerKeyboardItem(null, element)}
-                className={`${appTreeRowClass} cursor-pointer ${
+                className={cn(
+                  appTreeRowClass,
+                  "h-8 cursor-pointer gap-1.5 pr-2 text-gray-700 dark:text-gray-300",
                   currentView === "library" && selectedFolderId === null
-                    ? "bg-primary-100 dark:bg-primary-900/30"
-                    : "hover:bg-gray-100 dark:hover:bg-dark-border"
-                }`}
+                    ? "bg-black/[0.055] text-gray-900 ring-1 ring-inset ring-black/[0.045] dark:bg-white/[0.075] dark:text-gray-100 dark:ring-white/[0.06]"
+                    : "hover:bg-black/[0.04] dark:hover:bg-white/[0.055]",
+                )}
                 style={{ paddingLeft: "8px" }}
                 onClick={() => {
                   focusTree();

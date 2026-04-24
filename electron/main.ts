@@ -1,4 +1,14 @@
-import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, net, protocol, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  dialog,
+  nativeImage,
+  net,
+  protocol,
+  shell,
+} from "electron";
 import log from "electron-log/main";
 import crypto from "node:crypto";
 import fssync from "node:fs";

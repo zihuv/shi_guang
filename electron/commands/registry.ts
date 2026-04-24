@@ -63,10 +63,7 @@ import {
   rememberRecentIndexPaths,
   removeThumbnailForFile,
 } from "../storage";
-import {
-  getRecommendedVisualModelPath,
-  validateVisualModelPath,
-} from "../visual-search";
+import { getRecommendedVisualModelPath, validateVisualModelPath } from "../visual-search";
 import { encodeVisualSearchTextInUtility } from "../visual-index-utility-service.js";
 import type { AppState, FileRecord, ImportTaskItem } from "../types";
 import {
