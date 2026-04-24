@@ -551,14 +551,11 @@ export function InfoDisplayIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={1.8}
-        d="M6 7h12M10 12h8M10 17h8"
+        d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"
       />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.8}
-        d="M6.5 6.5h.01v.01H6.5zM6.5 11.5h.01v.01H6.5zM6.5 16.5h.01v.01H6.5z"
-      />
+      <circle cx="5" cy="6.5" r="1.05" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="12" r="1.05" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="17.5" r="1.05" fill="currentColor" stroke="none" />
     </svg>
   );
 }

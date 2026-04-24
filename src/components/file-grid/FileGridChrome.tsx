@@ -254,7 +254,7 @@ export function FileGridToolbar({
               aria-label="信息显示"
               aria-expanded={openToolbarMenu === "info"}
             >
-              <InfoDisplayIcon className="h-4 w-4" />
+              <InfoDisplayIcon className="h-[18px] w-[18px]" />
             </button>
 
             {openToolbarMenu === "info" && (
