@@ -199,10 +199,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="flex h-[42rem] max-h-[85vh] w-[66rem] max-w-[92vw] flex-col overflow-hidden p-0">
+      <DialogContent className="flex h-[42rem] max-h-[86vh] w-[62rem] max-w-[92vw] flex-col overflow-hidden border-transparent bg-[var(--app-surface)] p-0 shadow-[var(--app-shadow)]">
         <DialogHeader className="shrink-0">
-          <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
-            <DialogTitle className="text-base">设置</DialogTitle>
+          <div className="px-5 pb-2 pt-4">
+            <DialogTitle className="text-[15px] font-semibold tracking-[-0.01em]">设置</DialogTitle>
             <DialogDescription className="sr-only">
               管理索引目录、界面外观、AI 能力与快捷键设置。
             </DialogDescription>
@@ -212,59 +212,63 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
           <SettingsSidebar activeSection={activeSection} onSelectSection={setActiveSection} />
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            {activeSection === "general" ? (
-              <GeneralSettingsSection
-                currentIndexPath={currentIndexPath}
-                isAdding={isAdding}
-                isRebuilding={isRebuilding}
-                useTrash={useTrash}
-                theme={theme}
-                previewTrackpadZoomSpeed={previewTrackpadZoomSpeed}
-                onAddPath={() => void handleAddPath()}
-                onRebuildIndex={() => void handleRebuildIndex()}
-                onSetDeleteMode={(enabled) => void setDeleteMode(enabled)}
-                onSetPreviewTrackpadZoomSpeed={(value) => void setPreviewTrackpadZoomSpeed(value)}
-                onResetPreviewTrackpadZoomSpeed={() => void setPreviewTrackpadZoomSpeed(1)}
-                onSetTheme={(nextTheme) => void setTheme(nextTheme)}
-              />
-            ) : activeSection === "ai" ? (
-              <AiSettingsSection
-                aiConfig={aiConfig}
-                testingTargets={testingTargets}
-                autoAnalyzeOnImport={autoAnalyzeOnImport}
-                aiBatchAnalyzeConcurrency={aiBatchAnalyzeConcurrency}
-                visualSearch={visualSearch}
-                visualIndexStatus={visualIndexStatus}
-                visualIndexTask={visualIndexTask}
-                visualModelValidation={visualModelValidation}
-                isSelectingModelDir={isSelectingModelDir}
-                isValidatingModelDir={isValidatingModelDir}
-                onSetAiConfigField={setAiConfigField}
-                onTestAiEndpoint={(target, endpointTarget) =>
-                  void handleTestAiEndpoint(target, endpointTarget)
-                }
-                onSetAutoAnalyzeOnImport={(enabled) => void setAutoAnalyzeOnImport(enabled)}
-                onSetAiBatchAnalyzeConcurrency={(value) => void setAiBatchAnalyzeConcurrency(value)}
-                onSetVisualSearchField={setVisualSearchField}
-                onSetVisualSearchRuntimeField={setVisualSearchRuntimeField}
-                onSelectModelDir={() => void handleSelectModelDir()}
-                onValidateModelDir={(modelPath) => void handleValidateModelDir(modelPath)}
-                onStartVisualIndexTask={() =>
-                  void startVisualIndexTask(visualSearch.processUnindexedOnly)
-                }
-                onCancelVisualIndexTask={() => void cancelVisualIndexTask()}
-              />
-            ) : (
-              <ShortcutsSettingsSection
-                shortcuts={shortcuts}
-                onShortcutChange={(actionId, nextShortcut) =>
-                  void handleShortcutChange(actionId, nextShortcut)
-                }
-                onShortcutClear={(actionId) => void handleShortcutClear(actionId)}
-                onShortcutReset={(actionId) => void handleShortcutReset(actionId)}
-              />
-            )}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-2 md:px-6">
+            <div className="mx-auto w-full max-w-[52rem]">
+              {activeSection === "general" ? (
+                <GeneralSettingsSection
+                  currentIndexPath={currentIndexPath}
+                  isAdding={isAdding}
+                  isRebuilding={isRebuilding}
+                  useTrash={useTrash}
+                  theme={theme}
+                  previewTrackpadZoomSpeed={previewTrackpadZoomSpeed}
+                  onAddPath={() => void handleAddPath()}
+                  onRebuildIndex={() => void handleRebuildIndex()}
+                  onSetDeleteMode={(enabled) => void setDeleteMode(enabled)}
+                  onSetPreviewTrackpadZoomSpeed={(value) => void setPreviewTrackpadZoomSpeed(value)}
+                  onResetPreviewTrackpadZoomSpeed={() => void setPreviewTrackpadZoomSpeed(1)}
+                  onSetTheme={(nextTheme) => void setTheme(nextTheme)}
+                />
+              ) : activeSection === "ai" ? (
+                <AiSettingsSection
+                  aiConfig={aiConfig}
+                  testingTargets={testingTargets}
+                  autoAnalyzeOnImport={autoAnalyzeOnImport}
+                  aiBatchAnalyzeConcurrency={aiBatchAnalyzeConcurrency}
+                  visualSearch={visualSearch}
+                  visualIndexStatus={visualIndexStatus}
+                  visualIndexTask={visualIndexTask}
+                  visualModelValidation={visualModelValidation}
+                  isSelectingModelDir={isSelectingModelDir}
+                  isValidatingModelDir={isValidatingModelDir}
+                  onSetAiConfigField={setAiConfigField}
+                  onTestAiEndpoint={(target, endpointTarget) =>
+                    void handleTestAiEndpoint(target, endpointTarget)
+                  }
+                  onSetAutoAnalyzeOnImport={(enabled) => void setAutoAnalyzeOnImport(enabled)}
+                  onSetAiBatchAnalyzeConcurrency={(value) =>
+                    void setAiBatchAnalyzeConcurrency(value)
+                  }
+                  onSetVisualSearchField={setVisualSearchField}
+                  onSetVisualSearchRuntimeField={setVisualSearchRuntimeField}
+                  onSelectModelDir={() => void handleSelectModelDir()}
+                  onValidateModelDir={(modelPath) => void handleValidateModelDir(modelPath)}
+                  onStartVisualIndexTask={() =>
+                    void startVisualIndexTask(visualSearch.processUnindexedOnly)
+                  }
+                  onCancelVisualIndexTask={() => void cancelVisualIndexTask()}
+                />
+              ) : (
+                <ShortcutsSettingsSection
+                  shortcuts={shortcuts}
+                  onShortcutChange={(actionId, nextShortcut) =>
+                    void handleShortcutChange(actionId, nextShortcut)
+                  }
+                  onShortcutClear={(actionId) => void handleShortcutClear(actionId)}
+                  onShortcutReset={(actionId) => void handleShortcutReset(actionId)}
+                />
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>
