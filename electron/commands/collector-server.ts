@@ -65,6 +65,9 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
   if (collectorServer) return;
   const server = Fastify({ logger: false });
   await server.register(cors, { origin: true });
+  server.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
+  });
   server.get("/api/health", async () => ({ status: "ok" }));
   server.options("/api/health", async () => ({}));
   server.options("/api/import", async () => ({}));

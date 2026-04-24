@@ -29,17 +29,28 @@
       "js": [
         "content-shared.js",
         "content-drag-dock.js",
+        "content-panel.js",
         "content-xiaohongshu.js",
         "content.js"
       ]
     }
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "open-panel": {
+      "description": "打开拾光采集面板"
+    },
+    "capture-visible": {
+      "description": "收藏当前可视范围截图"
+    },
+    "capture-area": {
+      "description": "开始区域截图"
     }
   }
 }
