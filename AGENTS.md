@@ -33,6 +33,9 @@ Follow the existing code style in each layer: TypeScript files generally use 2-s
 ## Engineering Principles
 Prefer systematic thinking. Focus on the root cause of a problem rather than only addressing surface symptoms.
 
+## Database Migration Guidelines
+Keep SQLite migrations under `electron/database/migrations/`. Use `PRAGMA user_version` for schema versions, add each new upgrade as a focused version step such as `v4-to-v5.ts`, and keep `electron/database.ts` as a thin open-and-bootstrap entry. Before changing existing user databases, create a backup and run migrations in a transaction. Add or update migration tests, and when `better-sqlite3` is built for Electron ABI, verify real SQLite behavior with Electron rather than only plain Node.
+
 ## Testing Guidelines
 There is no dedicated frontend test runner configured yet. Before opening a PR, at minimum run `npm run lint` and `npm run build`, then validate the affected flow manually in `npm run dev`. For backend changes, add focused TypeScript tests if a test harness is introduced; otherwise validate through the Electron app and document the manual path.
 
