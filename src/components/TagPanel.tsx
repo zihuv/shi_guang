@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 import { Button } from "@/components/ui/Button";
@@ -24,7 +24,13 @@ import {
   type DragPosition,
 } from "@/components/tag-panel/tagTreeUtils";
 import { requestFocusFirstFile } from "@/lib/libraryNavigation";
-import { appPanelMetaClass, appTreeRowClass } from "@/lib/ui";
+import {
+  appPanelClass,
+  appPanelHeaderClass,
+  appPanelMetaClass,
+  appPanelTitleClass,
+  appTreeRowClass,
+} from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useFilterStore } from "@/stores/filterStore";
 import { useFolderStore } from "@/stores/folderStore";
@@ -60,6 +66,7 @@ export default function TagPanel() {
   const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" });
   const [expandedIds, setExpandedIds] = useState<number[]>([]);
   const [deletingTag, setDeletingTag] = useState<Tag | null>(null);
+  const childSelectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredTags = useMemo(() => filterTagTree(tags, searchQuery), [searchQuery, tags]);
   const effectiveExpandedIds = useMemo(() => {
@@ -116,6 +123,14 @@ export default function TagPanel() {
       return Array.from(new Set([...next, ...parents]));
     });
   }, [tags]);
+
+  useEffect(() => {
+    return () => {
+      if (childSelectTimerRef.current) {
+        clearTimeout(childSelectTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return monitorForElements({
@@ -260,30 +275,49 @@ export default function TagPanel() {
     setFolderId(null);
     selectFolder(null);
     setSelectedFolderId(null);
+    openLibrary("all");
     await runCurrentQuery(null);
-    openLibrary();
+  };
+
+  const handleChildTagClick = (tag: Tag) => {
+    if (childSelectTimerRef.current) {
+      clearTimeout(childSelectTimerRef.current);
+    }
+
+    childSelectTimerRef.current = setTimeout(() => {
+      setSelectedTagId(tag.id);
+      childSelectTimerRef.current = null;
+    }, 180);
+  };
+
+  const handleChildTagDoubleClick = (tag: Tag) => {
+    if (childSelectTimerRef.current) {
+      clearTimeout(childSelectTimerRef.current);
+      childSelectTimerRef.current = null;
+    }
+    void openFilesForTag(tag);
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-dark-bg">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-dark-border">
-        <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">标签管理</h2>
-        <Button variant="outline" onClick={() => openAddDialog()} className="h-8 rounded-lg px-3">
-          <Plus className="mr-1 h-4 w-4" />
+    <div className={appPanelClass}>
+      <div className={`${appPanelHeaderClass} border-b border-[color:var(--app-border)]`}>
+        <h2 className={appPanelTitleClass}>标签管理</h2>
+        <Button variant="outline" size="sm" onClick={() => openAddDialog()}>
+          <Plus className="h-3.5 w-3.5" />
           新建标签
         </Button>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <section className="flex min-h-0 w-[300px] flex-shrink-0 flex-col border-r border-gray-200 dark:border-dark-border">
-          <div className="border-b border-gray-200 px-3 py-3 dark:border-dark-border">
+        <section className="flex min-h-0 w-[300px] flex-shrink-0 flex-col border-r border-[color:var(--app-border)]">
+          <div className="border-b border-[color:var(--app-border)] px-3 py-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="搜索标签"
-                className="h-8 rounded-lg border-gray-200 bg-white pl-9 shadow-none dark:border-dark-border dark:bg-dark-bg/70"
+                className="h-8 rounded-lg pl-9"
               />
             </div>
           </div>
@@ -333,73 +367,56 @@ export default function TagPanel() {
         <section className="flex min-h-0 flex-1 flex-col">
           {selectedTag ? (
             <>
-              <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
-                <div className="flex items-center gap-3">
-                  <span
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: `${selectedTag.color}1f`, color: selectedTag.color }}
-                  >
-                    <TagIcon className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="truncate text-[16px] font-semibold text-gray-900 dark:text-gray-100">
+              <div className="flex h-[44px] items-center gap-2 border-b border-[color:var(--app-border)] px-4">
+                <TagIcon className="h-4 w-4 flex-shrink-0" style={{ color: selectedTag.color }} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3 className="truncate text-[13px] font-semibold text-gray-800 dark:text-gray-100">
                       {selectedTag.name}
                     </h3>
-                    <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-gray-500 dark:text-gray-400">
-                      <span>{selectedTag.count} 个素材</span>
-                      <span>{selectedTagChildren.length} 个子标签</span>
-                    </div>
+                    <span
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{ backgroundColor: selectedTag.color }}
+                    />
+                  </div>
+                  <div className={appPanelMetaClass}>
+                    {selectedTag.count} 个素材 · {selectedTagChildren.length} 个子标签
                   </div>
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto">
-                <div className="border-b border-gray-200 px-5 py-4 dark:border-dark-border">
-                  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-y-2 text-[13px]">
-                    <span className="text-gray-500 dark:text-gray-400">颜色</span>
-                    <span className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
-                      <span
-                        className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: selectedTag.color }}
-                      />
-                      {selectedTag.color}
-                    </span>
+              <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+                {selectedTagChildren.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    {selectedTagChildren.map((child) => (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => handleChildTagClick(child)}
+                        onDoubleClick={() => handleChildTagDoubleClick(child)}
+                        className={`${appTreeRowClass} hover:bg-gray-100 dark:hover:bg-dark-border`}
+                      >
+                        <span
+                          className="h-3 w-3 flex-shrink-0 rounded-full"
+                          style={{ backgroundColor: child.color }}
+                        />
+                        <span className="flex-1 truncate text-left text-gray-700 dark:text-gray-300">
+                          {child.name}
+                        </span>
+                        <span className={`${appPanelMetaClass} tabular-nums`}>{child.count}</span>
+                      </button>
+                    ))}
                   </div>
-                </div>
-
-                <div className="px-3 py-2">
-                  {selectedTagChildren.length > 0 ? (
-                    <div className="flex flex-col gap-1">
-                      {selectedTagChildren.map((child) => (
-                        <button
-                          key={child.id}
-                          type="button"
-                          onClick={() => setSelectedTagId(child.id)}
-                          onDoubleClick={() => void openFilesForTag(child)}
-                          className={`${appTreeRowClass} hover:bg-gray-100 dark:hover:bg-dark-border`}
-                        >
-                          <span
-                            className="h-3 w-3 flex-shrink-0 rounded-full"
-                            style={{ backgroundColor: child.color }}
-                          />
-                          <span className="flex-1 truncate text-left text-gray-800 dark:text-gray-100">
-                            {child.name}
-                          </span>
-                          <span className={`${appPanelMetaClass} tabular-nums`}>{child.count}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="px-2.5 py-3 text-[12px] text-gray-400 dark:text-gray-500">
-                      暂无子标签
-                    </div>
-                  )}
-                </div>
+                ) : (
+                  <div className="px-2.5 py-2 text-[12px] text-gray-400 dark:text-gray-500">
+                    暂无子标签
+                  </div>
+                )}
               </div>
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center">
-              <div className="text-[13px] text-gray-400 dark:text-gray-500">选择标签</div>
+              <div className="text-[12px] text-gray-400 dark:text-gray-500">选择标签</div>
             </div>
           )}
         </section>
