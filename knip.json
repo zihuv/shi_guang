@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "electron/main.ts",
+    "electron/preload.ts",
+    "electron/visual-index-utility.ts",
+    "electron.vite.config.ts",
+    "scripts/*.cjs",
+    "website/rspress.config.ts",
+    "extensions/shiguang-collector/background.js",
+    "extensions/shiguang-collector/content*.js",
+    "extensions/shiguang-collector/popup.js"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "electron/**/*.ts",
+    "scripts/**/*.cjs",
+    "website/**/*.{ts,tsx,js,jsx}",
+    "extensions/shiguang-collector/**/*.js",
+    "*.{ts,js,cjs,mjs}"
+  ],
+  "ignoreFiles": ["src/services/desktop/index.ts"]
+}

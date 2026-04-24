@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import log from "electron-log/main";
 import fs from "node:fs/promises";
 import fssync from "node:fs";
+import { z } from "zod";
 import { getIndexPaths } from "./database";
 import { isPathAllowedForRead } from "./storage";
 import type { AppState } from "./types";
@@ -11,6 +12,11 @@ import { createCommandRegistry } from "./commands/registry";
 export { startCollectorServer } from "./commands/collector-server";
 export { requestLibrarySyncScan, startLibrarySyncService } from "./commands/library-sync-service";
 export { ensureDeletedFolderHoldingDir } from "./commands/trash-file-service";
+
+const rendererLogSchema = z.object({
+  level: z.enum(["debug", "error", "info", "log", "trace", "warn"]).catch("info"),
+  message: z.string().max(20_000),
+});
 
 export function registerIpcHandlers(
   state: AppState,
@@ -58,14 +64,15 @@ export function registerIpcHandlers(
   });
   ipcMain.handle("shiguang:asset:toUrl", (_event, filePath: string) => assetToUrl(filePath));
   ipcMain.handle("shiguang:log", (_event, level: string, message: string) => {
+    const payload = rendererLogSchema.parse({ level, message });
     const writer =
-      level === "error"
+      payload.level === "error"
         ? log.error
-        : level === "warn"
+        : payload.level === "warn"
           ? log.warn
-          : level === "debug"
+          : payload.level === "debug"
             ? log.debug
             : log.info;
-    writer(message);
+    writer(payload.message);
   });
 }

@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
@@ -12,6 +12,10 @@ export default defineConfig(async () => ({
   clearScreen: false,
   build: {
     outDir: "out/renderer",
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
   },
   server: {
     host: "127.0.0.1",

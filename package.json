@@ -1,12 +1,9 @@
 {
   "name": "shiguang",
-  "private": true,
   "version": "0.3.3",
+  "private": true,
   "type": "module",
   "main": "out/main/main.cjs",
-  "engines": {
-    "node": "^20.19.0 || >=22.12.0"
-  },
   "scripts": {
     "dev": "electron-vite dev",
     "renderer:dev": "vite --host 127.0.0.1",
@@ -21,6 +18,7 @@
     "dist:linux": "npm run build && electron-builder --linux --publish never",
     "lint": "oxlint --react-plugin src electron electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
     "lint:fix": "oxlint --react-plugin --fix src electron electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
+    "knip": "knip --include files,dependencies,unlisted,binaries,unresolved",
     "test": "vitest run",
     "fmt": "oxfmt src electron index.html electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
     "fmt:check": "oxfmt --check src electron index.html electron.vite.config.ts vite.config.ts tailwind.config.js postcss.config.js",
@@ -43,7 +41,8 @@
     "onnxruntime-node": "^1.24.3",
     "pdfjs-dist": "^5.6.205",
     "sharp": "^0.34.5",
-    "unpdf": "^1.6.0"
+    "unpdf": "^1.6.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "^1.7.10",
@@ -55,6 +54,9 @@
     "@rspress/core": "^2.0.9",
     "@tailwindcss/postcss": "^4.2.2",
     "@tanstack/react-virtual": "^3.13.23",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
@@ -67,6 +69,8 @@
     "electron-builder": "^26.0.12",
     "electron-vite": "6.0.0-beta.0",
     "husky": "^9.1.7",
+    "jsdom": "^29.0.2",
+    "knip": "^6.6.2",
     "lint-staged": "^16.4.0",
     "lucide-react": "^1.7.0",
     "oxfmt": "^0.45.0",
@@ -90,6 +94,9 @@
     "*.html": [
       "oxfmt"
     ]
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   },
   "build": {
     "appId": "com.zihuv.shiguang",
