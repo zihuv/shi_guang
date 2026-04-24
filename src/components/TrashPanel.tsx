@@ -3,12 +3,15 @@ import { useTrashStore } from "@/stores/trashStore";
 import { Button } from "@/components/ui/Button";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/AlertDialog";
 import { AlertTriangle, Folder, RotateCcw, Trash2, X } from "lucide-react";
 import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
 import type { TrashFileItem, TrashFolderItem, TrashItem } from "@/stores/fileTypes";
@@ -197,6 +200,22 @@ function selectionKey(item: TrashItem) {
   return `${item.kind}:${item.id}`;
 }
 
+function isKeyboardShortcutIgnored(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(
+    target.closest(
+      "input, textarea, select, [contenteditable='true'], [contenteditable=''], [role='dialog'], [role='menu']",
+    ),
+  );
+}
+
 export default function TrashPanel() {
   const trashItems = useTrashStore((state) => state.trashItems);
   const trashCount = useTrashStore((state) => state.trashCount);
@@ -209,12 +228,38 @@ export default function TrashPanel() {
   const emptyTrash = useTrashStore((state) => state.emptyTrash);
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [showPermanentDeleteConfirm, setShowPermanentDeleteConfirm] = useState(false);
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
 
   useEffect(() => {
     void loadTrashItems();
     void loadTrashCount();
   }, [loadTrashCount, loadTrashItems]);
+
+  useEffect(() => {
+    const handleSelectAllShortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.key.toLowerCase() !== "a" ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        isKeyboardShortcutIgnored(event.target)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setSelectedKeys(trashItems.map(selectionKey));
+    };
+
+    document.addEventListener("keydown", handleSelectAllShortcut, { capture: true });
+    return () => {
+      document.removeEventListener("keydown", handleSelectAllShortcut, { capture: true });
+    };
+  }, [trashItems]);
 
   const selectedItems = useMemo(
     () => trashItems.filter((item) => selectedKeys.includes(selectionKey(item))),
@@ -253,6 +298,8 @@ export default function TrashPanel() {
   };
 
   const handlePermanentDeleteSelected = async () => {
+    if (selectedItems.length === 0) return;
+
     if (selectedFolderIds.length > 0) {
       await permanentDeleteFolders(selectedFolderIds);
     }
@@ -260,6 +307,7 @@ export default function TrashPanel() {
       await permanentDeleteFiles(selectedFileIds);
     }
     setSelectedKeys([]);
+    setShowPermanentDeleteConfirm(false);
   };
 
   const handleEmptyTrash = async () => {
@@ -313,7 +361,7 @@ export default function TrashPanel() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => void handlePermanentDeleteSelected()}
+              onClick={() => setShowPermanentDeleteConfirm(true)}
               disabled={selectedKeys.length === 0}
               className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
             >
@@ -360,37 +408,53 @@ export default function TrashPanel() {
         </div>
       </div>
 
-      <Dialog
-        open={showEmptyConfirm}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setShowEmptyConfirm(false);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
+      <AlertDialog open={showPermanentDeleteConfirm} onOpenChange={setShowPermanentDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              确认永久删除
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作会永久删除选中的回收站项目，删除后无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            已选择 {selectedItems.length} 个项目
+            {selectedFolderIds.length > 0 || selectedFileIds.length > 0
+              ? `，其中 ${selectedFileIds.length} 个文件、${selectedFolderIds.length} 个文件夹`
+              : ""}
+            。
+          </p>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handlePermanentDeleteSelected()}>
+              永久删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showEmptyConfirm} onOpenChange={setShowEmptyConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle className="h-5 w-5" />
               确认清空回收站
-            </DialogTitle>
-            <DialogDescription>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
               此操作会永久删除回收站中的全部文件和文件夹，无法恢复。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="mt-2 text-sm text-gray-500">回收站中共有 {trashItems.length} 个项目</p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowEmptyConfirm(false)}>
-              取消
-            </Button>
-            <Button variant="destructive" onClick={() => void handleEmptyTrash()}>
-              确认清空
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            回收站中共有 {trashItems.length} 个项目。
+          </p>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleEmptyTrash()}>确认清空</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { copyFilesToClipboard } from "@/lib/clipboard";
 import { SHORTCUT_ACTIONS, matchShortcut, type ShortcutActionId } from "@/lib/shortcuts";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useNavigationStore } from "@/stores/navigationStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSelectionStore } from "@/stores/selectionStore";
@@ -44,6 +45,7 @@ function getCopyTargetFileIds() {
 function canRunShortcut(actionId: ShortcutActionId) {
   const previewStore = usePreviewStore.getState();
   const libraryStore = useLibraryQueryStore.getState();
+  const navigationStore = useNavigationStore.getState();
   const trashStore = useTrashStore.getState();
 
   if (actionId === "copySelectedToClipboard") {
@@ -55,7 +57,11 @@ function canRunShortcut(actionId: ShortcutActionId) {
   }
 
   if (actionId === "selectAllCurrentPageFiles") {
-    return !previewStore.previewMode && libraryStore.files.length > 0;
+    return (
+      navigationStore.currentView === "library" &&
+      !previewStore.previewMode &&
+      libraryStore.files.length > 0
+    );
   }
 
   return true;
