@@ -418,6 +418,11 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
+  if (command === "capture-element") {
+    await sendMessageToTab(tab.id, { action: "startElementCapture" });
+    return;
+  }
+
   if (command === "capture-visible") {
     try {
       const response = await chrome.tabs.sendMessage(tab.id, { action: "captureVisibleFromPage" });

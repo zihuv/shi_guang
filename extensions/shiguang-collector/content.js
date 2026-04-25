@@ -157,6 +157,12 @@
       return true;
     }
 
+    if (message.action === "startElementCapture") {
+      panel?.startElementCapture?.();
+      sendResponse({ success: Boolean(panel) });
+      return true;
+    }
+
     if (message.action === "captureVisibleFromPage") {
       if (!panel?.captureVisibleScreenshot) {
         sendResponse({ success: false });

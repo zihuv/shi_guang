@@ -49,6 +49,9 @@
     "capture-visible": {
       "description": "收藏当前可视范围截图"
     },
+    "capture-element": {
+      "description": "开始元素截图"
+    },
     "capture-area": {
       "description": "开始区域截图"
     }

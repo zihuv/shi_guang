@@ -12,6 +12,7 @@
 
   const PANEL_ID = "shiguang-collector-panel-host";
   const OVERLAY_ID = "shiguang-area-capture-overlay";
+  const ELEMENT_PICKER_OVERLAY_ID = "shiguang-element-picker-overlay";
 
   let host = null;
   let shadow = null;
@@ -368,6 +369,7 @@
     body.innerHTML = `
       <div class="actions">
         <button class="action" id="areaCaptureButton" type="button">区域截图</button>
+        <button class="action" id="elementCaptureButton" type="button">元素截图</button>
         <button class="action" id="visibleCaptureButton" type="button">可视截图</button>
         <button class="action" id="batchButton" type="button">批量收藏</button>
         <button class="action" id="preferencesButton" type="button">偏好设置</button>
@@ -381,6 +383,7 @@
     `;
 
     body.querySelector("#areaCaptureButton").addEventListener("click", startAreaCapture);
+    body.querySelector("#elementCaptureButton").addEventListener("click", startElementCapture);
     body.querySelector("#visibleCaptureButton").addEventListener("click", captureVisibleScreenshot);
     body.querySelector("#batchButton").addEventListener("click", async () => {
       currentView = "batch";
@@ -803,7 +806,178 @@
     (document.body || document.documentElement).appendChild(overlay);
   }
 
-  async function captureArea(rect) {
+  function startElementCapture() {
+    ensurePanel();
+    setPanelVisible(false);
+
+    const previousCursor = document.documentElement.style.cursor;
+    document.documentElement.style.cursor = "crosshair";
+
+    const overlay = document.createElement("div");
+    overlay.id = ELEMENT_PICKER_OVERLAY_ID;
+    overlay.style.cssText = [
+      "position: fixed",
+      "inset: 0",
+      "z-index: 2147483647",
+      "pointer-events: none",
+      "background: rgba(15, 23, 42, 0.10)",
+    ].join(";");
+
+    const highlight = document.createElement("div");
+    highlight.style.cssText = [
+      "position: fixed",
+      "display: none",
+      "border-radius: 6px",
+      "background: rgba(37, 99, 235, 0.14)",
+      "box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.95), 0 0 0 9999px rgba(15, 23, 42, 0.20)",
+    ].join(";");
+    overlay.appendChild(highlight);
+
+    let selectedElement = null;
+    let selectedRect = null;
+    let completed = false;
+
+    function cleanup(restorePanel = true) {
+      document.documentElement.style.cursor = previousCursor;
+      document.removeEventListener("mousemove", handleMouseMove, true);
+      document.removeEventListener("mousedown", handleMouseDown, true);
+      document.removeEventListener("click", handleClick, true);
+      window.removeEventListener("keydown", handleKeydown, true);
+      window.removeEventListener("scroll", handleScroll, true);
+      overlay.remove();
+      if (restorePanel) {
+        setPanelVisible(true);
+      }
+    }
+
+    function isPickerElement(element) {
+      return (
+        element === overlay ||
+        element === host ||
+        element?.id === ELEMENT_PICKER_OVERLAY_ID ||
+        element?.id === PANEL_ID ||
+        element?.id === "shiguang-toast-container" ||
+        host?.contains(element)
+      );
+    }
+
+    function getElementAtPoint(x, y) {
+      const elements = document.elementsFromPoint(x, y);
+      return (
+        elements.find((element) => {
+          if (!(element instanceof Element) || isPickerElement(element)) {
+            return false;
+          }
+          const rect = element.getBoundingClientRect();
+          return rect.width >= 2 && rect.height >= 2;
+        }) || null
+      );
+    }
+
+    function getVisibleRect(element) {
+      const rect = element.getBoundingClientRect();
+      const left = Math.max(0, rect.left);
+      const top = Math.max(0, rect.top);
+      const right = Math.min(window.innerWidth, rect.right);
+      const bottom = Math.min(window.innerHeight, rect.bottom);
+      const width = Math.max(0, right - left);
+      const height = Math.max(0, bottom - top);
+      return { left, top, width, height };
+    }
+
+    function updateHighlight(rect) {
+      selectedRect = rect;
+      if (!rect || rect.width < 2 || rect.height < 2) {
+        highlight.style.display = "none";
+        return;
+      }
+
+      highlight.style.display = "block";
+      highlight.style.left = `${rect.left}px`;
+      highlight.style.top = `${rect.top}px`;
+      highlight.style.width = `${rect.width}px`;
+      highlight.style.height = `${rect.height}px`;
+    }
+
+    function selectFromEvent(event) {
+      selectedElement = getElementAtPoint(event.clientX, event.clientY);
+      updateHighlight(selectedElement ? getVisibleRect(selectedElement) : null);
+    }
+
+    async function finishSelection(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (completed) {
+        return;
+      }
+      completed = true;
+
+      if (!selectedElement) {
+        selectFromEvent(event);
+      }
+
+      const rect = selectedElement ? getVisibleRect(selectedElement) : selectedRect;
+      cleanup(false);
+
+      if (!rect || rect.width < 8 || rect.height < 8) {
+        setPanelVisible(true);
+        return;
+      }
+
+      try {
+        await captureArea(rect, "element-screenshot.png");
+        collector.showToast("已收藏元素截图", "success", 2200);
+      } catch (error) {
+        collector.showToast("截图失败: " + collector.getErrorMessage(error), "error", 3600);
+      } finally {
+        setPanelVisible(true);
+      }
+    }
+
+    function handleMouseMove(event) {
+      selectFromEvent(event);
+    }
+
+    function handleMouseDown(event) {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+
+    function handleClick(event) {
+      if (event.button !== 0) {
+        return;
+      }
+      void finishSelection(event);
+    }
+
+    function handleKeydown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cleanup(true);
+      }
+    }
+
+    function handleScroll() {
+      if (selectedElement) {
+        updateHighlight(getVisibleRect(selectedElement));
+      }
+    }
+
+    document.addEventListener("mousemove", handleMouseMove, true);
+    document.addEventListener("mousedown", handleMouseDown, true);
+    document.addEventListener("click", handleClick, true);
+    window.addEventListener("keydown", handleKeydown, true);
+    window.addEventListener("scroll", handleScroll, true);
+    (document.body || document.documentElement).appendChild(overlay);
+  }
+
+  async function captureArea(rect, filename = "area-screenshot.png") {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const response = await sendRuntimeMessage({ action: "captureVisibleDataUrl" });
     if (!response?.success || !response.dataUrl) {
@@ -815,7 +989,7 @@
       action: "importScreenshotDataUrl",
       payload: {
         dataUrl: croppedDataUrl,
-        filename: "area-screenshot.png",
+        filename,
       },
     });
 
@@ -874,6 +1048,7 @@
     openPanel,
     closePanel,
     startAreaCapture,
+    startElementCapture,
     captureVisibleScreenshot,
   };
 })();
