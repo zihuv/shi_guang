@@ -322,12 +322,12 @@ async function notifyResult(tabId, message, type = "info", duration = 3000) {
 
 // Create context menu when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
-  // 使用 'page' context 然后在 content script 中检查点击的是否是图片
-  // 这样可以处理更多网站（如 SPA、懒加载等）
+  // 链接遮罩里的图片（如小红书封面）会被 Chrome 归类为 link context。
+  // 取图仍交给 content script，保证 SPA、懒加载和遮罩结构都走同一套逻辑。
   chrome.contextMenus.create({
     id: "sendToShiguang",
     title: "发送给拾光",
-    contexts: ["page", "image"],
+    contexts: ["page", "image", "link"],
   });
 });
 

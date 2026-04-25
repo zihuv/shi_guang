@@ -14,9 +14,16 @@
   const dragDock = globalThis.__shiguangCollectorDragDock;
   const panel = globalThis.__shiguangCollectorPanel;
 
+  function getImageUrlFromPointerEvent(event) {
+    return (
+      collector.getImageUrlFromElement(event.target) ||
+      collector.getImageUrlFromPoint?.(event.clientX, event.clientY)
+    );
+  }
+
   async function collectImageFromEvent(event, label) {
     const target = event.target;
-    const imageUrl = collector.getImageUrlFromElement(target);
+    const imageUrl = getImageUrlFromPointerEvent(event);
 
     if (!imageUrl) {
       return false;
@@ -50,7 +57,7 @@
     "contextmenu",
     (event) => {
       const target = event.target;
-      const imageUrl = collector.getImageUrlFromElement(target);
+      const imageUrl = getImageUrlFromPointerEvent(event);
       collector.setLastImageContext(target, imageUrl);
 
       if (event.altKey && imageUrl) {
