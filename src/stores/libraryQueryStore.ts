@@ -43,6 +43,8 @@ interface LibraryPagination {
   totalPages: number;
 }
 
+type LibraryPaginationMode = "paged" | "flow";
+
 interface FilterFilesInput {
   query?: string;
   naturalLanguageQuery?: string;
@@ -64,8 +66,10 @@ interface LibraryQueryStore {
   imageQueryFile: ImageQueryFile | null;
   isLoading: boolean;
   pagination: LibraryPagination;
+  paginationMode: LibraryPaginationMode;
   setPage: (page: number) => void;
   setPageSize: (pageSize: number) => void;
+  setPaginationMode: (mode: LibraryPaginationMode) => void;
   resetPage: () => void;
   setSearchQuery: (query: string) => void;
   searchSimilarToFile: (file: ImageQueryFile) => Promise<void>;
@@ -101,10 +105,28 @@ function getCurrentSortConfig() {
   return getSortConfig(useFilterStore.getState().criteria);
 }
 
+function getQueryPagination(pagination: LibraryPagination, mode: LibraryPaginationMode) {
+  if (mode === "flow") {
+    return {
+      page: 1,
+      pageSize: 0,
+    };
+  }
+
+  return {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  };
+}
+
 function applyPaginatedFilesResult(
   result: PaginatedFilesResponse,
   requestId: number,
-  set: (partial: Partial<LibraryQueryStore>) => void,
+  set: (
+    partial:
+      | Partial<LibraryQueryStore>
+      | ((state: LibraryQueryStore) => Partial<LibraryQueryStore>),
+  ) => void,
 ) {
   if (requestId !== fileListRequestId) {
     return false;
@@ -113,16 +135,16 @@ function applyPaginatedFilesResult(
   const parsedFiles = parseFileList(result.files);
   useSelectionStore.getState().reconcileVisibleSelection(parsedFiles);
 
-  set({
+  set((state) => ({
     files: parsedFiles,
     isLoading: false,
     pagination: {
       page: result.page,
-      pageSize: result.page_size,
+      pageSize: state.paginationMode === "flow" ? state.pagination.pageSize : result.page_size,
       total: result.total,
       totalPages: result.total_pages,
     },
-  });
+  }));
 
   return true;
 }
@@ -284,6 +306,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     total: 0,
     totalPages: 0,
   },
+  paginationMode: "paged",
 
   setPage: (page) => {
     set((state) => ({ pagination: { ...state.pagination, page } }));
@@ -292,6 +315,21 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
   setPageSize: (pageSize) => {
     set((state) => ({ pagination: { ...state.pagination, pageSize, page: 1 } }));
+    void get().runCurrentQuery();
+  },
+
+  setPaginationMode: (mode) => {
+    if (get().paginationMode === mode) {
+      return;
+    }
+
+    set((state) => ({
+      paginationMode: mode,
+      pagination: {
+        ...state.pagination,
+        page: 1,
+      },
+    }));
     void get().runCurrentQuery();
   },
 
@@ -346,15 +384,16 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
 
   loadFiles: async () => {
-    const { pagination } = get();
+    const { pagination, paginationMode } = get();
+    const queryPagination = getQueryPagination(pagination, paginationMode);
     const { sortBy, sortDirection } = getCurrentSortConfig();
     const requestId = ++fileListRequestId;
     beginFileListLoading(set);
 
     try {
       const result = await getAllFiles({
-        page: pagination.page,
-        pageSize: pagination.pageSize,
+        page: queryPagination.page,
+        pageSize: queryPagination.pageSize,
         sortBy,
         sortDirection,
       });
@@ -392,7 +431,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       return;
     }
 
-    const { pagination } = get();
+    const { pagination, paginationMode } = get();
+    const queryPagination = getQueryPagination(pagination, paginationMode);
     const { sortBy, sortDirection } = getCurrentSortConfig();
     const requestId = ++fileListRequestId;
 
@@ -400,15 +440,15 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       const result =
         folderId === null
           ? await getAllFiles({
-              page: pagination.page,
-              pageSize: pagination.pageSize,
+              page: queryPagination.page,
+              pageSize: queryPagination.pageSize,
               sortBy,
               sortDirection,
             })
           : await getFilesInFolder({
               folderId,
-              page: pagination.page,
-              pageSize: pagination.pageSize,
+              page: queryPagination.page,
+              pageSize: queryPagination.pageSize,
               sortBy,
               sortDirection,
             });
@@ -460,7 +500,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   },
 
   filterFiles: async (filter) => {
-    const { pagination } = get();
+    const { pagination, paginationMode } = get();
+    const queryPagination = getQueryPagination(pagination, paginationMode);
     const requestId = ++fileListRequestId;
     const criteria = useFilterStore.getState().criteria;
     beginFileListLoading(set);
@@ -476,8 +517,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
           smartView: filter?.smartView ?? useNavigationStore.getState().activeSmartCollection,
           smartSeed: filter?.smartSeed ?? useNavigationStore.getState().randomSeed,
         }),
-        page: pagination.page,
-        pageSize: pagination.pageSize,
+        page: queryPagination.page,
+        pageSize: queryPagination.pageSize,
       });
       logVisualSearchDebugScores(result, filter?.naturalLanguageQuery);
       applyPaginatedFilesResult(result, requestId, set);

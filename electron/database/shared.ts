@@ -185,11 +185,17 @@ export function pageArgs(
   page?: number,
   pageSize?: number,
 ): { page: number; pageSize: number; offset: number } {
+  const rawPageSize = Number.isFinite(pageSize ?? 100) ? Number(pageSize ?? 100) : 100;
+  if (rawPageSize <= 0 || rawPageSize === Number.MAX_SAFE_INTEGER) {
+    return {
+      page: 1,
+      pageSize: 2_147_483_647,
+      offset: 0,
+    };
+  }
+
   const safePage = Math.max(1, Number.isFinite(page ?? 1) ? Number(page ?? 1) : 1);
-  const safePageSize = Math.max(
-    1,
-    Math.min(500, Number.isFinite(pageSize ?? 100) ? Number(pageSize ?? 100) : 100),
-  );
+  const safePageSize = Math.max(1, Math.min(500, rawPageSize));
   return {
     page: safePage,
     pageSize: safePageSize,

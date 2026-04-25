@@ -75,6 +75,7 @@ export default function FileGrid() {
   const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery);
   const setPage = useLibraryQueryStore((state) => state.setPage);
   const setPageSize = useLibraryQueryStore((state) => state.setPageSize);
+  const setPaginationMode = useLibraryQueryStore((state) => state.setPaginationMode);
   const resetPage = useLibraryQueryStore((state) => state.resetPage);
   const selectedFile = useSelectionStore((state) => state.selectedFile);
   const selectedFiles = useSelectionStore((state) => state.selectedFiles);
@@ -148,6 +149,7 @@ export default function FileGrid() {
   );
   const currentViewModeLabel = getCurrentViewModeLabel(viewMode);
   const visibleInfoFieldLabels = getVisibleInfoFieldLabels(libraryVisibleFields);
+  const showPaginationControls = viewMode === "list";
   useFileGridToolbarDismiss({
     openToolbarMenu,
     isFilterPanelOpen,
@@ -171,6 +173,10 @@ export default function FileGrid() {
   useEffect(() => {
     wheelScaleRemainderRef.current = 0;
   }, [viewMode]);
+
+  useEffect(() => {
+    setPaginationMode(showPaginationControls ? "paged" : "flow");
+  }, [setPaginationMode, showPaginationControls]);
 
   useEffect(() => {
     if (!sortDidMountRef.current) {
@@ -708,7 +714,7 @@ export default function FileGrid() {
         libraryVisibleFields={libraryVisibleFields}
         openToolbarMenu={openToolbarMenu}
         paginationLabel={
-          pagination.totalPages > 1
+          showPaginationControls && pagination.totalPages > 1
             ? `(第 ${pagination.page}/${pagination.totalPages} 页)`
             : undefined
         }
@@ -777,13 +783,15 @@ export default function FileGrid() {
         />
       )}
 
-      <FileGridPagination
-        page={pagination.page}
-        pageSize={pagination.pageSize}
-        totalPages={pagination.totalPages}
-        setPage={setPage}
-        setPageSize={setPageSize}
-      />
+      {showPaginationControls && (
+        <FileGridPagination
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalPages={pagination.totalPages}
+          setPage={setPage}
+          setPageSize={setPageSize}
+        />
+      )}
 
       <FileGridSelectionBar
         selectedCount={selectedFiles.length}
