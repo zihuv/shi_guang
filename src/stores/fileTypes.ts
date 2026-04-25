@@ -59,7 +59,13 @@ export interface VisualSearchDebugScore {
   score: number;
 }
 
-export type SmartCollectionId = "all" | "unclassified" | "untagged" | "recent" | "random";
+export type SmartCollectionId =
+  | "all"
+  | "unclassified"
+  | "untagged"
+  | "recent"
+  | "random"
+  | "similar";
 
 export interface SmartCollectionStats {
   allCount: number;

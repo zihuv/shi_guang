@@ -15,6 +15,7 @@ import {
   paginated,
   parseHexColor,
 } from "./shared";
+import { getDuplicateOrSimilarFileIds } from "./similarity-repository";
 
 export function getFileById(db: Database.Database, fileId: number): FileRecord | null {
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId) as FileRow | undefined;
@@ -240,11 +241,57 @@ function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): 
   return ` WHERE ${conditions.join(" AND ")}`;
 }
 
+function queryDuplicateOrSimilarRows(
+  db: Database.Database,
+  filter: Record<string, unknown>,
+  args: { page?: number; pageSize?: number },
+): { rows: FileRow[]; total: number; page: number; pageSize: number } {
+  const orderedIds = getDuplicateOrSimilarFileIds(db);
+  const { page, pageSize, offset } = pageArgs(args.page, args.pageSize);
+
+  if (!orderedIds.length) {
+    return { rows: [], total: 0, page, pageSize };
+  }
+
+  const params: unknown[] = [];
+  const scopedFilter = { ...filter, smart_view: null };
+  const where = appendFilterWhere(scopedFilter, params);
+  const idListSql = orderedIds.join(", ");
+  const orderSql = `CASE f.id ${orderedIds
+    .map((id, index) => `WHEN ${id} THEN ${index}`)
+    .join(" ")} ELSE ${orderedIds.length} END`;
+
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT f.*
+       FROM files f${where}
+         AND f.id IN (${idListSql})
+       ORDER BY ${orderSql}
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...params, pageSize, offset) as FileRow[];
+  const total = (
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT f.id) AS count
+         FROM files f${where}
+           AND f.id IN (${idListSql})`,
+      )
+      .get(...params) as { count: number }
+  ).count;
+
+  return { rows, total, page, pageSize };
+}
+
 export function queryFilteredRows(
   db: Database.Database,
   filter: Record<string, unknown>,
   args: { page?: number; pageSize?: number },
 ): { rows: FileRow[]; total: number; page: number; pageSize: number } {
+  if (String(filter.smart_view ?? "").trim() === "similar") {
+    return queryDuplicateOrSimilarRows(db, filter, args);
+  }
+
   const { page, pageSize, offset } = pageArgs(args.page, args.pageSize);
   const params: unknown[] = [];
   const where = appendFilterWhere(filter, params);

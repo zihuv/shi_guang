@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Bookmark, Clock3, FolderX, Library, Shuffle, Tag, Trash2 } from "lucide-react";
+import { Bookmark, Clock3, FolderX, Library, ScanSearch, Shuffle, Tag, Trash2 } from "lucide-react";
 import { appPanelClass, appPanelMetaClass, appSectionLabelClass, appTreeRowClass } from "@/lib/ui";
 import FolderTree from "@/components/FolderTree";
 import { selectSmartCollectionFromSidebar } from "@/components/folder-tree/utils";
@@ -25,6 +25,7 @@ const SMART_COLLECTION_ITEMS: Array<{
   { id: "untagged", label: "未标签", icon: Tag },
   { id: "recent", label: "最近使用", icon: Clock3 },
   { id: "random", label: "随机模式", icon: Shuffle },
+  { id: "similar", label: "重复/相似", icon: ScanSearch },
 ];
 
 export default function SidePanel({ width }: SidePanelProps) {

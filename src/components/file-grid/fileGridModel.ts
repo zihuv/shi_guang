@@ -48,6 +48,9 @@ export function getCurrentSortFieldLabel(
   if (activeSmartCollection === "recent") {
     return "最近使用";
   }
+  if (activeSmartCollection === "similar") {
+    return "重复/相似";
+  }
   return SORT_FIELD_LABELS[sortBy] ?? "导入时间";
 }
 
@@ -55,7 +58,11 @@ export function getCurrentSortDirectionLabel(
   sortDirection: "asc" | "desc",
   activeSmartCollection: SmartCollectionId | null,
 ) {
-  if (activeSmartCollection === "random" || activeSmartCollection === "recent") {
+  if (
+    activeSmartCollection === "random" ||
+    activeSmartCollection === "recent" ||
+    activeSmartCollection === "similar"
+  ) {
     return "固定排序";
   }
   return sortDirection === "asc" ? "升序" : "降序";

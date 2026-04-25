@@ -19,6 +19,7 @@ export * from "./database/shared";
 export * from "./database/settings-repository";
 export * from "./database/file-repository";
 export * from "./database/visual-repository";
+export * from "./database/similarity-repository";
 export * from "./database/folder-repository";
 export * from "./database/tag-repository";
 export * from "./database/trash-repository";
