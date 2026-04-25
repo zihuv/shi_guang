@@ -1,7 +1,7 @@
 import { app, Menu } from "electron";
 import log from "electron-log/main";
-import { buildApplicationMenu } from "./application-menu";
-import { setDockIcon } from "./app-icon";
+import { setDockIcon } from "./app/app-icon";
+import { buildApplicationMenu } from "./app/application-menu";
 import {
   ensureDeletedFolderHoldingDir,
   registerIpcHandlers,
@@ -11,16 +11,20 @@ import {
 } from "./commands";
 import { openDatabase } from "./database";
 import { getSetting } from "./database";
-import { assetToUrl, registerFileProtocol, registerFileProtocolPrivileges } from "./file-protocol";
-import { resolveStartupIndexPath } from "./startup-library";
+import {
+  assetToUrl,
+  registerFileProtocol,
+  registerFileProtocolPrivileges,
+} from "./app/file-protocol";
+import { resolveStartupIndexPath } from "./app/startup-library";
 import { getDbPath } from "./storage";
 import type { AppState } from "./types";
 import {
   AUTO_CHECK_UPDATES_SETTING_KEY,
   configureUpdater,
   scheduleStartupUpdateCheck,
-} from "./updater";
-import { createWindowManager } from "./window-manager";
+} from "./app/updater";
+import { createWindowManager } from "./app/window-manager";
 
 registerFileProtocolPrivileges();
 

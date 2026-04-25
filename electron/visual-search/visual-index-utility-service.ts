@@ -2,8 +2,8 @@ import { utilityProcess, type UtilityProcess } from "electron";
 import log from "electron-log/main";
 import crypto from "node:crypto";
 import path from "node:path";
-import { createClipRuntimeKey, type ClipRuntimeSnapshot } from "./visual-search/clip-runtime.js";
-import type { VisualModelValidationResult, VisualSearchConfig } from "./visual-search/index.js";
+import { createClipRuntimeKey, type ClipRuntimeSnapshot } from "./clip-runtime.js";
+import type { VisualModelValidationResult, VisualSearchConfig } from "./index.js";
 
 const VISUAL_INDEX_UTILITY_IDLE_MS = 15_000;
 

@@ -65,8 +65,8 @@ import {
   removeThumbnailForFile,
 } from "../storage";
 import { getRecommendedVisualModelPath, validateVisualModelPath } from "../visual-search";
-import { encodeVisualSearchTextInUtility } from "../visual-index-utility-service.js";
-import { checkForUpdates } from "../updater";
+import { encodeVisualSearchTextInUtility } from "../visual-search/visual-index-utility-service.js";
+import { checkForUpdates } from "../app/updater";
 import type { AppState, FileRecord, ImportTaskItem } from "../types";
 import {
   type CommandHandler,

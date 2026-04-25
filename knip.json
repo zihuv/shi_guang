@@ -3,7 +3,7 @@
   "entry": [
     "electron/main.ts",
     "electron/preload.ts",
-    "electron/visual-index-utility.ts",
+    "electron/visual-search/visual-index-utility.ts",
     "electron.vite.config.ts",
     "scripts/*.cjs",
     "website/rspress.config.ts",

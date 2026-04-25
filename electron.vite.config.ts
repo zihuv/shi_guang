@@ -26,7 +26,10 @@ export default defineConfig({
       lib: {
         entry: {
           main: path.resolve(__dirname, "electron/main.ts"),
-          "visual-index-utility": path.resolve(__dirname, "electron/visual-index-utility.ts"),
+          "visual-index-utility": path.resolve(
+            __dirname,
+            "electron/visual-search/visual-index-utility.ts",
+          ),
         },
         formats: ["cjs"],
         fileName: (_format, entryName) => `${entryName}.cjs`,

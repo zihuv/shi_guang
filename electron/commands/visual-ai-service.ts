@@ -33,7 +33,7 @@ import {
   encodeVisualSearchImageInUtility,
   getVisualIndexUtilitySnapshot,
   isVisualIndexUtilitySuspended,
-} from "../visual-index-utility-service.js";
+} from "../visual-search/visual-index-utility-service.js";
 import type {
   AiMetadataTaskSnapshot,
   AppState,

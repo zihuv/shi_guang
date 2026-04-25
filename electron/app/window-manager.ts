@@ -1,13 +1,13 @@
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from "electron";
 import path from "node:path";
-import { suspendVisualIndexing } from "./commands/visual-ai-service.js";
+import { suspendVisualIndexing } from "../commands/visual-ai-service.js";
 import { getAppIconPath, setDockVisibility } from "./app-icon";
 import {
   setVisualIndexUtilitySuspended,
   stopVisualIndexUtility,
-} from "./visual-index-utility-service.js";
-import { releaseVisualSearchRuntime } from "./visual-search/index.js";
-import type { AppState } from "./types";
+} from "../visual-search/visual-index-utility-service.js";
+import { releaseVisualSearchRuntime } from "../visual-search/index.js";
+import type { AppState } from "../types";
 
 type WindowManagerOptions = {
   getAppState: () => AppState | null;

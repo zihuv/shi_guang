@@ -7,7 +7,7 @@ import {
   persistIndexPath,
   readCurrentIndexPath,
   rememberRecentIndexPaths,
-} from "./storage";
+} from "../storage";
 
 function isExistingDirectory(targetPath: string): boolean {
   try {

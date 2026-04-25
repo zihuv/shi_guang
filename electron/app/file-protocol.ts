@@ -3,8 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { isPathAllowedForRead } from "./storage";
-import type { AppState } from "./types";
+import { isPathAllowedForRead } from "../storage";
+import type { AppState } from "../types";
 
 const tokenToPath = new Map<string, string>();
 const pathToToken = new Map<string, string>();

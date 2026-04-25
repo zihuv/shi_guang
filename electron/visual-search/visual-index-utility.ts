@@ -6,7 +6,7 @@ import {
   getCachedVisualRuntimeSnapshot,
   type VisualModelValidationResult,
   type VisualSearchConfig,
-} from "./visual-search/index.js";
+} from "./index.js";
 
 type EncodeTextRequest = {
   type: "encode_text";
