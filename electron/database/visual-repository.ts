@@ -273,6 +273,80 @@ export function getUnindexedVisualIndexCandidates(
     }));
 }
 
+export function getPendingVisualIndexCandidates(
+  db: Database.Database,
+  modelId: string,
+): VisualIndexCandidate[] {
+  const rows = db
+    .prepare(
+      `SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at, f.content_hash
+     FROM files f
+     LEFT JOIN file_visual_embeddings fve
+       ON fve.file_id = f.id
+      AND fve.model_id = ?
+     WHERE f.deleted_at IS NULL AND f.missing_at IS NULL
+       AND (
+         fve.file_id IS NULL
+         OR (
+           fve.status != 'error'
+           AND (
+             fve.status != 'ready'
+             OR fve.embedding IS NULL
+           )
+         )
+         OR ${outdatedVisualSourceMatchSql()}
+       )
+     ORDER BY f.imported_at DESC, f.id ASC`,
+    )
+    .all(modelId) as Array<{
+    id: number;
+    path: string;
+    name: string;
+    ext: string;
+    size: number;
+    fs_modified_at: string;
+    content_hash: string | null;
+  }>;
+
+  return rows
+    .filter((row) => isVisualSearchSupportedExtension(row.ext))
+    .map((row) => ({
+      file: {
+        id: row.id,
+        path: row.path,
+        name: row.name,
+        ext: row.ext,
+      },
+      sourceSize: row.size,
+      sourceModifiedAt: row.fs_modified_at,
+      contentHash: row.content_hash ?? null,
+    }));
+}
+
+export function isFileVisualEmbeddingReady(
+  db: Database.Database,
+  fileId: number,
+  modelId: string,
+): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1
+       FROM file_visual_embeddings fve
+       JOIN files f ON f.id = fve.file_id
+       WHERE f.id = ?
+         AND f.deleted_at IS NULL
+         AND f.missing_at IS NULL
+         AND fve.model_id = ?
+         AND fve.status = 'ready'
+         AND fve.embedding IS NOT NULL
+         AND ${currentVisualSourceMatchSql()}
+       LIMIT 1`,
+    )
+    .get(fileId, modelId) as { 1: number } | undefined;
+
+  return Boolean(row);
+}
+
 export function getVisualIndexCounts(db: Database.Database, modelId: string): VisualIndexCounts {
   const rows = db
     .prepare(

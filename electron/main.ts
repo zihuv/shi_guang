@@ -8,6 +8,7 @@ import {
   requestLibrarySyncScan,
   startCollectorServer,
   startLibrarySyncService,
+  wakeAutoVisualIndexing,
 } from "./commands";
 import { openDatabase } from "./database";
 import { getSetting } from "./database";
@@ -41,6 +42,7 @@ const windowManager = createWindowManager({
   getAppState: () => appState,
   onMainWindowFocus: (state, getMainWindow) => {
     requestLibrarySyncScan(state, getMainWindow, "focus");
+    wakeAutoVisualIndexing(state, getMainWindow());
   },
 });
 
@@ -71,6 +73,7 @@ async function bootstrap(): Promise<void> {
   registerIpcHandlers(appState, windowManager.getMainWindow, assetToUrl);
   configureUpdater({ getWindow: windowManager.getMainWindow });
   await windowManager.createMainWindow();
+  wakeAutoVisualIndexing(appState, windowManager.getMainWindow());
   scheduleStartupUpdateCheck(getSetting(db, AUTO_CHECK_UPDATES_SETTING_KEY) === "true");
   startLibrarySyncService(appState, windowManager.getMainWindow);
   await startCollectorServer(appState, windowManager.getMainWindow).catch((error) => {

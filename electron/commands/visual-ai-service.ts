@@ -8,11 +8,13 @@ import {
   createTag,
   getAllTags,
   getFileById,
+  getPendingVisualIndexCandidates,
   getSetting,
   getUnindexedVisualIndexCandidates,
   getVisualIndexCandidate,
   getVisualIndexCandidates,
   getVisualIndexCounts,
+  isFileVisualEmbeddingReady,
   markFileVisualEmbeddingError,
   moveFileWithFallback,
   resolveAvailableTargetPath,
@@ -42,7 +44,10 @@ import type {
 } from "../types";
 import { emit, taskId } from "./common";
 
-let autoVisualIndexQueue = Promise.resolve();
+let visualIndexJobQueue = Promise.resolve();
+let autoVisualIndexRunner: Promise<void> | null = null;
+let autoVisualIndexWindow: BrowserWindow | null = null;
+let autoVisualIndexWakePending = false;
 
 function cancelVisualIndexEntry(
   entry: { snapshot: VisualIndexTaskSnapshot; cancelled: boolean },
@@ -84,12 +89,27 @@ async function indexVisualCandidate(
   });
 }
 
+function enqueueVisualIndexJob<T>(job: () => Promise<T>): Promise<T> {
+  const queued = visualIndexJobQueue.then(job, job);
+  visualIndexJobQueue = queued.then(
+    () => undefined,
+    () => undefined,
+  );
+  return queued;
+}
+
+function isAutoVisualIndexWindowActive(window: BrowserWindow | null): boolean {
+  return Boolean(
+    window && !window.isDestroyed() && window.isVisible() && !isVisualIndexUtilitySuspended(),
+  );
+}
+
 export async function maybeAutoIndexImportedFile(
   state: AppState,
   file: FileRecord,
   window: BrowserWindow | null,
 ): Promise<void> {
-  if (isVisualIndexUtilitySuspended()) {
+  if (!isAutoVisualIndexWindowActive(window)) {
     return;
   }
 
@@ -103,34 +123,57 @@ export async function maybeAutoIndexImportedFile(
     return;
   }
 
-  autoVisualIndexQueue = autoVisualIndexQueue.then(async () => {
+  wakeAutoVisualIndexing(state, window);
+}
+
+export function wakeAutoVisualIndexing(state: AppState, window: BrowserWindow | null): void {
+  autoVisualIndexWindow = window;
+  autoVisualIndexWakePending = true;
+  if (autoVisualIndexRunner) {
+    return;
+  }
+
+  autoVisualIndexRunner = runAutoVisualIndexing(state).finally(() => {
+    autoVisualIndexRunner = null;
+    if (autoVisualIndexWakePending && isAutoVisualIndexWindowActive(autoVisualIndexWindow)) {
+      wakeAutoVisualIndexing(state, autoVisualIndexWindow);
+    }
+  });
+}
+
+async function runAutoVisualIndexing(state: AppState): Promise<void> {
+  while (autoVisualIndexWakePending) {
+    autoVisualIndexWakePending = false;
+    const window = autoVisualIndexWindow;
+    if (!isAutoVisualIndexWindowActive(window)) {
+      return;
+    }
+
+    const config = loadVisualSearchConfig(state);
+    if (!config.enabled || !config.autoVectorizeOnImport) {
+      return;
+    }
+
     const validation = await loadVisualModelValidation(state, config);
     if (!validation.valid || !validation.modelId) {
       return;
     }
 
-    try {
-      await indexVisualCandidate(state, config, validation, candidate);
-    } catch (error) {
-      markFileVisualEmbeddingError(state.db, {
-        fileId: candidate.file.id,
-        modelId: validation.modelId,
-        sourceSize: candidate.sourceSize,
-        sourceModifiedAt: candidate.sourceModifiedAt,
-        sourceContentHash: candidate.contentHash,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      log.warn("[visual-search] auto index failed", {
-        fileId: candidate.file.id,
-        path: candidate.file.path,
-        error,
-      });
+    const candidates = getPendingVisualIndexCandidates(state.db, validation.modelId);
+    if (candidates.length === 0) {
+      return;
     }
 
-    emit(window, "file-updated", { fileId: candidate.file.id });
-  });
-
-  await autoVisualIndexQueue;
+    try {
+      await runVisualIndexJob(state, window, null, true, true);
+    } catch (error) {
+      if (isVisualIndexUtilitySuspended()) {
+        return;
+      }
+      log.warn("[visual-search] auto index runner failed", error);
+      return;
+    }
+  }
 }
 
 export function loadAiConfig(state: AppState): { baseUrl: string; apiKey: string; model: string } {
@@ -213,6 +256,19 @@ export async function runVisualIndexJob(
   window: BrowserWindow | null,
   entryId: string | null,
   processUnindexedOnly: boolean,
+  skipCurrentErrors = false,
+) {
+  return enqueueVisualIndexJob(() =>
+    runVisualIndexJobNow(state, window, entryId, processUnindexedOnly, skipCurrentErrors),
+  );
+}
+
+async function runVisualIndexJobNow(
+  state: AppState,
+  window: BrowserWindow | null,
+  entryId: string | null,
+  processUnindexedOnly: boolean,
+  skipCurrentErrors: boolean,
 ) {
   const config = loadVisualSearchConfig(state);
   if (!config.enabled) {
@@ -228,7 +284,9 @@ export async function runVisualIndexJob(
   }
 
   const candidates = processUnindexedOnly
-    ? getUnindexedVisualIndexCandidates(state.db, validation.modelId)
+    ? skipCurrentErrors
+      ? getPendingVisualIndexCandidates(state.db, validation.modelId)
+      : getUnindexedVisualIndexCandidates(state.db, validation.modelId)
     : getVisualIndexCandidates(state.db);
 
   const entry = entryId ? (state.visualIndexTasks.get(entryId) ?? null) : null;
@@ -268,6 +326,25 @@ export async function runVisualIndexJob(
     }
 
     try {
+      if (isFileVisualEmbeddingReady(state.db, candidate.file.id, validation.modelId)) {
+        skipped += 1;
+        processed += 1;
+        if (entry) {
+          entry.snapshot.processed = processed;
+          entry.snapshot.indexedCount = indexed;
+          entry.snapshot.failureCount = failed;
+          entry.snapshot.skippedCount = skipped;
+          entry.snapshot.status =
+            processed === candidates.length
+              ? failed > 0
+                ? "completed_with_errors"
+                : "completed"
+              : "running";
+          emit(window, "visual-index-task-updated", entry.snapshot.id);
+        }
+        continue;
+      }
+
       await indexVisualCandidate(state, config, validation, candidate);
       indexed += 1;
     } catch (error) {

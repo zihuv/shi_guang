@@ -12,6 +12,7 @@ import { createCommandRegistry } from "./commands/registry";
 export { startCollectorServer } from "./commands/collector-server";
 export { requestLibrarySyncScan, startLibrarySyncService } from "./commands/library-sync-service";
 export { ensureDeletedFolderHoldingDir } from "./commands/trash-file-service";
+export { wakeAutoVisualIndexing } from "./commands/visual-ai-service";
 
 const rendererLogSchema = z.object({
   level: z.enum(["debug", "error", "info", "log", "trace", "warn"]).catch("info"),
