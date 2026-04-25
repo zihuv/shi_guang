@@ -85,6 +85,21 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+function getFolderDisplayPath(folders: FolderNode[], folderId: number): string | null {
+  for (const folder of folders) {
+    if (folder.id === folderId) {
+      return folder.name;
+    }
+
+    const childPath = getFolderDisplayPath(folder.children, folderId);
+    if (childPath) {
+      return `${folder.name}/${childPath}`;
+    }
+  }
+
+  return null;
+}
+
 export default function DetailPanel({ width }: DetailPanelProps) {
   const selectedFile = useSelectionStore((state) => state.selectedFile);
   const { folders, selectedFolderId } = useFolderStore();
@@ -133,9 +148,10 @@ export default function DetailPanel({ width }: DetailPanelProps) {
 }
 
 function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: number }) {
-  const { deleteFolder: deleteFolderFn } = useFolderStore();
+  const { deleteFolder: deleteFolderFn, folders } = useFolderStore();
   const selectedFolderId = useFolderStore((state) => state.selectedFolderId);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const folderDisplayPath = getFolderDisplayPath(folders, folder.id) ?? folder.name;
 
   const handleDelete = async () => {
     const result = await deleteFolderFn(folder.id);
@@ -215,8 +231,11 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 
           <div className="space-y-1.5">
             <h4 className={appSectionLabelClass}>路径</h4>
-            <p className="break-all text-[12px] leading-5 text-gray-500 dark:text-gray-400">
-              {folder.path}
+            <p
+              className="break-all text-[12px] leading-5 text-gray-500 dark:text-gray-400"
+              title={folderDisplayPath}
+            >
+              {folderDisplayPath}
             </p>
           </div>
         </div>
@@ -234,6 +253,7 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
 
   // Find folder by file's folderId
   const folder = file.folderId ? findFolderById(folders, file.folderId) : null;
+  const folderDisplayPath = file.folderId ? getFolderDisplayPath(folders, file.folderId) : null;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [imageSrc, setImageSrc] = useState<string>("");
   const [videoPosterSrc, setVideoPosterSrc] = useState<string>("");
@@ -784,7 +804,16 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
               </div>
             }
           />
-          {folder && <InfoRow label="文件夹" value={folder.name} />}
+          {folder && (
+            <InfoRow
+              label="文件夹"
+              value={
+                <span className="block truncate" title={folderDisplayPath ?? folder.name}>
+                  {folderDisplayPath ?? folder.name}
+                </span>
+              }
+            />
+          )}
           {/* File info list - left label, right value */}
           <InfoRow label="尺寸" value={`${file.width} x ${file.height}`} />
           <InfoRow label="大小" value={formatSize(file.size)} />
