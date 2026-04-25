@@ -1,8 +1,8 @@
-import { app, clipboard, nativeImage, shell } from "electron";
+import { app, nativeImage, shell } from "electron";
 import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
-import { serializeClipboardImportedImageItems, SHIGUANG_CLIPBOARD_FORMAT } from "../clipboard";
+import { writeFilesToClipboard } from "../clipboard-file-references";
 import {
   addIndexPath,
   addTagToFile,
@@ -681,28 +681,7 @@ export function createCommandRegistry(
       const files = numberArrayArg(args, "fileIds", "file_ids")
         .map((fileId) => getFileById(state.db, fileId))
         .filter((item): item is FileRecord => Boolean(item));
-      const paths = files.map((file) => file.path);
-      if (files.length === 1) {
-        const image = nativeImage.createFromPath(files[0].path);
-        if (!image.isEmpty()) {
-          clipboard.write({
-            image,
-            text: files[0].path,
-          });
-          clipboard.writeBuffer(
-            SHIGUANG_CLIPBOARD_FORMAT,
-            serializeClipboardImportedImageItems(files),
-          );
-          return;
-        }
-      }
-      clipboard.writeText(paths.join("\n"));
-      if (files.length > 0) {
-        clipboard.writeBuffer(
-          SHIGUANG_CLIPBOARD_FORMAT,
-          serializeClipboardImportedImageItems(files),
-        );
-      }
+      return writeFilesToClipboard(files);
     },
     start_drag_files: (args, window) => {
       const paths = numberArrayArg(args, "fileIds", "file_ids")

@@ -2,7 +2,7 @@ export const SHORTCUT_ACTIONS = [
   {
     id: "copySelectedToClipboard",
     label: "复制选中图片到剪贴板",
-    description: "复制当前选中的图片；单张图片复制像素内容，多选时复制文件引用",
+    description: "复制当前选中的图片；外部文件夹可粘贴文件，应用内粘贴保留元信息",
     defaultShortcut: "Mod+C",
   },
   {
