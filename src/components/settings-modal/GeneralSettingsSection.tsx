@@ -6,8 +6,9 @@ import {
 } from "@/stores/settingsStore";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
 import { SettingsRow, SettingsSectionBlock, StatusPill } from "./SettingsPrimitives";
-import { AlertTriangle, Moon, Plus, Sun, Trash } from "lucide-react";
+import { AlertTriangle, Moon, Plus, RefreshCw, Sun, Trash } from "lucide-react";
 
 interface GeneralSettingsSectionProps {
   currentIndexPath: string | null;
@@ -16,12 +17,17 @@ interface GeneralSettingsSectionProps {
   useTrash: boolean;
   theme: "light" | "dark";
   previewTrackpadZoomSpeed: number;
+  autoCheckUpdates: boolean;
+  appVersion: string;
+  isCheckingUpdates: boolean;
   onAddPath: () => void;
   onRebuildIndex: () => void;
   onSetDeleteMode: (useTrash: boolean) => void;
   onSetPreviewTrackpadZoomSpeed: (value: number) => void;
   onResetPreviewTrackpadZoomSpeed: () => void;
   onSetTheme: (theme: "light" | "dark") => void;
+  onSetAutoCheckUpdates: (enabled: boolean) => void;
+  onCheckUpdates: () => void;
 }
 
 export function GeneralSettingsSection({
@@ -31,12 +37,17 @@ export function GeneralSettingsSection({
   useTrash,
   theme,
   previewTrackpadZoomSpeed,
+  autoCheckUpdates,
+  appVersion,
+  isCheckingUpdates,
   onAddPath,
   onRebuildIndex,
   onSetDeleteMode,
   onSetPreviewTrackpadZoomSpeed,
   onResetPreviewTrackpadZoomSpeed,
   onSetTheme,
+  onSetAutoCheckUpdates,
+  onCheckUpdates,
 }: GeneralSettingsSectionProps) {
   return (
     <div className="flex flex-col gap-7">
@@ -58,6 +69,22 @@ export function GeneralSettingsSection({
               {isRebuilding ? "重建中..." : "重建索引"}
             </Button>
           </div>
+        </SettingsRow>
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock title="更新">
+        <SettingsRow title="当前版本">
+          <div className="flex items-center gap-2">
+            <StatusPill>{appVersion ? `v${appVersion}` : "读取中"}</StatusPill>
+            <Button variant="outline" onClick={onCheckUpdates} disabled={isCheckingUpdates}>
+              <RefreshCw className={cn("h-4 w-4", isCheckingUpdates && "animate-spin")} />
+              {isCheckingUpdates ? "检查中..." : "检查更新"}
+            </Button>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow title="自动检查更新">
+          <Switch checked={autoCheckUpdates} onCheckedChange={onSetAutoCheckUpdates} />
         </SettingsRow>
       </SettingsSectionBlock>
 

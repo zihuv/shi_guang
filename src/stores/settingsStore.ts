@@ -101,6 +101,7 @@ const AI_CONFIG_SETTING_KEY = "aiConfig";
 const VISUAL_SEARCH_SETTING_KEY = "visualSearch";
 const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY = "aiAutoAnalyzeOnImport";
 const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY = "aiBatchAnalyzeConcurrency";
+const AUTO_CHECK_UPDATES_SETTING_KEY = "autoCheckUpdates";
 
 let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let panelLayoutPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -198,6 +199,7 @@ interface Settings {
   aiBatchAnalyzeConcurrency: number;
   visualSearch: VisualSearchConfig;
   autoAnalyzeOnImport: boolean;
+  autoCheckUpdates: boolean;
   visualIndexStatus: VisualIndexStatus | null;
   visualModelValidation: VisualModelValidationResult | null;
   shortcuts: ShortcutConfig;
@@ -228,6 +230,7 @@ interface SettingsStore extends Settings {
   ) => void;
   setAiBatchAnalyzeConcurrency: (value: number) => Promise<void>;
   setAutoAnalyzeOnImport: (enabled: boolean) => Promise<void>;
+  setAutoCheckUpdates: (enabled: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
   resetShortcut: (actionId: ShortcutActionId) => Promise<void>;
   setPreviewTrackpadZoomSpeed: (speed: number) => Promise<void>;
@@ -252,6 +255,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   aiBatchAnalyzeConcurrency: DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
   visualSearch: cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG),
   autoAnalyzeOnImport: false,
+  autoCheckUpdates: true,
   visualIndexStatus: null,
   visualModelValidation: null,
   shortcuts: { ...DEFAULT_SHORTCUTS },
@@ -323,6 +327,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setAutoAnalyzeOnImport: async (enabled) => {
     await setSetting(AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY, enabled ? "true" : "false");
     set({ autoAnalyzeOnImport: enabled });
+  },
+
+  setAutoCheckUpdates: async (enabled) => {
+    await setSetting(AUTO_CHECK_UPDATES_SETTING_KEY, enabled ? "true" : "false");
+    set({ autoCheckUpdates: enabled });
   },
 
   setShortcut: async (actionId, shortcut) => {
@@ -408,6 +417,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let aiBatchAnalyzeConcurrency = DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
     let visualSearch = cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG);
     let autoAnalyzeOnImport = false;
+    let autoCheckUpdates = true;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
     let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
     let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
@@ -511,6 +521,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
+      const autoCheckUpdatesValue = await getSetting(AUTO_CHECK_UPDATES_SETTING_KEY);
+      if (autoCheckUpdatesValue !== null) {
+        autoCheckUpdates = autoCheckUpdatesValue === "true" || autoCheckUpdatesValue === "1";
+      }
+    } catch (e) {
+      console.error("Failed to load update check setting:", e);
+    }
+
+    try {
       const shortcutsValue = await getSetting(SHORTCUTS_SETTING_KEY);
       if (shortcutsValue) {
         shortcuts = resolveShortcuts(
@@ -577,6 +596,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       aiBatchAnalyzeConcurrency,
       visualSearch,
       autoAnalyzeOnImport,
+      autoCheckUpdates,
       shortcuts,
       previewTrackpadZoomSpeed,
       libraryViewMode,

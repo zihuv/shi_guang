@@ -17,6 +17,7 @@ export default defineConfig({
     ],
     nav: [
       { text: "首页", link: "/" },
+      { text: "下载", link: "/download" },
       {
         text: "指南",
         items: [

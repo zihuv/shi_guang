@@ -66,6 +66,7 @@ import {
 } from "../storage";
 import { getRecommendedVisualModelPath, validateVisualModelPath } from "../visual-search";
 import { encodeVisualSearchTextInUtility } from "../visual-index-utility-service.js";
+import { checkForUpdates } from "../updater";
 import type { AppState, FileRecord, ImportTaskItem } from "../types";
 import {
   type CommandHandler,
@@ -157,6 +158,8 @@ export function createCommandRegistry(
   getWindow: GetWindow,
 ): Record<string, CommandHandler> {
   const commands: Record<string, CommandHandler> = {
+    get_app_version: () => app.getVersion(),
+    check_for_updates: () => checkForUpdates({ manual: true }),
     get_all_files: (args) => getAllFiles(state.db, args),
     search_files: (args) => searchFiles(state.db, args),
     get_files_in_folder: (args) => getFilesInFolder(state.db, args),

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { testAiEndpoint, type AiEndpointTarget } from "@/services/desktop/files";
 import { getDesktopBridge } from "@/services/desktop/core";
+import { checkForUpdates, getAppVersion } from "@/services/desktop/system";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
@@ -50,6 +51,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   );
   const autoAnalyzeOnImport = useSettingsStore((state) => state.autoAnalyzeOnImport);
   const setAutoAnalyzeOnImport = useSettingsStore((state) => state.setAutoAnalyzeOnImport);
+  const autoCheckUpdates = useSettingsStore((state) => state.autoCheckUpdates);
+  const setAutoCheckUpdates = useSettingsStore((state) => state.setAutoCheckUpdates);
   const refreshVisualSearchStatus = useSettingsStore((state) => state.refreshVisualSearchStatus);
   const visualIndexStatus = useSettingsStore((state) => state.visualIndexStatus);
   const visualModelValidation = useSettingsStore((state) => state.visualModelValidation);
@@ -69,6 +72,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [isSelectingModelDir, setIsSelectingModelDir] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [isValidatingModelDir, setIsValidatingModelDir] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
   const [testingTargets, setTestingTargets] = useState<Record<AiConfigTarget, boolean>>({
     metadata: false,
   });
@@ -77,6 +82,11 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!open) return;
     void loadSettings();
+    void getAppVersion()
+      .then(setAppVersion)
+      .catch((error) => {
+        console.error("Failed to load app version:", error);
+      });
   }, [loadSettings, open]);
 
   useEffect(() => {
@@ -197,6 +207,30 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
   };
 
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdates(true);
+    const loadingToast = toast.loading("正在检查更新...");
+
+    try {
+      const result = await checkForUpdates();
+      if (result.status === "error") {
+        toast.error(`检查更新失败：${result.message}`, { id: loadingToast });
+        return;
+      }
+
+      if (result.status === "available") {
+        toast.success(result.message, { id: loadingToast });
+        return;
+      }
+
+      toast.info(result.message, { id: loadingToast });
+    } catch (error) {
+      toast.error(`检查更新失败：${String(error)}`, { id: loadingToast });
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="flex h-[42rem] max-h-[86vh] w-[62rem] max-w-[92vw] flex-col overflow-hidden border-transparent bg-[var(--app-surface)] p-0 shadow-[var(--app-shadow)]">
@@ -222,12 +256,17 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   useTrash={useTrash}
                   theme={theme}
                   previewTrackpadZoomSpeed={previewTrackpadZoomSpeed}
+                  autoCheckUpdates={autoCheckUpdates}
+                  appVersion={appVersion}
+                  isCheckingUpdates={isCheckingUpdates}
                   onAddPath={() => void handleAddPath()}
                   onRebuildIndex={() => void handleRebuildIndex()}
                   onSetDeleteMode={(enabled) => void setDeleteMode(enabled)}
                   onSetPreviewTrackpadZoomSpeed={(value) => void setPreviewTrackpadZoomSpeed(value)}
                   onResetPreviewTrackpadZoomSpeed={() => void setPreviewTrackpadZoomSpeed(1)}
                   onSetTheme={(nextTheme) => void setTheme(nextTheme)}
+                  onSetAutoCheckUpdates={(enabled) => void setAutoCheckUpdates(enabled)}
+                  onCheckUpdates={() => void handleCheckUpdates()}
                 />
               ) : activeSection === "ai" ? (
                 <AiSettingsSection

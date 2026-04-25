@@ -1,5 +1,20 @@
 import { invokeDesktop } from "@/services/desktop/core";
 
+export interface UpdateCheckResult {
+  status: "disabled" | "checking" | "available" | "not-available" | "downloaded" | "error";
+  message: string;
+  version?: string;
+  downloadUrl?: string;
+}
+
+export function getAppVersion() {
+  return invokeDesktop<string>("get_app_version");
+}
+
+export function checkForUpdates() {
+  return invokeDesktop<UpdateCheckResult>("check_for_updates");
+}
+
 export function copyFile(args: { fileId: number; targetFolderId: number | null }) {
   return invokeDesktop<void>("copy_file", args);
 }

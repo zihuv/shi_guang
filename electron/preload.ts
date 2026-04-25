@@ -12,6 +12,7 @@ const eventChannels = new Set([
   "thumbnail-build-request",
   "visual-index-task-updated",
   "visual-index-browser-decode-request",
+  "update-status",
 ]);
 
 contextBridge.exposeInMainWorld("shiguang", {

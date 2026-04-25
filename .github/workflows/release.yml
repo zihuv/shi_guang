@@ -142,11 +142,16 @@ jobs:
             args: --linux --x64
             files: |
               release/*.AppImage
+              release/*.AppImage.blockmap
               release/*.deb
+              release/latest-linux.yml
           - name: Windows x64
             platform: windows-2022
             args: --win --x64
-            files: release/*.exe
+            files: |
+              release/*.exe
+              release/*.exe.blockmap
+              release/latest.yml
 
     steps:
       - name: Checkout repository

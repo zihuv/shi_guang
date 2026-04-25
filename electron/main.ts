@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openDatabase } from "./database";
+import { getSetting } from "./database";
 import {
   ensureDeletedFolderHoldingDir,
   registerIpcHandlers,
@@ -25,6 +26,11 @@ import {
 } from "./commands";
 import { suspendVisualIndexing } from "./commands/visual-ai-service.js";
 import { releaseVisualSearchRuntime } from "./visual-search/index.js";
+import {
+  AUTO_CHECK_UPDATES_SETTING_KEY,
+  configureUpdater,
+  scheduleStartupUpdateCheck,
+} from "./updater";
 import {
   setVisualIndexUtilitySuspended,
   stopVisualIndexUtility,
@@ -53,6 +59,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 log.initialize();
+app.setAppUserModelId("com.zihuv.shiguang");
 
 if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
   app.commandLine.appendSwitch("remote-debugging-port", "9222");
@@ -585,7 +592,9 @@ async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(buildApplicationMenu());
   registerFileProtocol();
   registerIpcHandlers(appState, getMainWindow, assetToUrl);
+  configureUpdater({ getWindow: getMainWindow });
   await createMainWindow();
+  scheduleStartupUpdateCheck(getSetting(db, AUTO_CHECK_UPDATES_SETTING_KEY) !== "false");
   startLibrarySyncService(appState, getMainWindow);
   await startCollectorServer(appState, getMainWindow).catch((error) => {
     log.warn("Failed to start collector server", error);

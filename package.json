@@ -37,6 +37,7 @@
     "better-sqlite3": "^12.5.0",
     "chokidar": "^4.0.3",
     "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "fastify": "^5.6.2",
     "onnxruntime-node": "^1.24.3",
     "pdfjs-dist": "^5.6.205",
@@ -106,6 +107,14 @@
       "output": "release"
     },
     "artifactName": "${name}_${version}_${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zihuv",
+        "repo": "shiguang"
+      }
+    ],
+    "electronUpdaterCompatibility": ">=2.16",
     "files": [
       "out/**",
       "src/assets/app-icon.png",
