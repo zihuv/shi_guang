@@ -12,6 +12,7 @@ import type {
 export interface FileFilterPayload {
   query: string | null;
   natural_language_query: string | null;
+  image_query_file_id: number | null;
   folder_id: number | null;
   smart_view: SmartCollectionId | null;
   smart_seed: number | null;

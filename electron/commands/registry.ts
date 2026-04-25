@@ -21,6 +21,7 @@ import {
   getFilesInFolder,
   getFileById,
   getFileByPath,
+  getFileVisualEmbeddingQuery,
   getFolderById,
   getFolderByPath,
   getFolderTree,
@@ -166,6 +167,18 @@ export function createCommandRegistry(
     },
     filter_files: async (args) => {
       const filter = (args.filter ?? {}) as Record<string, unknown>;
+      const imageQueryFileId = Number(filter.image_query_file_id ?? filter.imageQueryFileId);
+      if (Number.isInteger(imageQueryFileId) && imageQueryFileId > 0) {
+        const query = getFileVisualEmbeddingQuery(state.db, imageQueryFileId);
+        if (!query) {
+          throw new Error("这张图片还没有可用的视觉索引，请先在设置中建立或更新视觉索引。");
+        }
+
+        return searchFilesByVisualEmbedding(state.db, args, query.modelId, query.embedding, {
+          excludeFileId: query.fileId,
+        });
+      }
+
       const naturalLanguageQuery = String(filter.natural_language_query ?? "").trim();
       if (!naturalLanguageQuery) {
         return filterFiles(state.db, args);

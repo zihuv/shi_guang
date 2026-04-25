@@ -46,21 +46,30 @@ interface LibraryPagination {
 interface FilterFilesInput {
   query?: string;
   naturalLanguageQuery?: string;
+  imageQueryFileId?: number | null;
   folderId?: number | null;
   smartView?: SmartCollectionId | null;
   smartSeed?: number | null;
+}
+
+interface ImageQueryFile {
+  id: number;
+  name: string;
 }
 
 interface LibraryQueryStore {
   files: FileItem[];
   selectedFolderId: number | null;
   searchQuery: string;
+  imageQueryFile: ImageQueryFile | null;
   isLoading: boolean;
   pagination: LibraryPagination;
   setPage: (page: number) => void;
   setPageSize: (pageSize: number) => void;
   resetPage: () => void;
   setSearchQuery: (query: string) => void;
+  searchSimilarToFile: (file: ImageQueryFile) => Promise<void>;
+  clearImageQuery: () => void;
   setSelectedFolderId: (folderId: number | null) => void;
   loadFiles: () => Promise<void>;
   loadFilesInFolder: (folderId: number | null) => Promise<void>;
@@ -267,6 +276,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   files: [],
   selectedFolderId: null,
   searchQuery: "",
+  imageQueryFile: null,
   isLoading: false,
   pagination: {
     page: 1,
@@ -290,7 +300,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   },
 
   setSearchQuery: (query) => {
-    set({ searchQuery: query });
+    set({ searchQuery: query, imageQueryFile: null });
     useFilterStore.getState().setSearchQuery(query);
     get().resetPage();
 
@@ -301,6 +311,36 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     searchDebounceTimer = setTimeout(() => {
       void get().runCurrentQuery();
     }, 250);
+  },
+
+  searchSimilarToFile: async (file) => {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+
+    useNavigationStore.getState().openLibrary("all");
+    useFilterStore.getState().setFolderId(null);
+    useFolderStore.getState().selectFolder(null);
+    useSelectionStore.getState().clearSelection();
+    usePreviewStore.getState().closePreview();
+    useSelectionStore.getState().setSelectedFile(null);
+    set({ imageQueryFile: file, searchQuery: "", selectedFolderId: null });
+    useFilterStore.getState().setSearchQuery("");
+    get().resetPage();
+    await get().runCurrentQuery(null);
+  },
+
+  clearImageQuery: () => {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+
+    set({ imageQueryFile: null, searchQuery: "" });
+    useFilterStore.getState().setSearchQuery("");
+    get().resetPage();
+    void get().runCurrentQuery();
   },
 
   setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
@@ -342,7 +382,12 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     });
 
     const criteria = useFilterStore.getState().criteria;
-    if (hasStructuredFilters(criteria) || get().searchQuery.trim() || hasSmartCollectionQuery) {
+    if (
+      hasStructuredFilters(criteria) ||
+      get().searchQuery.trim() ||
+      get().imageQueryFile ||
+      hasSmartCollectionQuery
+    ) {
       await get().runCurrentQuery(folderId);
       return;
     }
@@ -382,7 +427,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   },
 
   runCurrentQuery: async (folderIdOverride) => {
-    const { searchQuery, selectedFolderId } = get();
+    const { searchQuery, selectedFolderId, imageQueryFile } = get();
     const criteria = useFilterStore.getState().criteria;
     const folderId = folderIdOverride !== undefined ? folderIdOverride : selectedFolderId;
     const { activeSmartCollection, randomSeed } = useNavigationStore.getState();
@@ -391,7 +436,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
     if (hasStructuredFilters(criteria) || hasSmartCollectionQuery) {
       await get().filterFiles({
-        naturalLanguageQuery: searchQuery || undefined,
+        naturalLanguageQuery: imageQueryFile ? undefined : searchQuery || undefined,
+        imageQueryFileId: imageQueryFile?.id,
         folderId,
         smartView: activeSmartCollection,
         smartSeed: randomSeed,
@@ -399,9 +445,10 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       return;
     }
 
-    if (searchQuery.trim()) {
+    if (imageQueryFile || searchQuery.trim()) {
       await get().filterFiles({
-        naturalLanguageQuery: searchQuery,
+        naturalLanguageQuery: imageQueryFile ? undefined : searchQuery,
+        imageQueryFileId: imageQueryFile?.id,
         folderId,
         smartView: activeSmartCollection,
         smartSeed: randomSeed,
@@ -424,6 +471,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
           criteria,
           fallbackQuery: filter?.query,
           naturalLanguageQuery: filter?.naturalLanguageQuery,
+          imageQueryFileId: filter?.imageQueryFileId,
           folderId: filter?.folderId,
           smartView: filter?.smartView ?? useNavigationStore.getState().activeSmartCollection,
           smartSeed: filter?.smartSeed ?? useNavigationStore.getState().randomSeed,
@@ -437,7 +485,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       const errorMessage = getErrorMessage(error);
       console.error("Failed to filter files:", errorMessage);
       const naturalLanguageQuery = filter?.naturalLanguageQuery?.trim();
-      if (naturalLanguageQuery) {
+      if (naturalLanguageQuery || filter?.imageQueryFileId) {
         toast.error(errorMessage);
       }
       if (requestId === fileListRequestId) {

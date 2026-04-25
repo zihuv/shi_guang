@@ -1,13 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { toast } from "sonner";
+import { INTERNAL_FILE_DRAG_MIME } from "@/components/folder-tree/utils";
+import { getNameWithoutExt } from "@/stores/fileTypes";
 import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
 import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
+import { useSelectionStore } from "@/stores/selectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getDesktopBridge } from "@/services/desktop/core";
+import { getFile } from "@/services/desktop/files";
 import { showCurrentLibraryInExplorer } from "@/services/desktop/system";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import {
+  handlePrimaryClipboardShortcut,
+  handlePrimarySelectAll,
+} from "@/lib/textSelectionShortcuts";
 import {
   Check,
   ChevronDown,
@@ -22,6 +36,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { appTagPillClass } from "@/lib/ui";
 import appLogo from "@/assets/app-icon.png";
 
 interface HeaderProps {
@@ -31,6 +46,9 @@ interface HeaderProps {
 export default function Header({ onOpenSettings }: HeaderProps) {
   const searchQuery = useLibraryQueryStore((state) => state.searchQuery);
   const setSearchQuery = useLibraryQueryStore((state) => state.setSearchQuery);
+  const imageQueryFile = useLibraryQueryStore((state) => state.imageQueryFile);
+  const searchSimilarToFile = useLibraryQueryStore((state) => state.searchSimilarToFile);
+  const clearImageQuery = useLibraryQueryStore((state) => state.clearImageQuery);
   const importFiles = useImportStore((state) => state.importFiles);
   const importTask = useImportStore((state) => state.importTask);
   const aiMetadataTask = useAiBatchAnalyzeStore((state) => state.aiMetadataTask);
@@ -39,9 +57,11 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     useSettingsStore();
   const currentIndexPath = indexPaths[0] ?? null;
   const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useState(false);
+  const [isImageSearchDragOver, setIsImageSearchDragOver] = useState(false);
   const [isSelectingLibrary, setIsSelectingLibrary] = useState(false);
   const [isRebuildingLibrary, setIsRebuildingLibrary] = useState(false);
   const libraryMenuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const isImporting =
     !!importTask &&
     !["completed", "completed_with_errors", "cancelled", "failed"].includes(importTask.status);
@@ -74,6 +94,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
       }),
     [recentIndexPaths],
   );
+  const imageQueryLabel = imageQueryFile ? getNameWithoutExt(imageQueryFile.name) : "";
 
   useEffect(() => {
     if (!isLibraryMenuOpen) {
@@ -221,6 +242,120 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     }
   };
 
+  const hasInternalDragMime = (dataTransfer: DataTransfer | null) => {
+    return !!dataTransfer && Array.from(dataTransfer.types).includes(INTERNAL_FILE_DRAG_MIME);
+  };
+
+  const getDraggingStoreFileId = () => {
+    const { draggedPrimaryFileId, draggedFileIds } = useSelectionStore.getState();
+    const fileId = draggedPrimaryFileId ?? draggedFileIds[0] ?? null;
+    return Number.isInteger(fileId) && fileId > 0 ? fileId : null;
+  };
+
+  const isInternalAppFileDrag = (dataTransfer: DataTransfer | null) => {
+    if (hasInternalDragMime(dataTransfer)) {
+      return true;
+    }
+
+    const { isDraggingInternal, draggedFileIds } = useSelectionStore.getState();
+    return isDraggingInternal && draggedFileIds.length > 0;
+  };
+
+  const getDraggedAppFileId = (dataTransfer: DataTransfer | null) => {
+    if (!hasInternalDragMime(dataTransfer)) {
+      return getDraggingStoreFileId();
+    }
+
+    try {
+      if (!dataTransfer) {
+        return getDraggingStoreFileId();
+      }
+
+      const parsed = JSON.parse(dataTransfer.getData(INTERNAL_FILE_DRAG_MIME)) as unknown;
+      const fileId = Array.isArray(parsed) ? Number(parsed[0]) : Number(parsed);
+      if (Number.isInteger(fileId) && fileId > 0) {
+        return fileId;
+      }
+    } catch {
+      // Electron can expose our drag session while hiding custom MIME data from the drop target.
+    }
+
+    return getDraggingStoreFileId();
+  };
+
+  const handleSearchDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!isInternalAppFileDrag(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setIsImageSearchDragOver(true);
+  };
+
+  const handleSearchDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!isInternalAppFileDrag(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+
+    setIsImageSearchDragOver(false);
+  };
+
+  const handleSearchDrop = async (event: DragEvent<HTMLDivElement>) => {
+    const fileId = getDraggedAppFileId(event.dataTransfer);
+    if (!fileId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setIsImageSearchDragOver(false);
+
+    try {
+      const selectionStore = useSelectionStore.getState();
+      if (selectionStore.currentDragSessionId && !selectionStore.markInternalDropHandled()) {
+        return;
+      }
+
+      const file = await getFile(fileId);
+      await searchSimilarToFile({ id: file.id, name: file.name });
+    } catch (error) {
+      console.error("Failed to start image search:", error);
+      toast.error("以图搜图失败");
+    } finally {
+      useSelectionStore.getState().clearInternalFileDrag();
+    }
+  };
+
+  const handleClearImageQuery = () => {
+    clearImageQuery();
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+
+  const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (handlePrimarySelectAll(event) || handlePrimaryClipboardShortcut(event)) {
+      return;
+    }
+
+    if (
+      imageQueryFile &&
+      !searchQuery &&
+      !event.nativeEvent.isComposing &&
+      (event.key === "Backspace" || event.key === "Delete")
+    ) {
+      event.preventDefault();
+      handleClearImageQuery();
+    }
+  };
+
   return (
     <header className="app-topbar">
       <div className="flex h-full items-center gap-3 px-3">
@@ -327,14 +462,57 @@ export default function Header({ onOpenSettings }: HeaderProps) {
         </div>
 
         <div className="min-w-0 max-w-[38rem] flex-1">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            <Input
+          <div
+            className={cn(
+              "relative flex h-9 min-w-0 cursor-text items-center gap-1.5 rounded-[14px] border border-transparent bg-black/[0.035] pr-2 text-[13px] text-gray-800 transition-[border-color,box-shadow,background-color,color] focus-within:border-primary-500/35 focus-within:bg-black/[0.05] focus-within:ring-2 focus-within:ring-primary-500/18 dark:bg-white/[0.05] dark:text-gray-200 dark:focus-within:border-primary-500/40 dark:focus-within:bg-white/[0.07]",
+              imageQueryFile ? "pl-2" : "pl-9",
+              imageQueryFile && "border-primary-500/25 dark:border-primary-500/35",
+              isImageSearchDragOver &&
+                "border-primary-400 ring-2 ring-primary-400/30 dark:border-primary-500/70",
+            )}
+            onClick={() => searchInputRef.current?.focus()}
+            onDragEnter={handleSearchDragOver}
+            onDragOver={handleSearchDragOver}
+            onDragLeave={handleSearchDragLeave}
+            onDrop={(event) => void handleSearchDrop(event)}
+          >
+            {!imageQueryFile ? (
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            ) : null}
+            {imageQueryFile ? (
+              <span
+                className={cn(
+                  appTagPillClass,
+                  "h-6 min-w-0 max-w-[82%] flex-shrink bg-primary-600 py-0 pl-2.5 pr-1 text-[12px] text-primary-50 dark:bg-primary-500 dark:text-white",
+                )}
+                title={`以图搜图：${imageQueryFile.name}`}
+              >
+                <span className="truncate">以图搜图：{imageQueryLabel}</span>
+                <button
+                  type="button"
+                  className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/18"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClearImageQuery();
+                  }}
+                  title="移除以图搜图"
+                  aria-label="移除以图搜图"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ) : null}
+            <input
+              ref={searchInputRef}
               type="text"
-              placeholder="搜索图片，支持中文自然语言..."
+              placeholder={imageQueryFile ? "" : "搜索图片，支持中文自然语言..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 rounded-[14px] bg-black/[0.035] pl-9 dark:bg-white/[0.05]"
+              onKeyDown={handleSearchKeyDown}
+              className="input-system-font h-full min-w-[48px] flex-1 border-0 bg-transparent p-0 text-[13px] text-gray-800 placeholder:text-gray-400 focus:outline-none dark:text-gray-200"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
             />
           </div>
         </div>

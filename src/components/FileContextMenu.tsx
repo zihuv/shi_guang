@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { ExternalLink, FolderOpen, Copy, Move, Sparkles, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, FolderOpen, Move, ScanSearch, Sparkles, Trash2 } from "lucide-react";
 
 const AI_IMAGE_EXTENSIONS = new Set([
   "jpg",
@@ -75,6 +75,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   const selectedFiles = useSelectionStore((state) => state.selectedFiles);
   const files = useLibraryQueryStore((state) => state.files);
   const analyzeFileMetadata = useLibraryQueryStore((state) => state.analyzeFileMetadata);
+  const searchSimilarToFile = useLibraryQueryStore((state) => state.searchSimilarToFile);
   const startBatchAnalyze = useAiBatchAnalyzeStore((state) => state.startBatchAnalyze);
   const moveFiles = useLibraryQueryStore((state) => state.moveFiles);
   const copyFiles = useLibraryQueryStore((state) => state.copyFiles);
@@ -212,6 +213,15 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     await runBatchAnalyze(analyzableFiles);
   };
 
+  const handleSearchSimilar = async () => {
+    try {
+      await searchSimilarToFile({ id: file.id, name: file.name });
+    } catch (e) {
+      console.error("Failed to search similar images:", e);
+      toast.error(`以图搜图失败: ${String(e)}`);
+    }
+  };
+
   const runBatchAnalyze = async (filesToAnalyze: FileItem[]) => {
     if (filesToAnalyze.length === 0) {
       toast.error("没有可执行 AI 分析的图片");
@@ -308,6 +318,13 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
           >
             <Sparkles className="w-4 h-4 mr-2" />
             {aiMenuLabel}
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => triggerMenuAction("search-similar", handleSearchSimilar)}
+            onClick={() => triggerMenuAction("search-similar", handleSearchSimilar)}
+          >
+            <ScanSearch className="w-4 h-4 mr-2" />
+            以图搜图
           </ContextMenuItem>
           <ContextMenuSeparator />
 

@@ -48,8 +48,14 @@ describe("duplicate and similar detection", () => {
       return;
     }
 
-    const { filterFiles, getDuplicateOrSimilarFileIds, openDatabase, upsertFileVisualEmbedding } =
-      await import("../database");
+    const {
+      filterFiles,
+      getDuplicateOrSimilarFileIds,
+      getFileVisualEmbeddingQuery,
+      openDatabase,
+      searchFilesByVisualEmbedding,
+      upsertFileVisualEmbedding,
+    } = await import("../database");
     const tempDir = makeTempDir();
     const db = openDatabase(path.join(tempDir, "shiguang.db"), tempDir);
     const insertFile = db.prepare(
@@ -168,6 +174,22 @@ describe("duplicate and similar detection", () => {
         pageSize: 10,
       }).files.map((file) => file.id),
     ).toEqual([2, 1, 4, 3]);
+
+    const imageQuery = getFileVisualEmbeddingQuery(db, ids[2]);
+    expect(imageQuery?.modelId).toBe("clip-test");
+    expect(
+      imageQuery
+        ? searchFilesByVisualEmbedding(
+            db,
+            { filter: {}, page: 1, pageSize: 10 },
+            imageQuery.modelId,
+            imageQuery.embedding,
+            {
+              excludeFileId: imageQuery.fileId,
+            },
+          ).files.map((file) => file.id)
+        : [],
+    ).toEqual([2, 4, 5]);
 
     db.close();
   });

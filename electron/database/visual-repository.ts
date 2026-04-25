@@ -23,6 +23,13 @@ export type VisualIndexCounts = {
   outdated: number;
 };
 
+export type FileVisualEmbeddingQuery = {
+  fileId: number;
+  fileName: string;
+  modelId: string;
+  embedding: Float32Array;
+};
+
 const VISUAL_SEARCH_EXTENSIONS = new Set([
   "jpg",
   "jpeg",
@@ -342,10 +349,12 @@ export function searchFilesByVisualEmbedding(
   args: Record<string, unknown>,
   modelId: string,
   queryEmbedding: Float32Array,
+  options: { excludeFileId?: number | null } = {},
 ): PaginatedFiles {
   const filter = {
     ...((args.filter ?? {}) as Record<string, unknown>),
     natural_language_query: null,
+    image_query_file_id: null,
   };
   const { page, pageSize } = pageArgs(
     args.page as number | undefined,
@@ -396,6 +405,10 @@ export function searchFilesByVisualEmbedding(
 
   const rankedRows = attachTags(db, candidateRows)
     .map((file) => {
+      if (options.excludeFileId === file.id) {
+        return null;
+      }
+
       const embedding = embeddingMap.get(file.id);
       if (!embedding) {
         return null;
@@ -433,5 +446,49 @@ export function searchFilesByVisualEmbedding(
             score: item.score,
           }))
         : undefined,
+  };
+}
+
+export function getFileVisualEmbeddingQuery(
+  db: Database.Database,
+  fileId: number,
+): FileVisualEmbeddingQuery | null {
+  const row = db
+    .prepare(
+      `SELECT f.id, f.name, fve.model_id, fve.dimensions, fve.embedding
+       FROM file_visual_embeddings fve
+       JOIN files f ON f.id = fve.file_id
+       WHERE f.id = ?
+         AND f.deleted_at IS NULL
+         AND f.missing_at IS NULL
+         AND fve.status = 'ready'
+         AND fve.embedding IS NOT NULL
+         AND ${currentVisualSourceMatchSql()}
+       LIMIT 1`,
+    )
+    .get(fileId) as
+    | {
+        id: number;
+        name: string;
+        model_id: string;
+        dimensions: number;
+        embedding: Buffer;
+      }
+    | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  const embedding = decodeEmbeddingBlob(row.embedding, row.dimensions);
+  if (!embedding) {
+    return null;
+  }
+
+  return {
+    fileId: row.id,
+    fileName: row.name,
+    modelId: row.model_id,
+    embedding,
   };
 }
