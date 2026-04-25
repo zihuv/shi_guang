@@ -594,7 +594,7 @@ async function bootstrap(): Promise<void> {
   registerIpcHandlers(appState, getMainWindow, assetToUrl);
   configureUpdater({ getWindow: getMainWindow });
   await createMainWindow();
-  scheduleStartupUpdateCheck(getSetting(db, AUTO_CHECK_UPDATES_SETTING_KEY) !== "false");
+  scheduleStartupUpdateCheck(getSetting(db, AUTO_CHECK_UPDATES_SETTING_KEY) === "true");
   startLibrarySyncService(appState, getMainWindow);
   await startCollectorServer(appState, getMainWindow).catch((error) => {
     log.warn("Failed to start collector server", error);

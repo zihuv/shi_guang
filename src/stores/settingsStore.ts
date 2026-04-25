@@ -255,7 +255,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   aiBatchAnalyzeConcurrency: DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
   visualSearch: cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG),
   autoAnalyzeOnImport: false,
-  autoCheckUpdates: true,
+  autoCheckUpdates: false,
   visualIndexStatus: null,
   visualModelValidation: null,
   shortcuts: { ...DEFAULT_SHORTCUTS },
@@ -417,7 +417,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let aiBatchAnalyzeConcurrency = DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
     let visualSearch = cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG);
     let autoAnalyzeOnImport = false;
-    let autoCheckUpdates = true;
+    let autoCheckUpdates = false;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
     let previewTrackpadZoomSpeed = DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED;
     let libraryViewMode: LibraryViewMode = DEFAULT_LIBRARY_VIEW_MODE;
