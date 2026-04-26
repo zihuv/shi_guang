@@ -27,6 +27,7 @@ import {
   resolveAiConfig,
   resolveLibraryViewScales,
   resolveLibraryVisibleFields,
+  resolvePanelLayout,
   resolveVisualSearchConfig,
   serializeLibraryViewPreferences,
   serializePanelLayout,
@@ -133,6 +134,8 @@ function schedulePanelLayoutPersist(
   get: () => {
     sidebarWidth: number;
     detailPanelWidth: number;
+    isSidebarCollapsed: boolean;
+    isDetailPanelCollapsed: boolean;
   },
 ) {
   if (panelLayoutPersistTimer) {
@@ -140,10 +143,15 @@ function schedulePanelLayoutPersist(
   }
 
   panelLayoutPersistTimer = setTimeout(() => {
-    const { sidebarWidth, detailPanelWidth } = get();
+    const { sidebarWidth, detailPanelWidth, isSidebarCollapsed, isDetailPanelCollapsed } = get();
     void setSetting(
       PANEL_LAYOUT_SETTING_KEY,
-      serializePanelLayout(sidebarWidth, detailPanelWidth),
+      serializePanelLayout(
+        sidebarWidth,
+        detailPanelWidth,
+        isSidebarCollapsed,
+        isDetailPanelCollapsed,
+      ),
     ).catch((error) => {
       console.error("Failed to persist panel layout:", error);
     });
@@ -207,6 +215,8 @@ interface Settings {
   libraryVisibleFields: LibraryVisibleField[];
   sidebarWidth: number;
   detailPanelWidth: number;
+  isSidebarCollapsed: boolean;
+  isDetailPanelCollapsed: boolean;
 }
 
 interface SettingsStore extends Settings {
@@ -237,6 +247,8 @@ interface SettingsStore extends Settings {
   toggleLibraryVisibleField: (field: LibraryVisibleField) => void;
   setSidebarWidth: (width: number) => void;
   setDetailPanelWidth: (width: number) => void;
+  setSidebarCollapsed: (isCollapsed: boolean) => void;
+  setDetailPanelCollapsed: (isCollapsed: boolean) => void;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
   refreshVisualSearchStatus: () => Promise<void>;
@@ -261,6 +273,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   libraryVisibleFields: [...DEFAULT_LIBRARY_VISIBLE_FIELDS],
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   detailPanelWidth: DEFAULT_DETAIL_PANEL_WIDTH,
+  isSidebarCollapsed: false,
+  isDetailPanelCollapsed: false,
 
   setTheme: async (theme) => {
     await setSetting("theme", theme);
@@ -389,6 +403,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     schedulePanelLayoutPersist(get);
   },
 
+  setSidebarCollapsed: (isCollapsed) => {
+    set({ isSidebarCollapsed: isCollapsed });
+    schedulePanelLayoutPersist(get);
+  },
+
+  setDetailPanelCollapsed: (isCollapsed) => {
+    set({ isDetailPanelCollapsed: isCollapsed });
+    schedulePanelLayoutPersist(get);
+  },
+
   switchIndexPath: async (path) => {
     const nextPath = path.trim();
     if (!nextPath || get().indexPaths[0] === nextPath) {
@@ -414,6 +438,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let libraryVisibleFields = [...DEFAULT_LIBRARY_VISIBLE_FIELDS];
     let sidebarWidth = DEFAULT_SIDEBAR_WIDTH;
     let detailPanelWidth = DEFAULT_DETAIL_PANEL_WIDTH;
+    let isSidebarCollapsed = false;
+    let isDetailPanelCollapsed = false;
 
     // Get theme
     try {
@@ -553,13 +579,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const panelLayoutValue = await getSetting(PANEL_LAYOUT_SETTING_KEY);
       if (panelLayoutValue) {
-        const parsedLayout = JSON.parse(panelLayoutValue) as {
-          sidebarWidth?: unknown;
-          detailPanelWidth?: unknown;
-        };
-
-        sidebarWidth = clampSidebarWidth(Number(parsedLayout.sidebarWidth));
-        detailPanelWidth = clampDetailPanelWidth(Number(parsedLayout.detailPanelWidth));
+        const parsedLayout = resolvePanelLayout(JSON.parse(panelLayoutValue));
+        sidebarWidth = parsedLayout.sidebarWidth;
+        detailPanelWidth = parsedLayout.detailPanelWidth;
+        isSidebarCollapsed = parsedLayout.isSidebarCollapsed;
+        isDetailPanelCollapsed = parsedLayout.isDetailPanelCollapsed;
       }
     } catch (e) {
       console.error("Failed to load panel layout:", e);
@@ -581,6 +605,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       libraryVisibleFields,
       sidebarWidth,
       detailPanelWidth,
+      isSidebarCollapsed,
+      isDetailPanelCollapsed,
     });
 
     void get().refreshVisualSearchStatus();

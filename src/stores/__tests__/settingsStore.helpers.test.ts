@@ -5,11 +5,15 @@ import {
   clampPreviewTrackpadZoomSpeed,
   clampSidebarWidth,
   DEFAULT_AI_CONFIG,
+  DEFAULT_DETAIL_PANEL_WIDTH,
   DEFAULT_LIBRARY_VISIBLE_FIELDS,
+  DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_VISUAL_SEARCH_CONFIG,
   resolveAiConfig,
   resolveLibraryViewScales,
   resolveLibraryVisibleFields,
+  resolvePanelLayout,
+  serializePanelLayout,
   resolveVisualSearchConfig,
 } from "@/stores/settingsStore.helpers";
 
@@ -65,6 +69,34 @@ describe("settingsStore helpers", () => {
 
     expect(resolveLibraryVisibleFields(["name", "size"], 1)).toEqual(["name", "size", "tags"]);
     expect(resolveLibraryVisibleFields(["name", "size"], 2)).toEqual(["name", "size"]);
+  });
+
+  it("serializes panel layout collapse state while keeping legacy values valid", () => {
+    expect(resolvePanelLayout(null)).toEqual({
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      detailPanelWidth: DEFAULT_DETAIL_PANEL_WIDTH,
+      isSidebarCollapsed: false,
+      isDetailPanelCollapsed: false,
+    });
+
+    expect(
+      resolvePanelLayout({
+        sidebarWidth: 300,
+        detailPanelWidth: 360,
+      }),
+    ).toEqual({
+      sidebarWidth: 300,
+      detailPanelWidth: 360,
+      isSidebarCollapsed: false,
+      isDetailPanelCollapsed: false,
+    });
+
+    expect(JSON.parse(serializePanelLayout(300, 360, true, false))).toEqual({
+      sidebarWidth: 300,
+      detailPanelWidth: 360,
+      isSidebarCollapsed: true,
+      isDetailPanelCollapsed: false,
+    });
   });
 
   it("normalizes legacy ai config payloads into the metadata target", () => {

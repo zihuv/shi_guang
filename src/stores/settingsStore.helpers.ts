@@ -80,6 +80,13 @@ export interface VisualSearchConfig {
   runtime: VisualSearchRuntimeConfig;
 }
 
+export interface PanelLayout {
+  sidebarWidth: number;
+  detailPanelWidth: number;
+  isSidebarCollapsed: boolean;
+  isDetailPanelCollapsed: boolean;
+}
+
 export const DEFAULT_AI_SERVICE_CONFIG: AiServiceConfig = {
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
@@ -294,10 +301,36 @@ export function serializeLibraryViewPreferences(
   });
 }
 
-export function serializePanelLayout(sidebarWidth: number, detailPanelWidth: number) {
+export function resolvePanelLayout(value: unknown): PanelLayout {
+  if (!value || typeof value !== "object") {
+    return {
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      detailPanelWidth: DEFAULT_DETAIL_PANEL_WIDTH,
+      isSidebarCollapsed: false,
+      isDetailPanelCollapsed: false,
+    };
+  }
+
+  const layout = value as Partial<Record<keyof PanelLayout, unknown>>;
+  return {
+    sidebarWidth: clampSidebarWidth(Number(layout.sidebarWidth)),
+    detailPanelWidth: clampDetailPanelWidth(Number(layout.detailPanelWidth)),
+    isSidebarCollapsed: layout.isSidebarCollapsed === true,
+    isDetailPanelCollapsed: layout.isDetailPanelCollapsed === true,
+  };
+}
+
+export function serializePanelLayout(
+  sidebarWidth: number,
+  detailPanelWidth: number,
+  isSidebarCollapsed: boolean,
+  isDetailPanelCollapsed: boolean,
+) {
   return JSON.stringify({
     sidebarWidth,
     detailPanelWidth,
+    isSidebarCollapsed,
+    isDetailPanelCollapsed,
   });
 }
 

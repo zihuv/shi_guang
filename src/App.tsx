@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Toaster } from "sonner";
 import {
   MAX_DETAIL_PANEL_WIDTH,
@@ -54,7 +55,7 @@ function constrainPanelWidths(
   requestedSidebarWidth: number,
   requestedDetailPanelWidth: number,
 ) {
-  let sidebarWidth = clampSidebarWidth(requestedSidebarWidth);
+  let sidebarWidth = requestedSidebarWidth <= 0 ? 0 : clampSidebarWidth(requestedSidebarWidth);
   let detailPanelWidth =
     requestedDetailPanelWidth <= 0 ? 0 : clampDetailPanelWidth(requestedDetailPanelWidth);
 
@@ -87,7 +88,7 @@ function constrainPanelWidths(
   }
 
   return {
-    sidebarWidth: Math.max(48, Math.round(sidebarWidth)),
+    sidebarWidth: sidebarWidth > 0 ? Math.max(48, Math.round(sidebarWidth)) : 0,
     detailPanelWidth: detailPanelWidth > 0 ? Math.max(48, Math.round(detailPanelWidth)) : 0,
   };
 }
@@ -123,14 +124,59 @@ function PanelResizeHandle({
   );
 }
 
+function PanelEdgeToggle({
+  ariaLabel,
+  isCollapsed,
+  offset,
+  side,
+  title,
+  onClick,
+}: {
+  ariaLabel: string;
+  isCollapsed: boolean;
+  offset: number;
+  side: "left" | "right";
+  title: string;
+  onClick: () => void;
+}) {
+  const Icon =
+    side === "left"
+      ? isCollapsed
+        ? ChevronRight
+        : ChevronLeft
+      : isCollapsed
+        ? ChevronLeft
+        : ChevronRight;
+  const inset = isCollapsed ? 4 : Math.max(4, offset - 10);
+  const style = side === "left" ? { left: inset } : { right: inset };
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-pressed={!isCollapsed}
+      title={title}
+      className="absolute top-1/2 z-30 flex h-9 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--app-surface)]/45 text-gray-400 opacity-45 shadow-[0_4px_12px_rgba(15,23,42,0.08)] ring-1 ring-black/[0.03] backdrop-blur-sm transition-[background-color,color,opacity,box-shadow] hover:bg-[var(--app-surface-strong)]/95 hover:text-gray-700 hover:opacity-100 hover:shadow-[0_8px_18px_rgba(15,23,42,0.12)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-500 dark:ring-white/[0.04] dark:hover:text-gray-200"
+      style={style}
+      onClick={onClick}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 function App() {
   const hasBootstrapped = useBootstrapStore((state) => state.hasBootstrapped);
   const bootstrapError = useBootstrapStore((state) => state.bootstrapError);
   const theme = useSettingsStore((state) => state.theme);
   const sidebarWidthPreference = useSettingsStore((state) => state.sidebarWidth);
   const detailPanelWidthPreference = useSettingsStore((state) => state.detailPanelWidth);
+  const isSidebarCollapsed = useSettingsStore((state) => state.isSidebarCollapsed);
+  const isDetailPanelCollapsed = useSettingsStore((state) => state.isDetailPanelCollapsed);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const setDetailPanelWidth = useSettingsStore((state) => state.setDetailPanelWidth);
+  const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
+  const setDetailPanelCollapsed = useSettingsStore((state) => state.setDetailPanelCollapsed);
 
   const { importBinaryImages, importFiles } = useImportStore();
   const previewMode = usePreviewStore((state) => state.previewMode);
@@ -141,6 +187,8 @@ function App() {
   const clearSelection = useSelectionStore((state) => state.clearSelection);
   const setSelectedFile = useSelectionStore((state) => state.setSelectedFile);
   const currentView = useNavigationStore((state) => state.currentView);
+  const showsLibraryView = currentView === "library";
+  const showsDetailPanel = showsLibraryView && !isDetailPanelCollapsed;
   const [showSettings, setShowSettings] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
@@ -153,8 +201,8 @@ function App() {
 
   const { sidebarWidth, detailPanelWidth } = constrainPanelWidths(
     contentWidth,
-    sidebarWidthPreference,
-    currentView === "library" ? detailPanelWidthPreference : 0,
+    isSidebarCollapsed ? 0 : sidebarWidthPreference,
+    showsDetailPanel ? detailPanelWidthPreference : 0,
   );
   const sidebarWidthRef = useRef(sidebarWidth);
   const detailPanelWidthRef = useRef(detailPanelWidth);
@@ -461,9 +509,6 @@ function App() {
     );
   }
 
-  const showsLibraryView = currentView === "library";
-  const showsDetailPanel = showsLibraryView;
-
   return (
     <div
       className="app-shell flex h-screen flex-col"
@@ -497,14 +542,18 @@ function App() {
 
       <Header onOpenSettings={() => setShowSettings(true)} />
 
-      <div ref={contentContainerRef} className="flex flex-1 overflow-hidden">
-        <SidePanel width={sidebarWidth} />
+      <div ref={contentContainerRef} className="relative flex flex-1 overflow-hidden">
+        {!isSidebarCollapsed ? (
+          <>
+            <SidePanel width={sidebarWidth} />
 
-        <PanelResizeHandle
-          ariaLabel="调整左侧面板宽度"
-          isActive={activeResizeHandle === "sidebar"}
-          onMouseDown={handleResizeStart("sidebar")}
-        />
+            <PanelResizeHandle
+              ariaLabel="调整左侧面板宽度"
+              isActive={activeResizeHandle === "sidebar"}
+              onMouseDown={handleResizeStart("sidebar")}
+            />
+          </>
+        ) : null}
 
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           {currentView === "library" ? <FileGrid /> : null}
@@ -529,6 +578,26 @@ function App() {
 
             <DetailPanel width={detailPanelWidth} />
           </>
+        ) : null}
+
+        <PanelEdgeToggle
+          ariaLabel={isSidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
+          isCollapsed={isSidebarCollapsed}
+          offset={sidebarWidth}
+          side="left"
+          title={isSidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
+          onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
+        />
+
+        {showsLibraryView ? (
+          <PanelEdgeToggle
+            ariaLabel={isDetailPanelCollapsed ? "展开右侧栏" : "收起右侧栏"}
+            isCollapsed={isDetailPanelCollapsed}
+            offset={detailPanelWidth}
+            side="right"
+            title={isDetailPanelCollapsed ? "展开右侧栏" : "收起右侧栏"}
+            onClick={() => setDetailPanelCollapsed(!isDetailPanelCollapsed)}
+          />
         ) : null}
       </div>
 
