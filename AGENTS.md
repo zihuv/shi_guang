@@ -59,6 +59,7 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 - Keep SQLite migrations in `electron/database/migrations/`.
 - Use `PRAGMA user_version` and focused steps such as `v4-to-v5.ts`.
 - Keep `electron/database.ts` thin.
+- Add data migrations only for code that has shipped. For unreleased development changes, update the new shape directly.
 - Before changing existing user databases, create a backup and run migrations in a transaction.
 - Add or update migration tests when a test harness exists; for Electron ABI/native behavior, verify through Electron rather than plain Node.
 

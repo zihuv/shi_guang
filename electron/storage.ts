@@ -15,8 +15,6 @@ import {
 } from "./thumbnail";
 
 const LIBRARY_STATE_FILE = "library-state.json";
-const CURRENT_INDEX_PATH_FILE = "current-index-path.txt";
-const RECENT_INDEX_PATHS_FILE = "recent-index-paths.json";
 const MAX_RECENT_INDEX_PATHS = 8;
 const thumbnailBuildTasks = new Map<string, Promise<string | null>>();
 let pdfJsModuleReady: Promise<void> | null = null;
@@ -85,15 +83,6 @@ function emptyLibraryState(): LibraryState {
   };
 }
 
-async function readLegacyCurrentIndexPath(appDataDir: string): Promise<string | null> {
-  try {
-    const raw = await fs.readFile(path.join(appDataDir, CURRENT_INDEX_PATH_FILE), "utf8");
-    return raw.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
 function normalizeIndexPathValue(indexPath: string): string {
   return path.resolve(indexPath.trim());
 }
@@ -125,18 +114,6 @@ function dedupeRecentIndexPaths(paths: string[]): string[] {
   return next;
 }
 
-async function readLegacyRecentIndexPaths(appDataDir: string): Promise<string[]> {
-  try {
-    const raw = await fs.readFile(path.join(appDataDir, RECENT_INDEX_PATHS_FILE), "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? dedupeRecentIndexPaths(parsed.filter((item): item is string => typeof item === "string"))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 function sanitizeCurrentIndexPath(indexPath: string | null | undefined): string | null {
   if (typeof indexPath !== "string") {
     return null;
@@ -164,13 +141,6 @@ function sanitizeLibraryState(input: Partial<LibraryState>): LibraryState {
   };
 }
 
-async function removeLegacyLibraryStateFiles(appDataDir: string): Promise<void> {
-  await Promise.allSettled([
-    fs.rm(path.join(appDataDir, CURRENT_INDEX_PATH_FILE), { force: true }),
-    fs.rm(path.join(appDataDir, RECENT_INDEX_PATHS_FILE), { force: true }),
-  ]);
-}
-
 async function persistLibraryState(
   appDataDir: string,
   state: Partial<LibraryState>,
@@ -182,7 +152,6 @@ async function persistLibraryState(
     JSON.stringify(sanitized, null, 2),
     "utf8",
   );
-  await removeLegacyLibraryStateFiles(appDataDir);
   return sanitized;
 }
 
@@ -195,26 +164,10 @@ async function readPersistedLibraryState(appDataDir: string): Promise<LibrarySta
   }
 }
 
-async function migrateLegacyLibraryState(appDataDir: string): Promise<LibraryState> {
-  const currentPath = await readLegacyCurrentIndexPath(appDataDir);
-  const recentPaths = await readLegacyRecentIndexPaths(appDataDir);
-  return persistLibraryState(appDataDir, {
-    ...emptyLibraryState(),
-    currentPath,
-    recentPaths,
-  });
-}
-
 async function readLibraryState(appDataDir: string): Promise<LibraryState> {
   const persisted = await readPersistedLibraryState(appDataDir);
   if (persisted) {
     return persisted;
-  }
-
-  const legacyCurrentPath = await readLegacyCurrentIndexPath(appDataDir);
-  const legacyRecentPaths = await readLegacyRecentIndexPaths(appDataDir);
-  if (legacyCurrentPath || legacyRecentPaths.length > 0) {
-    return migrateLegacyLibraryState(appDataDir);
   }
 
   return emptyLibraryState();
