@@ -40,10 +40,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const aiConfig = useSettingsStore((state) => state.aiConfig);
   const setAiConfigField = useSettingsStore((state) => state.setAiConfigField);
-  const aiBatchAnalyzeConcurrency = useSettingsStore((state) => state.aiBatchAnalyzeConcurrency);
-  const setAiBatchAnalyzeConcurrency = useSettingsStore(
-    (state) => state.setAiBatchAnalyzeConcurrency,
-  );
   const visualSearch = useSettingsStore((state) => state.visualSearch);
   const setVisualSearchField = useSettingsStore((state) => state.setVisualSearchField);
   const setVisualSearchRuntimeField = useSettingsStore(
@@ -273,7 +269,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   aiConfig={aiConfig}
                   testingTargets={testingTargets}
                   autoAnalyzeOnImport={autoAnalyzeOnImport}
-                  aiBatchAnalyzeConcurrency={aiBatchAnalyzeConcurrency}
                   visualSearch={visualSearch}
                   visualIndexStatus={visualIndexStatus}
                   visualIndexTask={visualIndexTask}
@@ -285,9 +280,6 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                     void handleTestAiEndpoint(target, endpointTarget)
                   }
                   onSetAutoAnalyzeOnImport={(enabled) => void setAutoAnalyzeOnImport(enabled)}
-                  onSetAiBatchAnalyzeConcurrency={(value) =>
-                    void setAiBatchAnalyzeConcurrency(value)
-                  }
                   onSetVisualSearchField={setVisualSearchField}
                   onSetVisualSearchRuntimeField={setVisualSearchRuntimeField}
                   onSelectModelDir={() => void handleSelectModelDir()}

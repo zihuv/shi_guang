@@ -16,9 +16,13 @@ import { listenDesktop } from "@/services/desktop/core";
 interface AiBatchAnalyzeStore {
   aiMetadataTask: AiMetadataTaskSnapshot | null;
   setAiMetadataTask: (task: AiMetadataTaskSnapshot | null) => void;
+  watchAiMetadataTasks: () => void;
   startBatchAnalyze: (fileIds: number[]) => Promise<AiMetadataTaskSnapshot | null>;
   cancelBatchAnalyze: () => Promise<void>;
 }
+
+let isWatchingAiMetadataTasks = false;
+const trackedAiMetadataTaskIds = new Set<string>();
 
 async function waitForAiMetadataTask(
   taskId: string,
@@ -139,6 +143,44 @@ export const useAiBatchAnalyzeStore = create<AiBatchAnalyzeStore>((set, get) => 
 
   setAiMetadataTask: (task) => set({ aiMetadataTask: task }),
 
+  watchAiMetadataTasks: () => {
+    if (isWatchingAiMetadataTasks) {
+      return;
+    }
+    isWatchingAiMetadataTasks = true;
+
+    void listenDesktop<string>("ai-metadata-task-updated", (event) => {
+      const taskId = event.payload;
+      if (trackedAiMetadataTaskIds.has(taskId)) {
+        return;
+      }
+
+      const currentTask = get().aiMetadataTask;
+      if (currentTask && !TERMINAL_AI_METADATA_TASK_STATUSES.has(currentTask.status)) {
+        return;
+      }
+
+      trackedAiMetadataTaskIds.add(taskId);
+      void getAiMetadataTask(taskId)
+        .then((snapshot) => {
+          set({ aiMetadataTask: snapshot });
+          return waitForAiMetadataTask(taskId, (nextTask) => {
+            set({ aiMetadataTask: nextTask });
+          });
+        })
+        .then((finalTask) =>
+          finalizeAiMetadataTask(finalTask, (nextTask) => set({ aiMetadataTask: nextTask })),
+        )
+        .catch((error) => {
+          console.error("Failed to track AI metadata task:", error);
+          set({ aiMetadataTask: null });
+        });
+    }).catch((error) => {
+      isWatchingAiMetadataTasks = false;
+      console.error("Failed to listen AI metadata tasks:", error);
+    });
+  },
+
   startBatchAnalyze: async (fileIds) => {
     const uniqueFileIds = [...new Set(fileIds)].filter((fileId) => Number.isFinite(fileId));
     if (uniqueFileIds.length === 0) {
@@ -154,7 +196,12 @@ export const useAiBatchAnalyzeStore = create<AiBatchAnalyzeStore>((set, get) => 
 
     try {
       const task = await startAiMetadataTask(uniqueFileIds);
+      const isAlreadyTracked = trackedAiMetadataTaskIds.has(task.id);
+      trackedAiMetadataTaskIds.add(task.id);
       set({ aiMetadataTask: task });
+      if (isAlreadyTracked) {
+        return task;
+      }
 
       void waitForAiMetadataTask(task.id, (nextTask) => {
         set({ aiMetadataTask: nextTask });

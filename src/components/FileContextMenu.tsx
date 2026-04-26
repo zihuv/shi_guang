@@ -192,7 +192,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
       try {
         const imageDataUrl = await buildAiImageDataUrl(analyzableFiles[0].path);
         await analyzeFileMetadata(analyzableFiles[0].id, imageDataUrl);
-        toast.success("AI 已更新名称、标签和备注", { id: loadingToast });
+        toast.success("AI 分析已完成", { id: loadingToast });
       } catch (e) {
         console.error("Failed to analyze file metadata:", e);
         toast.error(`AI 分析失败: ${String(e)}`, { id: loadingToast });

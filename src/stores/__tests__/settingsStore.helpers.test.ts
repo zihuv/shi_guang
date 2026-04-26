@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  clampAiBatchAnalyzeConcurrency,
   clampDetailPanelWidth,
   clampLibraryViewScale,
   clampPreviewTrackpadZoomSpeed,
@@ -19,10 +18,6 @@ describe("settingsStore helpers", () => {
     expect(clampPreviewTrackpadZoomSpeed(Number.NaN)).toBe(1);
     expect(clampPreviewTrackpadZoomSpeed(0.26)).toBe(0.3);
     expect(clampPreviewTrackpadZoomSpeed(10)).toBe(3);
-
-    expect(clampAiBatchAnalyzeConcurrency(-1)).toBe(1);
-    expect(clampAiBatchAnalyzeConcurrency(3.4)).toBe(3);
-    expect(clampAiBatchAnalyzeConcurrency(99)).toBe(5);
 
     expect(clampLibraryViewScale("grid", 0.37)).toBe(0.5);
     expect(clampLibraryViewScale("list", 0.8)).toBe(0.82);
@@ -86,6 +81,7 @@ describe("settingsStore helpers", () => {
         baseUrl: "https://legacy.example/v1",
         apiKey: "legacy-key",
         model: "gpt-4.1-mini",
+        analysis: DEFAULT_AI_CONFIG.metadata.analysis,
       },
     });
 
@@ -103,6 +99,7 @@ describe("settingsStore helpers", () => {
         baseUrl: "https://service.example/v1",
         apiKey: "service-key",
         model: "gpt-5.4",
+        analysis: DEFAULT_AI_CONFIG.metadata.analysis,
       },
     });
   });

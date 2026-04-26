@@ -1,3 +1,16 @@
+import {
+  DEFAULT_AI_METADATA_ANALYSIS,
+  type AiMetadataAnalysisConfig,
+  type AiMetadataAnalysisField,
+  type AiMetadataAnalysisFieldConfig,
+} from "@/lib/aiMetadataDefaults";
+
+export type {
+  AiMetadataAnalysisConfig,
+  AiMetadataAnalysisField,
+  AiMetadataAnalysisFieldConfig,
+} from "@/lib/aiMetadataDefaults";
+
 export type LibraryViewMode = "grid" | "list" | "adaptive";
 export type LibraryVisibleField = "name" | "ext" | "size" | "dimensions" | "tags";
 const LIBRARY_VISIBLE_FIELDS_VERSION = 2;
@@ -6,9 +19,6 @@ export const DEFAULT_PREVIEW_TRACKPAD_ZOOM_SPEED = 1;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MIN = 0.2;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_MAX = 3;
 export const PREVIEW_TRACKPAD_ZOOM_SPEED_STEP = 0.1;
-export const DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY = 5;
-export const MIN_AI_BATCH_ANALYZE_CONCURRENCY = 1;
-export const MAX_AI_BATCH_ANALYZE_CONCURRENCY = 5;
 export const DEFAULT_LIBRARY_VIEW_MODE: LibraryViewMode = "grid";
 export const DEFAULT_SIDEBAR_WIDTH = 240;
 export const DEFAULT_DETAIL_PANEL_WIDTH = 288;
@@ -44,6 +54,7 @@ export interface AiServiceConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  analysis: AiMetadataAnalysisConfig;
 }
 
 export interface AiConfig {
@@ -73,6 +84,7 @@ export const DEFAULT_AI_SERVICE_CONFIG: AiServiceConfig = {
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
   model: "",
+  analysis: cloneAiMetadataAnalysisConfig(DEFAULT_AI_METADATA_ANALYSIS),
 };
 
 export const DEFAULT_AI_CONFIG: AiConfig = {
@@ -94,7 +106,21 @@ export const DEFAULT_VISUAL_SEARCH_CONFIG: VisualSearchConfig = {
 
 export function cloneAiConfig(config: AiConfig): AiConfig {
   return {
-    metadata: { ...config.metadata },
+    metadata: {
+      ...config.metadata,
+      analysis: cloneAiMetadataAnalysisConfig(config.metadata.analysis),
+    },
+  };
+}
+
+export function cloneAiMetadataAnalysisConfig(
+  config: AiMetadataAnalysisConfig,
+): AiMetadataAnalysisConfig {
+  return {
+    filename: { ...config.filename },
+    tags: { ...config.tags },
+    description: { ...config.description },
+    rating: { ...config.rating },
   };
 }
 
@@ -126,16 +152,6 @@ export function clampPreviewTrackpadZoomSpeed(value: number) {
     (
       Math.round(clamped / PREVIEW_TRACKPAD_ZOOM_SPEED_STEP) * PREVIEW_TRACKPAD_ZOOM_SPEED_STEP
     ).toFixed(1),
-  );
-}
-
-export function clampAiBatchAnalyzeConcurrency(value: number) {
-  if (!Number.isFinite(value)) {
-    return DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
-  }
-
-  return Math.round(
-    Math.max(MIN_AI_BATCH_ANALYZE_CONCURRENCY, Math.min(MAX_AI_BATCH_ANALYZE_CONCURRENCY, value)),
   );
 }
 
@@ -291,6 +307,42 @@ export function resolveAiConfig(value: unknown): AiConfig {
   }
 
   const config = value as Record<string, unknown>;
+  const resolveAnalysisField = (
+    field: AiMetadataAnalysisField,
+    value: unknown,
+  ): AiMetadataAnalysisFieldConfig => {
+    const defaultField = DEFAULT_AI_SERVICE_CONFIG.analysis[field];
+    if (!value || typeof value !== "object") {
+      return { ...defaultField };
+    }
+
+    const fieldConfig = value as Partial<Record<keyof AiMetadataAnalysisFieldConfig, unknown>>;
+    const prompt =
+      typeof fieldConfig.prompt === "string" && fieldConfig.prompt.trim()
+        ? fieldConfig.prompt
+        : defaultField.prompt;
+
+    return {
+      enabled:
+        typeof fieldConfig.enabled === "boolean" ? fieldConfig.enabled : defaultField.enabled,
+      prompt,
+    };
+  };
+
+  const resolveAnalysisConfig = (value: unknown): AiMetadataAnalysisConfig => {
+    const analysisConfig =
+      value && typeof value === "object"
+        ? (value as Partial<Record<AiMetadataAnalysisField, unknown>>)
+        : {};
+
+    return {
+      filename: resolveAnalysisField("filename", analysisConfig.filename),
+      tags: resolveAnalysisField("tags", analysisConfig.tags),
+      description: resolveAnalysisField("description", analysisConfig.description),
+      rating: resolveAnalysisField("rating", analysisConfig.rating),
+    };
+  };
+
   const resolveServiceConfig = (
     serviceValue: unknown,
     legacyModelKey?: string,
@@ -316,6 +368,7 @@ export function resolveAiConfig(value: unknown): AiConfig {
             : DEFAULT_AI_SERVICE_CONFIG.baseUrl,
       apiKey: typeof serviceConfig?.apiKey === "string" ? serviceConfig.apiKey : legacyApiKey,
       model: typeof serviceConfig?.model === "string" ? serviceConfig.model : legacyModel,
+      analysis: resolveAnalysisConfig(serviceConfig?.analysis),
     };
   };
 

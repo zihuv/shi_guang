@@ -8,14 +8,12 @@ import {
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import {
-  clampAiBatchAnalyzeConcurrency,
   clampDetailPanelWidth,
   clampLibraryViewScale,
   clampPreviewTrackpadZoomSpeed,
   clampSidebarWidth,
   cloneAiConfig,
   cloneVisualSearchConfig,
-  DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
   DEFAULT_AI_CONFIG,
   DEFAULT_DETAIL_PANEL_WIDTH,
   DEFAULT_LIBRARY_VISIBLE_FIELDS,
@@ -59,12 +57,10 @@ import {
 import { getDeleteMode, setDeleteMode as setDeleteModeCommand } from "@/services/desktop/trash";
 
 export {
-  clampAiBatchAnalyzeConcurrency,
   clampDetailPanelWidth,
   clampLibraryViewScale,
   clampPreviewTrackpadZoomSpeed,
   clampSidebarWidth,
-  DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
   DEFAULT_AI_CONFIG,
   DEFAULT_DETAIL_PANEL_WIDTH,
   DEFAULT_LIBRARY_VISIBLE_FIELDS,
@@ -74,10 +70,8 @@ export {
   DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_VISUAL_SEARCH_CONFIG,
   LIBRARY_VIEW_SCALE_STEP,
-  MAX_AI_BATCH_ANALYZE_CONCURRENCY,
   MAX_DETAIL_PANEL_WIDTH,
   MAX_SIDEBAR_WIDTH,
-  MIN_AI_BATCH_ANALYZE_CONCURRENCY,
   PREVIEW_TRACKPAD_ZOOM_SPEED_MAX,
   PREVIEW_TRACKPAD_ZOOM_SPEED_MIN,
   PREVIEW_TRACKPAD_ZOOM_SPEED_STEP,
@@ -93,6 +87,12 @@ export {
   type VisualSearchRuntimeDevice,
 } from "@/stores/settingsStore.helpers";
 
+export type {
+  AiMetadataAnalysisConfig,
+  AiMetadataAnalysisField,
+  AiMetadataAnalysisFieldConfig,
+} from "@/stores/settingsStore.helpers";
+
 const SHORTCUTS_SETTING_KEY = "shortcuts";
 const PREVIEW_TRACKPAD_ZOOM_SPEED_SETTING_KEY = "previewTrackpadZoomSpeed";
 const LIBRARY_VIEW_PREFERENCES_SETTING_KEY = "libraryViewPreferences";
@@ -100,7 +100,6 @@ const PANEL_LAYOUT_SETTING_KEY = "panelLayout";
 const AI_CONFIG_SETTING_KEY = "aiConfig";
 const VISUAL_SEARCH_SETTING_KEY = "visualSearch";
 const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY = "aiAutoAnalyzeOnImport";
-const AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY = "aiBatchAnalyzeConcurrency";
 const AUTO_CHECK_UPDATES_SETTING_KEY = "autoCheckUpdates";
 
 let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -196,7 +195,6 @@ interface Settings {
   recentIndexPaths: string[];
   useTrash: boolean;
   aiConfig: AiConfig;
-  aiBatchAnalyzeConcurrency: number;
   visualSearch: VisualSearchConfig;
   autoAnalyzeOnImport: boolean;
   autoCheckUpdates: boolean;
@@ -228,7 +226,6 @@ interface SettingsStore extends Settings {
     key: K,
     value: VisualSearchRuntimeConfig[K],
   ) => void;
-  setAiBatchAnalyzeConcurrency: (value: number) => Promise<void>;
   setAutoAnalyzeOnImport: (enabled: boolean) => Promise<void>;
   setAutoCheckUpdates: (enabled: boolean) => Promise<void>;
   setShortcut: (actionId: ShortcutActionId, shortcut: string) => Promise<void>;
@@ -252,7 +249,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   recentIndexPaths: [],
   useTrash: true,
   aiConfig: cloneAiConfig(DEFAULT_AI_CONFIG),
-  aiBatchAnalyzeConcurrency: DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY,
   visualSearch: cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG),
   autoAnalyzeOnImport: false,
   autoCheckUpdates: false,
@@ -316,12 +312,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       },
     }));
     scheduleVisualSearchPersist(get);
-  },
-
-  setAiBatchAnalyzeConcurrency: async (value) => {
-    const nextConcurrency = clampAiBatchAnalyzeConcurrency(value);
-    await setSetting(AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY, String(nextConcurrency));
-    set({ aiBatchAnalyzeConcurrency: nextConcurrency });
   },
 
   setAutoAnalyzeOnImport: async (enabled) => {
@@ -414,7 +404,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let recentIndexPaths: string[] = [];
     let useTrash: boolean = true;
     let aiConfig = cloneAiConfig(DEFAULT_AI_CONFIG);
-    let aiBatchAnalyzeConcurrency = DEFAULT_AI_BATCH_ANALYZE_CONCURRENCY;
     let visualSearch = cloneVisualSearchConfig(DEFAULT_VISUAL_SEARCH_CONFIG);
     let autoAnalyzeOnImport = false;
     let autoCheckUpdates = false;
@@ -501,17 +490,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
 
     try {
-      const concurrencyValue = await getSetting(AI_BATCH_ANALYZE_CONCURRENCY_SETTING_KEY);
-      if (concurrencyValue !== null) {
-        aiBatchAnalyzeConcurrency = clampAiBatchAnalyzeConcurrency(
-          Number.parseInt(concurrencyValue, 10),
-        );
-      }
-    } catch (e) {
-      console.error("Failed to load AI batch analyze concurrency:", e);
-    }
-
-    try {
       const autoAnalyzeValue = await getSetting(AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY);
       if (autoAnalyzeValue !== null) {
         autoAnalyzeOnImport = autoAnalyzeValue === "true" || autoAnalyzeValue === "1";
@@ -593,7 +571,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       recentIndexPaths: recentIndexPaths.filter((item) => item !== (indexPaths[0] ?? null)) || [],
       useTrash,
       aiConfig,
-      aiBatchAnalyzeConcurrency,
       visualSearch,
       autoAnalyzeOnImport,
       autoCheckUpdates,

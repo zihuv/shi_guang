@@ -7,6 +7,7 @@ import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { useFilterStore } from "@/stores/filterStore";
+import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
 import { getLastSelectedFolderId } from "@/services/desktop/indexing";
 import type { FolderNode } from "@/stores/folderStore";
 
@@ -44,6 +45,7 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
     set({ isBootstrapping: true, bootstrapError: null });
 
     try {
+      useAiBatchAnalyzeStore.getState().watchAiMetadataTasks();
       await useSettingsStore.getState().loadSettings();
       await useFilterStore.getState().loadPreferences();
       await useTagStore.getState().loadTags();

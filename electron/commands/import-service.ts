@@ -9,11 +9,13 @@ import {
   getFileById,
   getFolderById,
   getIndexPaths,
+  getSetting,
   upsertFile,
   type UpsertFileInput,
 } from "../database";
 import {
   buildThumbHash,
+  canAnalyzeImage,
   computeVisualContentHash,
   detectExtensionFromBytes,
   detectExtensionFromPath,
@@ -24,7 +26,11 @@ import { hasThumbnailCachePath, getOrCreateThumbnail } from "../storage";
 import { decideThumbnailGeneration, isVideoThumbnailExt } from "../thumbnail";
 import type { AppState, FileRecord, ImportTaskItem, ImportTaskSnapshot } from "../types";
 import { emit, taskId } from "./common";
-import { maybeAutoIndexImportedFile } from "./visual-ai-service";
+import {
+  hasEnabledAiMetadataAnalysisFields,
+  maybeAutoIndexImportedFile,
+  startAiMetadataTask,
+} from "./visual-ai-service";
 
 const recentImports = new Map<string, number>();
 let autoThumbnailQueue = Promise.resolve();
@@ -313,6 +319,14 @@ function importTaskSource(item: ImportTaskItem): string {
   return String(item.path ?? "");
 }
 
+function shouldAutoAnalyzeImportedMetadata(state: AppState): boolean {
+  const value = getSetting(state.db, "aiAutoAnalyzeOnImport");
+  if (value !== "true" && value !== "1") {
+    return false;
+  }
+  return hasEnabledAiMetadataAnalysisFields(state);
+}
+
 async function runImportTask(
   state: AppState,
   window: BrowserWindow | null,
@@ -322,6 +336,7 @@ async function runImportTask(
   if (!entry) return;
   entry.snapshot.status = "running";
   emit(window, "import-task-updated", id);
+  const autoAnalyzeFileIds: number[] = [];
 
   for (const [index, item] of entry.items.entries()) {
     if (entry.cancelled) {
@@ -382,6 +397,9 @@ async function runImportTask(
               : await importFilePath(state, String(item.path ?? ""), entry.folderId);
       entry.snapshot.successCount += 1;
       entry.snapshot.results.push({ index, status: "completed", source, error: null, file });
+      if (canAnalyzeImage(file.ext)) {
+        autoAnalyzeFileIds.push(file.id);
+      }
       postImport(state, window, file);
     } catch (error) {
       entry.snapshot.failureCount += 1;
@@ -402,6 +420,10 @@ async function runImportTask(
           : "completed"
         : "running";
     emit(window, "import-task-updated", id);
+  }
+
+  if (autoAnalyzeFileIds.length > 0 && shouldAutoAnalyzeImportedMetadata(state)) {
+    startAiMetadataTask(state, window, autoAnalyzeFileIds);
   }
 }
 

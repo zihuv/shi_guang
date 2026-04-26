@@ -5,11 +5,11 @@ import type {
 } from "@/services/desktop/files";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { AI_METADATA_FIELDS } from "@/lib/aiMetadataDefaults";
 import {
-  MAX_AI_BATCH_ANALYZE_CONCURRENCY,
-  MIN_AI_BATCH_ANALYZE_CONCURRENCY,
   type AiConfig,
   type AiConfigTarget,
+  type AiMetadataAnalysisField,
   type AiServiceConfig,
   type VisualSearchConfig,
   type VisualSearchProviderPolicy,
@@ -24,14 +24,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
+import { Textarea } from "@/components/ui/Textarea";
 import { SettingsRow, SettingsSectionBlock, StatusPill } from "./SettingsPrimitives";
-
-const AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS = Array.from(
-  {
-    length: MAX_AI_BATCH_ANALYZE_CONCURRENCY - MIN_AI_BATCH_ANALYZE_CONCURRENCY + 1,
-  },
-  (_, index) => MIN_AI_BATCH_ANALYZE_CONCURRENCY + index,
-);
 
 const RUNTIME_DEFAULT_SELECT_VALUE = "__default__";
 const FGCLIP_MAX_PATCH_OPTIONS = [128, 256, 576, 784, 1024] as const;
@@ -56,6 +50,12 @@ const VISUAL_SEARCH_PROVIDER_POLICY_OPTIONS: Array<{
   { value: "service", label: "Service" },
   { value: "auto", label: "Auto" },
 ];
+const AI_METADATA_FIELD_LABELS: Record<AiMetadataAnalysisField, string> = {
+  filename: "文件名",
+  tags: "标签",
+  description: "备注",
+  rating: "评价",
+};
 
 function parseOptionalPositiveInteger(value: string): number | null {
   const trimmed = value.trim();
@@ -70,7 +70,6 @@ interface AiSettingsSectionProps {
   aiConfig: AiConfig;
   testingTargets: Record<AiConfigTarget, boolean>;
   autoAnalyzeOnImport: boolean;
-  aiBatchAnalyzeConcurrency: number;
   visualSearch: VisualSearchConfig;
   visualIndexStatus: VisualIndexStatus | null;
   visualIndexTask: VisualIndexTaskSnapshot | null;
@@ -84,7 +83,6 @@ interface AiSettingsSectionProps {
   ) => void;
   onTestAiEndpoint: (target: AiConfigTarget, endpointTarget: AiEndpointTarget) => void;
   onSetAutoAnalyzeOnImport: (enabled: boolean) => void;
-  onSetAiBatchAnalyzeConcurrency: (value: number) => void;
   onSetVisualSearchField: <K extends keyof VisualSearchConfig>(
     field: K,
     value: VisualSearchConfig[K],
@@ -212,11 +210,43 @@ function FeatureToggle({
   );
 }
 
+function AiMetadataPromptRow({
+  field,
+  enabled,
+  prompt,
+  onSetEnabled,
+  onSetPrompt,
+}: {
+  field: AiMetadataAnalysisField;
+  enabled: boolean;
+  prompt: string;
+  onSetEnabled: (enabled: boolean) => void;
+  onSetPrompt: (prompt: string) => void;
+}) {
+  const label = AI_METADATA_FIELD_LABELS[field];
+
+  return (
+    <SettingsRow title={label} className="items-start md:items-start">
+      <div className="flex w-full min-w-0 flex-col gap-2 md:w-[min(32rem,52vw)]">
+        <div className="flex items-center justify-end">
+          <Switch checked={enabled} onCheckedChange={onSetEnabled} aria-label={`${label}分析`} />
+        </div>
+        <Textarea
+          value={prompt}
+          onChange={(event) => onSetPrompt(event.target.value)}
+          disabled={!enabled}
+          rows={field === "rating" ? 5 : 7}
+          className="min-h-[104px]"
+        />
+      </div>
+    </SettingsRow>
+  );
+}
+
 export function AiSettingsSection({
   aiConfig,
   testingTargets,
   autoAnalyzeOnImport,
-  aiBatchAnalyzeConcurrency,
   visualSearch,
   visualIndexStatus,
   visualIndexTask,
@@ -226,7 +256,6 @@ export function AiSettingsSection({
   onSetAiConfigField,
   onTestAiEndpoint,
   onSetAutoAnalyzeOnImport,
-  onSetAiBatchAnalyzeConcurrency,
   onSetVisualSearchField,
   onSetVisualSearchRuntimeField,
   onSelectModelDir,
@@ -258,6 +287,18 @@ export function AiSettingsSection({
     ? Math.min(100, Math.round((visualIndexTask.processed / visualIndexTask.total) * 100))
     : 0;
   const visualIndexCountLabel = `${visualIndexTask?.processed ?? 0}/${visualIndexTask?.total ?? 0}`;
+  const updateMetadataAnalysisField = (
+    field: AiMetadataAnalysisField,
+    patch: Partial<(typeof aiConfig.metadata.analysis)[AiMetadataAnalysisField]>,
+  ) => {
+    onSetAiConfigField("metadata", "analysis", {
+      ...aiConfig.metadata.analysis,
+      [field]: {
+        ...aiConfig.metadata.analysis[field],
+        ...patch,
+      },
+    });
+  };
   const visualIndexActionLabel = visualSearch.processUnindexedOnly
     ? "处理未索引图片"
     : "重建视觉索引";
@@ -331,24 +372,19 @@ export function AiSettingsSection({
               enabled={autoAnalyzeOnImport}
               onChange={onSetAutoAnalyzeOnImport}
             />
-            <SettingsRow title="并发数量" className="py-2">
-              <Select
-                value={String(aiBatchAnalyzeConcurrency)}
-                displayValue={`${aiBatchAnalyzeConcurrency} 张`}
-                onValueChange={(value) => onSetAiBatchAnalyzeConcurrency(Number(value))}
-                className="w-24 shrink-0"
-                triggerClassName={SETTINGS_SELECT_TRIGGER_CLASS_NAME}
-              >
-                <SelectContent>
-                  {AI_BATCH_ANALYZE_CONCURRENCY_OPTIONS.map((value) => (
-                    <SelectItem key={value} value={String(value)}>
-                      {value} 张
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingsRow>
           </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          {AI_METADATA_FIELDS.map((field) => (
+            <AiMetadataPromptRow
+              key={field}
+              field={field}
+              enabled={aiConfig.metadata.analysis[field].enabled}
+              prompt={aiConfig.metadata.analysis[field].prompt}
+              onSetEnabled={(enabled) => updateMetadataAnalysisField(field, { enabled })}
+              onSetPrompt={(prompt) => updateMetadataAnalysisField(field, { prompt })}
+            />
+          ))}
         </div>
       </SettingsSectionBlock>
 
