@@ -64,6 +64,19 @@ export function registerIpcHandlers(
     return fs.readFile(filePath, "utf8");
   });
   ipcMain.handle("shiguang:asset:toUrl", (_event, filePath: string) => assetToUrl(filePath));
+  ipcMain.handle("shiguang:window:set-fullscreen", (event, enabled: boolean) => {
+    const window = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
+    if (!window || window.isDestroyed()) {
+      return false;
+    }
+
+    window.setFullScreen(Boolean(enabled));
+    return window.isFullScreen();
+  });
+  ipcMain.handle("shiguang:window:is-fullscreen", (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
+    return Boolean(window && !window.isDestroyed() && window.isFullScreen());
+  });
   ipcMain.handle("shiguang:log", (_event, level: string, message: string) => {
     const payload = rendererLogSchema.parse({ level, message });
     const writer =

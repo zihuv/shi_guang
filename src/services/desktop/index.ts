@@ -5,3 +5,4 @@ export * as desktopIndexing from "@/services/desktop/indexing";
 export * as desktopSystem from "@/services/desktop/system";
 export * as desktopTags from "@/services/desktop/tags";
 export * as desktopTrash from "@/services/desktop/trash";
+export * as desktopWindow from "@/services/desktop/window";

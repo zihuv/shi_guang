@@ -12,6 +12,7 @@ const eventChannels = new Set([
   "thumbnail-build-request",
   "visual-index-task-updated",
   "visual-index-browser-decode-request",
+  "window-fullscreen-changed",
   "update-status",
 ]);
 
@@ -57,6 +58,11 @@ contextBridge.exposeInMainWorld("shiguang", {
   },
   asset: {
     toUrl: (filePath: string) => ipcRenderer.invoke("shiguang:asset:toUrl", filePath),
+  },
+  window: {
+    setFullscreen: (enabled: boolean) =>
+      ipcRenderer.invoke("shiguang:window:set-fullscreen", enabled),
+    isFullscreen: () => ipcRenderer.invoke("shiguang:window:is-fullscreen"),
   },
   log: (level: string, message: string) => ipcRenderer.invoke("shiguang:log", level, message),
 });

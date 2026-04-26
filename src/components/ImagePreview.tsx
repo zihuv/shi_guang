@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { toast } from "sonner";
 import { copyFilesToClipboard } from "@/lib/clipboard";
 import {
@@ -20,6 +20,11 @@ import { usePreviewSource } from "@/components/image-preview/usePreviewSource";
 import { usePreviewZoomPan } from "@/components/image-preview/usePreviewZoomPan";
 import { updateFileDimensions } from "@/services/desktop/files";
 import { openFile, showInExplorer } from "@/services/desktop/system";
+import {
+  isWindowFullscreen,
+  listenWindowFullscreenChanged,
+  setWindowFullscreen,
+} from "@/services/desktop/window";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { usePreviewStore } from "@/stores/previewStore";
@@ -27,6 +32,46 @@ import { useSelectionStore } from "@/stores/selectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { buildAiImageDataUrl, getFilePreviewMode, isVideoFile } from "@/utils";
+
+const FULLSCREEN_EVENT_FALLBACK_TIMEOUT_MS = 2200;
+
+function waitForWindowFullscreenEvent(expectedFullscreen: boolean) {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      window.clearTimeout(timeoutId);
+      unsubscribe?.();
+      resolve();
+    };
+
+    const timeoutId = window.setTimeout(finish, FULLSCREEN_EVENT_FALLBACK_TIMEOUT_MS);
+
+    void listenWindowFullscreenChanged((payload) => {
+      if (payload.isFullscreen === expectedFullscreen) {
+        finish();
+      }
+    })
+      .then((nextUnsubscribe) => {
+        if (settled) {
+          nextUnsubscribe();
+          return;
+        }
+
+        unsubscribe = nextUnsubscribe;
+      })
+      .catch((error) => {
+        console.error("Failed to wait for native fullscreen event:", error);
+        finish();
+      });
+  });
+}
 
 export default function ImagePreview() {
   const previewMode = usePreviewStore((state) => state.previewMode);
@@ -48,6 +93,7 @@ export default function ImagePreview() {
 
   const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null);
   const persistedDimensionsRef = useRef<Record<number, string>>({});
+  const nativeFullscreenRestoreRef = useRef<boolean | null>(null);
 
   const currentFolderName = selectedFolderId
     ? folders.find((folder) => folder.id === selectedFolderId)?.name || "未知文件夹"
@@ -150,6 +196,105 @@ export default function ImagePreview() {
     }
   }, [previewFiles.length, previewIndex, setPreviewIndex]);
 
+  const setPreviewFullscreen = useCallback(async (enabled: boolean) => {
+    if (enabled) {
+      setIsFullscreen(true);
+
+      try {
+        if (nativeFullscreenRestoreRef.current === null) {
+          nativeFullscreenRestoreRef.current = await isWindowFullscreen();
+        }
+        await setWindowFullscreen(true);
+      } catch (error) {
+        console.error("Failed to enter native fullscreen:", error);
+        nativeFullscreenRestoreRef.current = null;
+        setIsFullscreen(false);
+      }
+      return;
+    }
+
+    const restoreFullscreen = nativeFullscreenRestoreRef.current ?? false;
+
+    try {
+      const shouldWaitForNativeExit = !restoreFullscreen && (await isWindowFullscreen());
+      const waitForNativeExit = shouldWaitForNativeExit
+        ? waitForWindowFullscreenEvent(false)
+        : null;
+
+      await setWindowFullscreen(restoreFullscreen);
+      await waitForNativeExit;
+    } catch (error) {
+      console.error("Failed to leave native fullscreen:", error);
+    } finally {
+      nativeFullscreenRestoreRef.current = null;
+      setIsFullscreen(false);
+    }
+  }, []);
+
+  const closePreviewWithFullscreenExit = useCallback(() => {
+    if (isFullscreen) {
+      void setPreviewFullscreen(false).finally(closePreview);
+      return;
+    }
+    closePreview();
+  }, [closePreview, isFullscreen, setPreviewFullscreen]);
+
+  useEffect(() => {
+    if (!previewMode || !isFullscreen) {
+      return;
+    }
+
+    let cleanup: (() => void) | null = null;
+    let disposed = false;
+
+    void listenWindowFullscreenChanged((payload) => {
+      if (!payload.isFullscreen && nativeFullscreenRestoreRef.current !== null) {
+        flushSync(() => {
+          nativeFullscreenRestoreRef.current = null;
+          setIsFullscreen(false);
+        });
+      }
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+        cleanup = unsubscribe;
+      })
+      .catch((error) => {
+        console.error("Failed to listen for native fullscreen changes:", error);
+      });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [isFullscreen, previewMode]);
+
+  useEffect(() => {
+    if (previewMode || !isFullscreen) {
+      return;
+    }
+
+    void setPreviewFullscreen(false);
+  }, [isFullscreen, previewMode, setPreviewFullscreen]);
+
+  useEffect(
+    () => () => {
+      const restoreFullscreen = nativeFullscreenRestoreRef.current;
+      if (restoreFullscreen === null) {
+        return;
+      }
+
+      nativeFullscreenRestoreRef.current = null;
+      void setWindowFullscreen(restoreFullscreen).catch((error) => {
+        console.error("Failed to restore native fullscreen:", error);
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!previewMode) return;
 
@@ -157,9 +302,9 @@ export default function ImagePreview() {
       switch (event.key) {
         case "Escape":
           if (isFullscreen) {
-            setIsFullscreen(false);
+            void setPreviewFullscreen(false);
           } else {
-            closePreview();
+            closePreviewWithFullscreenExit();
           }
           break;
         case "ArrowLeft":
@@ -171,7 +316,7 @@ export default function ImagePreview() {
         case "f":
         case "F":
           if (previewType !== "none") {
-            setIsFullscreen((prev) => !prev);
+            void setPreviewFullscreen(!isFullscreen);
           }
           break;
       }
@@ -179,7 +324,15 @@ export default function ImagePreview() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closePreview, goToNext, goToPrev, isFullscreen, previewMode, previewType]);
+  }, [
+    closePreviewWithFullscreenExit,
+    goToNext,
+    goToPrev,
+    isFullscreen,
+    previewMode,
+    previewType,
+    setPreviewFullscreen,
+  ]);
 
   const flatFolders = flattenFolders(folders);
 
@@ -231,14 +384,14 @@ export default function ImagePreview() {
   const handleDeleteFile = async () => {
     try {
       await deleteFile(currentFile.id);
-      closePreview();
+      closePreviewWithFullscreenExit();
     } catch (error) {
       console.error("Failed to delete file:", error);
     }
   };
 
   const toggleFullscreen = () => {
-    setIsFullscreen((prev) => !prev);
+    void setPreviewFullscreen(!isFullscreen);
   };
 
   const hydrateCurrentFileDimensions = useCallback(
@@ -369,18 +522,26 @@ export default function ImagePreview() {
     <TextPreviewPane content={textContent} />
   ) : imageSrc ? (
     isVideo ? (
-      <div className="flex h-full min-h-full items-center justify-center p-4">
+      <div
+        className={`flex h-full min-h-full items-center justify-center ${isFullscreen ? "p-0" : "p-4"}`}
+      >
         <video
           src={imageSrc}
           controls
           playsInline
           preload="metadata"
-          className={`${isFullscreen ? "max-w-6xl shadow-2xl" : "max-w-5xl shadow-lg"} max-h-full w-full rounded-lg bg-black`}
+          className={`max-h-full bg-black ${
+            isFullscreen
+              ? "h-full w-full max-w-full object-contain"
+              : "w-full max-w-5xl rounded-lg shadow-lg"
+          }`}
         />
       </div>
     ) : isImageLike ? (
       isFitMode || scaledImageWidth === null || scaledImageHeight === null ? (
-        <div className="flex h-full min-h-full items-center justify-center p-4">
+        <div
+          className={`flex h-full min-h-full items-center justify-center ${isFullscreen ? "p-0" : "p-4"}`}
+        >
           <img
             src={imageSrc}
             alt={currentFile.name}
@@ -483,7 +644,7 @@ export default function ImagePreview() {
       onZoomIn={handleZoomIn}
       onFitToView={handleFitToView}
       onToggleFullscreen={toggleFullscreen}
-      onClose={closePreview}
+      onClose={closePreviewWithFullscreenExit}
       onGoPrev={goToPrev}
       onGoNext={goToNext}
       onSelectPreviewIndex={setPreviewIndex}

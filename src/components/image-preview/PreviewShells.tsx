@@ -1,11 +1,30 @@
-import type { PointerEventHandler, ReactNode, RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEventHandler,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import type { FileItem } from "@/stores/fileTypes";
 import { formatSize } from "@/utils";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import { ThumbnailItem } from "@/components/image-preview/PreviewHelpers";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/ContextMenu";
 import { OVERLAY_BUTTON_CLASS, OVERLAY_CHIP_CLASS } from "./constants";
-import { Scan, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  Scan,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+
+const FULLSCREEN_CONTROLS_HIDE_DELAY_MS = 900;
 
 interface PreviewViewportProps {
   canPanImage: boolean;
@@ -106,15 +125,49 @@ export function FullscreenPreviewShell({
   onGoNext,
   ...viewportProps
 }: FullscreenPreviewShellProps) {
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideControlsTimerRef = useRef<number | null>(null);
+
+  const clearHideControlsTimer = useCallback(() => {
+    if (hideControlsTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(hideControlsTimerRef.current);
+    hideControlsTimerRef.current = null;
+  }, []);
+
+  const showControls = useCallback(() => {
+    setControlsVisible(true);
+    clearHideControlsTimer();
+    hideControlsTimerRef.current = window.setTimeout(() => {
+      setControlsVisible(false);
+      hideControlsTimerRef.current = null;
+    }, FULLSCREEN_CONTROLS_HIDE_DELAY_MS);
+  }, [clearHideControlsTimer]);
+
+  useEffect(() => {
+    showControls();
+    return clearHideControlsTimer;
+  }, [clearHideControlsTimer, currentNum, previewType, showControls, supportsZoom, totalFiles]);
+
+  const controlsClassName = `transition-opacity duration-200 ${
+    controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
+  }`;
+
   return (
     <div className="fixed inset-0 z-[80] bg-black text-white">
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className="relative h-full w-full">
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-24 bg-gradient-to-b from-black/70 to-transparent" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-20 bg-gradient-to-t from-black/50 to-transparent" />
-
-            <div className="absolute left-4 top-4 z-20 flex items-center gap-2">
+          <div
+            className="relative h-full w-full bg-black"
+            onMouseDown={showControls}
+            onMouseMove={showControls}
+            onTouchStart={showControls}
+          >
+            <div
+              className={`absolute left-4 top-4 z-20 flex items-center gap-2 ${controlsClassName}`}
+            >
               {supportsZoom && (
                 <>
                   <button onClick={onZoomOut} className={OVERLAY_BUTTON_CLASS} title="缩小">
@@ -135,7 +188,9 @@ export function FullscreenPreviewShell({
               )}
             </div>
 
-            <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+            <div
+              className={`absolute right-4 top-4 z-20 flex items-center gap-2 ${controlsClassName}`}
+            >
               {previewType === "thumbnail" && (
                 <span className={OVERLAY_CHIP_CLASS}>快照缩略图</span>
               )}
@@ -149,14 +204,7 @@ export function FullscreenPreviewShell({
                 className={OVERLAY_BUTTON_CLASS}
                 title="退出全屏 (Esc)"
               >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
+                <X className="h-5 w-5" />
               </button>
             </div>
 
@@ -165,46 +213,32 @@ export function FullscreenPreviewShell({
                 <button
                   onClick={onGoPrev}
                   disabled={!canGoPrev}
-                  className={`${OVERLAY_BUTTON_CLASS} absolute left-4 top-1/2 z-20 -translate-y-1/2`}
+                  className={`${OVERLAY_BUTTON_CLASS} ${controlsClassName} absolute left-4 top-1/2 z-20 -translate-y-1/2`}
                   title="上一张"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
+                  <ChevronLeft className="h-5 w-5" />
                 </button>
                 <button
                   onClick={onGoNext}
                   disabled={!canGoNext}
-                  className={`${OVERLAY_BUTTON_CLASS} absolute right-4 top-1/2 z-20 -translate-y-1/2`}
+                  className={`${OVERLAY_BUTTON_CLASS} ${controlsClassName} absolute right-4 top-1/2 z-20 -translate-y-1/2`}
                   title="下一张"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
+                  <ChevronRight className="h-5 w-5" />
                 </button>
               </>
             )}
 
             <div
               ref={viewportProps.viewportRef}
-              className={`preview-wheel-container h-full w-full overflow-auto ${
+              className={`preview-wheel-container h-full w-full overflow-auto [&::-webkit-scrollbar]:hidden ${
                 viewportProps.canPanImage
                   ? viewportProps.isPanning
                     ? "cursor-grabbing"
                     : "cursor-grab"
                   : ""
               }`}
-              style={{ scrollbarGutter: "stable" }}
+              style={{ scrollbarGutter: "stable", scrollbarWidth: "none" }}
               onPointerDown={viewportProps.onPointerDown}
               onPointerMove={viewportProps.onPointerMove}
               onPointerUp={viewportProps.onPointerUp}
@@ -336,7 +370,11 @@ export function StandardPreviewShell({
                 className="rounded px-2 py-1 text-sm hover:bg-gray-200 dark:hover:bg-gray-700"
                 title={isFullscreen ? "退出全屏 (F)" : "全屏预览 (F)"}
               >
-                {isFullscreen ? "退出全屏" : "全屏"}
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
               </button>
             </>
           )}

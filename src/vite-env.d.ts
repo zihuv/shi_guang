@@ -36,6 +36,10 @@ interface ShiguangDesktopApi {
   asset: {
     toUrl(path: string): Promise<string>;
   };
+  window: {
+    setFullscreen(enabled: boolean): Promise<boolean>;
+    isFullscreen(): Promise<boolean>;
+  };
   log(level: string, message: string): Promise<void>;
 }
 
