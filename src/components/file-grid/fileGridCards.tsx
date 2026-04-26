@@ -166,7 +166,7 @@ export function FileCard({
         <div
           data-file-id={file.id}
           {...externalDragProps}
-          onMouseDownCapture={onClick}
+          onClick={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
             FILE_CARD_BASE_CLASS,
@@ -312,7 +312,7 @@ export function AdaptiveFileCard({
         <div
           data-file-id={file.id}
           {...externalDragProps}
-          onMouseDownCapture={onClick}
+          onClick={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
             FILE_CARD_BASE_CLASS,
@@ -444,7 +444,7 @@ export function FileRow({
         <div
           data-file-id={file.id}
           {...externalDragProps}
-          onMouseDownCapture={onClick}
+          onClick={onClick}
           onDoubleClick={onDoubleClick}
           className={cn(
             "file-card relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-[16px] p-2.5 transition-colors duration-100",
