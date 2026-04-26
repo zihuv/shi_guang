@@ -27,6 +27,8 @@ import {
 const FULLSCREEN_CONTROLS_HIDE_DELAY_MS = 900;
 const PREVIEW_TOOL_BUTTON_CLASS = cn(appIconButtonClass, "size-8 rounded-lg");
 const PREVIEW_THUMB_NAV_BUTTON_CLASS = cn(appIconButtonClass, "size-9 flex-shrink-0 rounded-xl");
+const PREVIEW_SIDE_NAV_BUTTON_CLASS =
+  "absolute top-1/2 z-20 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--app-surface)]/70 text-gray-500 opacity-45 shadow-sm ring-1 ring-black/5 backdrop-blur transition hover:bg-[var(--app-surface)]/95 hover:text-gray-800 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-15 dark:bg-black/35 dark:text-gray-300 dark:ring-white/10 dark:hover:bg-black/55 dark:hover:text-white";
 
 interface PreviewViewportProps {
   canPanImage: boolean;
@@ -92,7 +94,7 @@ function PreviewViewport({
       <ContextMenuTrigger asChild>
         <div
           ref={viewportRef}
-          className={`preview-wheel-container flex-1 overflow-auto ${
+          className={`preview-wheel-container h-full flex-1 overflow-auto ${
             canPanImage ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
           }`}
           style={{ scrollbarGutter: "stable" }}
@@ -154,6 +156,9 @@ export function FullscreenPreviewShell({
   const controlsClassName = `transition-opacity duration-200 ${
     controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
   }`;
+  const sideControlsClassName = `transition-opacity duration-200 ${
+    controlsVisible ? "opacity-55 hover:opacity-90" : "pointer-events-none opacity-0"
+  }`;
 
   return (
     <div className="fixed inset-0 z-[80] bg-black text-white">
@@ -213,7 +218,7 @@ export function FullscreenPreviewShell({
                 <button
                   onClick={onGoPrev}
                   disabled={!canGoPrev}
-                  className={`${OVERLAY_BUTTON_CLASS} ${controlsClassName} absolute left-4 top-1/2 z-20 -translate-y-1/2`}
+                  className={`${OVERLAY_BUTTON_CLASS} ${sideControlsClassName} absolute left-4 top-1/2 z-20 -translate-y-1/2`}
                   title="上一张"
                 >
                   <ChevronLeft className="h-5 w-5" />
@@ -221,7 +226,7 @@ export function FullscreenPreviewShell({
                 <button
                   onClick={onGoNext}
                   disabled={!canGoNext}
-                  className={`${OVERLAY_BUTTON_CLASS} ${controlsClassName} absolute right-4 top-1/2 z-20 -translate-y-1/2`}
+                  className={`${OVERLAY_BUTTON_CLASS} ${sideControlsClassName} absolute right-4 top-1/2 z-20 -translate-y-1/2`}
                   title="下一张"
                 >
                   <ChevronRight className="h-5 w-5" />
@@ -300,34 +305,16 @@ export function StandardPreviewShell({
 
   return (
     <div className="flex h-full flex-col bg-[var(--app-canvas)]">
-      <div className="flex h-12 items-center justify-between bg-[var(--app-surface)] px-4">
-        <div className="flex min-w-0 items-center gap-4">
+      <div className="relative flex h-12 items-center justify-between bg-[var(--app-surface)] px-4">
+        <div className="relative z-10 flex min-w-0 flex-1 items-center gap-4 pr-4">
           <span className={cn(appPanelTitleClass, "truncate")}>{currentFolderName}</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onGoPrev}
-            disabled={!canGoPrev}
-            className={cn(PREVIEW_TOOL_BUTTON_CLASS, !canGoPrev && "cursor-not-allowed opacity-40")}
-            title="上一张"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <span className="min-w-[60px] text-center text-[14px] font-medium text-gray-600 dark:text-gray-300">
-            {currentNum} / {totalFiles}
-          </span>
-          <button
-            onClick={onGoNext}
-            disabled={!canGoNext}
-            className={cn(PREVIEW_TOOL_BUTTON_CLASS, !canGoNext && "cursor-not-allowed opacity-40")}
-            title="下一张"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
+        <div className="pointer-events-none absolute left-1/2 top-1/2 min-w-[64px] -translate-x-1/2 -translate-y-1/2 text-center text-[13px] font-medium text-gray-500 dark:text-gray-400">
+          {currentNum} / {totalFiles}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="relative z-10 flex flex-shrink-0 items-center gap-3">
           {previewType === "thumbnail" && (
             <span className="rounded-full bg-black/[0.045] px-2.5 py-1 text-[11px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">
               快照缩略图
@@ -380,7 +367,32 @@ export function StandardPreviewShell({
         </div>
       </div>
 
-      <PreviewViewport {...viewportProps} />
+      <div className="relative min-h-0 flex-1">
+        <PreviewViewport {...viewportProps} />
+
+        {totalFiles > 1 && (
+          <>
+            <button
+              onClick={onGoPrev}
+              disabled={!canGoPrev}
+              className={cn(PREVIEW_SIDE_NAV_BUTTON_CLASS, "left-4")}
+              title="上一张"
+              aria-label="上一张"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={onGoNext}
+              disabled={!canGoNext}
+              className={cn(PREVIEW_SIDE_NAV_BUTTON_CLASS, "right-4")}
+              title="下一张"
+              aria-label="下一张"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+      </div>
 
       <div className="flex h-[72px] items-center gap-2 bg-[var(--app-surface)] px-4">
         <button
