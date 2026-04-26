@@ -8,8 +8,8 @@ import {
   type RefObject,
 } from "react";
 import type { FileItem } from "@/stores/fileTypes";
-import { formatSize } from "@/utils";
-import FileTypeIcon from "@/components/FileTypeIcon";
+import { appIconButtonClass, appPanelTitleClass } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { ThumbnailItem } from "@/components/image-preview/PreviewHelpers";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/ContextMenu";
 import { OVERLAY_BUTTON_CLASS, OVERLAY_CHIP_CLASS } from "./constants";
@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 
 const FULLSCREEN_CONTROLS_HIDE_DELAY_MS = 900;
+const PREVIEW_TOOL_BUTTON_CLASS = cn(appIconButtonClass, "size-8 rounded-lg");
+const PREVIEW_THUMB_NAV_BUTTON_CLASS = cn(appIconButtonClass, "size-9 flex-shrink-0 rounded-xl");
 
 interface PreviewViewportProps {
   canPanImage: boolean;
@@ -63,8 +65,6 @@ interface StandardPreviewShellProps extends PreviewViewportProps {
   previewType: string;
   isFullscreen: boolean;
   isFitMode: boolean;
-  currentFile: FileItem;
-  previewMeta: string;
   previewFiles: FileItem[];
   previewIndex: number;
   onZoomOut: () => void;
@@ -264,8 +264,6 @@ export function StandardPreviewShell({
   previewType,
   isFullscreen,
   isFitMode,
-  currentFile,
-  previewMeta,
   previewFiles,
   previewIndex,
   onZoomOut,
@@ -278,77 +276,74 @@ export function StandardPreviewShell({
   onSelectPreviewIndex,
   ...viewportProps
 }: StandardPreviewShellProps) {
+  const thumbnailStripRef = useRef<HTMLDivElement | null>(null);
+  const selectedThumbnailRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const strip = thumbnailStripRef.current;
+    const selectedThumbnail = selectedThumbnailRef.current;
+
+    if (!strip || !selectedThumbnail) {
+      return;
+    }
+
+    const stripRect = strip.getBoundingClientRect();
+    const selectedRect = selectedThumbnail.getBoundingClientRect();
+    const targetLeft =
+      strip.scrollLeft +
+      selectedRect.left -
+      stripRect.left -
+      (strip.clientWidth - selectedRect.width) / 2;
+
+    strip.scrollLeft = Math.max(0, targetLeft);
+  }, [previewFiles.length, previewIndex]);
+
   return (
-    <div className="flex h-full flex-col bg-gray-100 dark:bg-dark-bg">
-      <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2 dark:border-dark-border dark:bg-dark-surface">
-        <div className="flex items-center gap-4">
-          <span className="text-sm">{currentFolderName}</span>
+    <div className="flex h-full flex-col bg-[var(--app-canvas)]">
+      <div className="flex h-12 items-center justify-between bg-[var(--app-surface)] px-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <span className={cn(appPanelTitleClass, "truncate")}>{currentFolderName}</span>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={onGoPrev}
             disabled={!canGoPrev}
-            className={`rounded p-1.5 ${
-              canGoPrev
-                ? "hover:bg-gray-200 dark:hover:bg-gray-700"
-                : "cursor-not-allowed opacity-50"
-            }`}
+            className={cn(PREVIEW_TOOL_BUTTON_CLASS, !canGoPrev && "cursor-not-allowed opacity-40")}
             title="上一张"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
+            <ChevronLeft className="h-5 w-5" />
           </button>
-          <span className="min-w-[60px] text-center text-sm">
+          <span className="min-w-[60px] text-center text-[14px] font-medium text-gray-600 dark:text-gray-300">
             {currentNum} / {totalFiles}
           </span>
           <button
             onClick={onGoNext}
             disabled={!canGoNext}
-            className={`rounded p-1.5 ${
-              canGoNext
-                ? "hover:bg-gray-200 dark:hover:bg-gray-700"
-                : "cursor-not-allowed opacity-50"
-            }`}
+            className={cn(PREVIEW_TOOL_BUTTON_CLASS, !canGoNext && "cursor-not-allowed opacity-40")}
             title="下一张"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="h-5 w-5" />
           </button>
         </div>
 
         <div className="flex items-center gap-3">
           {previewType === "thumbnail" && (
-            <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
+            <span className="rounded-full bg-black/[0.045] px-2.5 py-1 text-[11px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">
               快照缩略图
             </span>
           )}
           {supportsZoom ? (
             <div className="flex items-center gap-2">
-              <button
-                onClick={onZoomOut}
-                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
-                title="缩小"
-              >
+              <button onClick={onZoomOut} className={PREVIEW_TOOL_BUTTON_CLASS} title="缩小">
                 <ZoomOut className="h-4 w-4" />
               </button>
-              <button
-                onClick={onZoomIn}
-                className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
-                title="放大"
-              >
+              <button onClick={onZoomIn} className={PREVIEW_TOOL_BUTTON_CLASS} title="放大">
                 <ZoomIn className="h-4 w-4" />
               </button>
             </div>
           ) : (
-            <span className="rounded bg-gray-200 px-2 py-1 text-xs text-gray-600 dark:bg-dark-border dark:text-gray-300">
+            <span className="rounded-full bg-black/[0.045] px-2.5 py-1 text-[11px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">
               {previewType === "video" ? "视频播放" : "文件预览"}
             </span>
           )}
@@ -358,7 +353,7 @@ export function StandardPreviewShell({
               {supportsZoom && (
                 <button
                   onClick={onFitToView}
-                  className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  className={PREVIEW_TOOL_BUTTON_CLASS}
                   title="适应视图"
                   aria-pressed={isFitMode}
                 >
@@ -367,7 +362,7 @@ export function StandardPreviewShell({
               )}
               <button
                 onClick={onToggleFullscreen}
-                className="rounded px-2 py-1 text-sm hover:bg-gray-200 dark:hover:bg-gray-700"
+                className={PREVIEW_TOOL_BUTTON_CLASS}
                 title={isFullscreen ? "退出全屏 (F)" : "全屏预览 (F)"}
               >
                 {isFullscreen ? (
@@ -379,69 +374,43 @@ export function StandardPreviewShell({
             </>
           )}
 
-          <button
-            onClick={onClose}
-            className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
-            title="关闭 (Esc)"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+          <button onClick={onClose} className={PREVIEW_TOOL_BUTTON_CLASS} title="关闭 (Esc)">
+            <X className="h-5 w-5" />
           </button>
         </div>
       </div>
 
       <PreviewViewport {...viewportProps} />
 
-      <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-1 text-xs dark:border-dark-border dark:bg-dark-surface">
-        <div className="flex min-w-0 items-center gap-2">
-          <FileTypeIcon
-            ext={currentFile.ext}
-            className="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-gray-400"
-          />
-          <span className="truncate text-gray-600 dark:text-gray-400">{currentFile.name}</span>
-        </div>
-        <span className="text-gray-500 dark:text-gray-500">
-          {previewMeta} · {formatSize(currentFile.size)}
-        </span>
-      </div>
-
-      <div className="flex h-20 items-center gap-2 overflow-x-auto border-t border-gray-200 bg-white px-4 dark:border-dark-border dark:bg-dark-surface">
+      <div className="flex h-[72px] items-center gap-2 bg-[var(--app-surface)] px-4">
         <button
           onClick={onGoPrev}
           disabled={!canGoPrev}
-          className={`flex-shrink-0 rounded p-1 ${
-            canGoPrev ? "hover:bg-gray-200 dark:hover:bg-gray-700" : "cursor-not-allowed opacity-50"
-          }`}
+          className={cn(
+            PREVIEW_THUMB_NAV_BUTTON_CLASS,
+            !canGoPrev && "cursor-not-allowed opacity-40",
+          )}
+          title="上一张"
         >
-          <svg
-            className="h-5 w-5 text-gray-600 dark:text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
+          <ChevronLeft className="h-5 w-5" />
         </button>
 
-        <div className="flex flex-1 items-center gap-1 overflow-x-auto py-1">
+        <div
+          ref={thumbnailStripRef}
+          className="flex flex-1 items-center gap-1 overflow-x-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {previewFiles.map((file, index) => (
             <button
               key={file.id}
+              ref={index === previewIndex ? selectedThumbnailRef : undefined}
               onClick={() => onSelectPreviewIndex(index)}
-              className={`h-14 w-14 flex-shrink-0 overflow-hidden rounded transition-all ${
-                index === previewIndex ? "ring-2 ring-white" : "opacity-50 hover:opacity-80"
-              }`}
+              className={cn(
+                "h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg transition-[opacity,box-shadow,transform]",
+                index === previewIndex
+                  ? "opacity-100 ring-2 ring-inset ring-primary-500/80 shadow-[0_8px_18px_rgba(59,130,246,0.16)]"
+                  : "opacity-45 hover:opacity-75",
+              )}
+              aria-current={index === previewIndex ? "true" : undefined}
             >
               <ThumbnailItem file={file} />
             </button>
@@ -451,18 +420,13 @@ export function StandardPreviewShell({
         <button
           onClick={onGoNext}
           disabled={!canGoNext}
-          className={`flex-shrink-0 rounded p-1 ${
-            canGoNext ? "hover:bg-gray-200 dark:hover:bg-gray-700" : "cursor-not-allowed opacity-50"
-          }`}
+          className={cn(
+            PREVIEW_THUMB_NAV_BUTTON_CLASS,
+            !canGoNext && "cursor-not-allowed opacity-40",
+          )}
+          title="下一张"
         >
-          <svg
-            className="h-5 w-5 text-gray-600 dark:text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight className="h-5 w-5" />
         </button>
       </div>
     </div>

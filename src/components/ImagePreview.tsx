@@ -2,11 +2,7 @@ import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "r
 import { createPortal, flushSync } from "react-dom";
 import { toast } from "sonner";
 import { copyFilesToClipboard } from "@/lib/clipboard";
-import {
-  AI_IMAGE_EXTENSIONS,
-  flattenFolders,
-  getPreviewMetaText,
-} from "@/components/image-preview/constants";
+import { AI_IMAGE_EXTENSIONS, flattenFolders } from "@/components/image-preview/constants";
 import { PreviewContextMenuContent } from "@/components/image-preview/PreviewContextMenu";
 import {
   TextPreviewPane,
@@ -479,10 +475,6 @@ export default function ImagePreview() {
   const currentNum = previewIndex + 1;
   const canGoPrev = previewIndex > 0;
   const canGoNext = previewIndex < totalFiles - 1;
-  const previewMeta = getPreviewMetaText(
-    currentFile,
-    previewType === "thumbnail" ? undefined : loadedImageSize,
-  );
 
   const renderedPreviewContent = isLoading ? (
     <div className="flex h-full min-h-full items-center justify-center p-4">
@@ -636,8 +628,6 @@ export default function ImagePreview() {
       viewportRef={viewportRef}
       renderedPreviewContent={renderedPreviewContent}
       previewContextMenu={previewContextMenu}
-      currentFile={currentFile}
-      previewMeta={previewMeta}
       previewFiles={previewFiles}
       previewIndex={previewIndex}
       onZoomOut={handleZoomOut}

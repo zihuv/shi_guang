@@ -1,4 +1,3 @@
-import type { FileItem } from "@/stores/fileTypes";
 import type { FolderNode } from "@/stores/folderStore";
 
 export const AI_IMAGE_EXTENSIONS = new Set([
@@ -42,18 +41,4 @@ export function flattenFolders(nodes: FolderNode[], depth = 0): FolderNode[] {
     }
   }
   return result;
-}
-
-export function getPreviewMetaText(
-  file: FileItem,
-  fallbackDimensions?: { width: number; height: number },
-) {
-  const width = file.width > 0 ? file.width : (fallbackDimensions?.width ?? 0);
-  const height = file.height > 0 ? file.height : (fallbackDimensions?.height ?? 0);
-
-  if (width > 0 && height > 0) {
-    return `${width} x ${height}`;
-  }
-
-  return file.ext.toUpperCase();
 }
