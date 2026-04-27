@@ -12,6 +12,7 @@ import {
 } from "@/services/desktop/folders";
 import { useLibraryQueryStore } from "./libraryQueryStore";
 import { useSmartCollectionStore } from "./smartCollectionStore";
+import { bindFolderStoreAccess } from "./folderStoreAccess";
 
 export interface FolderNode {
   id: number;
@@ -252,3 +253,8 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
 
   setDeleteConfirm: (folder) => set({ deleteConfirm: folder }),
 }));
+
+bindFolderStoreAccess({
+  loadFolders: () => useFolderStore.getState().loadFolders(),
+  selectFolder: (folderId) => useFolderStore.getState().selectFolder(folderId),
+});

@@ -1,3 +1,5 @@
+import { VIDEO_EXTENSIONS } from "@/shared/file-extensions";
+
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -35,7 +37,6 @@ const IMAGE_EXTENSIONS = [
   "tif",
   "tiff",
 ];
-const VIDEO_EXTENSIONS = ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"];
 const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"];
 const ARCHIVE_EXTENSIONS = ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"];
 const WORD_EXTENSIONS = ["doc", "docx", "rtf", "odt"];

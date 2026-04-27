@@ -1,21 +1,6 @@
 import { invokeDesktop } from "@/services/desktop/core";
-import type { FolderNode } from "@/stores/folderStore";
-
-export interface FolderSummary {
-  id: number;
-  name: string;
-  path: string;
-  parent_id: number | null;
-  created_at: string;
-}
-
-export interface DeleteFolderResult {
-  folderId: number;
-  folderName: string;
-  folderPath: string;
-  removedFileCount: number;
-  movedToTrash: boolean;
-}
+import type { DeleteFolderResult, FolderNode, FolderSummary } from "@/shared/desktop-types";
+export type { DeleteFolderResult, FolderSummary } from "@/shared/desktop-types";
 
 export function getFolderTree() {
   return invokeDesktop<FolderNode[]>("get_folder_tree");

@@ -1,5 +1,5 @@
 import { invokeDesktop } from "@/services/desktop/core";
-import type { FileItem, TrashItem } from "@/stores/fileTypes";
+import type { FileItem, TrashItem } from "@/shared/desktop-types";
 
 export interface RestoreFilesResult {
   movedToUnclassifiedCount: number;

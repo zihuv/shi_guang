@@ -8,7 +8,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { INTERNAL_FILE_DRAG_MIME } from "@/components/folder-tree/utils";
-import { getNameWithoutExt } from "@/stores/fileTypes";
+import { getNameWithoutExt, isTerminalTaskStatus } from "@/stores/fileTypes";
 import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
 import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -62,16 +62,12 @@ export default function Header({ onOpenSettings }: HeaderProps) {
   const [isRebuildingLibrary, setIsRebuildingLibrary] = useState(false);
   const libraryMenuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const isImporting =
-    !!importTask &&
-    !["completed", "completed_with_errors", "cancelled", "failed"].includes(importTask.status);
+  const isImporting = !!importTask && !isTerminalTaskStatus(importTask.status);
   const importProgress = importTask?.total
     ? Math.min(100, Math.round((importTask.processed / importTask.total) * 100))
     : 0;
   const importCountLabel = `${importTask?.processed ?? 0}/${importTask?.total ?? 0}`;
-  const isAiAnalyzing =
-    !!aiMetadataTask &&
-    !["completed", "completed_with_errors", "cancelled", "failed"].includes(aiMetadataTask.status);
+  const isAiAnalyzing = !!aiMetadataTask && !isTerminalTaskStatus(aiMetadataTask.status);
   const aiProgress = aiMetadataTask?.total
     ? Math.min(100, Math.round((aiMetadataTask.processed / aiMetadataTask.total) * 100))
     : 0;

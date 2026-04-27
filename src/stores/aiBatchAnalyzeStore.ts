@@ -12,6 +12,7 @@ import {
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useTagStore } from "@/stores/tagStore";
 import { listenDesktop } from "@/services/desktop/core";
+import { waitForDesktopTask } from "@/stores/taskWatcher";
 
 interface AiBatchAnalyzeStore {
   aiMetadataTask: AiMetadataTaskSnapshot | null;
@@ -23,90 +24,6 @@ interface AiBatchAnalyzeStore {
 
 let isWatchingAiMetadataTasks = false;
 const trackedAiMetadataTaskIds = new Set<string>();
-
-async function waitForAiMetadataTask(
-  taskId: string,
-  onUpdate: (task: AiMetadataTaskSnapshot) => void,
-) {
-  let unlisten: (() => void) | null = null;
-  let fallbackTimer: ReturnType<typeof setInterval> | null = null;
-  let isSettled = false;
-  let isRefreshing = false;
-  let needsRefresh = false;
-
-  return await new Promise<AiMetadataTaskSnapshot>((resolve, reject) => {
-    const cleanup = () => {
-      if (fallbackTimer) {
-        clearInterval(fallbackTimer);
-        fallbackTimer = null;
-      }
-      if (unlisten) {
-        unlisten();
-        unlisten = null;
-      }
-    };
-
-    const finish = (snapshot: AiMetadataTaskSnapshot) => {
-      if (isSettled) return;
-      isSettled = true;
-      cleanup();
-      resolve(snapshot);
-    };
-
-    const fail = (error: unknown) => {
-      if (isSettled) return;
-      isSettled = true;
-      cleanup();
-      reject(error);
-    };
-
-    const refreshSnapshot = async () => {
-      if (isSettled) return;
-      if (isRefreshing) {
-        needsRefresh = true;
-        return;
-      }
-
-      isRefreshing = true;
-      try {
-        const snapshot = await getAiMetadataTask(taskId);
-        onUpdate(snapshot);
-        if (TERMINAL_AI_METADATA_TASK_STATUSES.has(snapshot.status)) {
-          finish(snapshot);
-        }
-      } catch (error) {
-        fail(error);
-      } finally {
-        isRefreshing = false;
-        if (needsRefresh && !isSettled) {
-          needsRefresh = false;
-          void refreshSnapshot();
-        }
-      }
-    };
-
-    fallbackTimer = setInterval(() => {
-      void refreshSnapshot();
-    }, 1000);
-
-    void listenDesktop<string>("ai-metadata-task-updated", (event) => {
-      if (event.payload !== taskId || isSettled) return;
-      void refreshSnapshot();
-    })
-      .then((dispose) => {
-        if (isSettled) {
-          dispose();
-          return;
-        }
-        unlisten = dispose;
-      })
-      .catch(() => {
-        // Keep fallback timer when event subscription fails.
-      });
-
-    void refreshSnapshot();
-  });
-}
 
 async function finalizeAiMetadataTask(
   task: AiMetadataTaskSnapshot,
@@ -164,8 +81,12 @@ export const useAiBatchAnalyzeStore = create<AiBatchAnalyzeStore>((set, get) => 
       void getAiMetadataTask(taskId)
         .then((snapshot) => {
           set({ aiMetadataTask: snapshot });
-          return waitForAiMetadataTask(taskId, (nextTask) => {
-            set({ aiMetadataTask: nextTask });
+          return waitForDesktopTask({
+            eventChannel: "ai-metadata-task-updated",
+            getSnapshot: getAiMetadataTask,
+            isTerminal: (status) => TERMINAL_AI_METADATA_TASK_STATUSES.has(status),
+            onUpdate: (nextTask) => set({ aiMetadataTask: nextTask }),
+            taskId,
           });
         })
         .then((finalTask) =>
@@ -203,8 +124,12 @@ export const useAiBatchAnalyzeStore = create<AiBatchAnalyzeStore>((set, get) => 
         return task;
       }
 
-      void waitForAiMetadataTask(task.id, (nextTask) => {
-        set({ aiMetadataTask: nextTask });
+      void waitForDesktopTask({
+        eventChannel: "ai-metadata-task-updated",
+        getSnapshot: getAiMetadataTask,
+        isTerminal: (status) => TERMINAL_AI_METADATA_TASK_STATUSES.has(status),
+        onUpdate: (nextTask) => set({ aiMetadataTask: nextTask }),
+        taskId: task.id,
       })
         .then((finalTask) =>
           finalizeAiMetadataTask(finalTask, (nextTask) => set({ aiMetadataTask: nextTask })),

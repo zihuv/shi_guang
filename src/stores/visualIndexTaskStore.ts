@@ -11,7 +11,7 @@ import {
   type VisualIndexTaskSnapshot,
 } from "@/stores/fileTypes";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { listenDesktop } from "@/services/desktop/core";
+import { waitForDesktopTask } from "@/stores/taskWatcher";
 
 const VISUAL_INDEX_TASK_EVENT = "visual-index-task-updated";
 
@@ -20,90 +20,6 @@ interface VisualIndexTaskStore {
   setVisualIndexTask: (task: VisualIndexTaskSnapshot | null) => void;
   startVisualIndexTask: (processUnindexedOnly: boolean) => Promise<VisualIndexTaskSnapshot | null>;
   cancelVisualIndexTask: () => Promise<void>;
-}
-
-async function waitForVisualIndexTask(
-  taskId: string,
-  onUpdate: (task: VisualIndexTaskSnapshot) => void,
-) {
-  let unlisten: (() => void) | null = null;
-  let fallbackTimer: ReturnType<typeof setInterval> | null = null;
-  let isSettled = false;
-  let isRefreshing = false;
-  let needsRefresh = false;
-
-  return await new Promise<VisualIndexTaskSnapshot>((resolve, reject) => {
-    const cleanup = () => {
-      if (fallbackTimer) {
-        clearInterval(fallbackTimer);
-        fallbackTimer = null;
-      }
-      if (unlisten) {
-        unlisten();
-        unlisten = null;
-      }
-    };
-
-    const finish = (snapshot: VisualIndexTaskSnapshot) => {
-      if (isSettled) return;
-      isSettled = true;
-      cleanup();
-      resolve(snapshot);
-    };
-
-    const fail = (error: unknown) => {
-      if (isSettled) return;
-      isSettled = true;
-      cleanup();
-      reject(error);
-    };
-
-    const refreshSnapshot = async () => {
-      if (isSettled) return;
-      if (isRefreshing) {
-        needsRefresh = true;
-        return;
-      }
-
-      isRefreshing = true;
-      try {
-        const snapshot = await getVisualIndexTask(taskId);
-        onUpdate(snapshot);
-        if (TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(snapshot.status)) {
-          finish(snapshot);
-        }
-      } catch (error) {
-        fail(error);
-      } finally {
-        isRefreshing = false;
-        if (needsRefresh && !isSettled) {
-          needsRefresh = false;
-          void refreshSnapshot();
-        }
-      }
-    };
-
-    fallbackTimer = setInterval(() => {
-      void refreshSnapshot();
-    }, 1000);
-
-    void listenDesktop<string>(VISUAL_INDEX_TASK_EVENT, (event) => {
-      if (event.payload !== taskId || isSettled) return;
-      void refreshSnapshot();
-    })
-      .then((dispose) => {
-        if (isSettled) {
-          dispose();
-          return;
-        }
-        unlisten = dispose;
-      })
-      .catch(() => {
-        // Keep fallback timer when event subscription fails.
-      });
-
-    void refreshSnapshot();
-  });
 }
 
 async function finalizeVisualIndexTask(
@@ -144,12 +60,18 @@ export const useVisualIndexTaskStore = create<VisualIndexTaskStore>((set, get) =
       set({ visualIndexTask: task });
       let runtimeStatusRefreshed = false;
 
-      void waitForVisualIndexTask(task.id, (nextTask) => {
-        set({ visualIndexTask: nextTask });
-        if (!runtimeStatusRefreshed && nextTask.processed > 0) {
-          runtimeStatusRefreshed = true;
-          void useSettingsStore.getState().refreshVisualSearchStatus();
-        }
+      void waitForDesktopTask({
+        eventChannel: VISUAL_INDEX_TASK_EVENT,
+        getSnapshot: getVisualIndexTask,
+        isTerminal: (status) => TERMINAL_VISUAL_INDEX_TASK_STATUSES.has(status),
+        onUpdate: (nextTask) => {
+          set({ visualIndexTask: nextTask });
+          if (!runtimeStatusRefreshed && nextTask.processed > 0) {
+            runtimeStatusRefreshed = true;
+            void useSettingsStore.getState().refreshVisualSearchStatus();
+          }
+        },
+        taskId: task.id,
       })
         .then((finalTask) =>
           finalizeVisualIndexTask(finalTask, (nextTask) => set({ visualIndexTask: nextTask })),

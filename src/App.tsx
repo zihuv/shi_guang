@@ -1,13 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Toaster } from "sonner";
-import {
-  MAX_DETAIL_PANEL_WIDTH,
-  MAX_SIDEBAR_WIDTH,
-  clampDetailPanelWidth,
-  clampSidebarWidth,
-  useSettingsStore,
-} from "@/stores/settingsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiBatchAnalyzeStore } from "@/stores/aiBatchAnalyzeStore";
 import { useBootstrapStore } from "@/stores/bootstrapStore";
 import { useFolderStore } from "@/stores/folderStore";
@@ -23,160 +16,24 @@ import DragPreview from "@/components/DragPreview";
 import AppStartupScreen from "@/components/AppStartupScreen";
 import TagPanel from "@/components/TagPanel";
 import TrashPanel from "@/components/TrashPanel";
+import { PanelEdgeToggle, PanelResizeHandle } from "@/components/app-shell/PanelControls";
+import { useAppPanelLayout } from "@/hooks/useAppPanelLayout";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useClipboardImport } from "@/hooks/useClipboardImport";
 import { useDocumentTheme } from "@/hooks/useDocumentTheme";
+import { useExternalImportDrop } from "@/hooks/useExternalImportDrop";
 import { useInternalFileDrag } from "@/hooks/useInternalFileDrag";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDesktopImportListeners } from "@/hooks/useDesktopImportListeners";
 import { useNavigationStore } from "@/stores/navigationStore";
 
-const PANEL_RESIZER_LAYOUT_WIDTH = 0;
-const PANEL_RESIZER_TOTAL_WIDTH = PANEL_RESIZER_LAYOUT_WIDTH * 2;
-const MIN_MAIN_PANEL_WIDTH = 240;
-const MIN_RENDERED_SIDEBAR_WIDTH = 72;
-const MIN_RENDERED_DETAIL_PANEL_WIDTH = 120;
 const ImagePreview = lazy(() => import("@/components/ImagePreview"));
 const SettingsModal = lazy(() => import("@/components/SettingsModal"));
-
-type ResizeHandle = "sidebar" | "detail";
-
-function clampDraggedWidth(value: number, minWidth: number, maxWidth: number) {
-  const safeMaxWidth = Math.max(0, maxWidth);
-  if (safeMaxWidth <= minWidth) {
-    return safeMaxWidth;
-  }
-
-  return Math.max(minWidth, Math.min(safeMaxWidth, value));
-}
-
-function constrainPanelWidths(
-  containerWidth: number,
-  requestedSidebarWidth: number,
-  requestedDetailPanelWidth: number,
-) {
-  let sidebarWidth = requestedSidebarWidth <= 0 ? 0 : clampSidebarWidth(requestedSidebarWidth);
-  let detailPanelWidth =
-    requestedDetailPanelWidth <= 0 ? 0 : clampDetailPanelWidth(requestedDetailPanelWidth);
-
-  if (containerWidth <= 0) {
-    return { sidebarWidth, detailPanelWidth };
-  }
-
-  const maxCombinedPanelWidth = Math.max(
-    0,
-    containerWidth - PANEL_RESIZER_TOTAL_WIDTH - MIN_MAIN_PANEL_WIDTH,
-  );
-  let overflow = sidebarWidth + detailPanelWidth - maxCombinedPanelWidth;
-
-  if (overflow <= 0) {
-    return { sidebarWidth, detailPanelWidth };
-  }
-
-  const detailPanelReducible = Math.max(0, detailPanelWidth - MIN_RENDERED_DETAIL_PANEL_WIDTH);
-  const detailPanelReduction = Math.min(detailPanelReducible, overflow);
-  detailPanelWidth -= detailPanelReduction;
-  overflow -= detailPanelReduction;
-
-  const sidebarReducible = Math.max(0, sidebarWidth - MIN_RENDERED_SIDEBAR_WIDTH);
-  const sidebarReduction = Math.min(sidebarReducible, overflow);
-  sidebarWidth -= sidebarReduction;
-  overflow -= sidebarReduction;
-
-  if (overflow > 0) {
-    detailPanelWidth = Math.max(detailPanelWidth > 0 ? 48 : 0, detailPanelWidth - overflow);
-  }
-
-  return {
-    sidebarWidth: sidebarWidth > 0 ? Math.max(48, Math.round(sidebarWidth)) : 0,
-    detailPanelWidth: detailPanelWidth > 0 ? Math.max(48, Math.round(detailPanelWidth)) : 0,
-  };
-}
-
-function PanelResizeHandle({
-  ariaLabel,
-  isActive,
-  onMouseDown,
-}: {
-  ariaLabel: string;
-  isActive: boolean;
-  onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
-}) {
-  return (
-    <div
-      role="separator"
-      aria-label={ariaLabel}
-      aria-orientation="vertical"
-      className="group relative z-10 flex flex-shrink-0 select-none"
-      style={{ width: PANEL_RESIZER_LAYOUT_WIDTH }}
-      onMouseDown={onMouseDown}
-    >
-      <div className="absolute -left-1 top-0 flex h-full w-2 cursor-col-resize items-stretch justify-center">
-        <div
-          className={`my-auto h-8 w-[2px] rounded-full transition-colors ${
-            isActive
-              ? "bg-blue-400/80 dark:bg-blue-500/80"
-              : "bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/12"
-          }`}
-        />
-      </div>
-    </div>
-  );
-}
-
-function PanelEdgeToggle({
-  ariaLabel,
-  isCollapsed,
-  offset,
-  side,
-  title,
-  onClick,
-}: {
-  ariaLabel: string;
-  isCollapsed: boolean;
-  offset: number;
-  side: "left" | "right";
-  title: string;
-  onClick: () => void;
-}) {
-  const Icon =
-    side === "left"
-      ? isCollapsed
-        ? ChevronRight
-        : ChevronLeft
-      : isCollapsed
-        ? ChevronLeft
-        : ChevronRight;
-  const inset = isCollapsed ? 4 : Math.max(4, offset - 10);
-  const style = side === "left" ? { left: inset } : { right: inset };
-
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      aria-pressed={!isCollapsed}
-      title={title}
-      className="absolute top-1/2 z-30 flex h-9 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--app-surface)]/45 text-gray-400 opacity-45 shadow-[0_4px_12px_rgba(15,23,42,0.08)] ring-1 ring-black/[0.03] backdrop-blur-sm transition-[background-color,color,opacity,box-shadow] hover:bg-[var(--app-surface-strong)]/95 hover:text-gray-700 hover:opacity-100 hover:shadow-[0_8px_18px_rgba(15,23,42,0.12)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-500 dark:ring-white/[0.04] dark:hover:text-gray-200"
-      style={style}
-      onClick={onClick}
-    >
-      <Icon className="h-3.5 w-3.5" />
-    </button>
-  );
-}
 
 function App() {
   const hasBootstrapped = useBootstrapStore((state) => state.hasBootstrapped);
   const bootstrapError = useBootstrapStore((state) => state.bootstrapError);
   const theme = useSettingsStore((state) => state.theme);
-  const sidebarWidthPreference = useSettingsStore((state) => state.sidebarWidth);
-  const detailPanelWidthPreference = useSettingsStore((state) => state.detailPanelWidth);
-  const isSidebarCollapsed = useSettingsStore((state) => state.isSidebarCollapsed);
-  const isDetailPanelCollapsed = useSettingsStore((state) => state.isDetailPanelCollapsed);
-  const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
-  const setDetailPanelWidth = useSettingsStore((state) => state.setDetailPanelWidth);
-  const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
-  const setDetailPanelCollapsed = useSettingsStore((state) => state.setDetailPanelCollapsed);
 
   const { importBinaryImages, importFiles } = useImportStore();
   const previewMode = usePreviewStore((state) => state.previewMode);
@@ -188,28 +45,34 @@ function App() {
   const setSelectedFile = useSelectionStore((state) => state.setSelectedFile);
   const currentView = useNavigationStore((state) => state.currentView);
   const showsLibraryView = currentView === "library";
-  const showsDetailPanel = showsLibraryView && !isDetailPanelCollapsed;
   const [showSettings, setShowSettings] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   const [draggingFileId, setDraggingFileId] = useState<number | null>(null);
-  const [contentWidth, setContentWidth] = useState(0);
-  const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
-  const dragCounterRef = useRef(0);
-  const dragOverFolderIdRef = useRef<number | null>(dragOverFolderId);
-  const contentContainerRef = useRef<HTMLDivElement>(null);
-  const activeResizeHandleRef = useRef<ResizeHandle | null>(null);
-
-  const { sidebarWidth, detailPanelWidth } = constrainPanelWidths(
-    contentWidth,
-    isSidebarCollapsed ? 0 : sidebarWidthPreference,
-    showsDetailPanel ? detailPanelWidthPreference : 0,
-  );
-  const sidebarWidthRef = useRef(sidebarWidth);
-  const detailPanelWidthRef = useRef(detailPanelWidth);
-
-  dragOverFolderIdRef.current = dragOverFolderId;
-  sidebarWidthRef.current = sidebarWidth;
-  detailPanelWidthRef.current = detailPanelWidth;
+  const {
+    activeResizeHandle,
+    contentContainerRef,
+    detailPanelWidth,
+    handleResizeStart,
+    isDetailPanelCollapsed,
+    isSidebarCollapsed,
+    setDetailPanelCollapsed,
+    setSidebarCollapsed,
+    sidebarWidth,
+  } = useAppPanelLayout({ showsDetailPanel: showsLibraryView });
+  const showsDetailPanel = showsLibraryView && !isDetailPanelCollapsed;
+  const {
+    handleDragEnter,
+    handleDragLeave,
+    handleDragOver,
+    handleDrop,
+    isDragging,
+    setIsDragging,
+  } = useExternalImportDrop({
+    dragOverFolderId,
+    importBinaryImages,
+    importFiles,
+    isDraggingInternal,
+    setDragOverFolderId,
+  });
 
   useAppInitialization();
   useInternalFileDrag(setDraggingFileId);
@@ -224,29 +87,10 @@ function App() {
   useKeyboardShortcuts();
 
   useEffect(() => {
-    const element = contentContainerRef.current;
-    if (!element) {
-      return undefined;
+    if (!import.meta.env.DEV) {
+      return;
     }
 
-    const updateContentWidth = () => {
-      setContentWidth(element.clientWidth);
-    };
-
-    updateContentWidth();
-
-    const observer = new ResizeObserver(() => {
-      updateContentWidth();
-    });
-
-    observer.observe(element);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
     Object.assign(
       window as Window & {
         __SHIGUANG_DEBUG__?: {
@@ -280,224 +124,6 @@ function App() {
     clearSelection();
     setSelectedFile(null);
   }, [clearSelection, closePreview, currentView, setSelectedFile]);
-
-  useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
-      const activeHandle = activeResizeHandleRef.current;
-      const container = contentContainerRef.current;
-      if (!activeHandle || !container) {
-        return;
-      }
-
-      const rect = container.getBoundingClientRect();
-      const nextContentWidth = rect.width;
-
-      if (activeHandle === "sidebar") {
-        const maxSidebarWidth = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          nextContentWidth -
-            detailPanelWidthRef.current -
-            PANEL_RESIZER_TOTAL_WIDTH -
-            MIN_MAIN_PANEL_WIDTH,
-        );
-        const nextSidebarWidth = clampDraggedWidth(
-          event.clientX - rect.left,
-          MIN_RENDERED_SIDEBAR_WIDTH,
-          maxSidebarWidth,
-        );
-        setSidebarWidth(nextSidebarWidth);
-        return;
-      }
-
-      const maxDetailWidth = Math.min(
-        MAX_DETAIL_PANEL_WIDTH,
-        nextContentWidth -
-          sidebarWidthRef.current -
-          PANEL_RESIZER_TOTAL_WIDTH -
-          MIN_MAIN_PANEL_WIDTH,
-      );
-      const nextDetailWidth = clampDraggedWidth(
-        rect.right - event.clientX,
-        MIN_RENDERED_DETAIL_PANEL_WIDTH,
-        maxDetailWidth,
-      );
-      setDetailPanelWidth(nextDetailWidth);
-    };
-
-    const stopResize = () => {
-      if (!activeResizeHandleRef.current) {
-        return;
-      }
-
-      activeResizeHandleRef.current = null;
-      setActiveResizeHandle(null);
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", stopResize);
-    window.addEventListener("blur", stopResize);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", stopResize);
-      window.removeEventListener("blur", stopResize);
-      stopResize();
-    };
-  }, [setDetailPanelWidth, setSidebarWidth]);
-
-  const handleResizeStart = useCallback((handle: ResizeHandle) => {
-    return (event: React.MouseEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      activeResizeHandleRef.current = handle;
-      setActiveResizeHandle(handle);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    };
-  }, []);
-
-  const isExternalFileDrag = useCallback((e: React.DragEvent) => {
-    return Array.from(e.dataTransfer.types).includes("Files");
-  }, []);
-
-  const getDroppedPaths = useCallback((e: React.DragEvent) => {
-    return Array.from(e.dataTransfer.files)
-      .map((file) => (file as File & { path?: string }).path)
-      .filter((path): path is string => Boolean(path));
-  }, []);
-
-  const getDropTargetFolderId = useCallback((e: React.DragEvent) => {
-    const target = e.target;
-    if (!(target instanceof Element)) {
-      return undefined;
-    }
-
-    const folderElement = target.closest("[data-folder-id]");
-    if (!folderElement) {
-      return undefined;
-    }
-
-    const folderId = folderElement.getAttribute("data-folder-id");
-    if (!folderId) {
-      return undefined;
-    }
-
-    const parsed = Number(folderId);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }, []);
-
-  const getFileExt = useCallback((file: File) => {
-    const nameParts = file.name.split(".");
-    const extFromName = nameParts.length > 1 ? nameParts.pop() : undefined;
-    if (extFromName) {
-      return extFromName.toLowerCase();
-    }
-
-    const mimePart = file.type.split("/")[1];
-    return mimePart ? mimePart.toLowerCase() : "png";
-  }, []);
-
-  const fileToBytes = useCallback(
-    async (file: File) => new Uint8Array(await file.arrayBuffer()),
-    [],
-  );
-
-  // Handle drag and drop to import files while keeping internal DnD enabled.
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (!isDraggingInternal && isExternalFileDrag(e)) {
-        e.dataTransfer.dropEffect = "copy";
-        dragCounterRef.current = 1;
-        setIsDragging(true);
-      }
-    },
-    [isDraggingInternal, isExternalFileDrag],
-  );
-
-  const handleDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (isDraggingInternal || !isExternalFileDrag(e)) {
-        return;
-      }
-
-      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-      if (dragCounterRef.current === 0) {
-        setIsDragging(false);
-      }
-    },
-    [isDraggingInternal, isExternalFileDrag],
-  );
-
-  const handleDragEnter = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (isDraggingInternal || !isExternalFileDrag(e)) {
-        return;
-      }
-
-      dragCounterRef.current += 1;
-      setIsDragging(true);
-    },
-    [isDraggingInternal, isExternalFileDrag],
-  );
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      dragCounterRef.current = 0;
-      setIsDragging(false);
-
-      if (isDraggingInternal || !isExternalFileDrag(e)) {
-        return;
-      }
-
-      const targetFolderId =
-        getDropTargetFolderId(e) ??
-        (dragOverFolderIdRef.current !== null ? dragOverFolderIdRef.current : undefined);
-      const paths = getDroppedPaths(e);
-
-      if (paths.length > 0) {
-        void importFiles(paths, targetFolderId);
-      } else {
-        const items = await Promise.all(
-          Array.from(e.dataTransfer.files).map(async (file) => ({
-            bytes: await fileToBytes(file),
-            ext: getFileExt(file),
-          })),
-        );
-
-        if (items.length > 0) {
-          void importBinaryImages(items, targetFolderId);
-        }
-      }
-
-      if (dragOverFolderIdRef.current !== null) {
-        setDragOverFolderId(null);
-      }
-    },
-    [
-      fileToBytes,
-      getDropTargetFolderId,
-      getFileExt,
-      getDroppedPaths,
-      importFiles,
-      importBinaryImages,
-      isDraggingInternal,
-      isExternalFileDrag,
-      setDragOverFolderId,
-    ],
-  );
 
   if (!hasBootstrapped) {
     return (

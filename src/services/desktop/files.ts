@@ -7,7 +7,7 @@ import type {
   SmartCollectionId,
   SmartCollectionStats,
   VisualIndexTaskSnapshot,
-} from "@/stores/fileTypes";
+} from "@/shared/desktop-types";
 
 export interface FileFilterPayload {
   query: string | null;

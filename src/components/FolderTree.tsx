@@ -22,6 +22,7 @@ import {
   buildFolderMovePlan,
   findFolderParentId,
   findSiblings,
+  findFolderById,
   getAllFolderIds,
   getPersistedFolderIds,
   isDescendant,
@@ -42,19 +43,6 @@ function replaceFolderChildren(
     }
     return item;
   });
-}
-
-function findFolderById(items: FolderNode[], targetId: number): FolderNode | null {
-  for (const item of items) {
-    if (item.id === targetId) {
-      return item;
-    }
-    const nested = findFolderById(item.children, targetId);
-    if (nested) {
-      return nested;
-    }
-  }
-  return null;
 }
 
 function pathHasPrefix(candidate: string, prefix: string) {

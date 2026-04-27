@@ -7,7 +7,6 @@ import {
 } from "@/features/filters/types";
 import { getActiveFilterCount as getSchemaActiveFilterCount } from "@/features/filters/schema";
 import { getSetting, setSetting } from "@/services/desktop/indexing";
-import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 
 export type { FileSortField, FilterCriteria, SortDirection } from "@/features/filters/types";
 
@@ -176,13 +175,6 @@ function restoreFilterPreferences(
   };
 }
 
-export function getSortConfig(criteria: Pick<FilterCriteria, "sortBy" | "sortDirection">) {
-  return {
-    sortBy: criteria.sortBy,
-    sortDirection: criteria.sortDirection,
-  };
-}
-
 export const useFilterStore = create<FilterStore>((set, get) => ({
   criteria: { ...initialFilterCriteria },
   isFilterPanelOpen: false,
@@ -330,14 +322,5 @@ export const useFilterStore = create<FilterStore>((set, get) => ({
       },
       hasLoadedPreferences: true,
     }));
-
-    const libraryStore = useLibraryQueryStore.getState();
-    if (
-      libraryStore.selectedFolderId !== null ||
-      libraryStore.files.length > 0 ||
-      libraryStore.searchQuery.trim()
-    ) {
-      void libraryStore.runCurrentQuery();
-    }
   },
 }));

@@ -7,7 +7,7 @@ import { useTagStore } from "@/stores/tagStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { completeVisualIndexBrowserDecodeRequest } from "@/services/desktop/files";
 import { getDesktopBridge, listenDesktop } from "@/services/desktop/core";
-import { buildBrowserDecodedImageDataUrl, getVideoThumbnailSrc } from "@/utils";
+import { buildBrowserDecodedImageDataUrl, getVideoThumbnailSrc, isVideoFile } from "@/utils";
 
 const dragDropState = {
   processedPaths: new Set<string>(),
@@ -97,17 +97,7 @@ async function handleThumbnailBuildRequest(payload?: ThumbnailBuildRequestPayloa
     return;
   }
 
-  if (
-    ext !== "mp4" &&
-    ext !== "avi" &&
-    ext !== "mov" &&
-    ext !== "mkv" &&
-    ext !== "wmv" &&
-    ext !== "flv" &&
-    ext !== "webm" &&
-    ext !== "m4v" &&
-    ext !== "3gp"
-  ) {
+  if (!isVideoFile(ext)) {
     return;
   }
 

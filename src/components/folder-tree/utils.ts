@@ -6,6 +6,9 @@ import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { findFolderById } from "@/utils/folderTree";
+
+export { findFolderById } from "@/utils/folderTree";
 
 export const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids";
 
@@ -13,17 +16,6 @@ export type FlattenedFolderNode = FolderNode & { sortOrder: number };
 
 export const isPersistedFolder = (folder: FolderNode): boolean =>
   !folder.isSystem && folder.name !== "浏览器采集";
-
-export const findFolderById = (folders: FolderNode[], folderId: number): FolderNode | null => {
-  for (const folder of folders) {
-    if (folder.id === folderId) return folder;
-    if (folder.children && folder.children.length > 0) {
-      const found = findFolderById(folder.children, folderId);
-      if (found) return found;
-    }
-  }
-  return null;
-};
 
 export const findFolderParentId = (
   folders: FolderNode[],

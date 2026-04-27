@@ -1,8 +1,10 @@
+import { VIDEO_EXTENSIONS } from "../shared/file-extensions";
+
 export const THUMBNAIL_PIXEL_THRESHOLD = 10_000_000;
 export const THUMBNAIL_EDGE_THRESHOLD = 3840;
 export const THUMBNAIL_SIZE_THRESHOLD = 8 * 1024 * 1024;
 
-const VIDEO_EXTENSIONS = new Set(["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"]);
+const VIDEO_EXTENSION_SET = new Set(VIDEO_EXTENSIONS);
 
 export type ThumbnailDecisionReason =
   | "video"
@@ -30,7 +32,7 @@ export function normalizeThumbnailExt(ext: string): string {
 }
 
 export function isVideoThumbnailExt(ext: string): boolean {
-  return VIDEO_EXTENSIONS.has(normalizeThumbnailExt(ext));
+  return VIDEO_EXTENSION_SET.has(normalizeThumbnailExt(ext));
 }
 
 export function decideThumbnailGeneration(input: ThumbnailDecisionInput): ThumbnailDecision {

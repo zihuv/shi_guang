@@ -5,21 +5,31 @@ import { Tokenizer as HuggingFaceTokenizer } from "@huggingface/tokenizers";
 import * as ort from "onnxruntime-node";
 import { BertWordPieceTokenizer } from "./bert-wordpiece.js";
 import {
-  SUPPORTED_FGCLIP_PATCH_BUCKETS,
-  preprocessChineseClipImage,
-  preprocessFgClipImage,
-  type FgClipImageRuntime,
-} from "./clip-image-preprocess.js";
-import {
   readFlatManifest,
   type ClipEffectiveProvider,
   type ClipModelValidationResult,
   type ClipRuntimeConfig,
   type ClipRuntimeSnapshot,
-  type FlatManifest,
 } from "./clip-manifest.js";
-
-type OrtExecutionProvider = "cpu" | "dml" | "coreml";
+import {
+  encodeChineseClipImage,
+  encodeChineseClipText,
+  encodeFgClipImage,
+  encodeFgClipText,
+} from "./clip-encoders.js";
+import {
+  readF32File,
+  resolveFgClipMaxPatches,
+  resolveTokenEmbeddingRows,
+} from "./clip-runtime-data.js";
+import type {
+  ClipImageRuntime,
+  ClipTextRuntime,
+  OrtExecutionProvider,
+  ProviderAttempt,
+  ResolvedClipModel,
+  RuntimeHandle,
+} from "./clip-runtime-model.js";
 
 export {
   buildClipValidationResult,
@@ -35,62 +45,6 @@ export {
   type ClipRuntimeThreadConfig,
   type FlatManifest,
 } from "./clip-manifest.js";
-
-type ResolvedClipModel = {
-  manifest: FlatManifest;
-  normalizedModelPath: string;
-  textModelPath: string;
-  imageModelPath: string;
-  tokenizerPath: string;
-  tokenEmbeddingPath: string | null;
-  visionPosEmbeddingPath: string | null;
-};
-
-type ChineseClipTextRuntime = {
-  kind: "chinese_clip";
-  tokenizer: BertWordPieceTokenizer;
-};
-
-type FgClipTextRuntime = {
-  kind: "fg_clip";
-  tokenizer: HuggingFaceTokenizer;
-  tokenEmbeddingPath: string;
-  tokenEmbeddingRows: number;
-  tokenEmbeddingDtype: "f16" | "f32";
-  tokenEmbeddingDim: number;
-};
-
-type ChineseClipImageRuntime = {
-  kind: "chinese_clip";
-};
-
-type FgClipImageRuntimeHandle = FgClipImageRuntime & {
-  kind: "fg_clip";
-};
-
-type ClipTextRuntime = ChineseClipTextRuntime | FgClipTextRuntime;
-type ClipImageRuntime = ChineseClipImageRuntime | FgClipImageRuntimeHandle;
-
-type RuntimeHandle = {
-  key: string;
-  model: ResolvedClipModel;
-  providerAttempt: ProviderAttempt | null;
-  textRuntime: ClipTextRuntime | null;
-  textRuntimePromise: Promise<ClipTextRuntime> | null;
-  imageRuntime: ClipImageRuntime | null;
-  imageRuntimePromise: Promise<ClipImageRuntime> | null;
-  textSession: ort.InferenceSession | null;
-  textSessionPromise: Promise<ort.InferenceSession> | null;
-  imageSession: ort.InferenceSession | null;
-  imageSessionPromise: Promise<ort.InferenceSession> | null;
-};
-
-type ProviderAttempt = {
-  providers: OrtExecutionProvider[];
-  effectiveProvider: ClipEffectiveProvider;
-  runtimeMode: ClipRuntimeSnapshot["runtimeMode"];
-  reason: string;
-};
 
 const CLIP_RUNTIME_IDLE_RELEASE_MS = 30_000;
 
@@ -222,13 +176,7 @@ export async function encodeClipImage(
   }
 }
 
-export function embeddingToBuffer(embedding: Float32Array): Buffer {
-  const buffer = Buffer.allocUnsafe(embedding.length * 4);
-  for (let index = 0; index < embedding.length; index += 1) {
-    buffer.writeFloatLE(embedding[index], index * 4);
-  }
-  return buffer;
-}
+export { embeddingToBuffer } from "./clip-runtime-data.js";
 
 async function resolveModel(modelPath: string): Promise<ResolvedClipModel> {
   const normalizedModelPath = normalizeModelPath(modelPath);
@@ -771,319 +719,4 @@ function resolveIntraThreads(config: ClipRuntimeConfig): number | undefined {
     return config.intraThreads;
   }
   return Math.max(1, os.cpus().length);
-}
-
-function resolveFgClipMaxPatches(
-  manifestDefaultMaxPatches: number,
-  runtimeOverride: number | null,
-): number {
-  if (runtimeOverride == null) {
-    return manifestDefaultMaxPatches;
-  }
-  if (!SUPPORTED_FGCLIP_PATCH_BUCKETS.includes(runtimeOverride)) {
-    throw new Error(
-      `fgclipMaxPatches 必须是 ${SUPPORTED_FGCLIP_PATCH_BUCKETS.join("、")} 之一，当前为 ${runtimeOverride}。`,
-    );
-  }
-  if (runtimeOverride > manifestDefaultMaxPatches) {
-    throw new Error(
-      `fgclipMaxPatches ${runtimeOverride} 不能大于模型 default_max_patches ${manifestDefaultMaxPatches}。`,
-    );
-  }
-  return runtimeOverride;
-}
-
-async function resolveTokenEmbeddingRows(
-  filePath: string,
-  dtype: "f16" | "f32",
-  embeddingDim: number,
-): Promise<number> {
-  const stats = await fs.stat(filePath);
-  const rowBytes = (dtype === "f16" ? 2 : 4) * embeddingDim;
-  if (stats.size % rowBytes !== 0) {
-    throw new Error(`fg_clip token embedding 文件长度异常：${stats.size} bytes。`);
-  }
-  return stats.size / rowBytes;
-}
-
-async function readF32File(filePath: string): Promise<Float32Array> {
-  const bytes = await fs.readFile(filePath);
-  if (bytes.length % 4 !== 0) {
-    throw new Error(`${filePath} 的字节数不能被 4 整除。`);
-  }
-  const values = new Float32Array(bytes.length / 4);
-  for (let index = 0; index < values.length; index += 1) {
-    values[index] = bytes.readFloatLE(index * 4);
-  }
-  return values;
-}
-
-function f16ToF32(bits: number): number {
-  const sign = (bits & 0x8000) << 16;
-  const exponent = (bits >> 10) & 0x1f;
-  const fraction = bits & 0x03ff;
-  let f32Bits: number;
-
-  if (exponent === 0 && fraction === 0) {
-    f32Bits = sign;
-  } else if (exponent === 0) {
-    let normalizedFraction = fraction;
-    let normalizedExponent = -14;
-    while ((normalizedFraction & 0x0400) === 0) {
-      normalizedFraction <<= 1;
-      normalizedExponent -= 1;
-    }
-    normalizedFraction &= 0x03ff;
-    f32Bits = sign | ((normalizedExponent + 127) << 23) | (normalizedFraction << 13);
-  } else if (exponent === 0x1f) {
-    f32Bits = sign | 0x7f800000 | (fraction << 13);
-  } else {
-    f32Bits = sign | ((exponent + 112) << 23) | (fraction << 13);
-  }
-
-  const buffer = new ArrayBuffer(4);
-  new DataView(buffer).setUint32(0, f32Bits, true);
-  return new DataView(buffer).getFloat32(0, true);
-}
-
-async function gatherTokenEmbeddingRows(
-  runtime: FgClipTextRuntime,
-  inputIds: Int32Array,
-): Promise<Float32Array> {
-  const rowBytes = (runtime.tokenEmbeddingDtype === "f16" ? 2 : 4) * runtime.tokenEmbeddingDim;
-  const values = new Float32Array(inputIds.length * runtime.tokenEmbeddingDim);
-  const handle = await fs.open(runtime.tokenEmbeddingPath, "r");
-
-  try {
-    const row = Buffer.allocUnsafe(rowBytes);
-    for (let tokenIndex = 0; tokenIndex < inputIds.length; tokenIndex += 1) {
-      const tokenId = inputIds[tokenIndex];
-      if (tokenId < 0 || tokenId >= runtime.tokenEmbeddingRows) {
-        throw new Error(
-          `token id ${tokenId} 超出 fg_clip embedding 表范围 ${runtime.tokenEmbeddingRows}。`,
-        );
-      }
-
-      await handle.read(row, 0, rowBytes, tokenId * rowBytes);
-      const outputOffset = tokenIndex * runtime.tokenEmbeddingDim;
-      if (runtime.tokenEmbeddingDtype === "f16") {
-        for (let index = 0; index < runtime.tokenEmbeddingDim; index += 1) {
-          values[outputOffset + index] = f16ToF32(row.readUInt16LE(index * 2));
-        }
-      } else {
-        for (let index = 0; index < runtime.tokenEmbeddingDim; index += 1) {
-          values[outputOffset + index] = row.readFloatLE(index * 4);
-        }
-      }
-    }
-  } finally {
-    await handle.close();
-  }
-
-  return values;
-}
-
-function encodeFgClipTokenIds(
-  model: ResolvedClipModel,
-  runtime: FgClipTextRuntime,
-  query: string,
-): Int32Array {
-  const encoded = runtime.tokenizer.encode(query.toLowerCase(), {
-    add_special_tokens: true,
-  });
-  const contextLength = model.manifest.text.context_length;
-  const inputIds = new Int32Array(contextLength);
-  inputIds.fill(0);
-  for (let index = 0; index < Math.min(contextLength, encoded.ids.length); index += 1) {
-    inputIds[index] = encoded.ids[index];
-  }
-  return inputIds;
-}
-
-function normalizeEmbedding(embedding: Float32Array): Float32Array {
-  let sum = 0;
-  for (const value of embedding) {
-    sum += value * value;
-  }
-  const norm = Math.sqrt(sum);
-  if (!Number.isFinite(norm) || norm <= 0) {
-    return embedding;
-  }
-  const normalized = new Float32Array(embedding.length);
-  for (let index = 0; index < embedding.length; index += 1) {
-    normalized[index] = embedding[index] / norm;
-  }
-  return normalized;
-}
-
-function flattenTensorData(tensor: ort.Tensor): Float32Array {
-  if (!(tensor.data instanceof Float32Array)) {
-    throw new Error(`Unsupported tensor output type: ${tensor.type}`);
-  }
-  return tensor.data.length === 0 ? new Float32Array() : new Float32Array(tensor.data);
-}
-
-function extractEmbeddingFromOutput(
-  output: ort.InferenceSession.ReturnType[string],
-  expectedDimension: number,
-  normalizeOutput: boolean,
-): Float32Array {
-  if (!(output instanceof ort.Tensor)) {
-    throw new Error("模型输出不是 Tensor。");
-  }
-  const embedding = flattenTensorData(output);
-  if (embedding.length !== expectedDimension) {
-    throw new Error(`模型输出维度异常：期望 ${expectedDimension}，实际 ${embedding.length}。`);
-  }
-  return normalizeOutput ? normalizeEmbedding(embedding) : embedding;
-}
-
-function getSessionInputType(session: ort.InferenceSession, inputName: string): string | undefined {
-  const inputIndex = session.inputNames.indexOf(inputName);
-  if (inputIndex < 0) {
-    return undefined;
-  }
-  const metadata = session.inputMetadata[inputIndex];
-  return metadata?.isTensor ? metadata.type : undefined;
-}
-
-function intTensorForType(
-  type: string | undefined,
-  values: Int32Array,
-  dims: readonly number[],
-): ort.Tensor {
-  if (type === "int64") {
-    return new ort.Tensor(
-      "int64",
-      BigInt64Array.from(values, (value) => BigInt(value)),
-      dims,
-    );
-  }
-  return new ort.Tensor("int32", values, dims);
-}
-
-async function encodeChineseClipText(
-  model: ResolvedClipModel,
-  runtime: ChineseClipTextRuntime,
-  textSession: ort.InferenceSession,
-  query: string,
-): Promise<Float32Array> {
-  if (model.manifest.text.input.kind !== "bert_like") {
-    throw new Error("chinese_clip 文本输入配置无效。");
-  }
-
-  const encoded = runtime.tokenizer.encode(query);
-  const textInput = model.manifest.text.input;
-  const inputIdsName = textInput.input_ids_name;
-  const attentionMaskName = textInput.attention_mask_name;
-  if (!inputIdsName || !attentionMaskName) {
-    throw new Error("chinese_clip 文本输入名称配置无效。");
-  }
-  const inputDims = [1, model.manifest.text.context_length] as const;
-  const inputIdsType = getSessionInputType(textSession, inputIdsName);
-  const attentionMaskType = getSessionInputType(textSession, attentionMaskName);
-  const tokenTypeIdsName = textInput.token_type_ids_name;
-  const tokenTypeIdsType = tokenTypeIdsName
-    ? getSessionInputType(textSession, tokenTypeIdsName)
-    : undefined;
-
-  const feeds: Record<string, ort.Tensor> = {
-    [inputIdsName]: intTensorForType(inputIdsType, encoded.inputIds, inputDims),
-    [attentionMaskName]: intTensorForType(attentionMaskType, encoded.attentionMask, inputDims),
-  };
-  if (tokenTypeIdsName) {
-    feeds[tokenTypeIdsName] = intTensorForType(tokenTypeIdsType, encoded.tokenTypeIds, inputDims);
-  }
-
-  const outputs = await textSession.run(feeds as ort.InferenceSession.FeedsType, [
-    model.manifest.text.output_name,
-  ]);
-  return extractEmbeddingFromOutput(
-    outputs[model.manifest.text.output_name],
-    model.manifest.embedding_dim,
-    model.manifest.normalize_output !== false,
-  );
-}
-
-async function encodeFgClipText(
-  model: ResolvedClipModel,
-  runtime: FgClipTextRuntime,
-  textSession: ort.InferenceSession,
-  query: string,
-): Promise<Float32Array> {
-  const inputIds = encodeFgClipTokenIds(model, runtime, query);
-  const tokenEmbeds = await gatherTokenEmbeddingRows(runtime, inputIds);
-  const feeds: ort.InferenceSession.FeedsType = {
-    token_embeds: new ort.Tensor("float32", tokenEmbeds, [
-      1,
-      model.manifest.text.context_length,
-      runtime.tokenEmbeddingDim,
-    ]),
-  };
-  const outputs = await textSession.run(feeds, [model.manifest.text.output_name]);
-  return extractEmbeddingFromOutput(
-    outputs[model.manifest.text.output_name],
-    model.manifest.embedding_dim,
-    model.manifest.normalize_output !== false,
-  );
-}
-
-async function encodeChineseClipImage(
-  model: ResolvedClipModel,
-  imageSession: ort.InferenceSession,
-  filePath: string,
-): Promise<Float32Array> {
-  const tensor = await preprocessChineseClipImage(filePath, model.manifest);
-  const preprocess = model.manifest.image.preprocess;
-  if (preprocess.kind !== "clip_image") {
-    throw new Error("chinese_clip 图片预处理配置无效。");
-  }
-
-  const inputName = imageSession.inputNames[0];
-  const feeds: ort.InferenceSession.FeedsType = {
-    [inputName]: new ort.Tensor("float32", tensor, [
-      1,
-      3,
-      preprocess.image_size ?? 0,
-      preprocess.image_size ?? 0,
-    ]),
-  };
-  const outputs = await imageSession.run(feeds, [model.manifest.image.output_name]);
-  return extractEmbeddingFromOutput(
-    outputs[model.manifest.image.output_name],
-    model.manifest.embedding_dim,
-    model.manifest.normalize_output !== false,
-  );
-}
-
-async function encodeFgClipImage(
-  model: ResolvedClipModel,
-  runtime: FgClipImageRuntimeHandle,
-  imageSession: ort.InferenceSession,
-  filePath: string,
-): Promise<Float32Array> {
-  const inputs = await preprocessFgClipImage(filePath, runtime);
-  const maskType = getSessionInputType(imageSession, "pixel_attention_mask");
-  const feeds: ort.InferenceSession.FeedsType = {
-    pixel_values: new ort.Tensor("float32", inputs.pixelValues, [
-      1,
-      inputs.maxPatches,
-      inputs.channels,
-    ]),
-    pixel_attention_mask: intTensorForType(maskType, inputs.pixelAttentionMask, [
-      1,
-      inputs.maxPatches,
-    ]),
-    pos_embed: new ort.Tensor("float32", inputs.posEmbed, [
-      1,
-      inputs.maxPatches,
-      model.manifest.embedding_dim,
-    ]),
-  };
-  const outputs = await imageSession.run(feeds, [model.manifest.image.output_name]);
-  return extractEmbeddingFromOutput(
-    outputs[model.manifest.image.output_name],
-    model.manifest.embedding_dim,
-    model.manifest.normalize_output !== false,
-  );
 }

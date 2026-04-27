@@ -1,8 +1,8 @@
 import { invokeDesktop } from "@/services/desktop/core";
-import type { Tag } from "@/stores/tagStore";
+import type { RawTag } from "@/shared/desktop-types";
 
 export function getAllTags() {
-  return invokeDesktop<Tag[]>("get_all_tags");
+  return invokeDesktop<RawTag[]>("get_all_tags");
 }
 
 export function createTag(args: { name: string; color: string; parentId?: number | null }) {

@@ -29,6 +29,8 @@
       "js": [
         "content-shared.js",
         "content-drag-dock.js",
+        "content-panel-style.js",
+        "content-panel-utils.js",
         "content-panel.js",
         "content-xiaohongshu.js",
         "content.js"

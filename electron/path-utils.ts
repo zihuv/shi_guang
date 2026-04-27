@@ -34,3 +34,17 @@ export function isHiddenName(name: string): boolean {
 export function isInsideAnyPath(candidate: string, roots: string[]): boolean {
   return roots.some((root) => pathHasPrefix(candidate, root));
 }
+
+export function normalizeFolderName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("文件夹名称不能为空");
+  }
+  if (trimmed === "." || trimmed === "..") {
+    throw new Error("文件夹名称不合法");
+  }
+  if (trimmed.includes("/") || trimmed.includes("\\")) {
+    throw new Error("文件夹名称不能包含斜杠");
+  }
+  return trimmed;
+}

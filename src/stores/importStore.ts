@@ -14,7 +14,7 @@ import {
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
-import { listenDesktop } from "@/services/desktop/core";
+import { waitForDesktopTask } from "@/stores/taskWatcher";
 
 interface ImportStore {
   importTask: ImportTaskSnapshot | null;
@@ -78,87 +78,6 @@ function toImportTaskItem(item: BinaryImageImportItem) {
   };
 }
 
-async function waitForImportTask(taskId: string, onUpdate: (task: ImportTaskSnapshot) => void) {
-  let unlisten: (() => void) | null = null;
-  let fallbackTimer: ReturnType<typeof setInterval> | null = null;
-  let isSettled = false;
-  let isRefreshing = false;
-  let needsRefresh = false;
-
-  return await new Promise<ImportTaskSnapshot>((resolve, reject) => {
-    const cleanup = () => {
-      if (fallbackTimer) {
-        clearInterval(fallbackTimer);
-        fallbackTimer = null;
-      }
-      if (unlisten) {
-        unlisten();
-        unlisten = null;
-      }
-    };
-
-    const finish = (snapshot: ImportTaskSnapshot) => {
-      if (isSettled) return;
-      isSettled = true;
-      cleanup();
-      resolve(snapshot);
-    };
-
-    const fail = (error: unknown) => {
-      if (isSettled) return;
-      isSettled = true;
-      cleanup();
-      reject(error);
-    };
-
-    const refreshSnapshot = async () => {
-      if (isSettled) return;
-      if (isRefreshing) {
-        needsRefresh = true;
-        return;
-      }
-
-      isRefreshing = true;
-      try {
-        const snapshot = await getImportTask(taskId);
-        onUpdate(snapshot);
-        if (TERMINAL_IMPORT_TASK_STATUSES.has(snapshot.status)) {
-          finish(snapshot);
-        }
-      } catch (error) {
-        fail(error);
-      } finally {
-        isRefreshing = false;
-        if (needsRefresh && !isSettled) {
-          needsRefresh = false;
-          void refreshSnapshot();
-        }
-      }
-    };
-
-    fallbackTimer = setInterval(() => {
-      void refreshSnapshot();
-    }, 1000);
-
-    void listenDesktop<string>("import-task-updated", (event) => {
-      if (event.payload !== taskId || isSettled) return;
-      void refreshSnapshot();
-    })
-      .then((dispose) => {
-        if (isSettled) {
-          dispose();
-          return;
-        }
-        unlisten = dispose;
-      })
-      .catch(() => {
-        // Keep fallback timer when event subscription fails.
-      });
-
-    void refreshSnapshot();
-  });
-}
-
 async function finalizeImportTask(
   task: ImportTaskSnapshot,
   setImportTask: (task: ImportTaskSnapshot | null) => void,
@@ -206,8 +125,12 @@ export const useImportStore = create<ImportStore>((set, get) => ({
       });
       set({ importTask: task });
 
-      const currentTask = await waitForImportTask(task.id, (nextTask) => {
-        set({ importTask: nextTask });
+      const currentTask = await waitForDesktopTask({
+        eventChannel: "import-task-updated",
+        getSnapshot: getImportTask,
+        isTerminal: (status) => TERMINAL_IMPORT_TASK_STATUSES.has(status),
+        onUpdate: (nextTask) => set({ importTask: nextTask }),
+        taskId: task.id,
       });
 
       return await finalizeImportTask(
@@ -266,8 +189,12 @@ export const useImportStore = create<ImportStore>((set, get) => ({
       });
       set({ importTask: task });
 
-      const currentTask = await waitForImportTask(task.id, (nextTask) => {
-        set({ importTask: nextTask });
+      const currentTask = await waitForDesktopTask({
+        eventChannel: "import-task-updated",
+        getSnapshot: getImportTask,
+        isTerminal: (status) => TERMINAL_IMPORT_TASK_STATUSES.has(status),
+        onUpdate: (nextTask) => set({ importTask: nextTask }),
+        taskId: task.id,
       });
 
       return await finalizeImportTask(

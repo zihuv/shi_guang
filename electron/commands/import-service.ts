@@ -132,20 +132,6 @@ function generatedImportName(prefix: string | null, ext: string): string {
   return prefix ? `${prefix}_${stamp}_${id}.${ext}` : `${stamp}_${id}.${ext}`;
 }
 
-export function normalizeFolderName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("文件夹名称不能为空");
-  }
-  if (trimmed === "." || trimmed === "..") {
-    throw new Error("文件夹名称不合法");
-  }
-  if (trimmed.includes("/") || trimmed.includes("\\")) {
-    throw new Error("文件夹名称不能包含斜杠");
-  }
-  return trimmed;
-}
-
 export function getTargetDir(state: AppState, folderId: number | null): string {
   if (folderId !== null) {
     const folder = getFolderById(state.db, folderId);

@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import type { FileItem } from "@/stores/fileTypes";
-import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 
 interface SelectionStore {
   selectedFile: FileItem | null;
   selectedFiles: number[];
+  visibleFileIds: number[];
   isDraggingInternal: boolean;
   draggedFileIds: number[];
   draggedPrimaryFileId: number | null;
@@ -26,6 +26,7 @@ interface SelectionStore {
 export const useSelectionStore = create<SelectionStore>((set, get) => ({
   selectedFile: null,
   selectedFiles: [],
+  visibleFileIds: [],
   isDraggingInternal: false,
   draggedFileIds: [],
   draggedPrimaryFileId: null,
@@ -49,19 +50,17 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   clearSelection: () => set({ selectedFiles: [] }),
 
   selectAll: () => {
-    const files = useLibraryQueryStore.getState().files;
-    set({ selectedFiles: files.map((file) => file.id), selectedFile: null });
+    set((state) => ({ selectedFiles: state.visibleFileIds, selectedFile: null }));
   },
 
   toggleSelectAll: () => {
-    const files = useLibraryQueryStore.getState().files;
-    const { selectedFiles } = get();
-    if (files.length > 0 && selectedFiles.length === files.length) {
+    const { selectedFiles, visibleFileIds } = get();
+    if (visibleFileIds.length > 0 && selectedFiles.length === visibleFileIds.length) {
       set({ selectedFiles: [] });
       return;
     }
 
-    set({ selectedFiles: files.map((file) => file.id), selectedFile: null });
+    set({ selectedFiles: visibleFileIds, selectedFile: null });
   },
 
   reconcileVisibleSelection: (files) => {
@@ -71,6 +70,7 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     set({
       selectedFile: selectedFile ? files.find((file) => file.id === selectedFile.id) || null : null,
       selectedFiles: selectedFiles.filter((fileId) => visibleFileIds.has(fileId)),
+      visibleFileIds: files.map((file) => file.id),
     });
   },
 

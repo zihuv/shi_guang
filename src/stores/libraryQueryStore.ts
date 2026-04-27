@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import { toast } from "sonner";
-import { useFilterStore, getSortConfig } from "@/stores/filterStore";
-import { useFolderStore } from "@/stores/folderStore";
+import { useFilterStore } from "@/stores/filterStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSmartCollectionStore } from "@/stores/smartCollectionStore";
 import { useTagStore } from "@/stores/tagStore";
+import { loadFoldersFromAccess, selectFolderFromAccess } from "@/stores/folderStoreAccess";
 import {
   analyzeFileMetadata as analyzeFileMetadataCommand,
   extractColor,
@@ -102,7 +102,8 @@ let fileListRequestId = 0;
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getCurrentSortConfig() {
-  return getSortConfig(useFilterStore.getState().criteria);
+  const { sortBy, sortDirection } = useFilterStore.getState().criteria;
+  return { sortBy, sortDirection };
 }
 
 function getQueryPagination(pagination: LibraryPagination, mode: LibraryPaginationMode) {
@@ -263,7 +264,7 @@ function logVisualSearchDebugScores(result: PaginatedFilesResponse, naturalLangu
 }
 
 async function refreshFolders() {
-  await useFolderStore.getState().loadFolders();
+  await loadFoldersFromAccess();
 }
 
 async function refreshSmartCollections() {
@@ -359,7 +360,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
     useNavigationStore.getState().openLibrary("all");
     useFilterStore.getState().setFolderId(null);
-    useFolderStore.getState().selectFolder(null);
+    selectFolderFromAccess(null);
     useSelectionStore.getState().clearSelection();
     usePreviewStore.getState().closePreview();
     useSelectionStore.getState().setSelectedFile(null);
