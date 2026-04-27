@@ -26,6 +26,7 @@ import {
   removeTagFromFile as removeTagFromFileCommand,
 } from "@/services/desktop/tags";
 import { buildFileFilterPayload, hasStructuredFilters } from "@/features/filters/schema";
+import { resolveLibraryQueryFolderId } from "@/stores/libraryQueryModel";
 import { getErrorMessage } from "@/services/desktop/core";
 import {
   parseFile,
@@ -482,10 +483,14 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   runCurrentQuery: async (folderIdOverride) => {
     const { searchQuery, selectedFolderId, imageQueryFile } = get();
     const criteria = useFilterStore.getState().criteria;
-    const folderId = folderIdOverride !== undefined ? folderIdOverride : selectedFolderId;
     const { activeSmartCollection, randomSeed } = useNavigationStore.getState();
     const hasSmartCollectionQuery =
       activeSmartCollection !== null && activeSmartCollection !== "all";
+    const folderId = resolveLibraryQueryFolderId({
+      activeSmartCollection,
+      selectedFolderId,
+      folderIdOverride,
+    });
 
     if (hasStructuredFilters(criteria) || hasSmartCollectionQuery) {
       await get().filterFiles({

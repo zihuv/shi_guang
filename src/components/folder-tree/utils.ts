@@ -1,6 +1,6 @@
 import type { SmartCollectionId } from "@/stores/fileTypes";
 import type { FolderNode } from "@/stores/folderStore";
-import { shouldResetHiddenQueryStateForSmartCollection } from "@/components/folder-tree/navigationState";
+import { shouldResetQueryStateForSmartCollectionEntry } from "@/components/folder-tree/navigationState";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -157,13 +157,19 @@ export async function selectSmartCollectionFromSidebar(smartCollection: SmartCol
   const selectionStore = useSelectionStore.getState();
   const previewStore = usePreviewStore.getState();
 
-  if (shouldResetHiddenQueryStateForSmartCollection(navigationStore.currentView)) {
+  if (
+    shouldResetQueryStateForSmartCollectionEntry({
+      currentView: navigationStore.currentView,
+      smartCollection,
+    })
+  ) {
     filterStore.clearFilters();
     libraryStore.clearTransientQuery();
   }
   navigationStore.openSmartCollection(smartCollection);
   filterStore.setFolderId(null);
   folderStore.selectFolder(null);
+  libraryStore.setSelectedFolderId(null);
   selectionStore.clearSelection();
   previewStore.closePreview();
   selectionStore.setSelectedFile(null);

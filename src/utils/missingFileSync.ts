@@ -42,7 +42,7 @@ async function refreshVisibleLibraryState() {
   try {
     await useFolderStore.getState().loadFolders();
     const libraryStore = useLibraryQueryStore.getState();
-    await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId);
+    await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
   } catch (error) {
     console.error("Failed to refresh library state:", error);
   }

@@ -90,7 +90,7 @@ async function finalizeImportTask(
   );
 
   await delay(0);
-  await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId);
+  await useLibraryQueryStore.getState().runCurrentQuery(selectedFolderId);
   await useFolderStore.getState().loadFolders();
   await useSmartCollectionStore.getState().loadStats();
   setImportTask(null);

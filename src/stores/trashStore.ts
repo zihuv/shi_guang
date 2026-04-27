@@ -69,8 +69,8 @@ interface TrashStore {
 
 async function refreshCurrentLibraryState() {
   await useFolderStore.getState().loadFolders();
-  const selectedFolderId = useLibraryQueryStore.getState().selectedFolderId;
-  await useLibraryQueryStore.getState().loadFilesInFolder(selectedFolderId);
+  const libraryStore = useLibraryQueryStore.getState();
+  await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
   await useSmartCollectionStore.getState().loadStats();
 }
 
@@ -103,7 +103,7 @@ async function refreshAfterRestoreFolder(restoredPath: string, shouldSelectOnUnd
     }
   }
 
-  await libraryStore.loadFilesInFolder(libraryStore.selectedFolderId);
+  await libraryStore.runCurrentQuery(libraryStore.selectedFolderId);
 }
 
 function notifyRestoreResult(result: RestoreFilesResult, restoredCount: number) {
