@@ -348,6 +348,16 @@ export default function ImagePreview() {
     }
   };
 
+  const dismissContextMenu = () => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  };
+
   const triggerMenuAction = (key: string, action: () => void | Promise<void>) => {
     const now = Date.now();
     const lastAction = lastMenuActionRef.current;
@@ -356,6 +366,7 @@ export default function ImagePreview() {
     }
 
     lastMenuActionRef.current = { key, timestamp: now };
+    dismissContextMenu();
     void action();
   };
 

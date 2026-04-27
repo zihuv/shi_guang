@@ -120,7 +120,16 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   const clearActionFileIds = () => {
     frozenFileIdsRef.current = null;
     setFrozenFileIds(null);
-    lastMenuActionRef.current = null;
+  };
+
+  const dismissContextMenu = () => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
   };
 
   const triggerMenuAction = (key: string, action: () => void | Promise<void>) => {
@@ -131,6 +140,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     }
 
     lastMenuActionRef.current = { key, timestamp: now };
+    dismissContextMenu();
     void action();
   };
 
