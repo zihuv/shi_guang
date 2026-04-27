@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { shouldResetHiddenFiltersForSmartCollection } from "@/components/folder-tree/utils";
+import { shouldResetHiddenQueryStateForSmartCollection } from "@/components/folder-tree/navigationState";
 
 describe("folder tree navigation utils", () => {
-  it("resets hidden filters when opening a smart collection from non-library views", () => {
-    expect(shouldResetHiddenFiltersForSmartCollection("tags")).toBe(true);
-    expect(shouldResetHiddenFiltersForSmartCollection("trash")).toBe(true);
-    expect(shouldResetHiddenFiltersForSmartCollection("library")).toBe(false);
+  it("resets hidden query state when opening a smart collection from non-library views", () => {
+    expect(shouldResetHiddenQueryStateForSmartCollection("tags")).toBe(true);
+    expect(shouldResetHiddenQueryStateForSmartCollection("trash")).toBe(true);
+    expect(shouldResetHiddenQueryStateForSmartCollection("library")).toBe(false);
   });
 });

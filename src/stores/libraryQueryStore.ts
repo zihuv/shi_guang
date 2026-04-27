@@ -74,6 +74,7 @@ interface LibraryQueryStore {
   setSearchQuery: (query: string) => void;
   searchSimilarToFile: (file: ImageQueryFile) => Promise<void>;
   clearImageQuery: () => void;
+  clearTransientQuery: () => void;
   setSelectedFolderId: (folderId: number | null) => void;
   loadFiles: () => Promise<void>;
   loadFilesInFolder: (folderId: number | null) => Promise<void>;
@@ -380,6 +381,17 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     useFilterStore.getState().setSearchQuery("");
     get().resetPage();
     void get().runCurrentQuery();
+  },
+
+  clearTransientQuery: () => {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+
+    set({ imageQueryFile: null, searchQuery: "" });
+    useFilterStore.getState().setSearchQuery("");
+    get().resetPage();
   },
 
   setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
