@@ -1,5 +1,6 @@
 import type { SmartCollectionId } from "@/stores/fileTypes";
 import type { FolderNode } from "@/stores/folderStore";
+import type { AppView } from "@/stores/navigationStore";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -13,6 +14,10 @@ export { findFolderById } from "@/utils/folderTree";
 export const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids";
 
 export type FlattenedFolderNode = FolderNode & { sortOrder: number };
+
+export function shouldResetHiddenFiltersForSmartCollection(currentView: AppView) {
+  return currentView !== "library";
+}
 
 export const isPersistedFolder = (folder: FolderNode): boolean =>
   !folder.isSystem && folder.name !== "浏览器采集";
@@ -156,6 +161,9 @@ export async function selectSmartCollectionFromSidebar(smartCollection: SmartCol
   const selectionStore = useSelectionStore.getState();
   const previewStore = usePreviewStore.getState();
 
+  if (shouldResetHiddenFiltersForSmartCollection(navigationStore.currentView)) {
+    filterStore.clearFilters();
+  }
   navigationStore.openSmartCollection(smartCollection);
   filterStore.setFolderId(null);
   folderStore.selectFolder(null);
