@@ -7,6 +7,7 @@ import {
 } from "@/features/filters/types";
 import { getActiveFilterCount as getSchemaActiveFilterCount } from "@/features/filters/schema";
 import { getSetting, setSetting } from "@/services/desktop/indexing";
+import { LIBRARY_FILTER_FILE_TYPES, extensionSet } from "@/shared/file-formats";
 
 export type { FileSortField, FilterCriteria, SortDirection } from "@/features/filters/types";
 
@@ -23,7 +24,7 @@ type LegacyFileSortOption =
   | "size_desc"
   | "size_asc";
 
-const FILE_TYPES = new Set(["all", "image", "video", "document"]);
+const FILE_TYPES = extensionSet(LIBRARY_FILTER_FILE_TYPES);
 
 type PersistedFilterPreferences = {
   fileType?: unknown;

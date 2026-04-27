@@ -21,6 +21,8 @@ import {
   detectExtensionFromPath,
   extractColorDistributionFromInput,
   getImageDimensions,
+  isBlockedUnsupportedExtension,
+  isScanSupportedExtension,
 } from "../media";
 import { hasThumbnailCachePath, getOrCreateThumbnail } from "../storage";
 import { decideThumbnailGeneration, isVideoThumbnailExt } from "../thumbnail";
@@ -43,6 +45,24 @@ export function timestampFromStats(stats: Stats, key: "birthtime" | "mtime"): st
 export function normalizeImportExtension(ext: string | null | undefined): string {
   const normalized = ext?.trim().replace(/^\./, "").toLowerCase();
   return normalized || "bin";
+}
+
+function fallbackExtensionFromPath(filePath: string): string | null {
+  const ext = path.extname(filePath).replace(/^\./, "").trim().toLowerCase();
+  return ext || null;
+}
+
+function assertSupportedImportExtension(ext: string): void {
+  if (!isScanSupportedExtension(ext)) {
+    throw new Error(`不支持的文件格式: ${ext.toUpperCase()}`);
+  }
+}
+
+function assertFallbackExtensionAllowed(ext: string | null | undefined): void {
+  const normalized = normalizeImportExtension(ext);
+  if (normalized !== "bin" && isBlockedUnsupportedExtension(normalized)) {
+    throw new Error(`不支持的文件格式: ${normalized.toUpperCase()}`);
+  }
 }
 
 export function shouldGenerateFileThumbnail(
@@ -150,8 +170,10 @@ export async function buildFileInputFromPath(
 ): Promise<UpsertFileInput> {
   const stats = await fs.stat(filePath);
   const ext = normalizeImportExtension(
-    knownBytes ? detectExtensionFromBytes(knownBytes) : await detectExtensionFromPath(filePath),
+    (knownBytes ? detectExtensionFromBytes(knownBytes) : await detectExtensionFromPath(filePath)) ??
+      fallbackExtensionFromPath(filePath),
   );
+  assertSupportedImportExtension(ext);
   const dimensions = await getImageDimensions(filePath, ext);
   const colors = await extractColorDistributionFromInput(filePath);
   const dominantColor = colors[0]?.color ?? "";
@@ -191,8 +213,10 @@ export async function importBytes(
   },
 ): Promise<FileRecord> {
   const detectedExt = detectExtensionFromBytes(request.bytes);
+  assertFallbackExtensionAllowed(request.fallbackExt);
   const storageExt = normalizeImportExtension(detectedExt ?? request.fallbackExt);
-  const recordExt = normalizeImportExtension(detectedExt);
+  const recordExt = normalizeImportExtension(detectedExt ?? request.fallbackExt);
+  assertSupportedImportExtension(recordExt);
   const targetPath =
     request.targetPath ??
     path.join(

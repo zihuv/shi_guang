@@ -8,7 +8,7 @@ import { useSelectionStore } from "@/stores/selectionStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { copyFilesToClipboard } from "@/lib/clipboard";
 import { openFile, showInExplorer } from "@/services/desktop/system";
-import { buildAiImageDataUrl } from "@/utils";
+import { AI_SUPPORTED_IMAGE_EXTENSIONS, extensionSet } from "@/shared/file-formats";
 import { Button } from "@/components/ui/Button";
 import {
   ContextMenu,
@@ -29,18 +29,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Copy, ExternalLink, FolderOpen, Move, ScanSearch, Sparkles, Trash2 } from "lucide-react";
 
-const AI_IMAGE_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "bmp",
-  "gif",
-  "tif",
-  "tiff",
-  "ico",
-  "avif",
-]);
+const AI_IMAGE_EXTENSIONS = extensionSet(AI_SUPPORTED_IMAGE_EXTENSIONS);
 
 interface BatchAnalyzeDialogState {
   existingFiles: FileItem[];
@@ -200,8 +189,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     if (actionFiles.length === 1 && analyzableFiles.length === 1) {
       const loadingToast = toast.loading("AI 分析中...");
       try {
-        const imageDataUrl = await buildAiImageDataUrl(analyzableFiles[0].path);
-        await analyzeFileMetadata(analyzableFiles[0].id, imageDataUrl);
+        await analyzeFileMetadata(analyzableFiles[0].id);
         toast.success("AI 分析已完成", { id: loadingToast });
       } catch (e) {
         console.error("Failed to analyze file metadata:", e);

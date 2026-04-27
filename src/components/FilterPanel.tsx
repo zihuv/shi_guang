@@ -18,6 +18,7 @@ import { useFilterStore } from "@/stores/filterStore";
 import { useTagStore } from "@/stores/tagStore";
 import { getActiveFilterCount } from "@/features/filters/schema";
 import { cn } from "@/lib/utils";
+import type { LibraryFilterFileType } from "@/shared/file-formats";
 
 const PRESET_COLORS = [
   { name: "红色", value: "#FF0000" },
@@ -33,11 +34,13 @@ const PRESET_COLORS = [
   { name: "黑色", value: "#000000" },
 ];
 
-const FILE_TYPES = [
+const FILE_TYPES: Array<{ label: string; value: LibraryFilterFileType }> = [
   { label: "全部类型", value: "all" },
   { label: "图片", value: "image" },
   { label: "视频", value: "video" },
+  { label: "音频", value: "audio" },
   { label: "文档", value: "document" },
+  { label: "压缩包", value: "archive" },
 ];
 
 const RATING_OPTIONS = [
@@ -261,9 +264,7 @@ export default function FilterPanel() {
               displayValue={
                 criteria.fileType !== "all" ? getFileTypeDisplay(criteria.fileType) : "全部"
               }
-              onValueChange={(value) =>
-                setFileType(value as "all" | "image" | "video" | "document")
-              }
+              onValueChange={(value) => setFileType(value as LibraryFilterFileType)}
               className="max-w-[120px]"
               triggerClassName={SELECT_TRIGGER_CLASS_NAME}
             >

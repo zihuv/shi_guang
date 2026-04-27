@@ -2,71 +2,22 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import sharp from "sharp";
 import { rgbaToThumbHash, thumbHashBytesToBase64 } from "../src/lib/thumbhash";
+import {
+  AI_SUPPORTED_IMAGE_EXTENSIONS as AI_SUPPORTED_IMAGE_EXTENSION_LIST,
+  BACKEND_DECODABLE_IMAGE_EXTENSIONS as BACKEND_DECODABLE_IMAGE_EXTENSION_LIST,
+  BLOCKED_UNSUPPORTED_EXTENSIONS as BLOCKED_UNSUPPORTED_EXTENSION_LIST,
+  SCAN_SUPPORTED_EXTENSIONS as SCAN_SUPPORTED_EXTENSION_LIST,
+  extensionSet,
+} from "../src/shared/file-formats";
 
 const PROBE_READ_LIMIT = 4096;
 
-export const SCAN_SUPPORTED_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "gif",
-  "svg",
-  "webp",
-  "bmp",
-  "ico",
-  "tiff",
-  "tif",
-  "avif",
-  "psd",
-  "ai",
-  "eps",
-  "raw",
-  "cr2",
-  "nef",
-  "arw",
-  "dng",
-  "heic",
-  "heif",
-  "pdf",
-  "mp4",
-  "avi",
-  "mov",
-  "mkv",
-  "wmv",
-  "flv",
-  "webm",
-  "m4v",
-  "3gp",
-]);
-
-export const BACKEND_DECODABLE_IMAGE_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "bmp",
-  "gif",
-  "tif",
-  "tiff",
-  "ico",
-  "avif",
-  "svg",
-]);
-
-export const AI_SUPPORTED_IMAGE_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "bmp",
-  "gif",
-  "tif",
-  "tiff",
-  "ico",
-  "avif",
-  "heic",
-  "heif",
-]);
+export const BLOCKED_UNSUPPORTED_EXTENSIONS = extensionSet(BLOCKED_UNSUPPORTED_EXTENSION_LIST);
+export const SCAN_SUPPORTED_EXTENSIONS = extensionSet(SCAN_SUPPORTED_EXTENSION_LIST);
+export const BACKEND_DECODABLE_IMAGE_EXTENSIONS = extensionSet(
+  BACKEND_DECODABLE_IMAGE_EXTENSION_LIST,
+);
+export const AI_SUPPORTED_IMAGE_EXTENSIONS = extensionSet(AI_SUPPORTED_IMAGE_EXTENSION_LIST);
 
 function asciiSlice(bytes: Buffer, start: number, end: number): string {
   if (bytes.length < end) {
@@ -93,6 +44,7 @@ function extensionFromContentType(contentType?: string | null): string | null {
     "image/apng": "png",
     "image/jpeg": "jpg",
     "image/jpg": "jpg",
+    "image/jfif": "jpg",
     "image/pjpeg": "jpg",
     "image/gif": "gif",
     "image/webp": "webp",
@@ -115,6 +67,21 @@ function extensionFromContentType(contentType?: string | null): string | null {
     "video/x-ms-wmv": "wmv",
     "video/x-flv": "flv",
     "video/3gpp": "3gp",
+    "video/3gpp2": "3g2",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/wave": "wav",
+    "audio/x-wav": "wav",
+    "audio/ogg": "ogg",
+    "audio/flac": "flac",
+    "audio/aac": "aac",
+    "audio/mp4": "m4a",
+    "application/zip": "zip",
+    "application/x-rar-compressed": "rar",
+    "text/plain": "txt",
+    "text/csv": "csv",
+    "text/html": "html",
     "image/vnd.adobe.photoshop": "psd",
   };
   return map[normalized] ?? null;
@@ -140,14 +107,6 @@ export function detectExtensionFromBytes(
     hasSignature(bytes, [0x49, 0x49, 0x2a, 0x00]) ||
     hasSignature(bytes, [0x4d, 0x4d, 0x00, 0x2a])
   ) {
-    const head = bytes
-      .subarray(0, Math.min(bytes.length, PROBE_READ_LIMIT))
-      .toString("latin1")
-      .toLowerCase();
-    if (asciiSlice(bytes, 8, 10) === "CR") return "cr2";
-    if (head.includes("nikon")) return "nef";
-    if (head.includes("sony")) return "arw";
-    if (head.includes("adobe dng") || head.includes(" dng")) return "dng";
     return "tiff";
   }
   if (hasSignature(bytes, [0x00, 0x00, 0x01, 0x00])) return "ico";
@@ -164,7 +123,8 @@ export function detectExtensionFromBytes(
       return "heif";
     if (brands.includes("qt  ")) return "mov";
     if (brands.includes("m4v")) return "m4v";
-    if (["3gp", "3g2", "3gr", "3gs"].some((brand) => brands.includes(brand))) return "3gp";
+    if (brands.includes("3g2")) return "3g2";
+    if (["3gp", "3gr", "3gs"].some((brand) => brands.includes(brand))) return "3gp";
     if (
       ["mp4", "isom", "iso2", "iso5", "iso6", "avc1", "dash"].some((brand) =>
         brands.includes(brand),
@@ -200,8 +160,7 @@ export function detectExtensionFromBytes(
     .toString("utf8")
     .trimStart()
     .toLowerCase();
-  if (textHead.startsWith("%pdf-")) return textHead.includes("illustrator") ? "ai" : "pdf";
-  if (textHead.startsWith("%!ps-adobe-")) return textHead.includes("illustrator") ? "ai" : "eps";
+  if (textHead.startsWith("%pdf-")) return "pdf";
   if (textHead.startsWith("<svg") || textHead.startsWith("<?xml")) return "svg";
 
   return extensionFromContentType(contentType);
@@ -220,6 +179,10 @@ export async function detectExtensionFromPath(filePath: string): Promise<string 
 
 export function isScanSupportedExtension(ext: string): boolean {
   return SCAN_SUPPORTED_EXTENSIONS.has(ext.toLowerCase());
+}
+
+export function isBlockedUnsupportedExtension(ext: string): boolean {
+  return BLOCKED_UNSUPPORTED_EXTENSIONS.has(ext.toLowerCase());
 }
 
 export function canBackendDecodeImage(ext: string): boolean {

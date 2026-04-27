@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import type { FileRecord, PaginatedFiles } from "../types";
 import { attachTags, currentTimestamp, makePlaceholders, pageArgs } from "./shared";
 import { queryFilteredRows } from "./file-repository";
+import { VISUAL_SEARCH_IMAGE_EXTENSIONS, extensionSet } from "../../src/shared/file-formats";
 
 export type VisualIndexCandidate = {
   file: {
@@ -30,20 +31,7 @@ export type FileVisualEmbeddingQuery = {
   embedding: Float32Array;
 };
 
-const VISUAL_SEARCH_EXTENSIONS = new Set([
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "bmp",
-  "gif",
-  "tif",
-  "tiff",
-  "ico",
-  "avif",
-  "heic",
-  "heif",
-]);
+const VISUAL_SEARCH_EXTENSIONS = extensionSet(VISUAL_SEARCH_IMAGE_EXTENSIONS);
 
 function isVisualSearchSupportedExtension(ext: string): boolean {
   return VISUAL_SEARCH_EXTENSIONS.has(ext.trim().toLowerCase());

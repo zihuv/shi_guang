@@ -1,1 +1,3 @@
-export const VIDEO_EXTENSIONS = ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"];
+import { VIDEO_FILE_EXTENSIONS } from "./file-formats";
+
+export const VIDEO_EXTENSIONS = [...VIDEO_FILE_EXTENSIONS];

@@ -1,15 +1,16 @@
-import { VIDEO_EXTENSIONS } from "../shared/file-extensions";
+import { VIDEO_FILE_EXTENSIONS, extensionSet, normalizeExtension } from "../shared/file-formats";
 
 export const THUMBNAIL_PIXEL_THRESHOLD = 10_000_000;
 export const THUMBNAIL_EDGE_THRESHOLD = 3840;
 export const THUMBNAIL_SIZE_THRESHOLD = 8 * 1024 * 1024;
 
-const VIDEO_EXTENSION_SET = new Set(VIDEO_EXTENSIONS);
+const VIDEO_EXTENSION_SET = extensionSet(VIDEO_FILE_EXTENSIONS);
 
 export type ThumbnailDecisionReason =
   | "video"
   | "psd"
   | "pdf"
+  | "format"
   | "pixel-threshold"
   | "edge-threshold"
   | "size-threshold"
@@ -28,7 +29,7 @@ export interface ThumbnailDecision {
 }
 
 export function normalizeThumbnailExt(ext: string): string {
-  return ext.trim().replace(/^\./, "").toLowerCase();
+  return normalizeExtension(ext);
 }
 
 export function isVideoThumbnailExt(ext: string): boolean {
@@ -51,6 +52,10 @@ export function decideThumbnailGeneration(input: ThumbnailDecisionInput): Thumbn
 
   if (ext === "pdf") {
     return { shouldGenerate: true, reason: "pdf" };
+  }
+
+  if (ext === "heic" || ext === "heif") {
+    return { shouldGenerate: true, reason: "format" };
   }
 
   if (width * height >= THUMBNAIL_PIXEL_THRESHOLD) {

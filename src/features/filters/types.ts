@@ -1,10 +1,12 @@
+import type { LibraryFilterFileType } from "@/shared/file-formats";
+
 export type FileSortField = "imported_at" | "created_at" | "modified_at" | "name" | "ext" | "size";
 
 export type SortDirection = "asc" | "desc";
 
 export interface FilterCriteria {
   searchQuery: string;
-  fileType: "all" | "image" | "video" | "document";
+  fileType: LibraryFilterFileType;
   dateRange: { start: string | null; end: string | null };
   sizeRange: { min: number | null; max: number | null };
   tagIds: number[];

@@ -18,7 +18,11 @@ import {
   updateFilePathAndFolder,
   upsertFile,
 } from "../database";
-import { detectExtensionFromPath, isScanSupportedExtension } from "../media";
+import {
+  detectExtensionFromPath,
+  isBlockedUnsupportedExtension,
+  isScanSupportedExtension,
+} from "../media";
 import { isHiddenName } from "../path-utils";
 import { removeThumbnailForFile } from "../storage";
 import {
@@ -163,8 +167,13 @@ async function syncExistingPath(
     return "skipped";
   }
 
+  const pathExt = normalizeImportExtension(path.extname(filePath));
+  if (isBlockedUnsupportedExtension(pathExt)) {
+    return "skipped";
+  }
+
   const detectedExt = normalizeImportExtension(
-    knownExt ?? (await detectExtensionFromPath(filePath)),
+    knownExt ?? (await detectExtensionFromPath(filePath)) ?? pathExt,
   );
   if (!isScanSupportedExtension(detectedExt)) {
     return "skipped";
@@ -256,7 +265,10 @@ export async function scanIndexPath(
       }
       if (!entry.isFile()) continue;
 
-      const ext = normalizeImportExtension(await detectExtensionFromPath(candidate));
+      const pathExt = normalizeImportExtension(path.extname(candidate));
+      if (isBlockedUnsupportedExtension(pathExt)) continue;
+
+      const ext = normalizeImportExtension((await detectExtensionFromPath(candidate)) ?? pathExt);
       if (!isScanSupportedExtension(ext)) continue;
       processed.add(candidate);
       const kind = await syncExistingPath(state, candidate, window, ext);

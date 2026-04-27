@@ -1,77 +1,17 @@
-import { VIDEO_EXTENSIONS } from "@/shared/file-extensions";
-
-const MIME_TYPES: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  webp: "image/webp",
-  avif: "image/avif",
-  svg: "image/svg+xml",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  tif: "image/tiff",
-  tiff: "image/tiff",
-  pdf: "application/pdf",
-  mp4: "video/mp4",
-  avi: "video/x-msvideo",
-  mov: "video/quicktime",
-  mkv: "video/x-matroska",
-  webm: "video/webm",
-  m4v: "video/mp4",
-  wmv: "video/x-ms-wmv",
-  flv: "video/x-flv",
-  "3gp": "video/3gpp",
-};
-
-const IMAGE_EXTENSIONS = [
-  "jpg",
-  "jpeg",
-  "png",
-  "gif",
-  "webp",
-  "avif",
-  "svg",
-  "bmp",
-  "ico",
-  "tif",
-  "tiff",
-];
-const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"];
-const ARCHIVE_EXTENSIONS = ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"];
-const WORD_EXTENSIONS = ["doc", "docx", "rtf", "odt"];
-const SPREADSHEET_EXTENSIONS = ["xls", "xlsx", "csv", "ods"];
-const PRESENTATION_EXTENSIONS = ["ppt", "pptx", "odp", "key"];
-const CODE_EXTENSIONS = [
-  "js",
-  "jsx",
-  "ts",
-  "tsx",
-  "json",
-  "html",
-  "css",
-  "scss",
-  "less",
-  "md",
-  "mdx",
-  "rs",
-  "py",
-  "java",
-  "kt",
-  "go",
-  "c",
-  "cpp",
-  "h",
-  "hpp",
-  "sh",
-  "ps1",
-  "yaml",
-  "yml",
-  "toml",
-  "xml",
-];
-const TEXT_EXTENSIONS = ["txt", "log", "ini", "conf"];
-const TEXT_PREVIEW_EXTENSIONS = ["txt", "log", "md", "csv", "ini", "conf"];
+import {
+  AUDIO_FILE_EXTENSIONS,
+  ARCHIVE_FILE_EXTENSIONS,
+  CODE_FILE_EXTENSIONS,
+  DIRECT_IMAGE_EXTENSIONS,
+  PLAIN_TEXT_FILE_EXTENSIONS,
+  PRESENTATION_FILE_EXTENSIONS,
+  SPREADSHEET_FILE_EXTENSIONS,
+  TEXT_PREVIEW_EXTENSIONS,
+  VIDEO_FILE_EXTENSIONS,
+  WORD_FILE_EXTENSIONS,
+  extensionListIncludes,
+  getMimeTypeForExtension,
+} from "@/shared/file-formats";
 
 export const THUMBNAIL_MAX_EDGE = 768;
 export const LIST_THUMBNAIL_MAX_EDGE = THUMBNAIL_MAX_EDGE;
@@ -99,7 +39,7 @@ export function normalizeExt(ext: string): string {
 
 export function getFileMimeType(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() || "";
-  return MIME_TYPES[ext] || "application/octet-stream";
+  return getMimeTypeForExtension(ext);
 }
 
 function hasSignature(bytes: Uint8Array, signature: number[], offset = 0): boolean {
@@ -162,11 +102,11 @@ export function detectMimeTypeFromContents(bytes: Uint8Array, path: string): str
 }
 
 export function isImageFile(ext: string): boolean {
-  return IMAGE_EXTENSIONS.includes(normalizeExt(ext));
+  return extensionListIncludes(DIRECT_IMAGE_EXTENSIONS, ext);
 }
 
 export function isVideoFile(ext: string): boolean {
-  return VIDEO_EXTENSIONS.includes(normalizeExt(ext));
+  return extensionListIncludes(VIDEO_FILE_EXTENSIONS, ext);
 }
 
 export function isPdfFile(ext: string): boolean {
@@ -178,10 +118,14 @@ export function isPsdFile(ext: string): boolean {
 }
 
 export function isTextPreviewFile(ext: string): boolean {
-  return TEXT_PREVIEW_EXTENSIONS.includes(normalizeExt(ext));
+  return extensionListIncludes(TEXT_PREVIEW_EXTENSIONS, ext);
 }
 
 export function getFilePreviewMode(ext: string): FilePreviewMode {
+  const normalizedExt = normalizeExt(ext);
+  if (normalizedExt === "heic" || normalizedExt === "heif") {
+    return "thumbnail";
+  }
   if (isImageFile(ext)) {
     return "image";
   }
@@ -243,25 +187,25 @@ export function getFileKind(ext: string): FileKind {
   if (isPdfFile(normalizedExt)) {
     return "pdf";
   }
-  if (AUDIO_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(AUDIO_FILE_EXTENSIONS, normalizedExt)) {
     return "audio";
   }
-  if (ARCHIVE_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(ARCHIVE_FILE_EXTENSIONS, normalizedExt)) {
     return "archive";
   }
-  if (SPREADSHEET_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(SPREADSHEET_FILE_EXTENSIONS, normalizedExt)) {
     return "spreadsheet";
   }
-  if (PRESENTATION_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(PRESENTATION_FILE_EXTENSIONS, normalizedExt)) {
     return "presentation";
   }
-  if (WORD_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(WORD_FILE_EXTENSIONS, normalizedExt)) {
     return "word";
   }
-  if (CODE_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(CODE_FILE_EXTENSIONS, normalizedExt)) {
     return "code";
   }
-  if (TEXT_EXTENSIONS.includes(normalizedExt)) {
+  if (extensionListIncludes(PLAIN_TEXT_FILE_EXTENSIONS, normalizedExt)) {
     return "text";
   }
   return "other";

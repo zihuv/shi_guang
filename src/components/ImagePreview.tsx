@@ -27,7 +27,7 @@ import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTrashStore } from "@/stores/trashStore";
-import { buildAiImageDataUrl, getFilePreviewMode, isVideoFile } from "@/utils";
+import { getFilePreviewMode, isVideoFile } from "@/utils";
 
 const FULLSCREEN_EVENT_FALLBACK_TIMEOUT_MS = 2200;
 
@@ -157,8 +157,7 @@ export default function ImagePreview() {
 
     const loadingToast = toast.loading("AI 分析中...");
     try {
-      const imageDataUrl = await buildAiImageDataUrl(currentFile.path);
-      await analyzeFileMetadata(currentFile.id, imageDataUrl);
+      await analyzeFileMetadata(currentFile.id);
       toast.success("AI 分析已完成", { id: loadingToast });
     } catch (error) {
       console.error("Failed to analyze file metadata:", error);

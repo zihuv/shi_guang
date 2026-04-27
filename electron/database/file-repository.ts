@@ -4,6 +4,7 @@ import fssync from "node:fs";
 import path from "node:path";
 import { pathHasPrefix } from "../path-utils";
 import type { FileRecord, PaginatedFiles, SmartCollectionStats } from "../types";
+import { FILE_FORMAT_GROUPS } from "../../src/shared/file-formats";
 import {
   attachTags,
   buildOrderSql,
@@ -133,33 +134,7 @@ export function getFilesInFolder(
   return paginated(db, rows, total, page, pageSize);
 }
 
-const FILE_TYPE_EXTENSIONS: Record<string, string[]> = {
-  image: [
-    "jpg",
-    "jpeg",
-    "png",
-    "gif",
-    "webp",
-    "svg",
-    "bmp",
-    "ico",
-    "tiff",
-    "tif",
-    "avif",
-    "psd",
-    "ai",
-    "eps",
-    "raw",
-    "cr2",
-    "nef",
-    "arw",
-    "dng",
-    "heic",
-    "heif",
-  ],
-  video: ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v", "3gp"],
-  document: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "ods"],
-};
+const FILE_TYPE_EXTENSIONS: Record<string, readonly string[]> = FILE_FORMAT_GROUPS;
 
 function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): string {
   const conditions = ["f.deleted_at IS NULL AND f.missing_at IS NULL"];

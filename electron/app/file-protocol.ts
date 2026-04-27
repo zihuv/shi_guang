@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isPathAllowedForRead } from "../storage";
 import type { AppState } from "../types";
+import { getMimeTypeForExtension } from "../../src/shared/file-formats";
 
 const tokenToPath = new Map<string, string>();
 const pathToToken = new Map<string, string>();
@@ -36,29 +37,7 @@ export function assetToUrl(filePath: string): string {
 }
 
 function contentTypeForPath(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  const types: Record<string, string> = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".avif": "image/avif",
-    ".svg": "image/svg+xml",
-    ".bmp": "image/bmp",
-    ".ico": "image/x-icon",
-    ".tif": "image/tiff",
-    ".tiff": "image/tiff",
-    ".pdf": "application/pdf",
-    ".mp4": "video/mp4",
-    ".mov": "video/quicktime",
-    ".webm": "video/webm",
-    ".mkv": "video/x-matroska",
-    ".txt": "text/plain; charset=utf-8",
-    ".md": "text/markdown; charset=utf-8",
-    ".csv": "text/csv; charset=utf-8",
-  };
-  return types[ext] ?? "application/octet-stream";
+  return getMimeTypeForExtension(path.extname(filePath));
 }
 
 export function registerFileProtocol(getAppState: () => AppState | null): void {
