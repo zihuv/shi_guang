@@ -43,6 +43,18 @@ import { appDocumentsDir } from "./trash-file-service";
 import { loadVisualModelValidation, loadVisualSearchConfig } from "./visual-ai-service";
 import { encodeVisualSearchTextInUtility } from "../visual-search/visual-index-utility-service.js";
 
+function searchFilesByNameFallback(state: AppState, args: Record<string, unknown>, query: string) {
+  const filter = (args.filter ?? {}) as Record<string, unknown>;
+  return filterFiles(state.db, {
+    ...args,
+    filter: {
+      ...filter,
+      query: filter.query || query,
+      natural_language_query: null,
+    },
+  });
+}
+
 export function createFileCommands(
   state: AppState,
   getWindow: GetWindow,
@@ -87,6 +99,10 @@ export function createFileCommands(
       }
 
       const config = loadVisualSearchConfig(state);
+      if (!config.modelPath.trim()) {
+        return searchFilesByNameFallback(state, args, naturalLanguageQuery);
+      }
+
       if (!config.enabled) {
         throw new Error("请先在设置中启用本地自然语言搜索。");
       }
