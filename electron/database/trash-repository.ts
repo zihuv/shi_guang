@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import type { FileRecord, TrashFolderRecord, TrashItemRecord } from "../types";
+import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import { attachTags, FileRow } from "./shared";
 import { getSetting, setSetting } from "./settings-repository";
 
@@ -9,6 +10,11 @@ export interface FolderTrashEntryRecord {
   deletedAt: string;
   fileCount: number;
   subfolderCount: number;
+}
+
+interface TrashedFolderPathRecord {
+  originalPath: string;
+  tempPath: string;
 }
 
 export function createFolderTrashEntry(
@@ -103,11 +109,45 @@ export function getTrashFolders(db: Database.Database): TrashFolderRecord[] {
   }));
 }
 
+function getTrashedFolderPaths(db: Database.Database): TrashedFolderPathRecord[] {
+  const rows = db
+    .prepare(
+      `SELECT f.path, te.temp_path
+       FROM folders f
+       INNER JOIN folder_trash_entries te ON te.folder_id = f.id
+       WHERE f.deleted_at IS NOT NULL`,
+    )
+    .all() as Array<{ path: string; temp_path: string }>;
+  return rows
+    .map((row) => ({
+      originalPath: row.path,
+      tempPath: row.temp_path,
+    }))
+    .sort((left, right) => right.originalPath.length - left.originalPath.length);
+}
+
+export function resolveTrashPreviewPath(
+  filePath: string,
+  trashedFolders: TrashedFolderPathRecord[],
+): string | null {
+  for (const folder of trashedFolders) {
+    if (!pathHasPrefix(filePath, folder.originalPath)) {
+      continue;
+    }
+    return replacePathPrefix(filePath, folder.originalPath, folder.tempPath);
+  }
+  return null;
+}
+
 export function getTrashFiles(db: Database.Database): FileRecord[] {
   const rows = db
     .prepare("SELECT * FROM files WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id ASC")
     .all() as FileRow[];
-  return attachTags(db, rows);
+  const trashedFolders = getTrashedFolderPaths(db);
+  return attachTags(db, rows).map((file) => ({
+    ...file,
+    trashPreviewPath: resolveTrashPreviewPath(file.path, trashedFolders),
+  }));
 }
 
 export function getTrashItems(db: Database.Database): TrashItemRecord[] {

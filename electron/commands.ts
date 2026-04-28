@@ -5,6 +5,7 @@ import fssync from "node:fs";
 import { z } from "zod";
 import { getIndexPaths } from "./database";
 import { isPathAllowedForRead } from "./storage";
+import { getDeletedFolderHoldingDir } from "./trash-paths";
 import type { AppState } from "./types";
 import { type GetWindow } from "./commands/common";
 import { createCommandRegistry } from "./commands/registry";
@@ -51,15 +52,26 @@ export function registerIpcHandlers(
   ipcMain.handle(
     "shiguang:fs:exists",
     (_event, filePath: string) =>
-      fssync.existsSync(filePath) && isPathAllowedForRead(filePath, getIndexPaths(state.db)),
+      fssync.existsSync(filePath) &&
+      isPathAllowedForRead(filePath, getIndexPaths(state.db), [
+        getDeletedFolderHoldingDir(state.appDataDir),
+      ]),
   );
   ipcMain.handle("shiguang:fs:readFile", async (_event, filePath: string) => {
-    if (!isPathAllowedForRead(filePath, getIndexPaths(state.db)))
+    if (
+      !isPathAllowedForRead(filePath, getIndexPaths(state.db), [
+        getDeletedFolderHoldingDir(state.appDataDir),
+      ])
+    )
       throw new Error("Path is not allowed");
     return new Uint8Array(await fs.readFile(filePath));
   });
   ipcMain.handle("shiguang:fs:readTextFile", async (_event, filePath: string) => {
-    if (!isPathAllowedForRead(filePath, getIndexPaths(state.db)))
+    if (
+      !isPathAllowedForRead(filePath, getIndexPaths(state.db), [
+        getDeletedFolderHoldingDir(state.appDataDir),
+      ])
+    )
       throw new Error("Path is not allowed");
     return fs.readFile(filePath, "utf8");
   });

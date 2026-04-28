@@ -59,6 +59,7 @@ function TrashFileRow({
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const previewType = getFilePreviewMode(file.ext);
+  const previewPath = file.trashPreviewPath ?? file.path;
 
   useEffect(() => {
     let mounted = true;
@@ -73,8 +74,8 @@ function TrashFileRow({
 
     const loader =
       previewType === "thumbnail"
-        ? getThumbnailImageSrc(file.path, file.ext)
-        : getFileSrc(file.path);
+        ? getThumbnailImageSrc(previewPath, file.ext)
+        : getFileSrc(previewPath);
 
     loader.then((src) => {
       if (mounted) {
@@ -85,7 +86,7 @@ function TrashFileRow({
     return () => {
       mounted = false;
     };
-  }, [file.ext, file.path, previewType]);
+  }, [file.ext, previewPath, previewType]);
 
   useEffect(() => {
     return () => {

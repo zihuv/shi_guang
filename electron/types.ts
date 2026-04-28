@@ -30,6 +30,7 @@ export interface FileRecord {
   tags: TagRecord[];
   deletedAt: string | null;
   missingAt: string | null;
+  trashPreviewPath?: string | null;
 }
 
 export type SmartCollectionId =

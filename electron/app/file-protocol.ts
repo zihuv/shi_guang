@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isPathAllowedForRead } from "../storage";
+import { getDeletedFolderHoldingDir } from "../trash-paths";
 import type { AppState } from "../types";
 import { getMimeTypeForExtension } from "../../src/shared/file-formats";
 
@@ -58,6 +59,7 @@ export function registerFileProtocol(getAppState: () => AppState | null): void {
           .prepare("SELECT path FROM index_paths")
           .all()
           .map((row) => (row as { path: string }).path),
+        [getDeletedFolderHoldingDir(state.appDataDir)],
       )
     ) {
       return new Response("Not found", { status: 404 });

@@ -230,9 +230,17 @@ export async function resolveInitialIndexPath(appDataDir: string): Promise<strin
   return indexPath;
 }
 
-export function isPathAllowedForRead(filePath: string, indexPaths: string[]): boolean {
+export function isPathAllowedForRead(
+  filePath: string,
+  indexPaths: string[],
+  additionalRoots: string[] = [],
+): boolean {
   const thumbnailRoots = indexPaths.map(getThumbnailRoot);
-  return isInsideAnyPath(filePath, indexPaths) || isInsideAnyPath(filePath, thumbnailRoots);
+  return (
+    isInsideAnyPath(filePath, indexPaths) ||
+    isInsideAnyPath(filePath, thumbnailRoots) ||
+    isInsideAnyPath(filePath, additionalRoots)
+  );
 }
 
 function resolveIndexPath(indexPaths: string[], filePath: string): string | null {

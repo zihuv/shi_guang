@@ -25,14 +25,9 @@ import {
 } from "../database";
 import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import { removeThumbnailForFile } from "../storage";
+import { getDeletedFolderHoldingDir } from "../trash-paths";
 import type { AppState, FolderRecord } from "../types";
 import { getTargetDir, importBytes, postImport } from "./import-service";
-
-const DELETED_FOLDER_HOLDING_DIR_NAME = "deleted-folders-pending";
-
-function getDeletedFolderHoldingDir(appDataDir: string): string {
-  return path.join(appDataDir, DELETED_FOLDER_HOLDING_DIR_NAME);
-}
 
 export async function ensureDeletedFolderHoldingDir(appDataDir: string): Promise<string> {
   const dir = getDeletedFolderHoldingDir(appDataDir);

@@ -27,6 +27,7 @@ export interface FileItem {
   tags: FileTag[];
   deletedAt?: string | null;
   missingAt?: string | null;
+  trashPreviewPath?: string | null;
 }
 
 export type SmartCollectionId =
