@@ -126,7 +126,7 @@
   function getErrorMessage(error) {
     const message = error instanceof Error ? error.message : String(error || "网络错误");
     if (message === "Failed to fetch") {
-      return "无法连接到拾光应用，请确保应用正在运行";
+      return "无法连接到拾光本地服务（127.0.0.1:7845），请确保拾光应用正在运行";
     }
     return message;
   }
@@ -140,6 +140,8 @@
         missingImageMessage: options.missingImageMessage,
         notifyOnSuccess: options.notifyOnSuccess,
         successMessage: options.successMessage,
+        folderId: options.folderId,
+        targetFolderResolved: options.targetFolderResolved === true,
       },
     });
 

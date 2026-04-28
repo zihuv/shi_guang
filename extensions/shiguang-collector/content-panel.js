@@ -25,11 +25,13 @@
   let currentView = "home";
   let preferences = {};
   let defaults = { importConcurrency: 10 };
+  let folderTree = [];
   let batchImages = [];
   let selectedUrls = new Set();
   let batchStatus = new Map();
   let activeBatchUrls = new Set();
   let batchRunning = false;
+  let folderPickerPromise = null;
 
   function sendRuntimeMessage(message) {
     return new Promise((resolve, reject) => {
@@ -55,6 +57,16 @@
     }
   }
 
+  async function loadFolders() {
+    try {
+      const response = await sendRuntimeMessage({ action: "getFolders" });
+      folderTree = response?.success ? response.folders || [] : [];
+    } catch (error) {
+      console.warn("Failed to load collector folders:", error);
+      folderTree = [];
+    }
+  }
+
   async function savePreferences(nextPreferences) {
     const response = await sendRuntimeMessage({
       action: "updatePreferences",
@@ -67,6 +79,153 @@
     }
 
     throw new Error(response?.error || "偏好保存失败");
+  }
+
+  function flattenFolders(folders, depth = 0, trail = []) {
+    const rows = [];
+    for (const folder of folders || []) {
+      if (folder.isSystem && folder.name === "浏览器采集") {
+        rows.push(...flattenFolders(folder.children || [], depth, trail));
+        continue;
+      }
+
+      const nextTrail = [...trail, folder.name];
+      rows.push({
+        id: folder.id,
+        name: folder.name,
+        depth,
+        pathLabel: nextTrail.join("/"),
+      });
+      rows.push(...flattenFolders(folder.children || [], depth + 1, nextTrail));
+    }
+    return rows;
+  }
+
+  function isTargetFolderEnabled() {
+    return preferences.targetFolderEnabled === true;
+  }
+
+  function renderFolderField(id, selectedFolderId = "") {
+    const options = flattenFolders(folderTree)
+      .map((folder) => {
+        const selected = String(folder.id) === selectedFolderId ? "selected" : "";
+        return [
+          `<option value="${folder.id}" title="${escapeHtml(folder.pathLabel)}" data-depth="${folder.depth}" data-name="${escapeHtml(folder.name)}" data-path-label="${escapeHtml(folder.pathLabel)}" ${selected}>`,
+          escapeHtml(folder.pathLabel),
+          "</option>",
+        ].join("");
+      })
+      .join("");
+
+    return `
+      <div class="field folder-field">
+        <label for="${id}">收藏到</label>
+        <select id="${id}">
+          <option value="" data-depth="0" data-name="浏览器采集" data-path-label="浏览器采集" ${selectedFolderId ? "" : "selected"}>浏览器采集</option>
+          ${options}
+        </select>
+      </div>
+    `;
+  }
+
+  function setFolderSelectDisplayMode(select, mode) {
+    for (const option of select?.options || []) {
+      const pathLabel = option.dataset.pathLabel || option.textContent || "";
+      const name = option.dataset.name || pathLabel;
+      const depth = parseOptionalInt(option.dataset.depth) || 0;
+      option.textContent = mode === "tree" ? `${"\u00a0".repeat(depth * 4)}${name}` : pathLabel;
+    }
+  }
+
+  function bindFolderSelectDisplay(select) {
+    if (!select) {
+      return;
+    }
+
+    const showTree = () => setFolderSelectDisplayMode(select, "tree");
+    const showPath = () => setFolderSelectDisplayMode(select, "path");
+    select.addEventListener("pointerdown", showTree);
+    select.addEventListener("keydown", (event) => {
+      if ([" ", "Enter", "ArrowDown", "ArrowUp"].includes(event.key)) {
+        showTree();
+      }
+    });
+    select.addEventListener("change", () => window.setTimeout(showPath, 0));
+    select.addEventListener("blur", showPath);
+    showPath();
+  }
+
+  async function selectTargetFolder() {
+    await loadFolders();
+    if (folderPickerPromise) {
+      return folderPickerPromise;
+    }
+
+    folderPickerPromise = new Promise((resolve) => {
+      const pickerHost = document.createElement("div");
+      pickerHost.style.cssText = ["position: fixed", "inset: 0", "z-index: 2147483647"].join(";");
+
+      const pickerShadow = pickerHost.attachShadow({ mode: "open" });
+      const panelStyle = globalThis.__shiguangCollectorPanelStyle || "";
+      pickerShadow.innerHTML = `
+        <style>${panelStyle}</style>
+        <div class="folder-picker-shell" id="folderPickerShell">
+          <div class="folder-picker-card" role="dialog" aria-modal="true" aria-labelledby="folderPickerTitle">
+            <div class="folder-picker-title" id="folderPickerTitle">发送到</div>
+            ${renderFolderField("folderPickerSelect")}
+            <div class="folder-picker-actions">
+              <button class="button secondary" id="cancelFolderPicker" type="button">取消</button>
+              <button class="button" id="confirmFolderPicker" type="button">发送</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      function finish(result) {
+        pickerHost.remove();
+        folderPickerPromise = null;
+        resolve(result);
+      }
+
+      const select = pickerShadow.getElementById("folderPickerSelect");
+      bindFolderSelectDisplay(select);
+      pickerShadow.getElementById("cancelFolderPicker").addEventListener("click", () => {
+        finish({ success: false, cancelled: true, error: "已取消发送" });
+      });
+      pickerShadow.getElementById("confirmFolderPicker").addEventListener("click", () => {
+        finish({ success: true, folderId: select?.value || "" });
+      });
+      pickerShadow.getElementById("folderPickerShell").addEventListener("click", (event) => {
+        if (event.target?.id === "folderPickerShell") {
+          finish({ success: false, cancelled: true, error: "已取消发送" });
+        }
+      });
+      pickerShadow.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish({ success: false, cancelled: true, error: "已取消发送" });
+        }
+      });
+
+      (document.body || document.documentElement).appendChild(pickerHost);
+      select?.focus();
+    });
+
+    return folderPickerPromise;
+  }
+
+  async function resolveTargetFolderForSend() {
+    await loadPreferences();
+    if (!isTargetFolderEnabled()) {
+      return { cancelled: false, folderId: undefined, resolved: false };
+    }
+
+    const result = await selectTargetFolder();
+    if (!result?.success) {
+      return { cancelled: true, folderId: undefined, resolved: false };
+    }
+
+    return { cancelled: false, folderId: result.folderId, resolved: true };
   }
 
   function ensurePanel() {
@@ -113,7 +272,7 @@
     panelOpen = true;
     currentView = view;
     host.style.display = "block";
-    void loadPreferences().then(renderPanel);
+    void Promise.all([loadPreferences(), loadFolders()]).then(renderPanel);
   }
 
   function closePanel() {
@@ -329,7 +488,14 @@
 
   function renderPreferences(body) {
     const dragEnabled = preferences.dragDockEnabled !== false;
+    const targetFolderEnabled = isTargetFolderEnabled();
     body.innerHTML = `
+      <div class="plain-row" style="margin-top: 2px;">
+        <span>发送前选择文件夹</span>
+        <button class="switch ${targetFolderEnabled ? "on" : ""}" id="targetFolderToggleButton" type="button" aria-label="切换发送前选择文件夹">
+          <span></span>
+        </button>
+      </div>
       <div class="field">
         <label for="importConcurrency">导入并发</label>
         <input id="importConcurrency" inputmode="numeric" placeholder="${escapeHtml(defaults.importConcurrency || 10)}" value="${escapeHtml(preferences.importConcurrency || "")}">
@@ -345,6 +511,11 @@
       </div>
     `;
 
+    body.querySelector("#targetFolderToggleButton").addEventListener("click", async () => {
+      preferences = { ...preferences, targetFolderEnabled: !targetFolderEnabled };
+      await savePreferences(preferences);
+      renderPanel();
+    });
     body.querySelector("#dragToggleButton").addEventListener("click", async () => {
       preferences = { ...preferences, dragDockEnabled: !dragEnabled };
       await savePreferences(preferences);
@@ -354,6 +525,7 @@
       const next = {
         ...preferences,
         importConcurrency: body.querySelector("#importConcurrency").value.trim(),
+        targetFolderEnabled,
       };
 
       try {
@@ -367,7 +539,7 @@
   }
 
   async function scanImages() {
-    await loadPreferences();
+    await Promise.all([loadPreferences(), loadFolders()]);
     batchImages = scanPageImages(collector);
     const batchImageUrls = new Set(batchImages.map((image) => image.url));
     batchStatus = new Map(
@@ -382,6 +554,11 @@
   async function collectSelectedImages() {
     const urls = [...selectedUrls];
     if (!urls.length || batchRunning) {
+      return;
+    }
+
+    const target = await resolveTargetFolderForSend();
+    if (target.cancelled) {
       return;
     }
 
@@ -414,6 +591,8 @@
           referer: window.location.href,
           missingImageMessage: "未找到可采集的图片",
           notifyOnSuccess: false,
+          folderId: target.folderId,
+          targetFolderResolved: target.resolved,
         });
 
         batchStatus.set(url, result?.success ? "success" : "failed");
@@ -439,9 +618,20 @@
 
   async function captureVisibleScreenshot() {
     try {
+      const target = await resolveTargetFolderForSend();
+      if (target.cancelled) {
+        return false;
+      }
+
       setPanelVisible(false);
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const response = await sendRuntimeMessage({ action: "captureVisibleScreenshot" });
+      const response = await sendRuntimeMessage({
+        action: "captureVisibleScreenshot",
+        payload: {
+          folderId: target.folderId,
+          targetFolderResolved: target.resolved,
+        },
+      });
 
       if (!response?.success) {
         throw new Error(response?.error || "截图失败");
@@ -517,7 +707,10 @@
       }
 
       try {
-        await captureArea(rect);
+        const result = await captureArea(rect);
+        if (!result) {
+          return;
+        }
         collector.showToast("已收藏区域截图", "success", 2200);
       } catch (error) {
         collector.showToast("截图失败: " + collector.getErrorMessage(error), "error", 3600);
@@ -683,7 +876,10 @@
       }
 
       try {
-        await captureArea(rect, "element-screenshot.png");
+        const result = await captureArea(rect, "element-screenshot.png");
+        if (!result) {
+          return;
+        }
         collector.showToast("已收藏元素截图", "success", 2200);
       } catch (error) {
         collector.showToast("截图失败: " + collector.getErrorMessage(error), "error", 3600);
@@ -734,6 +930,11 @@
   }
 
   async function captureArea(rect, filename = "area-screenshot.png") {
+    const target = await resolveTargetFolderForSend();
+    if (target.cancelled) {
+      return null;
+    }
+
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const response = await sendRuntimeMessage({ action: "captureVisibleDataUrl" });
     if (!response?.success || !response.dataUrl) {
@@ -746,6 +947,8 @@
       payload: {
         dataUrl: croppedDataUrl,
         filename,
+        folderId: target.folderId,
+        targetFolderResolved: target.resolved,
       },
     });
 
@@ -770,6 +973,7 @@
     togglePanel,
     openPanel,
     closePanel,
+    selectTargetFolder,
     startAreaCapture,
     startElementCapture,
     captureVisibleScreenshot,

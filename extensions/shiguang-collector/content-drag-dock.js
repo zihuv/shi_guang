@@ -206,6 +206,10 @@
           successMessage: "已发送到拾光",
         });
 
+        if (result.cancelled) {
+          return;
+        }
+
         if (!result.success) {
           throw new Error(result.error || "未知错误");
         }

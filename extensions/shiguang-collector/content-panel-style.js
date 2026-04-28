@@ -155,7 +155,8 @@
       gap: 12px;
       min-height: 42px;
     }
-    .field input {
+    .field input,
+    .field select {
       width: 100%;
       height: 34px;
       border: 0;
@@ -164,8 +165,48 @@
       color: #111827;
       padding: 0 10px;
       outline: none;
+      font: inherit;
     }
-    .field input:focus { background: rgba(15, 23, 42, 0.10); }
+    .field select { cursor: pointer; }
+    .folder-field { margin-bottom: 6px; }
+    .field input:focus,
+    .field select:focus { background: rgba(15, 23, 42, 0.10); }
+    .folder-picker-shell {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(15, 23, 42, 0.20);
+      color: #1f2937;
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      backdrop-filter: blur(3px);
+    }
+    .folder-picker-card {
+      width: min(320px, calc(100vw - 36px));
+      border-radius: 14px;
+      background: rgba(250, 250, 249, 0.98);
+      box-shadow: 0 18px 46px rgba(15, 23, 42, 0.20);
+      padding: 14px;
+    }
+    .folder-picker-title {
+      margin-bottom: 8px;
+      color: #111827;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .folder-picker-card .field {
+      grid-template-columns: 1fr;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .folder-picker-card .field select { height: 38px; }
+    .folder-picker-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
     .switch {
       width: 46px;
       height: 26px;

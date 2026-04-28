@@ -42,6 +42,10 @@
         successMessage: "已发送到拾光",
       });
 
+      if (result.cancelled) {
+        return false;
+      }
+
       if (!result.success) {
         throw new Error(result.error || "未知错误");
       }
@@ -62,10 +66,7 @@
 
       if (event.altKey && imageUrl) {
         void collectImageFromEvent(event, "Alt+右键");
-        return;
       }
-
-      console.log("右键点击:", target?.tagName || target?.nodeName, "图片URL:", imageUrl);
     },
     true,
   );
@@ -148,6 +149,21 @@
     if (message.action === "togglePanel") {
       panel?.togglePanel?.();
       sendResponse({ success: Boolean(panel) });
+      return true;
+    }
+
+    if (message.action === "selectTargetFolder") {
+      if (!panel?.selectTargetFolder) {
+        sendResponse({ success: false, error: "当前页面无法选择目标文件夹" });
+        return true;
+      }
+
+      panel
+        .selectTargetFolder()
+        .then(sendResponse)
+        .catch((error) =>
+          sendResponse({ success: false, error: collector.getErrorMessage(error) }),
+        );
       return true;
     }
 

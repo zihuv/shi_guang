@@ -1,4 +1,4 @@
-import { app, Menu } from "electron";
+import { app, Menu, session } from "electron";
 import log from "electron-log/main";
 import { setDockIcon } from "./app/app-icon";
 import { buildApplicationMenu } from "./app/application-menu";
@@ -46,7 +46,12 @@ const windowManager = createWindowManager({
   },
 });
 
+async function configureSystemProxy(): Promise<void> {
+  await session.defaultSession.setProxy({ mode: "system" });
+}
+
 async function bootstrap(): Promise<void> {
+  await configureSystemProxy();
   const appDataDir = app.getPath("userData");
   await ensureDeletedFolderHoldingDir(appDataDir);
   const indexPath = await resolveStartupIndexPath(appDataDir);

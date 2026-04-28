@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import { net } from "electron";
 import fssync from "node:fs";
 import path from "node:path";
 import {
@@ -9,6 +10,7 @@ import {
   getAllFolders,
   getFolderById,
   getFolderByPath,
+  getFolderTree,
   getIndexPaths,
 } from "../database";
 import { detectExtensionFromBytes } from "../media";
@@ -17,6 +19,19 @@ import { emit, type GetWindow } from "./common";
 import { importBytes, normalizeImportExtension, postImport } from "./import-service";
 
 let collectorServer: FastifyInstance | null = null;
+const COLLECTOR_IMPORT_BODY_LIMIT_BYTES = 100 * 1024 * 1024;
+
+type CollectorFolderTargetPayload = {
+  folder_id?: unknown;
+  folderId?: unknown;
+  target_folder_id?: unknown;
+  targetFolderId?: unknown;
+};
+
+type CollectorImportFromUrlPayload = CollectorFolderTargetPayload & {
+  image_url?: string;
+  referer?: string;
+};
 
 export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
   const existing = getAllFolders(state.db).find(
@@ -61,6 +76,99 @@ export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
   return getFolderById(state.db, id) as FolderRecord;
 }
 
+function normalizeFolderId(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const folderId = typeof value === "number" ? value : Number(String(value).trim());
+  return Number.isInteger(folderId) && folderId > 0 ? folderId : null;
+}
+
+function getRequestedFolderId(request: { query?: unknown; body?: unknown }): number | null {
+  const query = request.query as CollectorFolderTargetPayload | undefined;
+  const body = request.body as CollectorFolderTargetPayload | undefined;
+  return normalizeFolderId(
+    query?.folder_id ??
+      query?.folderId ??
+      query?.target_folder_id ??
+      query?.targetFolderId ??
+      body?.folder_id ??
+      body?.folderId ??
+      body?.target_folder_id ??
+      body?.targetFolderId,
+  );
+}
+
+function resolveCollectorTargetFolder(state: AppState, folderId: number | null): FolderRecord {
+  if (folderId !== null) {
+    const folder = getFolderById(state.db, folderId);
+    if (!folder) {
+      throw new Error("目标文件夹不存在");
+    }
+    return folder;
+  }
+
+  return ensureBrowserCollectionFolder(state);
+}
+
+function getDownloadErrorMessage(error: unknown, imageUrl: string): string {
+  let host = "";
+  try {
+    host = new URL(imageUrl).host;
+  } catch {
+    host = imageUrl;
+  }
+
+  const detail = getErrorDetails(error);
+  return `拾光应用无法下载图片（${host}）：${detail || "网络请求失败"}。请检查图片链接是否仍可访问，或站点是否限制外部下载。`;
+}
+
+function getErrorDetails(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const details = [error.message];
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message && cause.message !== error.message) {
+    details.push(cause.message);
+  } else if (cause && typeof cause === "object") {
+    const causeRecord = cause as Record<string, unknown>;
+    const code = typeof causeRecord.code === "string" ? causeRecord.code : "";
+    const message = typeof causeRecord.message === "string" ? causeRecord.message : "";
+    if (code || message) {
+      details.push([code, message].filter(Boolean).join(": "));
+    }
+  } else if (typeof cause === "string") {
+    details.push(cause);
+  }
+
+  return [...new Set(details.filter(Boolean))].join(" / ");
+}
+
+function buildImageDownloadHeaders(imageUrl: string, referer?: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  let imageHost = "";
+
+  try {
+    imageHost = new URL(imageUrl).host;
+  } catch {
+    imageHost = "";
+  }
+
+  if (imageHost.endsWith("pximg.net")) {
+    headers.Referer = "https://www.pixiv.net/";
+    return headers;
+  }
+
+  if (referer) {
+    headers.Referer = referer;
+  }
+
+  return headers;
+}
+
 export async function startCollectorServer(state: AppState, getWindow: GetWindow): Promise<void> {
   if (collectorServer) return;
   const server = Fastify({ logger: false });
@@ -69,15 +177,24 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
     done(null, body);
   });
   server.get("/api/health", async () => ({ status: "ok" }));
+  server.get("/api/folders", async () => {
+    const defaultFolder = ensureBrowserCollectionFolder(state);
+    return {
+      success: true,
+      folders: getFolderTree(state.db),
+      default_folder_id: defaultFolder.id,
+    };
+  });
   server.options("/api/health", async () => ({}));
+  server.options("/api/folders", async () => ({}));
   server.options("/api/import", async () => ({}));
   server.options("/api/import-from-url", async () => ({}));
-  server.post("/api/import", async (request) => {
+  server.post("/api/import", { bodyLimit: COLLECTOR_IMPORT_BODY_LIMIT_BYTES }, async (request) => {
     const body = Buffer.isBuffer(request.body)
       ? request.body
       : Buffer.from(request.body as ArrayBuffer);
-    const folder = ensureBrowserCollectionFolder(state);
     try {
+      const folder = resolveCollectorTargetFolder(state, getRequestedFolderId(request));
       const query = request.query as { filename?: string };
       const filename = typeof query.filename === "string" ? query.filename : "";
       const headerContentType = request.headers["content-type"];
@@ -101,15 +218,25 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
     }
   });
   server.post("/api/import-from-url", async (request) => {
-    const payload = request.body as { image_url?: string; referer?: string };
+    const payload = request.body as CollectorImportFromUrlPayload;
     if (!payload?.image_url) return { success: false, file_id: null, error: "Missing image_url" };
     try {
-      const response = await fetch(payload.image_url, {
-        headers: payload.referer ? { referer: payload.referer } : undefined,
-      });
-      if (!response.ok) throw new Error(`Download failed with status: ${response.status}`);
+      let response: Awaited<ReturnType<typeof net.fetch>>;
+      const downloadHeaders = buildImageDownloadHeaders(payload.image_url, payload.referer);
+      try {
+        response = await net.fetch(payload.image_url, {
+          headers: downloadHeaders,
+        });
+      } catch (error) {
+        throw new Error(getDownloadErrorMessage(error, payload.image_url));
+      }
+      if (!response.ok) {
+        throw new Error(
+          `拾光应用下载图片失败：${response.status} ${response.statusText || ""}`.trim(),
+        );
+      }
       const bytes = Buffer.from(await response.arrayBuffer());
-      const folder = ensureBrowserCollectionFolder(state);
+      const folder = resolveCollectorTargetFolder(state, getRequestedFolderId(request));
       const contentType = response.headers.get("content-type");
       const file = await importBytes(state, {
         bytes,
