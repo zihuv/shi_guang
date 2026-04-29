@@ -15,7 +15,6 @@ import {
 } from "./thumbnail";
 
 const LIBRARY_STATE_FILE = "library-state.json";
-const MAX_RECENT_INDEX_PATHS = 8;
 const thumbnailBuildTasks = new Map<string, Promise<string | null>>();
 let pdfJsModuleReady: Promise<void> | null = null;
 
@@ -106,9 +105,6 @@ function dedupeRecentIndexPaths(paths: string[]): string[] {
     }
     seen.add(normalized);
     next.push(normalized);
-    if (next.length >= MAX_RECENT_INDEX_PATHS) {
-      break;
-    }
   }
 
   return next;

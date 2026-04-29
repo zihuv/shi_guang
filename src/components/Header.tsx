@@ -375,21 +375,23 @@ export default function Header({ onOpenSettings }: HeaderProps) {
                         <div className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
                           最近素材库
                         </div>
-                        {recentLibraries.map((library) => (
-                          <button
-                            key={library.path}
-                            type="button"
-                            className="flex min-h-11 flex-col items-start gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/8"
-                            onClick={() => void handleSwitchLibrary(library.path)}
-                          >
-                            <span className="w-full truncate text-[13px] font-medium text-gray-800 dark:text-gray-100">
-                              {library.name}
-                            </span>
-                            <span className="w-full truncate text-[11px] text-gray-500 dark:text-gray-400">
-                              {library.path}
-                            </span>
-                          </button>
-                        ))}
+                        <div className="max-h-[50vh] overflow-y-auto">
+                          {recentLibraries.map((library) => (
+                            <button
+                              key={library.path}
+                              type="button"
+                              className="flex min-h-11 flex-col items-start gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/8"
+                              onClick={() => void handleSwitchLibrary(library.path)}
+                            >
+                              <span className="w-full truncate text-[13px] font-medium text-gray-800 dark:text-gray-100">
+                                {library.name}
+                              </span>
+                              <span className="w-full truncate text-[11px] text-gray-500 dark:text-gray-400">
+                                {library.path}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
                         <div className="my-1 h-px bg-black/6 dark:bg-white/8" />
                       </>
                     ) : null}
