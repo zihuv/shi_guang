@@ -223,7 +223,17 @@ export function createFileCommands(
     get_thumbnail_cache_path: (args) => {
       const filePath = stringArg(args, "filePath", "file_path");
       const file = getFileByPath(state.db, filePath);
-      return getThumbnailCachePath(getIndexPaths(state.db), filePath, file?.contentHash);
+      return getThumbnailCachePath(
+        getIndexPaths(state.db),
+        filePath,
+        file
+          ? {
+              contentHash: file.contentHash,
+              size: file.size,
+              modifiedAt: file.modifiedAt,
+            }
+          : null,
+      );
     },
     get_smart_collection_stats: () => getSmartCollectionStats(state.db),
     touch_file_last_accessed: (args) =>
@@ -237,7 +247,11 @@ export function createFileCommands(
       if (!shouldGenerateFileThumbnail(file)) {
         return null;
       }
-      const cachePath = getThumbnailCachePath(getIndexPaths(state.db), filePath, file.contentHash);
+      const cachePath = getThumbnailCachePath(getIndexPaths(state.db), filePath, {
+        contentHash: file.contentHash,
+        size: file.size,
+        modifiedAt: file.modifiedAt,
+      });
       if (!cachePath) return null;
       await ensureDir(path.dirname(cachePath));
       await fs.writeFile(

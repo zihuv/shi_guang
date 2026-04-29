@@ -202,7 +202,17 @@ async function syncExistingPath(
       return "skipped";
     }
     if (existing.contentHash && existing.contentHash !== input.contentHash) {
-      await removeThumbnailForFile(indexPaths, filePath, existing.contentHash);
+      await removeThumbnailForFile(indexPaths, filePath, {
+        contentHash: existing.contentHash,
+        size: existing.size,
+        modifiedAt: existing.modifiedAt,
+      });
+    } else if (!existing.contentHash) {
+      await removeThumbnailForFile(indexPaths, filePath, {
+        contentHash: existing.contentHash,
+        size: existing.size,
+        modifiedAt: existing.modifiedAt,
+      });
     }
     updateFileBasicInfo(state.db, input);
     const updatedFile = getFileByPath(state.db, filePath);

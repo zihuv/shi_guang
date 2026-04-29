@@ -84,11 +84,11 @@ export async function ensureThumbnailForFile(
     return null;
   }
 
-  const existingThumbnailPath = hasThumbnailCachePath(
-    getIndexPaths(state.db),
-    file.path,
-    file.contentHash,
-  );
+  const existingThumbnailPath = hasThumbnailCachePath(getIndexPaths(state.db), file.path, {
+    contentHash: file.contentHash,
+    size: file.size,
+    modifiedAt: file.modifiedAt,
+  });
   if (existingThumbnailPath) {
     return existingThumbnailPath;
   }
@@ -114,6 +114,8 @@ export async function ensureThumbnailForFile(
     filePath: file.path,
     ext: file.ext,
     contentHash: file.contentHash,
+    size: file.size,
+    modifiedAt: file.modifiedAt,
   });
 
   if (thumbnailPath) {

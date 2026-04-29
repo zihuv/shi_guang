@@ -4,17 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT_DIR"
 
-OUT_FILE="${CLAUDE_REVIEW_OUTPUT:-tmp/claude-review.md}"
-
-mkdir -p "$(dirname "$OUT_FILE")"
-
 if ! command -v claude >/dev/null 2>&1; then
   echo "Claude Code CLI is not installed or not on PATH." >&2
   exit 127
 fi
 
-PROMPT=$(cat <<'PROMPT'
+BACKGROUND="${CLAUDE_REVIEW_BACKGROUND:-Codex has already made local changes for the current user request. The diff may include staged, unstaged, and untracked files. Review the background, reason for the change, and intended outcome from the user request and changed code.}"
+
+PROMPT=$(cat <<PROMPT
 You are reviewing local, uncommitted changes in this repository.
+
+Background:
+$BACKGROUND
 
 Read REVIEW.md and AGENTS.md first. Review staged, unstaged, and untracked changes. Treat untracked files shown by git status as review targets and read them directly when needed.
 
@@ -33,4 +34,4 @@ if [[ -n "${CLAUDE_REVIEW_MODEL:-}" ]]; then
   args+=(--model "$CLAUDE_REVIEW_MODEL")
 fi
 
-NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}" claude "${args[@]}" | tee "$OUT_FILE"
+NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}" claude "${args[@]}"

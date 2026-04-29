@@ -43,10 +43,20 @@ export async function ensureDeletedFolderHoldingDir(appDataDir: string): Promise
 export function getFilesUnderFolderPath(
   db: AppState["db"],
   folderPath: string,
-): Array<{ id: number; path: string; contentHash: string | null }> {
-  const rows = db.prepare("SELECT id, path, content_hash FROM files").all() as Array<{
+): Array<{
+  id: number;
+  path: string;
+  size: number;
+  modifiedAt: string;
+  contentHash: string | null;
+}> {
+  const rows = db
+    .prepare("SELECT id, path, size, modified_at, content_hash FROM files")
+    .all() as Array<{
     id: number;
     path: string;
+    size: number;
+    modified_at: string;
     content_hash: string | null;
   }>;
   return rows
@@ -54,6 +64,8 @@ export function getFilesUnderFolderPath(
     .map((row) => ({
       id: row.id,
       path: row.path,
+      size: row.size,
+      modifiedAt: row.modified_at,
       contentHash: row.content_hash ?? null,
     }));
 }
@@ -137,7 +149,11 @@ export async function permanentlyDeleteTrashedFolder(
 
   const affectedFiles = getFilesUnderFolderPath(state.db, folder.path);
   for (const file of affectedFiles) {
-    await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
+    await removeThumbnailForFile(getIndexPaths(state.db), file.path, {
+      contentHash: file.contentHash,
+      size: file.size,
+      modifiedAt: file.modifiedAt,
+    });
     permanentDeleteFileRecord(state.db, file.id);
   }
 
@@ -297,7 +313,11 @@ export async function restoreOneFile(
 export async function permanentDeleteOneFile(state: AppState, fileId: number): Promise<void> {
   const file = getFileById(state.db, fileId);
   if (!file) return;
-  await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
+  await removeThumbnailForFile(getIndexPaths(state.db), file.path, {
+    contentHash: file.contentHash,
+    size: file.size,
+    modifiedAt: file.modifiedAt,
+  });
   const trashedFolder = findTrashedFolderForPath(state, file.path);
   if (trashedFolder && fssync.existsSync(trashedFolder.sourcePath)) {
     await removePathQuietly(trashedFolder.sourcePath);

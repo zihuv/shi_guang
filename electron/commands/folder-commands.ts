@@ -80,7 +80,11 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
           await removePathQuietly(folder.path, { recursive: true });
         }
         for (const file of affectedFiles) {
-          await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
+          await removeThumbnailForFile(getIndexPaths(state.db), file.path, {
+            contentHash: file.contentHash,
+            size: file.size,
+            modifiedAt: file.modifiedAt,
+          });
           permanentDeleteFileRecord(state.db, file.id);
         }
         deleteFolderRecord(state.db, id);

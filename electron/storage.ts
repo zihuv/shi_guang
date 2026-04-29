@@ -10,6 +10,7 @@ import {
   getThumbnailGenerationRuntimeForExt,
   normalizeThumbnailExt,
   resolveThumbnailCacheKey,
+  type ThumbnailCacheIdentity,
   THUMBNAIL_MAX_EDGE,
   THUMBNAIL_WEBP_QUALITY,
 } from "./thumbnail";
@@ -317,23 +318,23 @@ async function buildThumbnailBuffer(filePath: string, ext: string): Promise<Buff
 export function getThumbnailCachePath(
   indexPaths: string[],
   filePath: string,
-  contentHash?: string | null,
+  identity?: ThumbnailCacheIdentity | string | null,
 ): string | null {
   const indexPath = resolveIndexPath(indexPaths, filePath);
   if (!indexPath) {
     return null;
   }
 
-  const cacheKey = resolveThumbnailCacheKey(path.resolve(filePath), contentHash);
+  const cacheKey = resolveThumbnailCacheKey(path.resolve(filePath), identity);
   return path.join(getThumbnailRoot(indexPath), `${cacheKey}.webp`);
 }
 
 export function hasThumbnailCachePath(
   indexPaths: string[],
   filePath: string,
-  contentHash?: string | null,
+  identity?: ThumbnailCacheIdentity | string | null,
 ): string | null {
-  const cachePath = getThumbnailCachePath(indexPaths, filePath, contentHash);
+  const cachePath = getThumbnailCachePath(indexPaths, filePath, identity);
   if (!cachePath || !fssync.existsSync(cachePath)) {
     return null;
   }
@@ -346,9 +347,16 @@ export async function getOrCreateThumbnail(
     filePath: string;
     ext: string;
     contentHash?: string | null;
+    size?: number | null;
+    modifiedAt?: string | null;
   },
 ): Promise<string | null> {
-  const thumbnailPath = getThumbnailCachePath(indexPaths, input.filePath, input.contentHash);
+  const identity: ThumbnailCacheIdentity = {
+    contentHash: input.contentHash,
+    size: input.size,
+    modifiedAt: input.modifiedAt,
+  };
+  const thumbnailPath = getThumbnailCachePath(indexPaths, input.filePath, identity);
   if (!thumbnailPath || !canBuildThumbnail(input.ext)) {
     return null;
   }
@@ -357,7 +365,7 @@ export async function getOrCreateThumbnail(
     return thumbnailPath;
   }
 
-  const cacheKey = resolveThumbnailCacheKey(path.resolve(input.filePath), input.contentHash);
+  const cacheKey = resolveThumbnailCacheKey(path.resolve(input.filePath), identity);
   const pendingTask = thumbnailBuildTasks.get(cacheKey);
   if (pendingTask) {
     return pendingTask;
@@ -389,10 +397,17 @@ export async function getOrCreateThumbnail(
 export async function removeThumbnailForFile(
   indexPaths: string[],
   filePath: string,
-  contentHash?: string | null,
+  identity?: ThumbnailCacheIdentity | string | null,
 ): Promise<void> {
-  const cachePath = getThumbnailCachePath(indexPaths, filePath, contentHash);
+  const cachePath = getThumbnailCachePath(indexPaths, filePath, identity);
   if (cachePath) {
     await fs.rm(cachePath, { force: true }).catch(() => undefined);
+  }
+
+  if (identity && typeof identity === "object" && !identity.contentHash?.trim()) {
+    const legacyCachePath = getThumbnailCachePath(indexPaths, filePath);
+    if (legacyCachePath && legacyCachePath !== cachePath) {
+      await fs.rm(legacyCachePath, { force: true }).catch(() => undefined);
+    }
   }
 }
