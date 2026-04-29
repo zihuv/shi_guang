@@ -81,12 +81,22 @@ export function createFileCommands(
       const filter = (args.filter ?? {}) as Record<string, unknown>;
       const imageQueryFileId = Number(filter.image_query_file_id ?? filter.imageQueryFileId);
       if (Number.isInteger(imageQueryFileId) && imageQueryFileId > 0) {
-        const query = getFileVisualEmbeddingQuery(state.db, imageQueryFileId);
-        if (!query) {
-          throw new Error("这张图片还没有可用的视觉索引，请先在设置中建立或更新视觉索引。");
+        const config = loadVisualSearchConfig(state);
+        if (!config.enabled) {
+          throw new Error("请先在设置中启用本地自然语言搜索。");
         }
 
-        return searchFilesByVisualEmbedding(state.db, args, query.modelId, query.embedding, {
+        const validation = await loadVisualModelValidation(state, config);
+        if (!validation.valid || !validation.modelId) {
+          throw new Error(validation.message);
+        }
+
+        const query = getFileVisualEmbeddingQuery(state.db, imageQueryFileId, validation.modelId);
+        if (!query) {
+          throw new Error("这张图片还没有当前模型的视觉索引，请先在设置中建立或更新视觉索引。");
+        }
+
+        return searchFilesByVisualEmbedding(state.db, args, validation.modelId, query.embedding, {
           excludeFileId: query.fileId,
         });
       }

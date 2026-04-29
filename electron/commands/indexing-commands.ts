@@ -1,6 +1,13 @@
 import { app } from "electron";
 import fs from "node:fs/promises";
-import { addIndexPath, getIndexPaths, getSetting, removeIndexPath, setSetting } from "../database";
+import {
+  addIndexPath,
+  clearFileVisualEmbeddings,
+  getIndexPaths,
+  getSetting,
+  removeIndexPath,
+  setSetting,
+} from "../database";
 import {
   ensureStorageDirs,
   getDefaultIndexPath,
@@ -9,8 +16,11 @@ import {
   rememberRecentIndexPaths,
 } from "../storage";
 import type { AppState } from "../types";
+import { isVisualSearchEmbeddingConfigChanged } from "../visual-search";
 import { type CommandHandler, stringArg, type GetWindow } from "./common";
 import { scanIndexPath } from "./library-sync-service";
+
+const VISUAL_SEARCH_SETTING_KEY = "visualSearch";
 
 async function scanAllIndexPaths(state: AppState, window: Parameters<CommandHandler>[1]) {
   let total = 0;
@@ -26,7 +36,21 @@ export function createIndexingCommands(
 ): Record<string, CommandHandler> {
   return {
     get_setting: (args) => getSetting(state.db, stringArg(args, "key")),
-    set_setting: (args) => setSetting(state.db, stringArg(args, "key"), stringArg(args, "value")),
+    set_setting: (args) => {
+      const key = stringArg(args, "key");
+      const value = stringArg(args, "value");
+      const transaction = state.db.transaction(() => {
+        const previousValue = getSetting(state.db, key);
+        if (
+          key === VISUAL_SEARCH_SETTING_KEY &&
+          isVisualSearchEmbeddingConfigChanged(previousValue, value)
+        ) {
+          clearFileVisualEmbeddings(state.db);
+        }
+        setSetting(state.db, key, value);
+      });
+      transaction();
+    },
     get_index_paths: () => getIndexPaths(state.db),
     get_recent_index_paths: async () => readRecentIndexPaths(state.appDataDir),
     get_default_index_path: async () => {

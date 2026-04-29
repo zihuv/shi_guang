@@ -18,6 +18,8 @@ import {
   type ClipRuntimeSnapshot,
 } from "./clip-runtime.js";
 export {
+  getVisualSearchEmbeddingConfigKey,
+  isVisualSearchEmbeddingConfigChanged,
   resolveVisualSearchConfig,
   type VisualSearchConfig,
   type VisualSearchProviderPolicy,

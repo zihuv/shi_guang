@@ -49,6 +49,7 @@ describe("duplicate and similar detection", () => {
     }
 
     const {
+      clearFileVisualEmbeddings,
       filterFiles,
       getDuplicateOrSimilarFileIds,
       getFileVisualEmbeddingQuery,
@@ -177,6 +178,7 @@ describe("duplicate and similar detection", () => {
 
     const imageQuery = getFileVisualEmbeddingQuery(db, ids[2]);
     expect(imageQuery?.modelId).toBe("clip-test");
+    expect(getFileVisualEmbeddingQuery(db, ids[2], "other-model")).toBeNull();
     expect(
       imageQuery
         ? searchFilesByVisualEmbedding(
@@ -190,6 +192,9 @@ describe("duplicate and similar detection", () => {
           ).files.map((file) => file.id)
         : [],
     ).toEqual([2, 4, 5]);
+
+    expect(clearFileVisualEmbeddings(db)).toBe(4);
+    expect(getFileVisualEmbeddingQuery(db, ids[2])).toBeNull();
 
     db.close();
   });

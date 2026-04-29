@@ -149,6 +149,10 @@ export function markFileVisualEmbeddingError(
   );
 }
 
+export function clearFileVisualEmbeddings(db: Database.Database): number {
+  return db.prepare("DELETE FROM file_visual_embeddings").run().changes;
+}
+
 export function getVisualIndexCandidate(
   db: Database.Database,
   fileId: number,
@@ -512,7 +516,10 @@ export function searchFilesByVisualEmbedding(
 export function getFileVisualEmbeddingQuery(
   db: Database.Database,
   fileId: number,
+  modelId?: string,
 ): FileVisualEmbeddingQuery | null {
+  const modelFilter = modelId ? "AND fve.model_id = ?" : "";
+  const params = modelId ? [fileId, modelId] : [fileId];
   const row = db
     .prepare(
       `SELECT f.id, f.name, fve.model_id, fve.dimensions, fve.embedding
@@ -523,10 +530,11 @@ export function getFileVisualEmbeddingQuery(
          AND f.missing_at IS NULL
          AND fve.status = 'ready'
          AND fve.embedding IS NOT NULL
+         ${modelFilter}
          AND ${currentVisualSourceMatchSql()}
        LIMIT 1`,
     )
-    .get(fileId) as
+    .get(...params) as
     | {
         id: number;
         name: string;

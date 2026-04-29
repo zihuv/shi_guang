@@ -1,6 +1,7 @@
 import { BrowserWindow } from "electron";
 import log from "electron-log/main";
 import {
+  clearFileVisualEmbeddings,
   getPendingVisualIndexCandidates,
   getSetting,
   getUnindexedVisualIndexCandidates,
@@ -14,6 +15,7 @@ import {
 import {
   embeddingToBuffer,
   getCachedVisualRuntimeSnapshot,
+  getVisualSearchEmbeddingConfigKey,
   resolveVisualSearchConfig,
   validateVisualModelPath,
   type VisualModelValidationResult,
@@ -41,6 +43,16 @@ let autoVisualIndexRunner: Promise<void> | null = null;
 let autoVisualIndexWindow: BrowserWindow | null = null;
 let autoVisualIndexWakePending = false;
 
+class VisualIndexConfigChangedError extends Error {
+  constructor() {
+    super("视觉模型配置已变更，本次索引任务已取消。");
+  }
+}
+
+function isVisualIndexConfigChangedError(error: unknown): error is VisualIndexConfigChangedError {
+  return error instanceof VisualIndexConfigChangedError;
+}
+
 function cancelVisualIndexEntry(
   entry: { snapshot: VisualIndexTaskSnapshot; cancelled: boolean },
   window: BrowserWindow | null,
@@ -54,6 +66,15 @@ function cancelVisualIndexEntry(
 
 export function loadVisualSearchConfig(state: AppState): VisualSearchConfig {
   return resolveVisualSearchConfig(getSetting(state.db, "visualSearch"));
+}
+
+function ensureVisualIndexConfigCurrent(state: AppState, config: VisualSearchConfig): void {
+  const currentConfig = loadVisualSearchConfig(state);
+  if (
+    getVisualSearchEmbeddingConfigKey(currentConfig) !== getVisualSearchEmbeddingConfigKey(config)
+  ) {
+    throw new VisualIndexConfigChangedError();
+  }
 }
 
 export async function loadVisualModelValidation(
@@ -70,6 +91,7 @@ async function indexVisualCandidate(
   candidate: NonNullable<ReturnType<typeof getVisualIndexCandidate>>,
 ): Promise<void> {
   const embedding = await encodeVisualSearchImageInUtility(config, validation, candidate.file.path);
+  ensureVisualIndexConfigCurrent(state, config);
   upsertFileVisualEmbedding(state.db, {
     fileId: candidate.file.id,
     modelId: validation.modelId ?? "",
@@ -262,6 +284,10 @@ async function runVisualIndexJobNow(
     throw new Error(validation.message);
   }
 
+  if (!processUnindexedOnly) {
+    clearFileVisualEmbeddings(state.db);
+  }
+
   const candidates = processUnindexedOnly
     ? skipCurrentErrors
       ? getPendingVisualIndexCandidates(state.db, validation.modelId)
@@ -305,6 +331,7 @@ async function runVisualIndexJobNow(
     }
 
     try {
+      ensureVisualIndexConfigCurrent(state, config);
       if (isFileVisualEmbeddingReady(state.db, candidate.file.id, validation.modelId)) {
         skipped += 1;
         processed += 1;
@@ -327,6 +354,17 @@ async function runVisualIndexJobNow(
       await indexVisualCandidate(state, config, validation, candidate);
       indexed += 1;
     } catch (error) {
+      if (isVisualIndexConfigChangedError(error)) {
+        if (entry) {
+          cancelVisualIndexEntry(entry, window);
+        }
+        return {
+          total: candidates.length,
+          indexed,
+          failed,
+          skipped: skipped + Math.max(0, candidates.length - processed),
+        };
+      }
       if (entry?.cancelled || isVisualIndexUtilitySuspended()) {
         if (entry) {
           cancelVisualIndexEntry(entry, window);

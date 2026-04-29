@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { ClipRuntimeConfig } from "./clip-runtime.js";
 
 export type VisualSearchRuntimeDevice = "auto" | "cpu" | "gpu";
@@ -86,4 +87,26 @@ export function resolveVisualSearchConfig(raw: string | null): VisualSearchConfi
   } catch {
     return structuredClone(DEFAULT_VISUAL_SEARCH_CONFIG);
   }
+}
+
+function normalizeVisualSearchModelPath(modelPath: string): string {
+  const trimmed = modelPath.trim().replace(/^["']|["']$/g, "");
+  return trimmed ? path.resolve(trimmed) : "";
+}
+
+export function getVisualSearchEmbeddingConfigKey(config: VisualSearchConfig): string {
+  return JSON.stringify({
+    modelPath: normalizeVisualSearchModelPath(config.modelPath),
+    fgclipMaxPatches: config.runtime.fgclipMaxPatches ?? null,
+  });
+}
+
+export function isVisualSearchEmbeddingConfigChanged(
+  previousRaw: string | null,
+  nextRaw: string | null,
+): boolean {
+  return (
+    getVisualSearchEmbeddingConfigKey(resolveVisualSearchConfig(previousRaw)) !==
+    getVisualSearchEmbeddingConfigKey(resolveVisualSearchConfig(nextRaw))
+  );
 }

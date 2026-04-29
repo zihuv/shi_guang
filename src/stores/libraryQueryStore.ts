@@ -234,16 +234,6 @@ function logVisualSearchDebugScores(result: PaginatedFilesResponse, naturalLangu
     return;
   }
 
-  console.info("[visual-search] score distribution", {
-    query,
-    scope: "currentPage",
-    count: pageScoreSummary.count,
-    top: roundDebugScore(pageScoreSummary.top),
-    p90: roundDebugScore(pageScoreSummary.p90),
-    p50: roundDebugScore(pageScoreSummary.p50),
-    min: roundDebugScore(pageScoreSummary.min),
-  });
-
   console.debug("[visual-search] similarity scores", {
     query,
     page: result.page,
