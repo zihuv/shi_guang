@@ -14,7 +14,12 @@ import {
 } from "@/components/ui/AlertDialog";
 import { AlertTriangle, Check, Folder, RotateCcw, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getFilePreviewMode, getFileSrc, getThumbnailImageSrc } from "@/utils";
+import {
+  getFilePreviewMode,
+  getFileSrc,
+  getGeneratedThumbnailSrc,
+  getThumbnailImageSrc,
+} from "@/utils";
 import type { TrashFileItem, TrashFolderItem, TrashItem } from "@/stores/fileTypes";
 
 interface TrashRowProps {
@@ -66,16 +71,24 @@ function TrashFileRow({
     setImageSrc(null);
     setImageError(false);
 
-    if (previewType !== "image" && previewType !== "thumbnail") {
+    if (previewType !== "image" && previewType !== "thumbnail" && previewType !== "video") {
       return () => {
         mounted = false;
       };
     }
 
     const loader =
-      previewType === "thumbnail"
-        ? getThumbnailImageSrc(previewPath, file.ext)
-        : getFileSrc(previewPath);
+      previewType === "video"
+        ? getGeneratedThumbnailSrc({
+            path: previewPath,
+            ext: file.ext,
+            width: file.width,
+            height: file.height,
+            size: file.size,
+          })
+        : previewType === "thumbnail"
+          ? getThumbnailImageSrc(previewPath, file.ext)
+          : getFileSrc(previewPath);
 
     loader.then((src) => {
       if (mounted) {
@@ -86,7 +99,7 @@ function TrashFileRow({
     return () => {
       mounted = false;
     };
-  }, [file.ext, previewPath, previewType]);
+  }, [file.ext, file.height, file.size, file.width, previewPath, previewType]);
 
   useEffect(() => {
     return () => {
