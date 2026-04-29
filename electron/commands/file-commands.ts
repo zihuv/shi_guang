@@ -10,7 +10,6 @@ import {
   getFilesInFolder,
   getIndexPaths,
   getSmartCollectionStats,
-  moveFileWithFallback,
   searchFiles,
   searchFilesByVisualEmbedding,
   touchFileLastAccessed,
@@ -20,6 +19,7 @@ import {
   updateFileNameRecord,
   updateFileThumbHash,
 } from "../database";
+import { copyFileWithCloneFallback, ensureDir, moveFileWithFallback } from "../file-operations";
 import { buildThumbHash, extractColorDistributionFromInput } from "../media";
 import { getThumbnailCachePath } from "../storage";
 import type { AppState, ImportTaskItem } from "../types";
@@ -65,8 +65,9 @@ export function createFileCommands(
     if (!file) {
       return null;
     }
+    const allowBackgroundRequest = args.allowBackgroundRequest ?? args.allow_background_request;
     return ensureThumbnailForFile(state, getWindow(), file.id, {
-      allowBackgroundRequest: true,
+      allowBackgroundRequest: allowBackgroundRequest !== false,
     });
   };
 
@@ -160,13 +161,13 @@ export function createFileCommands(
       const file = getFileById(state.db, numberArg(args, "fileId", "file_id"));
       if (!file) throw new Error("File not found");
       const exportDir = path.join(appDocumentsDir(), "shiguang_exports");
-      await fs.mkdir(exportDir, { recursive: true });
+      await ensureDir(exportDir);
       await fs.writeFile(
         path.join(exportDir, `${path.basename(file.name, path.extname(file.name))}_metadata.json`),
         JSON.stringify(file, null, 2),
       );
       if (fssync.existsSync(file.path))
-        await fs.copyFile(file.path, path.join(exportDir, file.name));
+        await copyFileWithCloneFallback(file.path, path.join(exportDir, file.name));
       return exportDir;
     },
     update_file_name: async (args) => {
@@ -250,7 +251,7 @@ export function createFileCommands(
       }
       const cachePath = getThumbnailCachePath(getIndexPaths(state.db), filePath, file.contentHash);
       if (!cachePath) return null;
-      await fs.mkdir(path.dirname(cachePath), { recursive: true });
+      await ensureDir(path.dirname(cachePath));
       await fs.writeFile(
         cachePath,
         Buffer.from(stringArg(args, "dataBase64", "data_base64"), "base64"),

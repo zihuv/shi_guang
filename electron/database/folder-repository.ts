@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
-import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
+import { moveDirectoryWithFallback } from "../file-operations";
 import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import type { FolderRecord, FolderTreeNode } from "../types";
 import { currentTimestamp, FolderRow, generateSyncId, toFolder } from "./shared";
@@ -158,7 +158,7 @@ export async function renameFolder(db: Database.Database, id: number, name: stri
   const oldPath = folder.path;
   const newPath = path.join(path.dirname(oldPath), name);
   if (fssync.existsSync(oldPath)) {
-    await fs.rename(oldPath, newPath);
+    await moveDirectoryWithFallback(oldPath, newPath);
   }
   db.transaction(() => {
     db.prepare("UPDATE folders SET name = ?, path = ? WHERE id = ?").run(name, newPath, id);
@@ -180,15 +180,6 @@ export async function renameFolder(db: Database.Database, id: number, name: stri
   })();
 }
 
-async function movePathWithFallback(from: string, to: string): Promise<void> {
-  try {
-    await fs.rename(from, to);
-  } catch {
-    await fs.cp(from, to, { recursive: true });
-    await fs.rm(from, { recursive: true, force: true });
-  }
-}
-
 export async function moveFolderRecord(
   db: Database.Database,
   folderId: number,
@@ -204,7 +195,7 @@ export async function moveFolderRecord(
   if (!fssync.existsSync(folder.path))
     throw new Error(`Source folder does not exist: ${folder.path}`);
   if (fssync.existsSync(newPath)) throw new Error(`Destination path already exists: ${newPath}`);
-  await movePathWithFallback(folder.path, newPath);
+  await moveDirectoryWithFallback(folder.path, newPath);
 
   db.transaction(() => {
     db.prepare("UPDATE folders SET parent_id = ?, sort_order = ?, path = ? WHERE id = ?").run(

@@ -2,16 +2,15 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { getOrCreateThumbHash } from "@/services/desktop/files";
 import { type FileItem } from "@/stores/fileTypes";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
-import { decideThumbnailGeneration } from "@/lib/thumbnailPolicy";
+import { decideThumbnailPlan, getThumbnailGenerationRuntimeForExt } from "@/lib/thumbnailPolicy";
 import { thumbHashBase64ToBytes, thumbHashToDataUrl } from "@/lib/thumbhash";
 import {
   canGenerateThumbnail,
   getFileSrc,
+  getGeneratedThumbnailSrc,
   getThumbnailImageSrc,
-  getVideoThumbnailSrc,
   isPdfFile,
   isPsdFile,
-  isVideoFile,
   rememberPreviewImageSrc,
   resolveThumbnailRequestMaxEdge,
 } from "@/utils";
@@ -383,6 +382,10 @@ function scheduleThumbHashPlaceholderPrewarm(
 
 export function prewarmThumbHashPlaceholders(files: FileItem[]) {
   for (const file of files) {
+    if (getThumbnailGenerationRuntimeForExt(file.ext) !== "main") {
+      continue;
+    }
+
     const cacheKey = `${file.path}:${file.modifiedAt}:${file.size}:thumb-hash`;
     scheduleThumbHashPlaceholderPrewarm(file.path, cacheKey, file.thumbHash);
   }
@@ -392,22 +395,13 @@ function getImagePreviewCacheKey(file: FileItem) {
   return `${file.path}:${file.modifiedAt}:${file.size}:image-preview`;
 }
 
-function shouldUseGeneratedThumbnail(file: Pick<FileItem, "ext" | "width" | "height" | "size">) {
-  return decideThumbnailGeneration({
-    ext: file.ext,
-    width: file.width,
-    height: file.height,
-    size: file.size,
-  }).shouldGenerate;
-}
-
 async function loadPreviewImageSrc(file: PreviewSourceFile, maxEdge: number | undefined) {
-  if (isVideoFile(file.ext)) {
-    return getVideoThumbnailSrc(file.path, maxEdge);
+  const thumbnailPlan = decideThumbnailPlan(file);
+  if (thumbnailPlan.runtime === "renderer") {
+    return getGeneratedThumbnailSrc(file, maxEdge);
   }
 
-  const shouldGenerateThumbnail = shouldUseGeneratedThumbnail(file);
-  if (shouldGenerateThumbnail) {
+  if (thumbnailPlan.runtime === "main") {
     const thumbnailSrc = await getThumbnailImageSrc(file.path, file.ext, maxEdge);
     if (thumbnailSrc) {
       return thumbnailSrc;
@@ -421,7 +415,7 @@ async function loadPreviewImageSrc(file: PreviewSourceFile, maxEdge: number | un
 }
 
 function scheduleThumbnailImagePrewarm(file: FileItem, generation: number) {
-  if (!canGenerateThumbnail(file.ext) || isVideoFile(file.ext)) {
+  if (decideThumbnailPlan(file).runtime !== "main") {
     return;
   }
 
@@ -579,6 +573,7 @@ export function useLazyImageSrc(
 
 export function useThumbHashPlaceholder(
   path: string,
+  ext: string,
   thumbHash: string | null | undefined,
   cacheKey: string,
   isVisible: boolean,
@@ -591,6 +586,11 @@ export function useThumbHashPlaceholder(
   }, [cacheKey, thumbHash]);
 
   useEffect(() => {
+    if (getThumbnailGenerationRuntimeForExt(ext) !== "main") {
+      setPlaceholderSrc("");
+      return;
+    }
+
     if (!isVisible || placeholderSrc) {
       return;
     }
@@ -605,7 +605,7 @@ export function useThumbHashPlaceholder(
     return () => {
       active = false;
     };
-  }, [cacheKey, isVisible, path, placeholderSrc, refreshVersion, thumbHash]);
+  }, [cacheKey, ext, isVisible, path, placeholderSrc, refreshVersion, thumbHash]);
 
   return placeholderSrc;
 }

@@ -1,5 +1,6 @@
 import { getThumbnailPath, saveThumbnailCache } from "@/services/desktop/indexing";
 import { canGenerateThumbnail, isImageFile, THUMBNAIL_MAX_EDGE } from "@/utils/fileClassification";
+import { decideThumbnailPlan, getThumbnailGenerationRuntimeForExt } from "@/lib/thumbnailPolicy";
 import {
   buildBrowserDecodedImageDataUrl,
   getCanvasSafeImageSrc,
@@ -13,6 +14,14 @@ const THUMBNAIL_BROWSER_OUTPUT_QUALITY = 0.85;
 const THUMBNAIL_BROWSER_OUTPUT_MIME = "image/webp";
 const videoThumbnailPromiseCache = new Map<string, Promise<string>>();
 const browserThumbnailPromiseCache = new Map<string, Promise<string>>();
+
+type ThumbnailSourceFile = {
+  path: string;
+  ext: string;
+  width: number;
+  height: number;
+  size: number;
+};
 
 function getThumbnailVariantCacheKey(path: string, maxEdge: number) {
   return `${THUMBNAIL_CACHE_VERSION}:${path}::${maxEdge}`;
@@ -189,11 +198,20 @@ export async function getVideoThumbnailSrc(
   path: string,
   maxEdge: number = THUMBNAIL_MAX_EDGE,
 ): Promise<string> {
-  const cachedThumbnailSrc = await getThumbnailImageSrc(path, undefined, maxEdge);
+  const cachedThumbnailSrc = await getThumbnailImageSrc(path, undefined, maxEdge, {
+    allowBackgroundRequest: false,
+  });
   if (cachedThumbnailSrc) {
     return cachedThumbnailSrc;
   }
 
+  return generateVideoThumbnailCache(path, maxEdge);
+}
+
+export async function generateVideoThumbnailCache(
+  path: string,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
   const cacheKey = getThumbnailVariantCacheKey(path, maxEdge);
   const pending = videoThumbnailPromiseCache.get(cacheKey);
   if (pending) {
@@ -209,6 +227,10 @@ export async function getVideoThumbnailSrc(
       const persistedThumbnailSrc = await persistThumbnailDataUrl(path, thumbnailDataUrl, maxEdge);
       return persistedThumbnailSrc || thumbnailDataUrl;
     })
+    .catch((error) => {
+      console.error("Failed to generate video thumbnail:", error);
+      return "";
+    })
     .finally(() => {
       videoThumbnailPromiseCache.delete(cacheKey);
     });
@@ -217,17 +239,52 @@ export async function getVideoThumbnailSrc(
   return nextThumbnailPromise;
 }
 
+export async function generateRendererThumbnailCache(
+  file: Pick<ThumbnailSourceFile, "path" | "ext">,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
+  const runtime = getThumbnailGenerationRuntimeForExt(file.ext);
+  if (runtime !== "renderer") {
+    return "";
+  }
+
+  return generateVideoThumbnailCache(file.path, maxEdge);
+}
+
+export async function getGeneratedThumbnailSrc(
+  file: ThumbnailSourceFile,
+  maxEdge: number = THUMBNAIL_MAX_EDGE,
+): Promise<string> {
+  const plan = decideThumbnailPlan(file);
+  if (!plan.shouldGenerate) {
+    return "";
+  }
+
+  if (plan.runtime === "renderer") {
+    return getVideoThumbnailSrc(file.path, maxEdge);
+  }
+
+  if (plan.runtime === "main") {
+    return getThumbnailImageSrc(file.path, file.ext, maxEdge);
+  }
+
+  return "";
+}
+
 export async function getThumbnailImageSrc(
   path: string,
   ext?: string,
   maxEdge: number = THUMBNAIL_MAX_EDGE,
+  options: { allowBackgroundRequest?: boolean } = {},
 ): Promise<string> {
   if (ext && !canGenerateThumbnail(ext)) {
     return "";
   }
 
   try {
-    const thumbnailPath = await getThumbnailPath(path, maxEdge);
+    const thumbnailPath = await getThumbnailPath(path, maxEdge, {
+      allowBackgroundRequest: options.allowBackgroundRequest,
+    });
     if (thumbnailPath) {
       return await toAssetSrc(thumbnailPath);
     }

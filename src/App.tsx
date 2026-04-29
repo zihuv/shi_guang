@@ -59,29 +59,17 @@ function App() {
     sidebarWidth,
   } = useAppPanelLayout({ showsDetailPanel: showsLibraryView });
   const showsDetailPanel = showsLibraryView && !isDetailPanelCollapsed;
-  const {
-    handleDragEnter,
-    handleDragLeave,
-    handleDragOver,
-    handleDrop,
-    isDragging,
-    setIsDragging,
-  } = useExternalImportDrop({
-    dragOverFolderId,
-    importBinaryImages,
-    importFiles,
-    isDraggingInternal,
-    setDragOverFolderId,
-  });
+  const { handleDragEnter, handleDragLeave, handleDragOver, handleDrop, isDragging } =
+    useExternalImportDrop({
+      dragOverFolderId,
+      importFiles,
+      isDraggingInternal,
+      setDragOverFolderId,
+    });
 
   useAppInitialization();
   useInternalFileDrag(setDraggingFileId);
-  useDesktopImportListeners({
-    dragOverFolderId,
-    setDragOverFolderId,
-    setIsDragging,
-    importFiles,
-  });
+  useDesktopImportListeners();
   useClipboardImport(importBinaryImages);
   useDocumentTheme(theme);
   useKeyboardShortcuts();

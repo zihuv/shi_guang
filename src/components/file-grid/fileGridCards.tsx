@@ -147,6 +147,7 @@ export function FileCard({
   );
   const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
     file.path,
+    file.ext,
     file.thumbHash,
     cacheKey,
     isVisible,
@@ -288,6 +289,7 @@ export function AdaptiveFileCard({
   );
   const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
     file.path,
+    file.ext,
     file.thumbHash,
     cacheKey,
     isVisible,
@@ -424,6 +426,7 @@ export function FileRow({
   );
   const thumbHashPlaceholderSrc = useThumbHashPlaceholder(
     file.path,
+    file.ext,
     file.thumbHash,
     cacheKey,
     isVisible,

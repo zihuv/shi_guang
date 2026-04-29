@@ -1,5 +1,4 @@
 import Database from "better-sqlite3";
-import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
 import { pathHasPrefix } from "../path-utils";
@@ -650,13 +649,4 @@ export async function resolveAvailableTargetPath(
   }
 
   throw new Error("Failed to resolve available target path");
-}
-
-export async function moveFileWithFallback(from: string, to: string): Promise<void> {
-  try {
-    await fs.rename(from, to);
-  } catch {
-    await fs.copyFile(from, to);
-    await fs.rm(from, { force: true });
-  }
 }

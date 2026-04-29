@@ -290,7 +290,13 @@ export default function FileGrid() {
   });
 
   const handleBatchDelete = async () => {
-    await deleteFiles(selectedFiles);
+    const fileIds = useSelectionStore.getState().selectedFiles;
+    if (fileIds.length === 0) {
+      setShowBatchDeleteConfirm(false);
+      return;
+    }
+
+    await deleteFiles(fileIds);
     setShowBatchDeleteConfirm(false);
   };
 

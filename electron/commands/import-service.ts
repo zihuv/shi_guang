@@ -1,12 +1,14 @@
 import { BrowserWindow } from "electron";
 import log from "electron-log/main";
 import fs from "node:fs/promises";
+import fssync from "node:fs";
 import type { Stats } from "node:fs";
 import path from "node:path";
 import {
   addTagToFile,
   currentTimestamp,
   getFileById,
+  getFileByPath,
   getFolderById,
   getIndexPaths,
   getSetting,
@@ -16,6 +18,7 @@ import {
 import {
   buildThumbHash,
   canAnalyzeImage,
+  canBackendDecodeImage,
   computeVisualContentHash,
   detectExtensionFromBytes,
   detectExtensionFromPath,
@@ -25,8 +28,9 @@ import {
   isScanSupportedExtension,
 } from "../media";
 import { hasThumbnailCachePath, getOrCreateThumbnail } from "../storage";
-import { decideThumbnailGeneration, isVideoThumbnailExt } from "../thumbnail";
+import { decideThumbnailPlan } from "../thumbnail";
 import type { AppState, FileRecord, ImportTaskItem, ImportTaskSnapshot } from "../types";
+import { copyFileWithCloneFallback, ensureDir } from "../file-operations";
 import { emit, taskId } from "./common";
 import {
   hasEnabledAiMetadataAnalysisFields,
@@ -35,6 +39,8 @@ import {
 } from "./visual-ai-service";
 
 const recentImports = new Map<string, number>();
+const FILE_PATH_IMPORT_CONCURRENCY = 5;
+const pendingImportTargetPaths = new Set<string>();
 let autoThumbnailQueue = Promise.resolve();
 
 export function timestampFromStats(stats: Stats, key: "birthtime" | "mtime"): string {
@@ -68,7 +74,7 @@ function assertFallbackExtensionAllowed(ext: string | null | undefined): void {
 export function shouldGenerateFileThumbnail(
   file: Pick<FileRecord, "ext" | "width" | "height" | "size">,
 ) {
-  return decideThumbnailGeneration({
+  return decideThumbnailPlan({
     ext: file.ext,
     width: file.width,
     height: file.height,
@@ -89,7 +95,13 @@ export async function ensureThumbnailForFile(
     return null;
   }
 
-  if (!shouldGenerateFileThumbnail(file)) {
+  const thumbnailPlan = decideThumbnailPlan({
+    ext: file.ext,
+    width: file.width,
+    height: file.height,
+    size: file.size,
+  });
+  if (!thumbnailPlan.shouldGenerate) {
     return null;
   }
 
@@ -102,14 +114,20 @@ export async function ensureThumbnailForFile(
     return existingThumbnailPath;
   }
 
-  if (isVideoThumbnailExt(file.ext)) {
+  if (thumbnailPlan.runtime === "renderer") {
     if (options.allowBackgroundRequest !== false && window) {
       emit(window, "thumbnail-build-request", {
         fileId: file.id,
         path: file.path,
         ext: file.ext,
+        reason: thumbnailPlan.reason,
+        runtime: thumbnailPlan.runtime,
       });
     }
+    return null;
+  }
+
+  if (thumbnailPlan.runtime !== "main") {
     return null;
   }
 
@@ -163,6 +181,112 @@ export function getTargetDir(state: AppState, folderId: number | null): string {
   return indexPath;
 }
 
+export async function importExistingFilePath(
+  state: AppState,
+  request: {
+    filePath: string;
+    folderId: number | null;
+    createdAt?: string;
+    modifiedAt?: string;
+    rating?: number;
+    description?: string;
+    sourceUrl?: string;
+    tagIds?: number[];
+  },
+): Promise<FileRecord> {
+  const input = await buildFileInputFromPath(request.filePath, request.folderId);
+  const fileId = upsertFile(state.db, {
+    ...input,
+    createdAt: request.createdAt ?? input.createdAt,
+    modifiedAt: request.modifiedAt ?? input.modifiedAt,
+    rating: request.rating,
+    description: request.description,
+    sourceUrl: request.sourceUrl,
+  });
+  for (const tagId of new Set(request.tagIds ?? [])) {
+    addTagToFile(state.db, fileId, tagId);
+  }
+  return getFileById(state.db, fileId) as FileRecord;
+}
+
+async function importFileFromPath(
+  state: AppState,
+  request: {
+    sourcePath: string;
+    folderId: number | null;
+    fallbackExt?: string | null;
+    createdAt?: string;
+    modifiedAt?: string;
+    rating?: number;
+    description?: string;
+    sourceUrl?: string;
+    tagIds?: number[];
+  },
+): Promise<FileRecord> {
+  const detectedExt = await detectExtensionFromPath(request.sourcePath);
+  const recordExt = normalizeImportExtension(
+    detectedExt ?? request.fallbackExt ?? fallbackExtensionFromPath(request.sourcePath),
+  );
+  assertSupportedImportExtension(recordExt);
+  const targetPath = await resolveImportTargetPath(state, request.sourcePath, request.folderId);
+  const targetKey = path.resolve(targetPath);
+
+  try {
+    await copyFileWithCloneFallback(request.sourcePath, targetPath);
+    return await importExistingFilePath(state, {
+      filePath: targetPath,
+      folderId: request.folderId,
+      createdAt: request.createdAt,
+      modifiedAt: request.modifiedAt,
+      rating: request.rating,
+      description: request.description,
+      sourceUrl: request.sourceUrl,
+      tagIds: request.tagIds,
+    });
+  } finally {
+    pendingImportTargetPaths.delete(targetKey);
+  }
+}
+
+async function resolveImportTargetPath(
+  state: AppState,
+  sourcePath: string,
+  folderId: number | null,
+): Promise<string> {
+  const targetDir = getTargetDir(state, folderId);
+  await ensureDir(targetDir);
+
+  const hasConflict = (candidate: string) => {
+    const resolved = path.resolve(candidate);
+    return (
+      pendingImportTargetPaths.has(resolved) ||
+      fssync.existsSync(candidate) ||
+      Boolean(getFileByPath(state.db, candidate))
+    );
+  };
+
+  const desiredPath = path.join(targetDir, path.basename(sourcePath));
+  if (!hasConflict(desiredPath)) {
+    pendingImportTargetPaths.add(path.resolve(desiredPath));
+    return desiredPath;
+  }
+
+  const ext = path.extname(sourcePath);
+  const stem = path.basename(sourcePath, ext);
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const candidate = path.join(
+      targetDir,
+      `${stem}_import_${Date.now().toString(16)}_${attempt}${ext}`,
+    );
+    if (!hasConflict(candidate)) {
+      pendingImportTargetPaths.add(path.resolve(candidate));
+      return candidate;
+    }
+  }
+
+  throw new Error("Failed to resolve available import target path");
+}
+
 export async function buildFileInputFromPath(
   filePath: string,
   folderId: number | null,
@@ -174,11 +298,14 @@ export async function buildFileInputFromPath(
       fallbackExtensionFromPath(filePath),
   );
   assertSupportedImportExtension(ext);
-  const dimensions = await getImageDimensions(filePath, ext);
-  const colors = await extractColorDistributionFromInput(filePath);
+  const canExtractVisualMetadata = canBackendDecodeImage(ext);
+  const dimensions = canExtractVisualMetadata
+    ? await getImageDimensions(filePath, ext)
+    : { width: 0, height: 0 };
+  const colors = canExtractVisualMetadata ? await extractColorDistributionFromInput(filePath) : [];
   const dominantColor = colors[0]?.color ?? "";
-  const contentHash = await computeVisualContentHash(filePath);
-  const thumbHash = await buildThumbHash(filePath, ext);
+  const contentHash = canExtractVisualMetadata ? await computeVisualContentHash(filePath) : null;
+  const thumbHash = canExtractVisualMetadata ? await buildThumbHash(filePath, ext) : "";
   return {
     path: filePath,
     name: path.basename(filePath),
@@ -224,12 +351,17 @@ export async function importBytes(
       generatedImportName(request.namePrefix ?? null, storageExt),
     );
 
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await ensureDir(path.dirname(targetPath));
   await fs.writeFile(targetPath, request.bytes);
   const stats = await fs.stat(targetPath);
-  const dimensions = await getImageDimensions(targetPath, recordExt);
-  const colors = await extractColorDistributionFromInput(targetPath);
-  const thumbHash = await buildThumbHash(targetPath, recordExt);
+  const canExtractVisualMetadata = canBackendDecodeImage(recordExt);
+  const dimensions = canExtractVisualMetadata
+    ? await getImageDimensions(targetPath, recordExt)
+    : { width: 0, height: 0 };
+  const colors = canExtractVisualMetadata
+    ? await extractColorDistributionFromInput(targetPath)
+    : [];
+  const thumbHash = canExtractVisualMetadata ? await buildThumbHash(targetPath, recordExt) : "";
   const fileId = upsertFile(state.db, {
     path: targetPath,
     name: path.basename(targetPath),
@@ -246,7 +378,7 @@ export async function importBytes(
     dominantColor: colors[0]?.color ?? "",
     colorDistribution: JSON.stringify(colors),
     thumbHash,
-    contentHash: await computeVisualContentHash(targetPath),
+    contentHash: canExtractVisualMetadata ? await computeVisualContentHash(targetPath) : null,
   });
   for (const tagId of new Set(request.tagIds ?? [])) {
     addTagToFile(state.db, fileId, tagId);
@@ -270,8 +402,8 @@ export async function importFilePath(
   if (!stats.isFile()) {
     throw new Error("Source file does not exist");
   }
-  return importBytes(state, {
-    bytes: await fs.readFile(sourcePath),
+  return importFileFromPath(state, {
+    sourcePath,
     folderId,
     fallbackExt: path.extname(sourcePath),
     createdAt: timestampFromStats(stats, "birthtime"),
@@ -296,8 +428,8 @@ export async function importClipboardFile(
     throw new Error("Clipboard source file does not exist");
   }
 
-  return importBytes(state, {
-    bytes: await fs.readFile(request.sourcePath),
+  return importFileFromPath(state, {
+    sourcePath: request.sourcePath,
     folderId: request.folderId,
     fallbackExt: request.ext ?? path.extname(request.sourcePath),
     createdAt: timestampFromStats(stats, "birthtime"),
@@ -337,6 +469,70 @@ function shouldAutoAnalyzeImportedMetadata(state: AppState): boolean {
   return hasEnabledAiMetadataAnalysisFields(state);
 }
 
+function isFilePathImportItem(item: ImportTaskItem): boolean {
+  return !item.kind || item.kind === "file_path";
+}
+
+async function importTaskItem(
+  state: AppState,
+  item: ImportTaskItem,
+  folderId: number | null,
+): Promise<FileRecord> {
+  if (item.kind === "base64_image") {
+    return importBytes(state, {
+      bytes: Buffer.from(String(item.base64Data ?? item.base64_data ?? ""), "base64"),
+      folderId,
+      fallbackExt: item.ext,
+      namePrefix: "paste",
+    });
+  }
+
+  if (item.kind === "binary_image") {
+    return importBytes(state, {
+      bytes: Buffer.from(item.bytes ?? []),
+      folderId,
+      fallbackExt: item.ext,
+      namePrefix: "paste",
+      rating: typeof item.rating === "number" ? item.rating : undefined,
+      description: typeof item.description === "string" ? item.description : undefined,
+      sourceUrl:
+        typeof item.sourceUrl === "string"
+          ? item.sourceUrl
+          : typeof item.source_url === "string"
+            ? item.source_url
+            : undefined,
+      tagIds: Array.isArray(item.tagIds)
+        ? item.tagIds.filter((tagId): tagId is number => Number.isInteger(tagId))
+        : Array.isArray(item.tag_ids)
+          ? item.tag_ids.filter((tagId): tagId is number => Number.isInteger(tagId))
+          : undefined,
+    });
+  }
+
+  if (item.kind === "clipboard_file") {
+    return importClipboardFile(state, {
+      sourcePath: String(item.sourcePath ?? item.path ?? ""),
+      folderId,
+      ext: item.ext,
+      rating: typeof item.rating === "number" ? item.rating : undefined,
+      description: typeof item.description === "string" ? item.description : undefined,
+      sourceUrl:
+        typeof item.sourceUrl === "string"
+          ? item.sourceUrl
+          : typeof item.source_url === "string"
+            ? item.source_url
+            : undefined,
+      tagIds: Array.isArray(item.tagIds)
+        ? item.tagIds.filter((tagId): tagId is number => Number.isInteger(tagId))
+        : Array.isArray(item.tag_ids)
+          ? item.tag_ids.filter((tagId): tagId is number => Number.isInteger(tagId))
+          : undefined,
+    });
+  }
+
+  return importFilePath(state, String(item.path ?? ""), folderId);
+}
+
 async function runImportTask(
   state: AppState,
   window: BrowserWindow | null,
@@ -348,70 +544,21 @@ async function runImportTask(
   emit(window, "import-task-updated", id);
   const autoAnalyzeFileIds: number[] = [];
 
-  for (const [index, item] of entry.items.entries()) {
-    if (entry.cancelled) {
-      entry.snapshot.status = "cancelled";
-      emit(window, "import-task-updated", id);
-      return;
-    }
-
+  const recordResult = (
+    index: number,
+    item: ImportTaskItem,
+    file: FileRecord | null,
+    error?: unknown,
+  ) => {
     const source = importTaskSource(item);
-    try {
-      const file =
-        item.kind === "base64_image"
-          ? await importBytes(state, {
-              bytes: Buffer.from(String(item.base64Data ?? item.base64_data ?? ""), "base64"),
-              folderId: entry.folderId,
-              fallbackExt: item.ext,
-              namePrefix: "paste",
-            })
-          : item.kind === "binary_image"
-            ? await importBytes(state, {
-                bytes: Buffer.from(item.bytes ?? []),
-                folderId: entry.folderId,
-                fallbackExt: item.ext,
-                namePrefix: "paste",
-                rating: typeof item.rating === "number" ? item.rating : undefined,
-                description: typeof item.description === "string" ? item.description : undefined,
-                sourceUrl:
-                  typeof item.sourceUrl === "string"
-                    ? item.sourceUrl
-                    : typeof item.source_url === "string"
-                      ? item.source_url
-                      : undefined,
-                tagIds: Array.isArray(item.tagIds)
-                  ? item.tagIds.filter((tagId): tagId is number => Number.isInteger(tagId))
-                  : Array.isArray(item.tag_ids)
-                    ? item.tag_ids.filter((tagId): tagId is number => Number.isInteger(tagId))
-                    : undefined,
-              })
-            : item.kind === "clipboard_file"
-              ? await importClipboardFile(state, {
-                  sourcePath: String(item.sourcePath ?? item.path ?? ""),
-                  folderId: entry.folderId,
-                  ext: item.ext,
-                  rating: typeof item.rating === "number" ? item.rating : undefined,
-                  description: typeof item.description === "string" ? item.description : undefined,
-                  sourceUrl:
-                    typeof item.sourceUrl === "string"
-                      ? item.sourceUrl
-                      : typeof item.source_url === "string"
-                        ? item.source_url
-                        : undefined,
-                  tagIds: Array.isArray(item.tagIds)
-                    ? item.tagIds.filter((tagId): tagId is number => Number.isInteger(tagId))
-                    : Array.isArray(item.tag_ids)
-                      ? item.tag_ids.filter((tagId): tagId is number => Number.isInteger(tagId))
-                      : undefined,
-                })
-              : await importFilePath(state, String(item.path ?? ""), entry.folderId);
+    if (file) {
       entry.snapshot.successCount += 1;
       entry.snapshot.results.push({ index, status: "completed", source, error: null, file });
       if (canAnalyzeImage(file.ext)) {
         autoAnalyzeFileIds.push(file.id);
       }
       postImport(state, window, file);
-    } catch (error) {
+    } else {
       entry.snapshot.failureCount += 1;
       entry.snapshot.results.push({
         index,
@@ -430,6 +577,52 @@ async function runImportTask(
           : "completed"
         : "running";
     emit(window, "import-task-updated", id);
+  };
+
+  const processOne = async (index: number, item: ImportTaskItem): Promise<void> => {
+    if (entry.cancelled) {
+      entry.snapshot.status = "cancelled";
+      emit(window, "import-task-updated", id);
+      return;
+    }
+
+    try {
+      recordResult(index, item, await importTaskItem(state, item, entry.folderId));
+    } catch (error) {
+      recordResult(index, item, null, error);
+    }
+  };
+
+  if (entry.items.length > 1 && entry.items.every(isFilePathImportItem)) {
+    let nextIndex = 0;
+    const workers = Array.from(
+      { length: Math.min(FILE_PATH_IMPORT_CONCURRENCY, entry.items.length) },
+      async () => {
+        while (!entry.cancelled) {
+          const index = nextIndex;
+          nextIndex += 1;
+          const item = entry.items[index];
+          if (!item) {
+            return;
+          }
+          await processOne(index, item);
+        }
+      },
+    );
+    await Promise.all(workers);
+  } else {
+    for (const [index, item] of entry.items.entries()) {
+      await processOne(index, item);
+      if (entry.cancelled) {
+        return;
+      }
+    }
+  }
+
+  if (entry.cancelled && entry.snapshot.processed < entry.snapshot.total) {
+    entry.snapshot.status = "cancelled";
+    emit(window, "import-task-updated", id);
+    return;
   }
 
   if (autoAnalyzeFileIds.length > 0 && shouldAutoAnalyzeImportedMetadata(state)) {

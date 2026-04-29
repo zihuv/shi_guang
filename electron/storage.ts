@@ -5,9 +5,9 @@ import path from "node:path";
 import sharp from "sharp";
 import * as WebtoonPsd from "@webtoon/psd";
 import { definePDFJSModule, renderPageAsImage } from "unpdf";
-import { canBackendDecodeImage } from "./media";
 import { isInsideAnyPath, pathHasPrefix } from "./path-utils";
 import {
+  getThumbnailGenerationRuntimeForExt,
   normalizeThumbnailExt,
   resolveThumbnailCacheKey,
   THUMBNAIL_MAX_EDGE,
@@ -248,8 +248,7 @@ function resolveIndexPath(indexPaths: string[], filePath: string): string | null
 }
 
 function canBuildThumbnail(ext: string): boolean {
-  const normalizedExt = normalizeThumbnailExt(ext);
-  return canBackendDecodeImage(normalizedExt) || normalizedExt === "pdf" || normalizedExt === "psd";
+  return getThumbnailGenerationRuntimeForExt(normalizeThumbnailExt(ext)) === "main";
 }
 
 async function ensurePdfJsModule(): Promise<void> {

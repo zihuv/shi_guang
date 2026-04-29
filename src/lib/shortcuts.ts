@@ -17,6 +17,12 @@ export const SHORTCUT_ACTIONS = [
     description: "选择当前页已加载的全部文件",
     defaultShortcut: "Mod+A",
   },
+  {
+    id: "deleteSelectedFiles",
+    label: "删除选中文件",
+    description: "删除当前选中的文件",
+    defaultShortcut: "Delete",
+  },
 ] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];

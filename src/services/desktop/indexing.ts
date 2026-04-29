@@ -61,8 +61,16 @@ export function rebuildLibraryIndex() {
   return invokeDesktop<number>("rebuild_library_index");
 }
 
-export function getThumbnailPath(filePath: string, maxEdge?: number) {
-  return invokeDesktop<string | null>("get_thumbnail_path", { filePath, maxEdge });
+export function getThumbnailPath(
+  filePath: string,
+  maxEdge?: number,
+  options: { allowBackgroundRequest?: boolean } = {},
+) {
+  return invokeDesktop<string | null>("get_thumbnail_path", {
+    filePath,
+    maxEdge,
+    allowBackgroundRequest: options.allowBackgroundRequest,
+  });
 }
 
 export function getThumbnailDataBase64(filePath: string, maxEdge?: number) {

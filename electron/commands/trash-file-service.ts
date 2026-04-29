@@ -1,5 +1,4 @@
 import { app, BrowserWindow } from "electron";
-import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
 import {
@@ -15,7 +14,6 @@ import {
   getFolderTrashEntry,
   getIndexPaths,
   getOrCreateFolder,
-  moveFileWithFallback,
   permanentDeleteFileRecord,
   resolveAvailableTargetPath,
   restoreFileRecord,
@@ -23,15 +21,22 @@ import {
   softDeleteFile,
   updateFilePathAndFolder,
 } from "../database";
+import {
+  copyFileWithCloneFallback,
+  ensureDir,
+  moveDirectoryWithFallback,
+  moveFileWithFallback,
+  removePathQuietly,
+} from "../file-operations";
 import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import { removeThumbnailForFile } from "../storage";
 import { getDeletedFolderHoldingDir } from "../trash-paths";
 import type { AppState, FolderRecord } from "../types";
-import { getTargetDir, importBytes, postImport } from "./import-service";
+import { getTargetDir, importExistingFilePath, postImport } from "./import-service";
 
 export async function ensureDeletedFolderHoldingDir(appDataDir: string): Promise<string> {
   const dir = getDeletedFolderHoldingDir(appDataDir);
-  await fs.mkdir(dir, { recursive: true });
+  await ensureDir(dir);
   return dir;
 }
 
@@ -120,15 +125,6 @@ function resolveAvailableFolderRestorePath(indexPath: string, originalPath: stri
   throw new Error("无法为恢复的文件夹找到可用路径");
 }
 
-export async function moveDirectoryWithFallback(from: string, to: string): Promise<void> {
-  try {
-    await fs.rename(from, to);
-  } catch {
-    await fs.cp(from, to, { recursive: true });
-    await fs.rm(from, { recursive: true, force: true });
-  }
-}
-
 export async function permanentlyDeleteTrashedFolder(
   state: AppState,
   folderId: number,
@@ -147,7 +143,7 @@ export async function permanentlyDeleteTrashedFolder(
 
   deleteFolderTrashEntry(state.db, folderId);
   deleteFolderRecord(state.db, folderId);
-  await fs.rm(trashEntry.tempPath, { recursive: true, force: true }).catch(() => undefined);
+  await removePathQuietly(trashEntry.tempPath, { recursive: true });
   return { removedFileCount: affectedFiles.length };
 }
 
@@ -163,7 +159,7 @@ export async function restoreTrashedFolder(
 
   const indexPath = getIndexPaths(state.db)[0] ?? state.indexPath;
   const restoredPath = resolveAvailableFolderRestorePath(indexPath, folder.path);
-  await fs.mkdir(path.dirname(restoredPath), { recursive: true });
+  await ensureDir(path.dirname(restoredPath));
   await moveDirectoryWithFallback(trashEntry.tempPath, restoredPath);
   const restoredParentId = getOrCreateFolder(
     state.db,
@@ -196,7 +192,7 @@ export async function copyOneFile(
   const file = getFileById(state.db, fileId);
   if (!file) throw new Error("File not found");
   const targetDir = getTargetDir(state, targetFolderId);
-  await fs.mkdir(targetDir, { recursive: true });
+  await ensureDir(targetDir);
   const targetPath = await resolveAvailableTargetPath(
     state.db,
     file.path,
@@ -205,12 +201,10 @@ export async function copyOneFile(
     "copy",
     false,
   );
-  const bytes = await fs.readFile(file.path);
-  const imported = await importBytes(state, {
-    bytes,
+  await copyFileWithCloneFallback(file.path, targetPath);
+  const imported = await importExistingFilePath(state, {
+    filePath: targetPath,
     folderId: targetFolderId,
-    fallbackExt: file.ext,
-    targetPath,
     rating: file.rating,
     description: file.description,
     sourceUrl: file.sourceUrl,
@@ -227,7 +221,7 @@ export async function moveOneFile(
   const file = getFileById(state.db, fileId);
   if (!file) throw new Error("File not found");
   const targetDir = getTargetDir(state, targetFolderId);
-  await fs.mkdir(targetDir, { recursive: true });
+  await ensureDir(targetDir);
   const targetPath = await resolveAvailableTargetPath(
     state.db,
     file.path,
@@ -271,7 +265,6 @@ export async function restoreOneFile(
       false,
     );
     if (fssync.existsSync(trashedFolder.sourcePath)) {
-      await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await moveFileWithFallback(trashedFolder.sourcePath, targetPath);
     }
     adjustFolderTrashEntryFileCount(state.db, trashedFolder.folderId, -1);
@@ -307,9 +300,9 @@ export async function permanentDeleteOneFile(state: AppState, fileId: number): P
   await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);
   const trashedFolder = findTrashedFolderForPath(state, file.path);
   if (trashedFolder && fssync.existsSync(trashedFolder.sourcePath)) {
-    await fs.rm(trashedFolder.sourcePath, { force: true }).catch(() => undefined);
+    await removePathQuietly(trashedFolder.sourcePath);
     adjustFolderTrashEntryFileCount(state.db, trashedFolder.folderId, -1);
   }
   permanentDeleteFileRecord(state.db, fileId);
-  await fs.rm(file.path, { force: true }).catch(() => undefined);
+  await removePathQuietly(file.path);
 }

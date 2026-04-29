@@ -12,6 +12,7 @@ import {
   extensionListIncludes,
   getMimeTypeForExtension,
 } from "@/shared/file-formats";
+import { isThumbnailSupportedExt } from "@/lib/thumbnailPolicy";
 
 export const THUMBNAIL_MAX_EDGE = 768;
 export const LIST_THUMBNAIL_MAX_EDGE = THUMBNAIL_MAX_EDGE;
@@ -146,7 +147,7 @@ export function canPreviewFile(ext: string): boolean {
 }
 
 export function canGenerateThumbnail(ext: string): boolean {
-  return isImageFile(ext) || isVideoFile(ext) || isPdfFile(ext) || isPsdFile(ext);
+  return isThumbnailSupportedExt(ext);
 }
 
 export function resolveThumbnailRequestMaxEdge(

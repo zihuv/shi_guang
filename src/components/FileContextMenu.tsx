@@ -58,7 +58,6 @@ interface FileContextMenuProps {
 }
 
 export default function FileContextMenu({ file, children }: FileContextMenuProps) {
-  const deleteFile = useTrashStore((state) => state.deleteFile);
   const deleteFiles = useTrashStore((state) => state.deleteFiles);
   const setSelectedFile = useSelectionStore((state) => state.setSelectedFile);
   const selectedFiles = useSelectionStore((state) => state.selectedFiles);
@@ -93,7 +92,6 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
       : [file.id];
     frozenFileIdsRef.current = nextFileIds;
     setFrozenFileIds(nextFileIds);
-    console.log("[FileContextMenu] snapshotActiveFileIds", { fileId: file.id, nextFileIds });
     return nextFileIds;
   };
 
@@ -129,8 +127,8 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
     }
 
     lastMenuActionRef.current = { key, timestamp: now };
-    dismissContextMenu();
     void action();
+    dismissContextMenu();
   };
 
   // Flatten folder tree for display in submenu
@@ -260,14 +258,7 @@ export default function FileContextMenu({ file, children }: FileContextMenuProps
   // Delete file
   const handleDeleteFile = async () => {
     try {
-      const fileIds = getActionFileIds();
-
-      if (fileIds.length > 1) {
-        await deleteFiles(fileIds);
-        return;
-      }
-
-      await deleteFile(fileIds[0] ?? file.id);
+      await deleteFiles(getActionFileIds());
       setSelectedFile(null);
     } catch (e) {
       console.error("Failed to delete file:", e);

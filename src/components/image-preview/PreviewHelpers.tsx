@@ -4,8 +4,7 @@ import FileTypeIcon from "@/components/FileTypeIcon";
 import {
   getFilePreviewMode,
   getFileSrc,
-  getThumbnailImageSrc,
-  getVideoThumbnailSrc,
+  getGeneratedThumbnailSrc,
   rememberPreviewImageSrc,
 } from "@/utils";
 
@@ -34,9 +33,9 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
 
     const loader =
       previewType === "video"
-        ? getVideoThumbnailSrc(file.path)
+        ? getGeneratedThumbnailSrc(file)
         : previewType === "thumbnail"
-          ? getThumbnailImageSrc(file.path, file.ext)
+          ? getGeneratedThumbnailSrc(file)
           : getFileSrc(file.path);
 
     loader.then((imageSrc) => {

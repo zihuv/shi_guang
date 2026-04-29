@@ -81,7 +81,6 @@ function toImportTaskItem(item: BinaryImageImportItem) {
 async function finalizeImportTask(
   task: ImportTaskSnapshot,
   setImportTask: (task: ImportTaskSnapshot | null) => void,
-  selectedFolderId: number | null,
 ) {
   const results = parseFileList(
     task.results
@@ -90,7 +89,7 @@ async function finalizeImportTask(
   );
 
   await delay(0);
-  await useLibraryQueryStore.getState().runCurrentQuery(selectedFolderId);
+  await useLibraryQueryStore.getState().runCurrentQuery();
   await useFolderStore.getState().loadFolders();
   await useSmartCollectionStore.getState().loadStats();
   setImportTask(null);
@@ -133,11 +132,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
         taskId: task.id,
       });
 
-      return await finalizeImportTask(
-        currentTask,
-        (nextTask) => set({ importTask: nextTask }),
-        selectedFolderId,
-      );
+      return await finalizeImportTask(currentTask, (nextTask) => set({ importTask: nextTask }));
     } catch (error) {
       console.error("Failed to import files:", error);
       set({ importTask: null });
@@ -197,11 +192,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
         taskId: task.id,
       });
 
-      return await finalizeImportTask(
-        currentTask,
-        (nextTask) => set({ importTask: nextTask }),
-        selectedFolderId,
-      );
+      return await finalizeImportTask(currentTask, (nextTask) => set({ importTask: nextTask }));
     } catch (error) {
       console.error("Failed to import images:", error);
       set({ importTask: null });

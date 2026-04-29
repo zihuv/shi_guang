@@ -42,6 +42,22 @@ function getCopyTargetFileIds() {
   return selectionStore.selectedFile ? [selectionStore.selectedFile.id] : [];
 }
 
+function getDeleteTargetFileIds() {
+  const previewStore = usePreviewStore.getState();
+  const selectionStore = useSelectionStore.getState();
+
+  if (previewStore.previewMode) {
+    const currentPreviewFile = previewStore.previewFiles[previewStore.previewIndex];
+    return currentPreviewFile ? [currentPreviewFile.id] : [];
+  }
+
+  if (selectionStore.selectedFiles.length > 0) {
+    return selectionStore.selectedFiles;
+  }
+
+  return selectionStore.selectedFile ? [selectionStore.selectedFile.id] : [];
+}
+
 function canRunShortcut(actionId: ShortcutActionId) {
   const previewStore = usePreviewStore.getState();
   const libraryStore = useLibraryQueryStore.getState();
@@ -50,6 +66,10 @@ function canRunShortcut(actionId: ShortcutActionId) {
 
   if (actionId === "copySelectedToClipboard") {
     return getCopyTargetFileIds().length > 0;
+  }
+
+  if (actionId === "deleteSelectedFiles") {
+    return getDeleteTargetFileIds().length > 0;
   }
 
   if (actionId === "undoDelete") {
@@ -84,6 +104,21 @@ async function runShortcut(actionId: ShortcutActionId) {
 
   if (actionId === "undoDelete") {
     void useTrashStore.getState().undo();
+    return;
+  }
+
+  if (actionId === "deleteSelectedFiles") {
+    const fileIds = getDeleteTargetFileIds();
+    if (fileIds.length === 0) {
+      return;
+    }
+
+    if (fileIds.length === 1) {
+      await useTrashStore.getState().deleteFile(fileIds[0]);
+      return;
+    }
+
+    await useTrashStore.getState().deleteFiles(fileIds);
     return;
   }
 

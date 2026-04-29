@@ -4,9 +4,8 @@ import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import {
   getFilePreviewMode,
   getFileSrc,
+  getGeneratedThumbnailSrc,
   getTextPreviewContent,
-  getThumbnailImageSrc,
-  getVideoThumbnailSrc,
   resolveThumbnailRequestMaxEdge,
 } from "@/utils";
 
@@ -74,11 +73,7 @@ export function useDetailPreview({ file, width }: { file: FileItem; width: numbe
 
     if (usesThumbnailPreview) {
       void (async () => {
-        const thumbnailSrc = await getThumbnailImageSrc(
-          file.path,
-          file.ext,
-          previewThumbnailMaxEdge,
-        );
+        const thumbnailSrc = await getGeneratedThumbnailSrc(file, previewThumbnailMaxEdge);
         if (!mounted) {
           if (thumbnailSrc.startsWith("blob:")) {
             URL.revokeObjectURL(thumbnailSrc);
@@ -118,7 +113,7 @@ export function useDetailPreview({ file, width }: { file: FileItem; width: numbe
     }
 
     if (previewType === "video") {
-      getVideoThumbnailSrc(file.path, previewThumbnailMaxEdge).then((src) => {
+      getGeneratedThumbnailSrc(file, previewThumbnailMaxEdge).then((src) => {
         if (mounted && src) {
           setVideoPosterSrc(src);
         }

@@ -2,6 +2,10 @@ import crypto from "node:crypto";
 
 export {
   decideThumbnailGeneration,
+  decideThumbnailPlan,
+  getThumbnailGenerationRuntimeForExt,
+  isMainProcessThumbnailExt,
+  isThumbnailSupportedExt,
   isVideoThumbnailExt,
   normalizeThumbnailExt,
   THUMBNAIL_EDGE_THRESHOLD,
@@ -12,6 +16,8 @@ export type {
   ThumbnailDecision,
   ThumbnailDecisionInput,
   ThumbnailDecisionReason,
+  ThumbnailGenerationRuntime,
+  ThumbnailPlan,
 } from "../src/lib/thumbnailPolicy";
 
 export const THUMBNAIL_CACHE_VERSION = "v4";

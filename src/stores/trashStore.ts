@@ -188,8 +188,13 @@ export const useTrashStore = create<TrashStore>((set, get) => ({
   },
 
   deleteFiles: async (fileIds) => {
-    await deleteFiles(fileIds);
-    await get().addFileDeleteToUndoStack(fileIds);
+    const uniqueFileIds = [...new Set(fileIds)].filter((fileId) => Number.isFinite(fileId));
+    if (uniqueFileIds.length === 0) {
+      return;
+    }
+
+    await deleteFiles(uniqueFileIds);
+    await get().addFileDeleteToUndoStack(uniqueFileIds);
     useSelectionStore.getState().clearSelection();
     useSelectionStore.getState().setSelectedFile(null);
     await refreshCurrentLibraryState();

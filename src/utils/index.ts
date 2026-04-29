@@ -35,6 +35,9 @@ export {
 } from "@/utils/previewImageCache";
 export {
   generateBrowserThumbnailCache,
+  generateRendererThumbnailCache,
+  generateVideoThumbnailCache,
+  getGeneratedThumbnailSrc,
   getThumbnailBlobSrc,
   getThumbnailImageSrc,
   getVideoThumbnailSrc,

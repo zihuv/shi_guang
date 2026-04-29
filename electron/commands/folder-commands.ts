@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
 import {
@@ -21,6 +20,7 @@ import {
 } from "../database";
 import { removeThumbnailForFile } from "../storage";
 import type { AppState } from "../types";
+import { ensureDir, moveDirectoryWithFallback, removePathQuietly } from "../file-operations";
 import {
   type CommandHandler,
   numberArg,
@@ -35,7 +35,6 @@ import {
   ensureDeletedFolderHoldingDir,
   getFilesUnderFolderPath,
   getFoldersUnderFolderPath,
-  moveDirectoryWithFallback,
 } from "./trash-file-service";
 import { normalizeFolderName } from "../path-utils";
 
@@ -56,7 +55,7 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
       if (getFolderByPath(state.db, folderPath) || fssync.existsSync(folderPath)) {
         throw new Error(`文件夹“${folderName}”已存在`);
       }
-      await fs.mkdir(folderPath);
+      await ensureDir(folderPath);
       return getFolderById(
         state.db,
         createFolderRecord(
@@ -78,7 +77,7 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
 
       if (!useTrash || !fssync.existsSync(folder.path)) {
         if (fssync.existsSync(folder.path)) {
-          await fs.rm(folder.path, { recursive: true, force: true }).catch(() => undefined);
+          await removePathQuietly(folder.path, { recursive: true });
         }
         for (const file of affectedFiles) {
           await removeThumbnailForFile(getIndexPaths(state.db), file.path, file.contentHash);

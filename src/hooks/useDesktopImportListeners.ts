@@ -1,30 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
-import { useSelectionStore } from "@/stores/selectionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { useThumbnailRefreshStore } from "@/stores/thumbnailRefreshStore";
 import { completeVisualIndexBrowserDecodeRequest } from "@/services/desktop/files";
-import { getDesktopBridge, listenDesktop } from "@/services/desktop/core";
-import { buildBrowserDecodedImageDataUrl, getVideoThumbnailSrc, isVideoFile } from "@/utils";
-
-const dragDropState = {
-  processedPaths: new Set<string>(),
-  isProcessing: false,
-  listenersReady: false,
-};
+import { listenDesktop } from "@/services/desktop/core";
+import { buildBrowserDecodedImageDataUrl, generateRendererThumbnailCache } from "@/utils";
 
 const visualIndexBrowserDecodeState = {
   queue: Promise.resolve() as Promise<void>,
 };
 
-type UseDesktopImportListenersOptions = {
-  dragOverFolderId: number | null;
-  setDragOverFolderId: (folderId: number | null) => void;
-  setIsDragging: (isDragging: boolean) => void;
-  importFiles: (sourcePaths: string[], targetFolderId?: number | null) => Promise<unknown>;
-};
+const LIBRARY_IMPORT_REFRESH_DELAY_MS = 120;
 
 type FileUpdatedPayload = {
   fileId?: number;
@@ -56,6 +44,7 @@ type ThumbnailBuildRequestPayload = {
   file_id?: number;
   path?: string;
   ext?: string;
+  runtime?: string;
 };
 
 async function handleVisualIndexBrowserDecodeRequest(
@@ -97,11 +86,7 @@ async function handleThumbnailBuildRequest(payload?: ThumbnailBuildRequestPayloa
     return;
   }
 
-  if (!isVideoFile(ext)) {
-    return;
-  }
-
-  await getVideoThumbnailSrc(path);
+  await generateRendererThumbnailCache({ path, ext });
 }
 
 function enqueueVisualIndexBrowserDecodeRequest(payload?: VisualIndexBrowserDecodeRequestPayload) {
@@ -114,136 +99,45 @@ function enqueueVisualIndexBrowserDecodeRequest(payload?: VisualIndexBrowserDeco
   return task;
 }
 
-export function useDesktopImportListeners({
-  dragOverFolderId,
-  setDragOverFolderId,
-  setIsDragging,
-  importFiles,
-}: UseDesktopImportListenersOptions) {
-  const importFilesRef = useRef(importFiles);
-  const dragOverFolderIdRef = useRef(dragOverFolderId);
-  const setDragOverFolderIdRef = useRef(setDragOverFolderId);
-
-  importFilesRef.current = importFiles;
-  dragOverFolderIdRef.current = dragOverFolderId;
-  setDragOverFolderIdRef.current = setDragOverFolderId;
-
+export function useDesktopImportListeners() {
   useEffect(() => {
-    if (dragDropState.listenersReady) {
-      return;
-    }
-
-    let unlistenDragEnter: (() => void) | undefined;
-    let unlistenDragDrop: (() => void) | undefined;
-    let unlistenDragLeave: (() => void) | undefined;
     let unlistenFileImported: (() => void) | undefined;
     let unlistenFileImportError: (() => void) | undefined;
     let unlistenFileUpdated: (() => void) | undefined;
     let unlistenLibrarySyncUpdated: (() => void) | undefined;
     let librarySyncRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let libraryImportRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let importRefreshShouldIncludeTags = false;
     let unlistenVisualIndexBrowserDecodeRequest: (() => void) | undefined;
     let unlistenThumbnailBuildRequest: (() => void) | undefined;
 
-    const setupListeners = async () => {
-      const handleDragEnter = (event: DragEvent) => {
-        if (!event.dataTransfer?.types.includes("Files")) {
-          return;
-        }
-        event.preventDefault();
-        if (!useSelectionStore.getState().isDraggingInternal) {
-          setIsDragging(true);
-        }
-      };
+    const scheduleImportRefresh = (options: { includeTags?: boolean } = {}) => {
+      importRefreshShouldIncludeTags ||= Boolean(options.includeTags);
+      if (libraryImportRefreshTimer) {
+        clearTimeout(libraryImportRefreshTimer);
+      }
 
-      const handleDragOver = (event: DragEvent) => {
-        if (!event.dataTransfer?.types.includes("Files")) {
-          return;
-        }
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-      };
-
-      const handleDragLeave = (event: DragEvent) => {
-        if (event.relatedTarget) {
-          return;
-        }
-        if (!useSelectionStore.getState().isDraggingInternal) {
-          setIsDragging(false);
-        }
-      };
-
-      const handleDrop = async (event: DragEvent) => {
-        if (useSelectionStore.getState().isDraggingInternal) {
-          return;
-        }
-
-        event.preventDefault();
-        if (dragDropState.isProcessing) {
-          return;
-        }
-
-        setIsDragging(false);
-        dragDropState.isProcessing = true;
-        const bridge = getDesktopBridge();
-        const paths = Array.from(event.dataTransfer?.files ?? [])
-          .map((file) => bridge.file.getPathForFile(file))
-          .filter((path) => path.trim().length > 0);
-
-        const uniquePaths = [...new Set(paths)].filter(
-          (path) => !dragDropState.processedPaths.has(path),
-        );
-
-        if (uniquePaths.length === 0) {
-          dragDropState.isProcessing = false;
-          return;
-        }
-
-        for (const path of uniquePaths) {
-          dragDropState.processedPaths.add(path);
-        }
-
-        try {
-          const targetFolderId =
-            dragOverFolderIdRef.current !== null ? dragOverFolderIdRef.current : undefined;
-          await importFilesRef.current(uniquePaths, targetFolderId);
-        } catch (error) {
-          console.error("[Desktop DragDrop] Import error:", error);
-          for (const path of uniquePaths) {
-            dragDropState.processedPaths.delete(path);
-          }
-        } finally {
-          dragDropState.isProcessing = false;
-
-          if (dragOverFolderIdRef.current !== null) {
-            setDragOverFolderIdRef.current(null);
-          }
-
-          setTimeout(() => {
-            for (const path of uniquePaths) {
-              dragDropState.processedPaths.delete(path);
-            }
-          }, 2000);
-        }
-      };
-
-      document.addEventListener("dragenter", handleDragEnter);
-      document.addEventListener("dragover", handleDragOver);
-      document.addEventListener("dragleave", handleDragLeave);
-      document.addEventListener("drop", handleDrop);
-
-      unlistenDragEnter = () => document.removeEventListener("dragenter", handleDragEnter);
-      unlistenDragDrop = () => {
-        document.removeEventListener("dragover", handleDragOver);
-        document.removeEventListener("drop", handleDrop);
-      };
-      unlistenDragLeave = () => document.removeEventListener("dragleave", handleDragLeave);
-
-      unlistenFileImported = await listenDesktop<FileImportedPayload>("file-imported", async () => {
+      libraryImportRefreshTimer = setTimeout(() => {
+        libraryImportRefreshTimer = null;
+        const includeTags = importRefreshShouldIncludeTags;
+        importRefreshShouldIncludeTags = false;
         const libraryStore = useLibraryQueryStore.getState();
-        await Promise.all([
-          libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
+        const refreshes: Array<Promise<unknown>> = [
+          libraryStore.runCurrentQuery(),
           useFolderStore.getState().loadFolders(),
-        ]);
+        ];
+
+        if (includeTags) {
+          refreshes.push(useTagStore.getState().loadTags());
+        }
+
+        void Promise.all(refreshes);
+      }, LIBRARY_IMPORT_REFRESH_DELAY_MS);
+    };
+
+    const setupListeners = async () => {
+      unlistenFileImported = await listenDesktop<FileImportedPayload>("file-imported", () => {
+        scheduleImportRefresh();
       });
 
       unlistenFileImportError = await listenDesktop<{ error: string }>(
@@ -260,12 +154,7 @@ export function useDesktopImportListeners({
             useThumbnailRefreshStore.getState().bumpFileVersion(event.payload.fileId);
           }
 
-          const libraryStore = useLibraryQueryStore.getState();
-          await Promise.all([
-            libraryStore.runCurrentQuery(libraryStore.selectedFolderId),
-            useFolderStore.getState().loadFolders(),
-            useTagStore.getState().loadTags(),
-          ]);
+          scheduleImportRefresh({ includeTags: true });
         },
       );
 
@@ -314,16 +203,11 @@ export function useDesktopImportListeners({
           }
         },
       );
-
-      dragDropState.listenersReady = true;
     };
 
     setupListeners();
 
     return () => {
-      unlistenDragEnter?.();
-      unlistenDragDrop?.();
-      unlistenDragLeave?.();
       unlistenFileImported?.();
       unlistenFileImportError?.();
       unlistenFileUpdated?.();
@@ -331,9 +215,11 @@ export function useDesktopImportListeners({
       if (librarySyncRefreshTimer) {
         clearTimeout(librarySyncRefreshTimer);
       }
+      if (libraryImportRefreshTimer) {
+        clearTimeout(libraryImportRefreshTimer);
+      }
       unlistenVisualIndexBrowserDecodeRequest?.();
       unlistenThumbnailBuildRequest?.();
-      dragDropState.listenersReady = false;
     };
-  }, [setIsDragging]);
+  }, []);
 }

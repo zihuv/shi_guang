@@ -18,9 +18,11 @@ import {
 import { appPanelMetaClass, appTreeRowClass } from "@/lib/ui";
 import { showFolderInExplorer } from "@/services/desktop/system";
 import { useFolderStore, type FolderNode } from "@/stores/folderStore";
+import { useImportStore } from "@/stores/importStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { getDroppedFilePaths, isExternalFileDrag } from "@/utils/dropImport";
 import { Button } from "@/components/ui/Button";
 import {
   ContextMenu,
@@ -79,6 +81,7 @@ export function FolderItem({
     setDragOverFolderId,
   } = useFolderStore();
   const currentView = useNavigationStore((state) => state.currentView);
+  const importFiles = useImportStore((state) => state.importFiles);
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore();
   const isExpanded = expandedFolderIds.includes(folder.id);
   const isSelected = currentView === "library" && selectedFolderId === folder.id;
@@ -256,10 +259,6 @@ export function FolderItem({
     return isDraggingInternal && draggedFileIds.length > 0;
   };
 
-  const isExternalFileDrag = (event: React.DragEvent) => {
-    return Array.from(event.dataTransfer.types).includes("Files");
-  };
-
   const getDraggedFileIds = (event: React.DragEvent) => {
     if (isInternalFileDrag(event)) {
       try {
@@ -277,14 +276,14 @@ export function FolderItem({
   };
 
   const handleExternalDragEnter = (event: React.DragEvent) => {
-    if (!isExternalFileDrag(event) && !isInternalFileDrag(event)) return;
+    if (!isExternalFileDrag(event.dataTransfer) && !isInternalFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     setDragOverFolderId(folder.id);
   };
 
   const handleExternalDragOver = (event: React.DragEvent) => {
-    if (!isExternalFileDrag(event) && !isInternalFileDrag(event)) return;
+    if (!isExternalFileDrag(event.dataTransfer) && !isInternalFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = isInternalFileDrag(event) ? "move" : "copy";
@@ -294,7 +293,7 @@ export function FolderItem({
   };
 
   const handleExternalDragLeave = (event: React.DragEvent) => {
-    if (!isExternalFileDrag(event) && !isInternalFileDrag(event)) return;
+    if (!isExternalFileDrag(event.dataTransfer) && !isInternalFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
 
@@ -309,7 +308,7 @@ export function FolderItem({
   };
 
   const handleExternalDrop = async (event: React.DragEvent) => {
-    if (!isExternalFileDrag(event) && !isInternalFileDrag(event)) return;
+    if (!isExternalFileDrag(event.dataTransfer) && !isInternalFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
 
@@ -337,6 +336,11 @@ export function FolderItem({
     }
 
     setDragOverFolderId(folder.id);
+    const paths = getDroppedFilePaths(event.dataTransfer);
+    if (paths.length > 0) {
+      await importFiles(paths, folder.id);
+    }
+    setDragOverFolderId(null);
   };
 
   const isNestingTarget =
