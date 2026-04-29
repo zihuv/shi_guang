@@ -99,7 +99,7 @@ export function FileGridViewport({
         >
           {adaptiveVisibleItems.map((item) => (
             <div
-              key={`adaptive-${item.index}`}
+              key={`adaptive-${item.file.id}`}
               className="absolute left-0 top-0"
               style={{
                 transform: `translate(${item.left}px, ${item.top}px)`,
@@ -149,7 +149,7 @@ export function FileGridViewport({
                 >
                   {rowFiles.map((file, offset) => (
                     <FileCard
-                      key={`grid-${rowIndex}-${offset}`}
+                      key={`grid-${file.id}`}
                       file={file}
                       footerHeight={gridMetadataHeight}
                       previewWidth={gridItemWidth}
@@ -177,7 +177,7 @@ export function FileGridViewport({
 
             return (
               <div
-                key={virtualRow.key}
+                key={`${virtualRow.key}-${file.id}`}
                 className="absolute left-0 top-0 w-full"
                 style={{
                   height: `${virtualRow.size}px`,

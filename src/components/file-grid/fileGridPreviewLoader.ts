@@ -495,35 +495,47 @@ export function useLazyImageSrc(
   refreshVersion: number,
   generation: number,
 ) {
-  const [imageError, setImageError] = useState(false);
-  const [imageSrc, setImageSrc] = useState<string | null>(() => getCachedImageSrc(cacheKey));
+  const [imageState, setImageState] = useState<{
+    cacheKey: string;
+    error: boolean;
+    src: string | null;
+  }>(() => ({
+    cacheKey,
+    error: false,
+    src: getCachedImageSrc(cacheKey),
+  }));
 
   useEffect(() => {
-    setImageSrc(getCachedImageSrc(cacheKey));
-    setImageError(false);
+    setImageState({
+      cacheKey,
+      error: false,
+      src: getCachedImageSrc(cacheKey),
+    });
   }, [cacheKey]);
 
   useEffect(() => {
     if (!isVisible) {
-      setImageError(false);
+      setImageState((current) =>
+        current.cacheKey === cacheKey ? { ...current, error: false } : current,
+      );
       return;
     }
 
     if (!canGenerateThumbnail(file.ext)) {
-      setImageError(false);
-      setImageSrc("");
+      setImageState({ cacheKey, error: false, src: "" });
       return;
     }
 
     const cached = getCachedImageSrc(cacheKey);
     if (cached) {
-      setImageError(false);
-      setImageSrc(cached);
+      setImageState({ cacheKey, error: false, src: cached });
       return;
     }
 
     let active = true;
-    setImageError(false);
+    setImageState((current) =>
+      current.cacheKey === cacheKey ? { ...current, error: false } : current,
+    );
 
     const scheduledTask = scheduleCardThumbnailTask(
       async () => loadPreviewImageSrc(file, maxEdge),
@@ -538,7 +550,7 @@ export function useLazyImageSrc(
         }
 
         cacheImageSrc(cacheKey, src);
-        setImageSrc(src);
+        setImageState({ cacheKey, error: false, src });
       })
       .catch((error) => {
         if (!active) {
@@ -548,8 +560,7 @@ export function useLazyImageSrc(
           return;
         }
         console.error("Failed to load card thumbnail:", error);
-        setImageError(true);
-        setImageSrc("");
+        setImageState({ cacheKey, error: true, src: "" });
       });
 
     return () => {
@@ -559,15 +570,18 @@ export function useLazyImageSrc(
   }, [cacheKey, file, generation, isVisible, maxEdge, refreshVersion]);
 
   useEffect(() => {
-    if (imageSrc) {
-      rememberPreviewImageSrc(file.path, imageSrc);
+    if (imageState.cacheKey === cacheKey && imageState.src) {
+      rememberPreviewImageSrc(file.path, imageState.src);
     }
-  }, [file.path, imageSrc]);
+  }, [cacheKey, file.path, imageState]);
+
+  const isCurrentImageState = imageState.cacheKey === cacheKey;
 
   return {
-    imageSrc,
-    imageError,
-    setImageError,
+    imageSrc: isCurrentImageState ? imageState.src : null,
+    imageError: isCurrentImageState ? imageState.error : false,
+    setImageError: (error: boolean) =>
+      setImageState((current) => (current.cacheKey === cacheKey ? { ...current, error } : current)),
   };
 }
 
@@ -579,35 +593,48 @@ export function useThumbHashPlaceholder(
   isVisible: boolean,
   refreshVersion: number,
 ) {
-  const [placeholderSrc, setPlaceholderSrc] = useState(() => getThumbHashPlaceholderSrc(thumbHash));
+  const [placeholderState, setPlaceholderState] = useState<{
+    cacheKey: string;
+    src: string;
+  }>(() => ({
+    cacheKey,
+    src: getThumbHashPlaceholderSrc(thumbHash),
+  }));
 
   useEffect(() => {
-    setPlaceholderSrc(getThumbHashPlaceholderSrc(thumbHash));
+    setPlaceholderState({
+      cacheKey,
+      src: getThumbHashPlaceholderSrc(thumbHash),
+    });
   }, [cacheKey, thumbHash]);
+
+  const currentPlaceholderSrc = placeholderState.cacheKey === cacheKey ? placeholderState.src : "";
 
   useEffect(() => {
     if (getThumbnailGenerationRuntimeForExt(ext) !== "main") {
-      setPlaceholderSrc("");
+      if (currentPlaceholderSrc) {
+        setPlaceholderState({ cacheKey, src: "" });
+      }
       return;
     }
 
-    if (!isVisible || placeholderSrc) {
+    if (!isVisible || currentPlaceholderSrc) {
       return;
     }
 
     let active = true;
     void loadThumbHashPlaceholder(path, cacheKey, thumbHash).then((src) => {
       if (active && src) {
-        setPlaceholderSrc(src);
+        setPlaceholderState({ cacheKey, src });
       }
     });
 
     return () => {
       active = false;
     };
-  }, [cacheKey, ext, isVisible, path, placeholderSrc, refreshVersion, thumbHash]);
+  }, [cacheKey, currentPlaceholderSrc, ext, isVisible, path, refreshVersion, thumbHash]);
 
-  return placeholderSrc;
+  return currentPlaceholderSrc;
 }
 
 export function useThumbnailRefreshVersion(fileId: number) {
