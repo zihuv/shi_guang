@@ -31,6 +31,8 @@ type CollectorFolderTargetPayload = {
 type CollectorImportFromUrlPayload = CollectorFolderTargetPayload & {
   image_url?: string;
   referer?: string;
+  source_url?: string;
+  sourceUrl?: string;
 };
 
 export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
@@ -98,6 +100,32 @@ function getRequestedFolderId(request: { query?: unknown; body?: unknown }): num
       body?.target_folder_id ??
       body?.targetFolderId,
   );
+}
+
+function getRequestedSourceUrl(request: { query?: unknown; body?: unknown }): string {
+  const query = request.query as
+    | {
+        source_url?: unknown;
+        sourceUrl?: unknown;
+        referer?: unknown;
+      }
+    | undefined;
+  const body = request.body as
+    | {
+        source_url?: unknown;
+        sourceUrl?: unknown;
+        referer?: unknown;
+      }
+    | undefined;
+  const value =
+    query?.source_url ??
+    query?.sourceUrl ??
+    body?.source_url ??
+    body?.sourceUrl ??
+    body?.referer ??
+    query?.referer;
+
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function resolveCollectorTargetFolder(state: AppState, folderId: number | null): FolderRecord {
@@ -208,6 +236,7 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
           detectExtensionFromBytes(body, contentType) ?? path.extname(filename),
         ),
         namePrefix: "browser",
+        sourceUrl: getRequestedSourceUrl(request),
       });
       runPostImportPipeline(state, getWindow(), file, { source: "collector" });
       return { success: true, file_id: file.id, error: null };
@@ -243,7 +272,7 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
         folderId: folder.id,
         fallbackExt: normalizeImportExtension(detectExtensionFromBytes(bytes, contentType)),
         namePrefix: "browser",
-        sourceUrl: payload.referer ?? payload.image_url,
+        sourceUrl: payload.source_url ?? payload.sourceUrl ?? payload.referer ?? payload.image_url,
       });
       runPostImportPipeline(state, getWindow(), file, { source: "collector" });
       return { success: true, file_id: file.id, error: null };

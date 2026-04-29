@@ -86,7 +86,11 @@
       }
 
       collector.setLastImageContext(target, imageUrl);
-      dragDock?.showDragDock(imageUrl, window.location.href);
+      dragDock?.showDragDock(
+        imageUrl,
+        window.location.href,
+        collector.getLastSourceUrl?.() || window.location.href,
+      );
     },
     true,
   );
@@ -135,7 +139,10 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.action === "getLastImageUrl") {
-      sendResponse({ imageUrl: collector.getLastImageUrl() });
+      sendResponse({
+        imageUrl: collector.getLastImageUrl(),
+        sourceUrl: collector.getLastSourceUrl?.() || null,
+      });
       return true;
     }
 

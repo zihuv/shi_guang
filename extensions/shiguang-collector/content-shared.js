@@ -11,7 +11,9 @@
   const state = {
     lastImageUrl: null,
     lastRightClickTarget: null,
+    lastSourceUrl: null,
   };
+  const sourceUrlResolvers = [];
 
   function ensureToastContainer() {
     let container = document.getElementById(TOAST_CONTAINER_ID);
@@ -132,11 +134,16 @@
   }
 
   async function requestCollectImage(imageUrl, options = {}) {
+    const rememberedSourceUrl = state.lastImageUrl === imageUrl ? state.lastSourceUrl : null;
+    const sourceUrl =
+      options.sourceUrl || rememberedSourceUrl || options.referer || window.location.href;
+
     const response = await chrome.runtime.sendMessage({
       action: "collectImage",
       payload: {
         imageUrl,
         referer: options.referer || window.location.href,
+        sourceUrl,
         missingImageMessage: options.missingImageMessage,
         notifyOnSuccess: options.notifyOnSuccess,
         successMessage: options.successMessage,
@@ -282,13 +289,46 @@
     return null;
   }
 
-  function setLastImageContext(target, imageUrl) {
+  function resolveSourceUrlFromElement(target, imageUrl) {
+    const element = getElementFromTarget(target);
+    if (!(element instanceof Element)) {
+      return null;
+    }
+
+    for (const resolver of sourceUrlResolvers) {
+      try {
+        const sourceUrl = resolver(element, imageUrl);
+        if (sourceUrl) {
+          return normalizeImageUrl(sourceUrl);
+        }
+      } catch (error) {
+        console.warn("Failed to resolve source URL:", error);
+      }
+    }
+
+    return null;
+  }
+
+  function registerSourceUrlResolver(resolver) {
+    if (typeof resolver === "function") {
+      sourceUrlResolvers.push(resolver);
+    }
+  }
+
+  function setLastImageContext(target, imageUrl, sourceUrl) {
     state.lastRightClickTarget = target ?? null;
     state.lastImageUrl = imageUrl ?? null;
+    state.lastSourceUrl = sourceUrl
+      ? normalizeImageUrl(sourceUrl)
+      : resolveSourceUrlFromElement(target, imageUrl);
   }
 
   function getLastImageUrl() {
     return state.lastImageUrl;
+  }
+
+  function getLastSourceUrl() {
+    return state.lastSourceUrl;
   }
 
   function getLastRightClickTarget() {
@@ -304,8 +344,11 @@
     extractImageUrlFromDragEvent,
     getImageUrlFromElement,
     getImageUrlFromPoint,
+    resolveSourceUrlFromElement,
+    registerSourceUrlResolver,
     setLastImageContext,
     getLastImageUrl,
+    getLastSourceUrl,
     getLastRightClickTarget,
   };
 })();

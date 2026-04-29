@@ -23,6 +23,7 @@
   let dragDockSending = false;
   let currentDragImageUrl = null;
   let currentDragReferer = null;
+  let currentDragSourceUrl = null;
   let dragDockEnabled = true;
 
   chrome.storage.sync.get(PREFERENCES_KEY, (result) => {
@@ -201,6 +202,7 @@
       try {
         const result = await collector.requestCollectImage(imageUrl, {
           referer: currentDragReferer || window.location.href,
+          sourceUrl: currentDragSourceUrl || currentDragReferer || window.location.href,
           missingImageMessage: "未找到可采集的图片",
           notifyOnSuccess: true,
           successMessage: "已发送到拾光",
@@ -265,7 +267,7 @@
     subtitle.textContent = "仅在拖动可采集图片时出现";
   }
 
-  function showDragDock(imageUrl, referer = window.location.href) {
+  function showDragDock(imageUrl, referer = window.location.href, sourceUrl = referer) {
     if (!dragDockEnabled) {
       return;
     }
@@ -276,6 +278,7 @@
     dragDockSending = false;
     currentDragImageUrl = imageUrl;
     currentDragReferer = referer;
+    currentDragSourceUrl = sourceUrl;
     syncDragDock();
   }
 
@@ -291,6 +294,7 @@
     dragDockSending = false;
     currentDragImageUrl = null;
     currentDragReferer = null;
+    currentDragSourceUrl = null;
     syncDragDock();
   }
 

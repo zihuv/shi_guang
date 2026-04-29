@@ -9,7 +9,7 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 127
 fi
 
-BACKGROUND="${CLAUDE_REVIEW_BACKGROUND:-Codex has already made local changes for the current user request. The diff may include staged, unstaged, and untracked files. Review the background, reason for the change, and intended outcome from the user request and changed code.}"
+BACKGROUND="${CLAUDE_REVIEW_BACKGROUND:-Codex has already made local changes for the current user request. The diff may include staged, unstaged, and untracked files. Review the user-facing goal, intended outcome, and changed code.}"
 
 PROMPT=$(cat <<PROMPT
 You are reviewing local, uncommitted changes in this repository.
@@ -17,11 +17,13 @@ You are reviewing local, uncommitted changes in this repository.
 Background:
 $BACKGROUND
 
+The background should describe the user problem, business context, and intended user-facing outcome. Treat implementation details in the diff as evidence to verify, not as the source of truth. Challenge whether the changed code actually satisfies the goal and whether it creates regressions in adjacent workflows.
+
 Read REVIEW.md and AGENTS.md first. Review staged, unstaged, and untracked changes. Treat untracked files shown by git status as review targets and read them directly when needed.
 
 This is a read-only review. Do not edit files, run formatters, install dependencies, start dev servers, or change git state.
 
-Follow REVIEW.md exactly. If there are no material findings, the entire response must be exactly one line: NO_ISSUES_FOUND. Do not wrap NO_ISSUES_FOUND in Markdown code fences.
+Follow REVIEW.md exactly. Always include the required review audit section, even when there are no material findings.
 PROMPT
 )
 

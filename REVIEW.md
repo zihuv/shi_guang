@@ -40,7 +40,7 @@ Do not flag maintainability issues only because code could be more elegant. Flag
 
 ## Output Format
 
-For each material finding, use this format:
+Start with material findings, ordered by severity. For each material finding, use this format:
 
 ```text
 [P0|P1|P2|P3] Short title
@@ -51,12 +51,28 @@ impact: why it matters
 suggestion: suggested fix
 ```
 
-If there are no material findings, the entire response must be exactly one line:
+After the findings, always include a short review audit section. This section is required even when there are no material findings, so the caller can see what was checked and what uncertainty remains.
+
+Use this format when there are material findings:
 
 ```text
-NO_ISSUES_FOUND
+Review audit:
+- Goal checked: the user-facing behavior or business outcome you judged the diff against.
+- Risk checks: concrete risks you considered.
+- Evidence: files, flows, or code paths that support the findings.
+- Residual risk: anything important that static review could not prove.
 ```
 
-Do not wrap `NO_ISSUES_FOUND` in Markdown code fences.
+Use this format when there are no material findings:
 
-After findings, include at most one short verification-risk note when the diff cannot be fully judged from static review. If there are no findings, do not include any extra text before or after `NO_ISSUES_FOUND`.
+```text
+No material findings.
+
+Review audit:
+- Goal checked: the user-facing behavior or business outcome you judged the diff against.
+- Risk checks: concrete risks you considered.
+- Evidence: files, flows, or code paths that looked correct.
+- Residual risk: anything important that static review could not prove.
+```
+
+Keep the audit concise and evidence-based. Do not include private chain-of-thought or step-by-step hidden reasoning; summarize the observable checks and conclusions.

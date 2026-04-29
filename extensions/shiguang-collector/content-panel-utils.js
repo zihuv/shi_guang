@@ -22,18 +22,25 @@
   function scanPageImages(collector) {
     const images = new Map();
 
-    function addImage(url, width = 0, height = 0) {
+    function addImage(url, width = 0, height = 0, sourceElement = null) {
       const normalized = collector.normalizeImageUrl(url);
       if (!normalized || !/^https?:\/\//i.test(normalized)) {
         return;
       }
+
+      const sourceUrl = sourceElement
+        ? collector.resolveSourceUrlFromElement?.(sourceElement, normalized)
+        : null;
 
       if (!images.has(normalized)) {
         images.set(normalized, {
           url: normalized,
           width,
           height,
+          sourceUrl,
         });
+      } else if (sourceUrl && !images.get(normalized).sourceUrl) {
+        images.get(normalized).sourceUrl = sourceUrl;
       }
     }
 
@@ -42,18 +49,35 @@
         img.currentSrc || img.src,
         img.naturalWidth || img.width,
         img.naturalHeight || img.height,
+        img,
       );
-      addImage(img.dataset.src, img.naturalWidth || img.width, img.naturalHeight || img.height);
+      addImage(
+        img.dataset.src,
+        img.naturalWidth || img.width,
+        img.naturalHeight || img.height,
+        img,
+      );
       addImage(
         img.dataset.original,
         img.naturalWidth || img.width,
         img.naturalHeight || img.height,
+        img,
       );
-      addImage(img.dataset.lazy, img.naturalWidth || img.width, img.naturalHeight || img.height);
+      addImage(
+        img.dataset.lazy,
+        img.naturalWidth || img.width,
+        img.naturalHeight || img.height,
+        img,
+      );
     });
 
     document.querySelectorAll("[data-src], [data-original], [data-lazy]").forEach((element) => {
-      addImage(element.dataset.src || element.dataset.original || element.dataset.lazy);
+      addImage(
+        element.dataset.src || element.dataset.original || element.dataset.lazy,
+        0,
+        0,
+        element,
+      );
     });
 
     document.querySelectorAll("*").forEach((element) => {
@@ -64,7 +88,7 @@
       }
 
       for (const match of backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/gi)) {
-        addImage(match[1], element.clientWidth, element.clientHeight);
+        addImage(match[1], element.clientWidth, element.clientHeight, element);
       }
     });
 

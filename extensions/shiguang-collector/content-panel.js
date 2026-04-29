@@ -557,6 +557,7 @@
       return;
     }
 
+    const batchImageByUrl = new Map(batchImages.map((image) => [image.url, image]));
     const target = await resolveTargetFolderForSend();
     if (target.cancelled) {
       return;
@@ -587,8 +588,10 @@
       renderPanel();
 
       try {
+        const sourceUrl = batchImageByUrl.get(url)?.sourceUrl;
         const result = await collector.requestCollectImage(url, {
           referer: window.location.href,
+          sourceUrl,
           missingImageMessage: "未找到可采集的图片",
           notifyOnSuccess: false,
           folderId: target.folderId,
