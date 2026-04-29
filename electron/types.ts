@@ -167,6 +167,29 @@ export interface VisualIndexTaskSnapshot {
   processUnindexedOnly: boolean;
 }
 
+export type VisualModelDownloadStatus =
+  | "queued"
+  | "scanning"
+  | "downloading"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface VisualModelDownloadSnapshot {
+  id: string;
+  status: VisualModelDownloadStatus;
+  repoId: string;
+  modelName: string;
+  mirrorUrl: string;
+  targetDir: string;
+  totalFiles: number;
+  completedFiles: number;
+  totalBytes: number;
+  downloadedBytes: number;
+  currentFileName?: string | null;
+  error?: string | null;
+}
+
 export interface AppState {
   db: import("better-sqlite3").Database;
   dbPath: string;
@@ -183,4 +206,11 @@ export interface AppState {
   >;
   aiMetadataTasks: Map<string, { snapshot: AiMetadataTaskSnapshot; cancelled: boolean }>;
   visualIndexTasks: Map<string, { snapshot: VisualIndexTaskSnapshot; cancelled: boolean }>;
+  visualModelDownloadTasks: Map<
+    string,
+    {
+      snapshot: VisualModelDownloadSnapshot;
+      abortController: AbortController;
+    }
+  >;
 }

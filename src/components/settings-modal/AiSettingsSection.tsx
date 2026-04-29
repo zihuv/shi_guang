@@ -1,11 +1,14 @@
 import type {
   AiEndpointTarget,
+  VisualModelDownloadRepoId,
   VisualIndexStatus,
   VisualModelValidationResult,
 } from "@/services/desktop/files";
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Download, X } from "lucide-react";
+import { VISUAL_MODEL_DOWNLOAD_OPTIONS as MODEL_DOWNLOAD_OPTIONS } from "@/services/desktop/files";
 import { AI_METADATA_FIELDS } from "@/lib/aiMetadataDefaults";
+import { formatSize } from "@/utils";
 import {
   type AiConfig,
   type AiConfigTarget,
@@ -20,6 +23,7 @@ import {
   TERMINAL_VISUAL_INDEX_TASK_STATUSES,
   type VisualIndexTaskSnapshot,
 } from "@/stores/fileTypes";
+import type { VisualModelDownloadSnapshot } from "@/shared/desktop-types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select, SelectContent, SelectItem } from "@/components/ui/Select";
@@ -74,6 +78,7 @@ interface AiSettingsSectionProps {
   visualIndexStatus: VisualIndexStatus | null;
   visualIndexTask: VisualIndexTaskSnapshot | null;
   visualModelValidation: VisualModelValidationResult | null;
+  visualModelDownloadTask: VisualModelDownloadSnapshot | null;
   isSelectingModelDir: boolean;
   isValidatingModelDir: boolean;
   onSetAiConfigField: <K extends keyof AiServiceConfig>(
@@ -93,6 +98,8 @@ interface AiSettingsSectionProps {
   ) => void;
   onSelectModelDir: () => void;
   onValidateModelDir: (modelPath?: string) => void;
+  onStartVisualModelDownload: (repoId: VisualModelDownloadRepoId) => void;
+  onCancelVisualModelDownload: () => void;
   onStartVisualIndexTask: () => void;
   onCancelVisualIndexTask: () => void;
 }
@@ -251,6 +258,7 @@ export function AiSettingsSection({
   visualIndexStatus,
   visualIndexTask,
   visualModelValidation,
+  visualModelDownloadTask,
   isSelectingModelDir,
   isValidatingModelDir,
   onSetAiConfigField,
@@ -260,6 +268,8 @@ export function AiSettingsSection({
   onSetVisualSearchRuntimeField,
   onSelectModelDir,
   onValidateModelDir,
+  onStartVisualModelDownload,
+  onCancelVisualModelDownload,
   onStartVisualIndexTask,
   onCancelVisualIndexTask,
 }: AiSettingsSectionProps) {
@@ -267,6 +277,9 @@ export function AiSettingsSection({
     typeof visualSearch.runtime.intraThreads === "number"
       ? String(visualSearch.runtime.intraThreads)
       : String(DEFAULT_CUSTOM_INTRA_THREADS),
+  );
+  const [selectedDownloadRepoId, setSelectedDownloadRepoId] = useState<VisualModelDownloadRepoId>(
+    "zihuv/fg-clip2-base-onnx",
   );
 
   useEffect(() => {
@@ -287,6 +300,24 @@ export function AiSettingsSection({
     ? Math.min(100, Math.round((visualIndexTask.processed / visualIndexTask.total) * 100))
     : 0;
   const visualIndexCountLabel = `${visualIndexTask?.processed ?? 0}/${visualIndexTask?.total ?? 0}`;
+  const isVisualModelDownloadRunning =
+    !!visualModelDownloadTask &&
+    ["queued", "scanning", "downloading"].includes(visualModelDownloadTask.status);
+  const visualModelDownloadProgress =
+    visualModelDownloadTask?.totalBytes && visualModelDownloadTask.totalBytes > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (visualModelDownloadTask.downloadedBytes / visualModelDownloadTask.totalBytes) * 100,
+          ),
+        )
+      : 0;
+  const visualModelDownloadCountLabel = visualModelDownloadTask
+    ? `${visualModelDownloadTask.completedFiles}/${visualModelDownloadTask.totalFiles || 0}`
+    : "0/0";
+  const selectedDownloadOption =
+    MODEL_DOWNLOAD_OPTIONS.find((option) => option.repoId === selectedDownloadRepoId) ??
+    MODEL_DOWNLOAD_OPTIONS[0];
   const updateMetadataAnalysisField = (
     field: AiMetadataAnalysisField,
     patch: Partial<(typeof aiConfig.metadata.analysis)[AiMetadataAnalysisField]>,
@@ -429,6 +460,112 @@ export function AiSettingsSection({
                 使用说明
               </a>
             </div>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="模型下载"
+          detail={
+            <span className="whitespace-nowrap">
+              本下载服务由{" "}
+              <a
+                href="https://hf-mirror.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-gray-700 underline decoration-gray-300 underline-offset-2 hover:text-gray-950 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-white"
+              >
+                https://hf-mirror.com/
+              </a>{" "}
+              提供
+            </span>
+          }
+          className="items-start md:items-start"
+        >
+          <div className="flex w-full flex-col items-stretch gap-3 xl:w-[34rem]">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Select
+                value={selectedDownloadRepoId}
+                displayValue={selectedDownloadOption.label}
+                onValueChange={(value) =>
+                  setSelectedDownloadRepoId(value as VisualModelDownloadRepoId)
+                }
+                className="w-[12rem]"
+                triggerClassName={SETTINGS_SELECT_TRIGGER_CLASS_NAME}
+              >
+                <SelectContent>
+                  {MODEL_DOWNLOAD_OPTIONS.map((option) => (
+                    <SelectItem key={option.repoId} value={option.repoId}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                disabled={isVisualModelDownloadRunning}
+                onClick={() => onStartVisualModelDownload(selectedDownloadRepoId)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                {isVisualModelDownloadRunning ? "下载中..." : "下载模型"}
+              </Button>
+            </div>
+
+            {visualModelDownloadTask ? (
+              <div
+                className="rounded-xl bg-black/[0.025] px-3 py-3 dark:bg-white/[0.04]"
+                role={isVisualModelDownloadRunning ? "status" : undefined}
+                aria-live="polite"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                        {visualModelDownloadTask.modelName}
+                      </span>
+                      <span className="text-xs font-medium tabular-nums text-gray-500 dark:text-gray-400">
+                        {visualModelDownloadCountLabel}
+                      </span>
+                      <span className="text-xs font-medium tabular-nums text-gray-500 dark:text-gray-400">
+                        {formatSize(visualModelDownloadTask.downloadedBytes)}
+                        {visualModelDownloadTask.totalBytes > 0
+                          ? ` / ${formatSize(visualModelDownloadTask.totalBytes)}`
+                          : ""}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
+                      {visualModelDownloadTask.targetDir}
+                    </p>
+                    {visualModelDownloadTask.currentFileName ? (
+                      <p className="truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        {visualModelDownloadTask.currentFileName}
+                      </p>
+                    ) : null}
+                    {visualModelDownloadTask.error ? (
+                      <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
+                        {visualModelDownloadTask.error}
+                      </p>
+                    ) : null}
+                  </div>
+                  {isVisualModelDownloadRunning ? (
+                    <button
+                      type="button"
+                      onClick={onCancelVisualModelDownload}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-black/[0.06] hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                      title="取消模型下载"
+                      aria-label="取消模型下载"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]">
+                  <div
+                    className="h-full rounded-full bg-gray-800 transition-[width] duration-300 dark:bg-gray-100"
+                    style={{ width: `${visualModelDownloadProgress}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </SettingsRow>
 

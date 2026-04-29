@@ -70,6 +70,7 @@ async function bootstrap(): Promise<void> {
     importTasks: new Map(),
     aiMetadataTasks: new Map(),
     visualIndexTasks: new Map(),
+    visualModelDownloadTasks: new Map(),
   };
 
   setDockIcon();

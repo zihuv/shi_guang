@@ -9,6 +9,10 @@ import {
   startVisualIndexTask,
 } from "./visual-ai-service";
 import { getRecommendedVisualModelPath, validateVisualModelPath } from "../visual-search";
+import {
+  cancelVisualModelDownload,
+  startVisualModelDownload,
+} from "../visual-search/model-download";
 import type { AppState } from "../types";
 import { type CommandHandler, emit, numberArg, numberArrayArg, stringArg } from "./common";
 
@@ -65,6 +69,15 @@ export function createVisualAiCommands(state: AppState): Record<string, CommandH
     validate_visual_model_path: async (args) =>
       validateVisualModelPath(stringArg(args, "modelPath", "model_path")),
     get_recommended_visual_model_path: async () => getRecommendedVisualModelPath(),
+    start_visual_model_download: (args, window) =>
+      startVisualModelDownload(
+        state,
+        window,
+        stringArg(args, "repoId", "repo_id"),
+        stringArg(args, "targetParentDir", "target_parent_dir"),
+      ),
+    cancel_visual_model_download: (args) =>
+      cancelVisualModelDownload(state, stringArg(args, "taskId", "task_id")),
     test_ai_endpoint: async () => {
       const config = loadAiConfig(state);
       const payload = await postAiJson(config, {

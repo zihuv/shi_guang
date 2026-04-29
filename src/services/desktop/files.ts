@@ -7,6 +7,7 @@ import type {
   SmartCollectionId,
   SmartCollectionStats,
   VisualIndexTaskSnapshot,
+  VisualModelDownloadSnapshot,
 } from "@/shared/desktop-types";
 
 export interface FileFilterPayload {
@@ -65,6 +66,21 @@ export interface VisualModelValidationResult {
 }
 
 export type AiEndpointTarget = "metadata";
+
+export const VISUAL_MODEL_DOWNLOAD_OPTIONS = [
+  {
+    repoId: "zihuv/fg-clip2-base-onnx",
+    label: "FG-CLIP2",
+    description: "更适合复杂画面",
+  },
+  {
+    repoId: "zihuv/chinese-clip-vit-base-patch16-onnx",
+    label: "Chinese-CLIP",
+    description: "更轻量",
+  },
+] as const;
+
+export type VisualModelDownloadRepoId = (typeof VISUAL_MODEL_DOWNLOAD_OPTIONS)[number]["repoId"];
 
 export function getAllFiles(args: {
   page: number;
@@ -199,6 +215,17 @@ export function validateVisualModelPath(modelPath: string) {
 
 export function getRecommendedVisualModelPath() {
   return invokeDesktop<string | null>("get_recommended_visual_model_path");
+}
+
+export function startVisualModelDownload(args: {
+  repoId: VisualModelDownloadRepoId;
+  targetParentDir: string;
+}) {
+  return invokeDesktop<VisualModelDownloadSnapshot>("start_visual_model_download", args);
+}
+
+export function cancelVisualModelDownload(taskId: string) {
+  return invokeDesktop<void>("cancel_visual_model_download", { taskId });
 }
 
 export function testAiEndpoint(target: AiEndpointTarget) {

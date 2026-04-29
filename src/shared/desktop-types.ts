@@ -189,3 +189,26 @@ export interface VisualIndexTaskSnapshot {
   currentFileName?: string | null;
   processUnindexedOnly: boolean;
 }
+
+export type VisualModelDownloadStatus =
+  | "queued"
+  | "scanning"
+  | "downloading"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface VisualModelDownloadSnapshot {
+  id: string;
+  status: VisualModelDownloadStatus;
+  repoId: string;
+  modelName: string;
+  mirrorUrl: string;
+  targetDir: string;
+  totalFiles: number;
+  completedFiles: number;
+  totalBytes: number;
+  downloadedBytes: number;
+  currentFileName?: string | null;
+  error?: string | null;
+}

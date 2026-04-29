@@ -1,8 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { testAiEndpoint, type AiEndpointTarget } from "@/services/desktop/files";
-import { getDesktopBridge } from "@/services/desktop/core";
+import {
+  startVisualModelDownload,
+  cancelVisualModelDownload,
+  testAiEndpoint,
+  type AiEndpointTarget,
+  type VisualModelDownloadRepoId,
+} from "@/services/desktop/files";
+import { getDesktopBridge, listenDesktop } from "@/services/desktop/core";
 import { checkForUpdates, getAppVersion } from "@/services/desktop/system";
+import type { VisualModelDownloadSnapshot } from "@/shared/desktop-types";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
@@ -70,10 +77,13 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [isValidatingModelDir, setIsValidatingModelDir] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  const [visualModelDownloadTask, setVisualModelDownloadTask] =
+    useState<VisualModelDownloadSnapshot | null>(null);
   const [testingTargets, setTestingTargets] = useState<Record<AiConfigTarget, boolean>>({
     metadata: false,
   });
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const lastDownloadTerminalKeyRef = useRef("");
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +99,68 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     if (!open || activeSection !== "ai") return;
     void refreshVisualSearchStatus();
   }, [activeSection, open, refreshVisualSearchStatus]);
+
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    let disposed = false;
+    void listenDesktop<VisualModelDownloadSnapshot>("visual-model-download-updated", (event) => {
+      setVisualModelDownloadTask(event.payload);
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+        cleanup = unsubscribe;
+      })
+      .catch((error) => {
+        console.error("Failed to listen visual model downloads:", error);
+      });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!visualModelDownloadTask) return;
+
+    const isTerminal = ["completed", "failed", "cancelled"].includes(
+      visualModelDownloadTask.status,
+    );
+    if (!isTerminal) {
+      return;
+    }
+
+    const terminalKey = `${visualModelDownloadTask.id}:${visualModelDownloadTask.status}`;
+    if (lastDownloadTerminalKeyRef.current === terminalKey) {
+      return;
+    }
+    lastDownloadTerminalKeyRef.current = terminalKey;
+
+    if (visualModelDownloadTask.status === "completed") {
+      toast.success("视觉模型下载完成");
+      setVisualSearchField("modelPath", visualModelDownloadTask.targetDir);
+      void (async () => {
+        await validateVisualModelPath(visualModelDownloadTask.targetDir);
+        await refreshVisualSearchStatus();
+      })();
+      return;
+    }
+
+    if (visualModelDownloadTask.status === "failed") {
+      toast.error(`视觉模型下载失败：${visualModelDownloadTask.error ?? "未知错误"}`);
+      return;
+    }
+
+    toast.info("视觉模型下载已取消");
+  }, [
+    refreshVisualSearchStatus,
+    setVisualSearchField,
+    validateVisualModelPath,
+    visualModelDownloadTask,
+  ]);
 
   const currentIndexPath = indexPaths[0] ?? null;
 
@@ -203,6 +275,37 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
   };
 
+  const handleStartVisualModelDownload = async (repoId: VisualModelDownloadRepoId) => {
+    const selected = await getDesktopBridge().dialog.open({
+      properties: ["openDirectory", "createDirectory"],
+      title: "选择模型下载位置",
+      buttonLabel: "下载到这里",
+    });
+
+    if (!selected || typeof selected !== "string") {
+      return;
+    }
+
+    try {
+      const task = await startVisualModelDownload({ repoId, targetParentDir: selected });
+      setVisualModelDownloadTask(task);
+      toast.info(`开始下载到 ${task.targetDir}`);
+    } catch (error) {
+      toast.error(`启动模型下载失败：${String(error)}`);
+    }
+  };
+
+  const handleCancelVisualModelDownload = async () => {
+    if (!visualModelDownloadTask) {
+      return;
+    }
+    try {
+      await cancelVisualModelDownload(visualModelDownloadTask.id);
+    } catch (error) {
+      toast.error(`取消模型下载失败：${String(error)}`);
+    }
+  };
+
   const handleCheckUpdates = async () => {
     setIsCheckingUpdates(true);
     const loadingToast = toast.loading("正在检查更新...");
@@ -273,6 +376,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   visualIndexStatus={visualIndexStatus}
                   visualIndexTask={visualIndexTask}
                   visualModelValidation={visualModelValidation}
+                  visualModelDownloadTask={visualModelDownloadTask}
                   isSelectingModelDir={isSelectingModelDir}
                   isValidatingModelDir={isValidatingModelDir}
                   onSetAiConfigField={setAiConfigField}
@@ -284,6 +388,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   onSetVisualSearchRuntimeField={setVisualSearchRuntimeField}
                   onSelectModelDir={() => void handleSelectModelDir()}
                   onValidateModelDir={(modelPath) => void handleValidateModelDir(modelPath)}
+                  onStartVisualModelDownload={(repoId) =>
+                    void handleStartVisualModelDownload(repoId)
+                  }
+                  onCancelVisualModelDownload={() => void handleCancelVisualModelDownload()}
                   onStartVisualIndexTask={() =>
                     void startVisualIndexTask(visualSearch.processUnindexedOnly)
                   }

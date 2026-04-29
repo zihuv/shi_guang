@@ -11,6 +11,7 @@ const eventChannels = new Set([
   "ai-metadata-task-updated",
   "thumbnail-build-request",
   "visual-index-task-updated",
+  "visual-model-download-updated",
   "visual-index-browser-decode-request",
   "window-fullscreen-changed",
   "update-status",
