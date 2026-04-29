@@ -252,6 +252,18 @@ export const IMPORT_DIALOG_EXTENSIONS = SCAN_SUPPORTED_EXTENSIONS;
 
 export type FileFormatGroup = keyof typeof FILE_FORMAT_GROUPS;
 export type LibraryFilterFileType = (typeof LIBRARY_FILTER_FILE_TYPES)[number];
+export type ThumbnailGenerationRuntime = "none" | "main" | "renderer";
+
+export interface FileFormatCapabilities {
+  group: FileFormatGroup | null;
+  backendDecodable: boolean;
+  metadataExtractable: boolean;
+  thumbnailRuntime: ThumbnailGenerationRuntime;
+  aiAnalyzable: boolean;
+  visualSearchable: boolean;
+  directPreviewable: boolean;
+  textPreviewable: boolean;
+}
 
 export function normalizeExtension(ext: string): string {
   return ext.trim().replace(/^\./, "").toLowerCase();
@@ -267,4 +279,61 @@ export function extensionListIncludes(extensions: readonly string[], ext: string
 
 export function getMimeTypeForExtension(ext: string): string {
   return MIME_TYPES_BY_EXTENSION[normalizeExtension(ext)] ?? "application/octet-stream";
+}
+
+const DIRECT_IMAGE_EXTENSION_SET = extensionSet(DIRECT_IMAGE_EXTENSIONS);
+const VIDEO_EXTENSION_SET = extensionSet(VIDEO_FILE_EXTENSIONS);
+const BACKEND_DECODABLE_EXTENSION_SET = extensionSet(BACKEND_DECODABLE_IMAGE_EXTENSIONS);
+const AI_ANALYZABLE_EXTENSION_SET = extensionSet(AI_SUPPORTED_IMAGE_EXTENSIONS);
+const VISUAL_SEARCH_EXTENSION_SET = extensionSet(VISUAL_SEARCH_IMAGE_EXTENSIONS);
+const TEXT_PREVIEW_EXTENSION_SET = extensionSet(TEXT_PREVIEW_EXTENSIONS);
+const MAIN_PROCESS_THUMBNAIL_EXTENSION_SET = extensionSet([
+  ...DIRECT_IMAGE_EXTENSIONS,
+  "pdf",
+  "psd",
+] as const);
+const BROWSER_DIRECT_PREVIEW_BLOCKLIST = extensionSet(["heic", "heif"] as const);
+
+function getFormatGroup(ext: string): FileFormatGroup | null {
+  for (const [group, extensions] of Object.entries(FILE_FORMAT_GROUPS)) {
+    if (extensionListIncludes(extensions, ext)) {
+      return group as FileFormatGroup;
+    }
+  }
+  return null;
+}
+
+export function getFileFormatCapabilities(ext: string): FileFormatCapabilities {
+  const normalizedExt = normalizeExtension(ext);
+  const backendDecodable = BACKEND_DECODABLE_EXTENSION_SET.has(normalizedExt);
+  const thumbnailRuntime: ThumbnailGenerationRuntime = VIDEO_EXTENSION_SET.has(normalizedExt)
+    ? "renderer"
+    : MAIN_PROCESS_THUMBNAIL_EXTENSION_SET.has(normalizedExt)
+      ? "main"
+      : "none";
+
+  return {
+    group: getFormatGroup(normalizedExt),
+    backendDecodable,
+    metadataExtractable: backendDecodable,
+    thumbnailRuntime,
+    aiAnalyzable: AI_ANALYZABLE_EXTENSION_SET.has(normalizedExt),
+    visualSearchable: VISUAL_SEARCH_EXTENSION_SET.has(normalizedExt),
+    directPreviewable:
+      DIRECT_IMAGE_EXTENSION_SET.has(normalizedExt) &&
+      !BROWSER_DIRECT_PREVIEW_BLOCKLIST.has(normalizedExt),
+    textPreviewable: TEXT_PREVIEW_EXTENSION_SET.has(normalizedExt),
+  };
+}
+
+export function canExtractImageMetadata(ext: string): boolean {
+  return getFileFormatCapabilities(ext).metadataExtractable;
+}
+
+export function canAnalyzeImageMetadata(ext: string): boolean {
+  return getFileFormatCapabilities(ext).aiAnalyzable;
+}
+
+export function canVisualSearchImage(ext: string): boolean {
+  return getFileFormatCapabilities(ext).visualSearchable;
 }

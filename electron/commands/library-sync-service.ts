@@ -35,10 +35,9 @@ import { emit, type GetWindow } from "./common";
 import {
   buildFileInputFromPath,
   normalizeImportExtension,
-  scheduleThumbnailGeneration,
+  runPostImportPipeline,
   timestampFromStats,
 } from "./import-service";
-import { maybeAutoIndexImportedFile } from "./visual-ai-service";
 
 let libraryWatcher: FSWatcher | null = null;
 let librarySyncQueue = Promise.resolve();
@@ -214,8 +213,11 @@ async function syncExistingPath(
         input.dominantColor ?? "",
         input.colorDistribution ?? "[]",
       );
-      scheduleThumbnailGeneration(state, window, updatedFile.id);
-      void maybeAutoIndexImportedFile(state, updatedFile, window);
+      runPostImportPipeline(state, window, updatedFile, {
+        source: "library_sync",
+        notify: false,
+        autoAnalyzeMetadata: false,
+      });
     }
     return kind;
   }
@@ -231,16 +233,23 @@ async function syncExistingPath(
     updateFileBasicInfo(state.db, input);
     const movedFile = getFileById(state.db, moveCandidate.id);
     if (movedFile) {
-      scheduleThumbnailGeneration(state, window, movedFile.id);
+      runPostImportPipeline(state, window, movedFile, {
+        source: "library_sync",
+        notify: false,
+        autoAnalyzeMetadata: false,
+      });
     }
     return "moved";
   }
 
   const fileId = upsertFile(state.db, input);
-  scheduleThumbnailGeneration(state, window, fileId);
   const file = getFileById(state.db, fileId);
   if (file) {
-    void maybeAutoIndexImportedFile(state, file, window);
+    runPostImportPipeline(state, window, file, {
+      source: "library_sync",
+      notify: false,
+      autoAnalyzeMetadata: false,
+    });
   }
   return "added";
 }

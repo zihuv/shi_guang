@@ -1,7 +1,4 @@
 import type { FolderNode } from "@/stores/folderStore";
-import { AI_SUPPORTED_IMAGE_EXTENSIONS, extensionSet } from "@/shared/file-formats";
-
-export const AI_IMAGE_EXTENSIONS = extensionSet(AI_SUPPORTED_IMAGE_EXTENSIONS);
 
 export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 10000;

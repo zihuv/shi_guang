@@ -8,7 +8,7 @@ import { useSelectionStore } from "@/stores/selectionStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { copyFilesToClipboard } from "@/lib/clipboard";
 import { openFile, showInExplorer } from "@/services/desktop/system";
-import { AI_SUPPORTED_IMAGE_EXTENSIONS, extensionSet } from "@/shared/file-formats";
+import { canAnalyzeImageMetadata } from "@/shared/file-formats";
 import { Button } from "@/components/ui/Button";
 import {
   ContextMenu,
@@ -29,8 +29,6 @@ import {
 } from "@/components/ui/Dialog";
 import { Copy, ExternalLink, FolderOpen, Move, ScanSearch, Sparkles, Trash2 } from "lucide-react";
 
-const AI_IMAGE_EXTENSIONS = extensionSet(AI_SUPPORTED_IMAGE_EXTENSIONS);
-
 interface BatchAnalyzeDialogState {
   existingFiles: FileItem[];
   freshFiles: FileItem[];
@@ -38,7 +36,7 @@ interface BatchAnalyzeDialogState {
 }
 
 function canAnalyzeFileWithAi(file: FileItem) {
-  return AI_IMAGE_EXTENSIONS.has(file.ext.toLowerCase());
+  return canAnalyzeImageMetadata(file.ext);
 }
 
 function hasExistingAiMetadata(file: FileItem) {

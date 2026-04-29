@@ -3,16 +3,8 @@
   "name": "拾光采集器",
   "version": "0.4.5",
   "description": "右键图片发送到拾光桌面应用",
-  "permissions": [
-    "contextMenus",
-    "activeTab",
-    "storage",
-    "notifications",
-    "scripting"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["contextMenus", "activeTab", "storage", "notifications", "scripting"],
+  "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -23,9 +15,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
+      "matches": ["<all_urls>"],
       "js": [
         "content-shared.js",
         "content-drag-dock.js",

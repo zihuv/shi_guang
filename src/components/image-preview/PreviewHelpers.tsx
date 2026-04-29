@@ -31,11 +31,18 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
       };
     }
 
+    const thumbnailFile = {
+      path: file.path,
+      ext: file.ext,
+      width: file.width,
+      height: file.height,
+      size: file.size,
+    };
     const loader =
       previewType === "video"
-        ? getGeneratedThumbnailSrc(file)
+        ? getGeneratedThumbnailSrc(thumbnailFile)
         : previewType === "thumbnail"
-          ? getGeneratedThumbnailSrc(file)
+          ? getGeneratedThumbnailSrc(thumbnailFile)
           : getFileSrc(file.path);
 
     loader.then((imageSrc) => {
@@ -54,7 +61,7 @@ export function ThumbnailItem({ file }: { file: FileItem }) {
       revokeBlobUrl(srcRef.current);
       srcRef.current = null;
     };
-  }, [file.ext, file.path, previewType]);
+  }, [file.ext, file.height, file.path, file.size, file.width, previewType]);
 
   useEffect(() => {
     if (src) {

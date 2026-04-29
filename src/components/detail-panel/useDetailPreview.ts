@@ -73,7 +73,14 @@ export function useDetailPreview({ file, width }: { file: FileItem; width: numbe
 
     if (usesThumbnailPreview) {
       void (async () => {
-        const thumbnailSrc = await getGeneratedThumbnailSrc(file, previewThumbnailMaxEdge);
+        const thumbnailFile = {
+          path: file.path,
+          ext: file.ext,
+          width: file.width,
+          height: file.height,
+          size: file.size,
+        };
+        const thumbnailSrc = await getGeneratedThumbnailSrc(thumbnailFile, previewThumbnailMaxEdge);
         if (!mounted) {
           if (thumbnailSrc.startsWith("blob:")) {
             URL.revokeObjectURL(thumbnailSrc);
@@ -113,7 +120,14 @@ export function useDetailPreview({ file, width }: { file: FileItem; width: numbe
     }
 
     if (previewType === "video") {
-      getGeneratedThumbnailSrc(file, previewThumbnailMaxEdge).then((src) => {
+      const thumbnailFile = {
+        path: file.path,
+        ext: file.ext,
+        width: file.width,
+        height: file.height,
+        size: file.size,
+      };
+      getGeneratedThumbnailSrc(thumbnailFile, previewThumbnailMaxEdge).then((src) => {
         if (mounted && src) {
           setVideoPosterSrc(src);
         }
@@ -138,6 +152,8 @@ export function useDetailPreview({ file, width }: { file: FileItem; width: numbe
   }, [
     file.path,
     file.size,
+    file.width,
+    file.height,
     previewType,
     file.ext,
     previewThumbnailMaxEdge,

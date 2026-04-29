@@ -33,9 +33,6 @@ import {
 } from "./common";
 import {
   ensureThumbnailForFile,
-  importBytes,
-  importFilePath,
-  postImport,
   shouldGenerateFileThumbnail,
   startImportTask,
 } from "./import-service";
@@ -178,25 +175,6 @@ export function createFileCommands(
       const newPath = path.join(path.dirname(file.path), newName);
       if (fssync.existsSync(file.path)) await moveFileWithFallback(file.path, newPath);
       updateFileNameRecord(state.db, fileId, newName, newPath);
-    },
-    import_file: async (args, window) => {
-      const file = await importFilePath(
-        state,
-        stringArg(args, "sourcePath", "source_path"),
-        optionalNumberArg(args, "folderId", "folder_id"),
-      );
-      postImport(state, window, file);
-      return file;
-    },
-    import_image_from_base64: async (args, window) => {
-      const file = await importBytes(state, {
-        bytes: Buffer.from(stringArg(args, "base64Data", "base64_data"), "base64"),
-        folderId: optionalNumberArg(args, "folderId", "folder_id"),
-        fallbackExt: stringArg(args, "ext"),
-        namePrefix: "paste",
-      });
-      postImport(state, window, file);
-      return file;
     },
     start_import_task: (args, window) =>
       startImportTask(

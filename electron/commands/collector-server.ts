@@ -16,7 +16,7 @@ import {
 import { detectExtensionFromBytes } from "../media";
 import type { AppState, FolderRecord } from "../types";
 import { emit, type GetWindow } from "./common";
-import { importBytes, normalizeImportExtension, postImport } from "./import-service";
+import { importBytes, normalizeImportExtension, runPostImportPipeline } from "./import-service";
 
 let collectorServer: FastifyInstance | null = null;
 const COLLECTOR_IMPORT_BODY_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -209,7 +209,7 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
         ),
         namePrefix: "browser",
       });
-      postImport(state, getWindow(), file);
+      runPostImportPipeline(state, getWindow(), file, { source: "collector" });
       return { success: true, file_id: file.id, error: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -245,7 +245,7 @@ export async function startCollectorServer(state: AppState, getWindow: GetWindow
         namePrefix: "browser",
         sourceUrl: payload.referer ?? payload.image_url,
       });
-      postImport(state, getWindow(), file);
+      runPostImportPipeline(state, getWindow(), file, { source: "collector" });
       return { success: true, file_id: file.id, error: null };
     } catch (error) {
       return {

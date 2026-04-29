@@ -32,7 +32,7 @@ import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import { removeThumbnailForFile } from "../storage";
 import { getDeletedFolderHoldingDir } from "../trash-paths";
 import type { AppState, FolderRecord } from "../types";
-import { getTargetDir, importExistingFilePath, postImport } from "./import-service";
+import { getTargetDir, importExistingFilePath, runPostImportPipeline } from "./import-service";
 
 export async function ensureDeletedFolderHoldingDir(appDataDir: string): Promise<string> {
   const dir = getDeletedFolderHoldingDir(appDataDir);
@@ -210,7 +210,7 @@ export async function copyOneFile(
     sourceUrl: file.sourceUrl,
     tagIds: file.tags.map((tag) => tag.id),
   });
-  postImport(state, window, imported);
+  runPostImportPipeline(state, window, imported, { source: "restore" });
 }
 
 export async function moveOneFile(

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "r
 import { createPortal, flushSync } from "react-dom";
 import { toast } from "sonner";
 import { copyFilesToClipboard } from "@/lib/clipboard";
-import { AI_IMAGE_EXTENSIONS, flattenFolders } from "@/components/image-preview/constants";
+import { flattenFolders } from "@/components/image-preview/constants";
 import { PreviewContextMenuContent } from "@/components/image-preview/PreviewContextMenu";
 import {
   TextPreviewPane,
@@ -16,6 +16,7 @@ import { usePreviewSource } from "@/components/image-preview/usePreviewSource";
 import { usePreviewZoomPan } from "@/components/image-preview/usePreviewZoomPan";
 import { updateFileDimensions } from "@/services/desktop/files";
 import { openFile, showInExplorer } from "@/services/desktop/system";
+import { canAnalyzeImageMetadata } from "@/shared/file-formats";
 import {
   isWindowFullscreen,
   listenWindowFullscreenChanged,
@@ -99,9 +100,7 @@ export default function ImagePreview() {
   const previewType = currentFile ? getFilePreviewMode(currentFile.ext) : "none";
   const isVideo = currentFile ? isVideoFile(currentFile.ext) : false;
   const isImageLike = previewType === "image" || previewType === "thumbnail";
-  const canAnalyzeWithAi = currentFile
-    ? AI_IMAGE_EXTENSIONS.has(currentFile.ext.toLowerCase())
-    : false;
+  const canAnalyzeWithAi = currentFile ? canAnalyzeImageMetadata(currentFile.ext) : false;
   const {
     imageSrc,
     textContent,

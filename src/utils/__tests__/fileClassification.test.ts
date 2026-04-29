@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  canAnalyzeImageMetadata,
+  canExtractImageMetadata,
+  canVisualSearchImage,
+  getFileFormatCapabilities,
+} from "@/shared/file-formats";
+import {
   canGenerateThumbnail,
   canPreviewFile,
   detectMimeTypeFromContents,
@@ -29,12 +35,65 @@ describe("fileClassification", () => {
     expect(canGenerateThumbnail("txt")).toBe(false);
   });
 
+  it("describes file format capabilities from one source", () => {
+    expect(getFileFormatCapabilities("psd")).toMatchObject({
+      group: "image",
+      backendDecodable: false,
+      metadataExtractable: false,
+      thumbnailRuntime: "main",
+      aiAnalyzable: false,
+      visualSearchable: false,
+      directPreviewable: false,
+    });
+    expect(getFileFormatCapabilities("svg")).toMatchObject({
+      group: "image",
+      thumbnailRuntime: "main",
+      directPreviewable: true,
+    });
+    expect(getFileFormatCapabilities("heic")).toMatchObject({
+      group: "image",
+      backendDecodable: true,
+      thumbnailRuntime: "main",
+      aiAnalyzable: true,
+      visualSearchable: true,
+      directPreviewable: false,
+    });
+    expect(getFileFormatCapabilities("mp4")).toMatchObject({
+      group: "video",
+      thumbnailRuntime: "renderer",
+      aiAnalyzable: false,
+      visualSearchable: false,
+      directPreviewable: false,
+    });
+    expect(getFileFormatCapabilities("pdf")).toMatchObject({
+      group: "document",
+      thumbnailRuntime: "main",
+      aiAnalyzable: false,
+      visualSearchable: false,
+    });
+    expect(getFileFormatCapabilities("unknown")).toMatchObject({
+      group: null,
+      backendDecodable: false,
+      metadataExtractable: false,
+      thumbnailRuntime: "none",
+      aiAnalyzable: false,
+      visualSearchable: false,
+      directPreviewable: false,
+      textPreviewable: false,
+    });
+
+    expect(canExtractImageMetadata("jpg")).toBe(true);
+    expect(canAnalyzeImageMetadata("psd")).toBe(false);
+    expect(canVisualSearchImage("heif")).toBe(true);
+  });
+
   it("resolves file kind and mime type from extensions and signatures", () => {
     expect(getFileKind("xlsx")).toBe("spreadsheet");
     expect(getFileKind("mp3")).toBe("audio");
     expect(getFileKind("rar")).toBe("archive");
     expect(getFileKind("tsx")).toBe("code");
     expect(getFileKind("zip")).toBe("archive");
+    expect(getFileKind("psd")).toBe("image");
     expect(getFileMimeType("/tmp/photo.jpeg")).toBe("image/jpeg");
     expect(getFileMimeType("/tmp/live.heic")).toBe("image/heic");
 

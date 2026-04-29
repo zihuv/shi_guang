@@ -3,10 +3,10 @@ import crypto from "node:crypto";
 import sharp from "sharp";
 import { rgbaToThumbHash, thumbHashBytesToBase64 } from "../src/lib/thumbhash";
 import {
-  AI_SUPPORTED_IMAGE_EXTENSIONS as AI_SUPPORTED_IMAGE_EXTENSION_LIST,
-  BACKEND_DECODABLE_IMAGE_EXTENSIONS as BACKEND_DECODABLE_IMAGE_EXTENSION_LIST,
   BLOCKED_UNSUPPORTED_EXTENSIONS as BLOCKED_UNSUPPORTED_EXTENSION_LIST,
   SCAN_SUPPORTED_EXTENSIONS as SCAN_SUPPORTED_EXTENSION_LIST,
+  canAnalyzeImageMetadata,
+  canExtractImageMetadata,
   extensionSet,
 } from "../src/shared/file-formats";
 
@@ -14,10 +14,6 @@ const PROBE_READ_LIMIT = 4096;
 
 export const BLOCKED_UNSUPPORTED_EXTENSIONS = extensionSet(BLOCKED_UNSUPPORTED_EXTENSION_LIST);
 export const SCAN_SUPPORTED_EXTENSIONS = extensionSet(SCAN_SUPPORTED_EXTENSION_LIST);
-export const BACKEND_DECODABLE_IMAGE_EXTENSIONS = extensionSet(
-  BACKEND_DECODABLE_IMAGE_EXTENSION_LIST,
-);
-export const AI_SUPPORTED_IMAGE_EXTENSIONS = extensionSet(AI_SUPPORTED_IMAGE_EXTENSION_LIST);
 
 function asciiSlice(bytes: Buffer, start: number, end: number): string {
   if (bytes.length < end) {
@@ -186,11 +182,11 @@ export function isBlockedUnsupportedExtension(ext: string): boolean {
 }
 
 export function canBackendDecodeImage(ext: string): boolean {
-  return BACKEND_DECODABLE_IMAGE_EXTENSIONS.has(ext.toLowerCase());
+  return canExtractImageMetadata(ext);
 }
 
 export function canAnalyzeImage(ext: string): boolean {
-  return AI_SUPPORTED_IMAGE_EXTENSIONS.has(ext.toLowerCase());
+  return canAnalyzeImageMetadata(ext);
 }
 
 export async function getImageDimensions(

@@ -205,18 +205,6 @@ export function testAiEndpoint(target: AiEndpointTarget) {
   return invokeDesktop<string>("test_ai_endpoint", { target });
 }
 
-export function importFile(args: { sourcePath: string; folderId?: number | null }) {
-  return invokeDesktop<FileItem>("import_file", args);
-}
-
-export function importImageFromBase64(args: {
-  base64Data: string;
-  ext: string;
-  folderId?: number | null;
-}) {
-  return invokeDesktop<FileItem>("import_image_from_base64", args);
-}
-
 export function startImportTask(args: {
   items: Array<Record<string, unknown>>;
   folderId?: number | null;

@@ -10,6 +10,7 @@ import {
   VIDEO_FILE_EXTENSIONS,
   WORD_FILE_EXTENSIONS,
   extensionListIncludes,
+  getFileFormatCapabilities,
   getMimeTypeForExtension,
 } from "@/shared/file-formats";
 import { isThumbnailSupportedExt } from "@/lib/thumbnailPolicy";
@@ -124,19 +125,17 @@ export function isTextPreviewFile(ext: string): boolean {
 
 export function getFilePreviewMode(ext: string): FilePreviewMode {
   const normalizedExt = normalizeExt(ext);
-  if (normalizedExt === "heic" || normalizedExt === "heif") {
-    return "thumbnail";
-  }
-  if (isImageFile(ext)) {
+  const capabilities = getFileFormatCapabilities(normalizedExt);
+  if (capabilities.directPreviewable) {
     return "image";
   }
   if (isVideoFile(ext)) {
     return "video";
   }
-  if (isPdfFile(ext) || isPsdFile(ext)) {
+  if (capabilities.thumbnailRuntime !== "none") {
     return "thumbnail";
   }
-  if (isTextPreviewFile(ext)) {
+  if (capabilities.textPreviewable) {
     return "text";
   }
   return "none";
@@ -179,7 +178,7 @@ export function resolveThumbnailRequestMaxEdge(
 export function getFileKind(ext: string): FileKind {
   const normalizedExt = normalizeExt(ext);
 
-  if (isImageFile(normalizedExt)) {
+  if (isImageFile(normalizedExt) || isPsdFile(normalizedExt)) {
     return "image";
   }
   if (isVideoFile(normalizedExt)) {

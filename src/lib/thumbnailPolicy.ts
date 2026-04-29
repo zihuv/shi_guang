@@ -1,20 +1,14 @@
 import {
-  DIRECT_IMAGE_EXTENSIONS,
-  VIDEO_FILE_EXTENSIONS,
-  extensionSet,
+  getFileFormatCapabilities,
   normalizeExtension,
+  type ThumbnailGenerationRuntime,
 } from "../shared/file-formats";
+
+export type { ThumbnailGenerationRuntime } from "../shared/file-formats";
 
 export const THUMBNAIL_PIXEL_THRESHOLD = 10_000_000;
 export const THUMBNAIL_EDGE_THRESHOLD = 3840;
 export const THUMBNAIL_SIZE_THRESHOLD = 8 * 1024 * 1024;
-
-const VIDEO_EXTENSION_SET = extensionSet(VIDEO_FILE_EXTENSIONS);
-const MAIN_PROCESS_THUMBNAIL_EXTENSION_SET = extensionSet([
-  ...DIRECT_IMAGE_EXTENSIONS,
-  "pdf",
-  "psd",
-]);
 
 export type ThumbnailDecisionReason =
   | "video"
@@ -38,8 +32,6 @@ export interface ThumbnailDecision {
   reason: ThumbnailDecisionReason;
 }
 
-export type ThumbnailGenerationRuntime = "none" | "main" | "renderer";
-
 export interface ThumbnailPlan extends ThumbnailDecision {
   runtime: ThumbnailGenerationRuntime;
 }
@@ -49,11 +41,11 @@ export function normalizeThumbnailExt(ext: string): string {
 }
 
 export function isVideoThumbnailExt(ext: string): boolean {
-  return VIDEO_EXTENSION_SET.has(normalizeThumbnailExt(ext));
+  return getThumbnailGenerationRuntimeForExt(ext) === "renderer";
 }
 
 export function isMainProcessThumbnailExt(ext: string): boolean {
-  return MAIN_PROCESS_THUMBNAIL_EXTENSION_SET.has(normalizeThumbnailExt(ext));
+  return getThumbnailGenerationRuntimeForExt(ext) === "main";
 }
 
 export function isThumbnailSupportedExt(ext: string): boolean {
@@ -61,13 +53,7 @@ export function isThumbnailSupportedExt(ext: string): boolean {
 }
 
 export function getThumbnailGenerationRuntimeForExt(ext: string): ThumbnailGenerationRuntime {
-  if (isVideoThumbnailExt(ext)) {
-    return "renderer";
-  }
-  if (isMainProcessThumbnailExt(ext)) {
-    return "main";
-  }
-  return "none";
+  return getFileFormatCapabilities(ext).thumbnailRuntime;
 }
 
 export function decideThumbnailGeneration(input: ThumbnailDecisionInput): ThumbnailDecision {
