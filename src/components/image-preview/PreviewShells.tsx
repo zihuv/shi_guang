@@ -18,6 +18,9 @@ import {
   ChevronRight,
   Maximize2,
   Minimize2,
+  RefreshCcwDot,
+  RotateCcw,
+  RotateCw,
   Scan,
   X,
   ZoomIn,
@@ -47,11 +50,15 @@ interface FullscreenPreviewShellProps extends PreviewViewportProps {
   canGoPrev: boolean;
   canGoNext: boolean;
   supportsZoom: boolean;
+  canTransformImage: boolean;
   previewType: string;
   isFitMode: boolean;
   onZoomOut: () => void;
   onZoomIn: () => void;
   onFitToView: () => void;
+  onRotateLeft: () => void;
+  onRotateRight: () => void;
+  onReverseCenter: () => void;
   onToggleFullscreen: () => void;
   onGoPrev: () => void;
   onGoNext: () => void;
@@ -64,6 +71,7 @@ interface StandardPreviewShellProps extends PreviewViewportProps {
   canGoPrev: boolean;
   canGoNext: boolean;
   supportsZoom: boolean;
+  canTransformImage: boolean;
   previewType: string;
   isFullscreen: boolean;
   isFitMode: boolean;
@@ -72,6 +80,9 @@ interface StandardPreviewShellProps extends PreviewViewportProps {
   onZoomOut: () => void;
   onZoomIn: () => void;
   onFitToView: () => void;
+  onRotateLeft: () => void;
+  onRotateRight: () => void;
+  onReverseCenter: () => void;
   onToggleFullscreen: () => void;
   onClose: () => void;
   onGoPrev: () => void;
@@ -117,11 +128,15 @@ export function FullscreenPreviewShell({
   canGoPrev,
   canGoNext,
   supportsZoom,
+  canTransformImage,
   previewType,
   isFitMode,
   onZoomOut,
   onZoomIn,
   onFitToView,
+  onRotateLeft,
+  onRotateRight,
+  onReverseCenter,
   onToggleFullscreen,
   onGoPrev,
   onGoNext,
@@ -171,7 +186,7 @@ export function FullscreenPreviewShell({
             onTouchStart={showControls}
           >
             <div
-              className={`absolute left-4 top-4 z-20 flex items-center gap-2 ${controlsClassName}`}
+              className={`absolute left-4 top-4 z-20 flex items-center gap-1 ${controlsClassName}`}
             >
               {supportsZoom && (
                 <>
@@ -191,10 +206,27 @@ export function FullscreenPreviewShell({
                   </button>
                 </>
               )}
+              {canTransformImage && (
+                <>
+                  <button onClick={onRotateLeft} className={OVERLAY_BUTTON_CLASS} title="左旋转">
+                    <RotateCcw className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={onReverseCenter}
+                    className={OVERLAY_BUTTON_CLASS}
+                    title="中心反转"
+                  >
+                    <RefreshCcwDot className="h-5 w-5" />
+                  </button>
+                  <button onClick={onRotateRight} className={OVERLAY_BUTTON_CLASS} title="右旋转">
+                    <RotateCw className="h-5 w-5" />
+                  </button>
+                </>
+              )}
             </div>
 
             <div
-              className={`absolute right-4 top-4 z-20 flex items-center gap-2 ${controlsClassName}`}
+              className={`absolute right-4 top-4 z-20 flex items-center gap-1 ${controlsClassName}`}
             >
               {previewType === "thumbnail" && (
                 <span className={OVERLAY_CHIP_CLASS}>快照缩略图</span>
@@ -266,6 +298,7 @@ export function StandardPreviewShell({
   canGoPrev,
   canGoNext,
   supportsZoom,
+  canTransformImage,
   previewType,
   isFullscreen,
   isFitMode,
@@ -274,6 +307,9 @@ export function StandardPreviewShell({
   onZoomOut,
   onZoomIn,
   onFitToView,
+  onRotateLeft,
+  onRotateRight,
+  onReverseCenter,
   onToggleFullscreen,
   onClose,
   onGoPrev,
@@ -314,14 +350,14 @@ export function StandardPreviewShell({
           {currentNum} / {totalFiles}
         </div>
 
-        <div className="relative z-10 flex flex-shrink-0 items-center gap-3">
+        <div className="relative z-10 flex flex-shrink-0 items-center gap-1">
           {previewType === "thumbnail" && (
             <span className="rounded-full bg-black/[0.045] px-2.5 py-1 text-[11px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">
               快照缩略图
             </span>
           )}
           {supportsZoom ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button onClick={onZoomOut} className={PREVIEW_TOOL_BUTTON_CLASS} title="缩小">
                 <ZoomOut className="h-4 w-4" />
               </button>
@@ -346,6 +382,31 @@ export function StandardPreviewShell({
                 >
                   <Scan className="h-4 w-4" />
                 </button>
+              )}
+              {canTransformImage && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={onRotateLeft}
+                    className={PREVIEW_TOOL_BUTTON_CLASS}
+                    title="左旋转"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={onReverseCenter}
+                    className={PREVIEW_TOOL_BUTTON_CLASS}
+                    title="中心反转"
+                  >
+                    <RefreshCcwDot className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={onRotateRight}
+                    className={PREVIEW_TOOL_BUTTON_CLASS}
+                    title="右旋转"
+                  >
+                    <RotateCw className="h-4 w-4" />
+                  </button>
+                </div>
               )}
               <button
                 onClick={onToggleFullscreen}

@@ -9,6 +9,14 @@ import {
   UnsupportedPreviewState,
 } from "@/components/image-preview/PreviewHelpers";
 import {
+  DEFAULT_IMAGE_TRANSFORM,
+  getContainedImageLayout,
+  getImageTransformValue,
+  getRotatedBoundingSize,
+  rotateImageTransform,
+  type ImageTransformState,
+} from "@/components/image-preview/imageTransform";
+import {
   FullscreenPreviewShell,
   StandardPreviewShell,
 } from "@/components/image-preview/PreviewShells";
@@ -87,6 +95,8 @@ export default function ImagePreview() {
   const previewTrackpadZoomSpeed = useSettingsStore((state) => state.previewTrackpadZoomSpeed);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [imageTransform, setImageTransform] =
+    useState<ImageTransformState>(DEFAULT_IMAGE_TRANSFORM);
 
   const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null);
   const persistedDimensionsRef = useRef<Record<number, string>>({});
@@ -118,6 +128,7 @@ export default function ImagePreview() {
   });
   const {
     viewportRef,
+    viewportSize,
     supportsZoom,
     isFitMode,
     canPanImage,
@@ -169,6 +180,10 @@ export default function ImagePreview() {
       setSelectedFile(currentFile);
     }
   }, [currentFile, previewIndex, setSelectedFile]);
+
+  useEffect(() => {
+    setImageTransform(DEFAULT_IMAGE_TRANSFORM);
+  }, [currentFile?.id]);
 
   useEffect(() => {
     if (!currentFile?.id) {
@@ -399,6 +414,21 @@ export default function ImagePreview() {
     void setPreviewFullscreen(!isFullscreen);
   };
 
+  const handleRotateLeft = useCallback(() => {
+    handleFitToView();
+    setImageTransform((current) => rotateImageTransform(current, -90));
+  }, [handleFitToView]);
+
+  const handleRotateRight = useCallback(() => {
+    handleFitToView();
+    setImageTransform((current) => rotateImageTransform(current, 90));
+  }, [handleFitToView]);
+
+  const handleReverseCenter = useCallback(() => {
+    handleFitToView();
+    setImageTransform((current) => rotateImageTransform(current, 180));
+  }, [handleFitToView]);
+
   const hydrateCurrentFileDimensions = useCallback(
     (width: number, height: number) => {
       if (!currentFile || width <= 0 || height <= 0) return;
@@ -484,6 +514,32 @@ export default function ImagePreview() {
   const currentNum = previewIndex + 1;
   const canGoPrev = previewIndex > 0;
   const canGoNext = previewIndex < totalFiles - 1;
+  const canTransformImage = supportsZoom && Boolean(imageSrc) && !imageError;
+  const imageNaturalWidth =
+    currentFile.width > 0
+      ? currentFile.width
+      : loadedImageSize.width > 0
+        ? loadedImageSize.width
+        : 0;
+  const imageNaturalHeight =
+    currentFile.height > 0
+      ? currentFile.height
+      : loadedImageSize.height > 0
+        ? loadedImageSize.height
+        : 0;
+  const fitImagePadding = isFullscreen ? 0 : 32;
+  const fitImageLayout = getContainedImageLayout({
+    containerHeight: Math.max(1, viewportSize.height - fitImagePadding),
+    containerWidth: Math.max(1, viewportSize.width - fitImagePadding),
+    imageHeight: imageNaturalHeight,
+    imageWidth: imageNaturalWidth,
+    rotation: imageTransform.rotation,
+  });
+  const scaledImageBounds =
+    scaledImageWidth !== null && scaledImageHeight !== null
+      ? getRotatedBoundingSize(scaledImageWidth, scaledImageHeight, imageTransform.rotation)
+      : null;
+  const imageTransformValue = getImageTransformValue(imageTransform);
 
   const renderedPreviewContent = isLoading ? (
     <div className="flex h-full min-h-full items-center justify-center p-4">
@@ -543,20 +599,44 @@ export default function ImagePreview() {
         <div
           className={`flex h-full min-h-full items-center justify-center ${isFullscreen ? "p-0" : "p-4"}`}
         >
-          <img
-            src={imageSrc}
-            alt={currentFile.name}
-            className="max-h-full max-w-full cursor-grab select-none object-contain active:cursor-grabbing"
-            onLoad={handleImageLoad}
-            draggable={false}
-          />
+          {fitImageLayout ? (
+            <div
+              className="grid place-items-center"
+              style={{
+                height: `${fitImageLayout.boundsHeight}px`,
+                width: `${fitImageLayout.boundsWidth}px`,
+              }}
+            >
+              <img
+                src={imageSrc}
+                alt={currentFile.name}
+                className="block cursor-grab select-none transition-transform duration-150 active:cursor-grabbing"
+                onLoad={handleImageLoad}
+                draggable={false}
+                style={{
+                  height: `${fitImageLayout.imageHeight}px`,
+                  transform: imageTransformValue,
+                  width: `${fitImageLayout.imageWidth}px`,
+                }}
+              />
+            </div>
+          ) : (
+            <img
+              src={imageSrc}
+              alt={currentFile.name}
+              className="max-h-full max-w-full cursor-grab select-none object-contain transition-transform duration-150 active:cursor-grabbing"
+              onLoad={handleImageLoad}
+              draggable={false}
+              style={{ transform: imageTransformValue }}
+            />
+          )}
         </div>
       ) : (
         <div
           className="grid place-items-center"
           style={{
-            width: `${scaledImageWidth}px`,
-            height: `${scaledImageHeight}px`,
+            width: `${scaledImageBounds?.width ?? scaledImageWidth}px`,
+            height: `${scaledImageBounds?.height ?? scaledImageHeight}px`,
             minWidth: "100%",
             minHeight: "100%",
           }}
@@ -570,6 +650,7 @@ export default function ImagePreview() {
             style={{
               width: `${scaledImageWidth}px`,
               height: `${scaledImageHeight}px`,
+              transform: imageTransformValue,
             }}
           />
         </div>
@@ -602,6 +683,7 @@ export default function ImagePreview() {
         supportsZoom={supportsZoom}
         previewType={previewType}
         isFitMode={isFitMode}
+        canTransformImage={canTransformImage}
         canPanImage={canPanImage}
         isPanning={isPanning}
         viewportRef={viewportRef}
@@ -610,6 +692,9 @@ export default function ImagePreview() {
         onZoomOut={handleZoomOut}
         onZoomIn={handleZoomIn}
         onFitToView={handleFitToView}
+        onRotateLeft={handleRotateLeft}
+        onRotateRight={handleRotateRight}
+        onReverseCenter={handleReverseCenter}
         onToggleFullscreen={toggleFullscreen}
         onGoPrev={goToPrev}
         onGoNext={goToNext}
@@ -632,6 +717,7 @@ export default function ImagePreview() {
       previewType={previewType}
       isFullscreen={isFullscreen}
       isFitMode={isFitMode}
+      canTransformImage={canTransformImage}
       canPanImage={canPanImage}
       isPanning={isPanning}
       viewportRef={viewportRef}
@@ -642,6 +728,9 @@ export default function ImagePreview() {
       onZoomOut={handleZoomOut}
       onZoomIn={handleZoomIn}
       onFitToView={handleFitToView}
+      onRotateLeft={handleRotateLeft}
+      onRotateRight={handleRotateRight}
+      onReverseCenter={handleReverseCenter}
       onToggleFullscreen={toggleFullscreen}
       onClose={closePreviewWithFullscreenExit}
       onGoPrev={goToPrev}

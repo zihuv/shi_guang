@@ -332,6 +332,7 @@ export function usePreviewZoomPan({
 
   return {
     viewportRef,
+    viewportSize,
     supportsZoom,
     isFitMode,
     canPanImage,
