@@ -20,6 +20,7 @@ import {
   FullscreenPreviewShell,
   StandardPreviewShell,
 } from "@/components/image-preview/PreviewShells";
+import { VideoPlayer, type VideoPlaybackSnapshot } from "@/components/video/VideoPlayer";
 import { usePreviewSource } from "@/components/image-preview/usePreviewSource";
 import { usePreviewZoomPan } from "@/components/image-preview/usePreviewZoomPan";
 import { updateFileDimensions } from "@/services/desktop/files";
@@ -31,6 +32,7 @@ import {
   setWindowFullscreen,
 } from "@/services/desktop/window";
 import { useFolderStore } from "@/stores/folderStore";
+import type { FileItem } from "@/stores/fileTypes";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { usePreviewStore } from "@/stores/previewStore";
 import { useSelectionStore } from "@/stores/selectionStore";
@@ -39,6 +41,10 @@ import { useTrashStore } from "@/stores/trashStore";
 import { getFilePreviewMode, isVideoFile } from "@/utils";
 
 const FULLSCREEN_EVENT_FALLBACK_TIMEOUT_MS = 2200;
+
+function getVideoPlaybackSnapshotKey(file: FileItem) {
+  return `${file.id}:${file.modifiedAt}:${file.size}`;
+}
 
 function waitForWindowFullscreenEvent(expectedFullscreen: boolean) {
   return new Promise<void>((resolve) => {
@@ -101,6 +107,7 @@ export default function ImagePreview() {
   const lastMenuActionRef = useRef<{ key: string; timestamp: number } | null>(null);
   const persistedDimensionsRef = useRef<Record<number, string>>({});
   const nativeFullscreenRestoreRef = useRef<boolean | null>(null);
+  const videoPlaybackSnapshotsRef = useRef<Record<string, VideoPlaybackSnapshot>>({});
 
   const currentFolderName = selectedFolderId
     ? folders.find((folder) => folder.id === selectedFolderId)?.name || "未知文件夹"
@@ -182,6 +189,15 @@ export default function ImagePreview() {
   }, [currentFile, previewIndex, setSelectedFile]);
 
   useEffect(() => {
+    const activeSnapshotKeys = new Set(previewFiles.map(getVideoPlaybackSnapshotKey));
+    for (const snapshotKey of Object.keys(videoPlaybackSnapshotsRef.current)) {
+      if (!activeSnapshotKeys.has(snapshotKey)) {
+        delete videoPlaybackSnapshotsRef.current[snapshotKey];
+      }
+    }
+  }, [previewFiles]);
+
+  useEffect(() => {
     setImageTransform(DEFAULT_IMAGE_TRANSFORM);
   }, [currentFile?.id]);
 
@@ -204,6 +220,17 @@ export default function ImagePreview() {
       setPreviewIndex(previewIndex + 1);
     }
   }, [previewFiles.length, previewIndex, setPreviewIndex]);
+
+  const handleVideoPlaybackSnapshotChange = useCallback(
+    (snapshot: VideoPlaybackSnapshot) => {
+      if (!currentFile) {
+        return;
+      }
+
+      videoPlaybackSnapshotsRef.current[getVideoPlaybackSnapshotKey(currentFile)] = snapshot;
+    },
+    [currentFile],
+  );
 
   const setPreviewFullscreen = useCallback(async (enabled: boolean) => {
     if (enabled) {
@@ -308,6 +335,16 @@ export default function ImagePreview() {
     if (!previewMode) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      const eventTarget = event.target as HTMLElement | null;
+      const isVideoPlayerTarget = Boolean(eventTarget?.closest("[data-video-player]"));
+
+      if (
+        isVideoPlayerTarget &&
+        [" ", "Enter", "ArrowLeft", "ArrowRight", "k", "K", "m", "M"].includes(event.key)
+      ) {
+        return;
+      }
+
       switch (event.key) {
         case "Escape":
           if (isFullscreen) {
@@ -515,6 +552,9 @@ export default function ImagePreview() {
   const canGoPrev = previewIndex > 0;
   const canGoNext = previewIndex < totalFiles - 1;
   const canTransformImage = supportsZoom && Boolean(imageSrc) && !imageError;
+  const currentVideoSnapshot = currentFile
+    ? videoPlaybackSnapshotsRef.current[getVideoPlaybackSnapshotKey(currentFile)]
+    : undefined;
   const imageNaturalWidth =
     currentFile.width > 0
       ? currentFile.width
@@ -582,15 +622,20 @@ export default function ImagePreview() {
       <div
         className={`flex h-full min-h-full items-center justify-center ${isFullscreen ? "p-0" : "p-4"}`}
       >
-        <video
+        <VideoPlayer
           src={imageSrc}
-          controls
-          playsInline
-          preload="metadata"
+          fit={isFullscreen ? "cover" : "contain"}
+          initialCurrentTime={currentVideoSnapshot?.currentTime}
+          initialDuration={currentVideoSnapshot?.duration}
+          initialIsMuted={currentVideoSnapshot?.isMuted}
+          initialIsPlaying={currentVideoSnapshot?.isPlaying}
+          initialPlaybackRate={currentVideoSnapshot?.playbackRate}
+          initialVolume={currentVideoSnapshot?.volume}
+          isFullscreen={isFullscreen}
+          onPlaybackSnapshotChange={handleVideoPlaybackSnapshotChange}
+          onToggleFullscreen={toggleFullscreen}
           className={`max-h-full bg-black ${
-            isFullscreen
-              ? "h-full w-full max-w-full object-contain"
-              : "w-full max-w-5xl rounded-lg shadow-lg"
+            isFullscreen ? "h-full w-full max-w-full" : "w-full max-w-5xl rounded-lg shadow-lg"
           }`}
         />
       </div>

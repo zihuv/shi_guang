@@ -1,4 +1,5 @@
 import FileTypeIcon from "@/components/FileTypeIcon";
+import { VideoPlayer } from "@/components/video/VideoPlayer";
 import type { FileItem } from "@/stores/fileTypes";
 import type { FilePreviewMode } from "@/utils";
 
@@ -98,14 +99,12 @@ function VideoPreview({
 >) {
   if (isVideoPlayerOpen && imageSrc) {
     return (
-      <video
+      <VideoPlayer
         src={imageSrc}
-        controls
-        playsInline
         autoPlay
-        preload="metadata"
+        fit="cover"
         poster={videoPosterSrc || undefined}
-        className="h-full w-full bg-black object-contain"
+        variant="detail"
       />
     );
   }
