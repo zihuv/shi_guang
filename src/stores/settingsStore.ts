@@ -264,7 +264,7 @@ interface SettingsStore extends Settings {
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
-  theme: "light",
+  theme: "dark",
   indexPaths: [],
   recentIndexPaths: [],
   useTrash: true,
@@ -441,7 +441,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   loadSettings: async () => {
-    let theme: "light" | "dark" = "light";
+    let theme: "light" | "dark" = "dark";
     let indexPaths: string[] = [];
     let recentIndexPaths: string[] = [];
     let useTrash: boolean = true;
