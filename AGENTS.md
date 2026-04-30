@@ -25,11 +25,11 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 ## Electron Development
 
 - Keep dev services on `127.0.0.1`; never switch them back to `localhost`.
-- Before restarting dev mode, reuse an existing repo-owned `127.0.0.1:1420` Vite process when possible, and stop stale repo-scoped Electron/Vite processes before relaunching.
-- Electron exposes Chrome DevTools Protocol on `127.0.0.1:9222`; Chrome MCP must target `http://127.0.0.1:9222`.
-- Do not open or use standalone Chrome for Electron desktop UI verification. `127.0.0.1:1420` is only the renderer URL inside Electron; normal Chrome lacks preload, IPC, native window behavior, menus, dialogs, and drag-and-drop.
-- If Chrome MCP shows `about:blank`, a normal Chrome tab, or cannot see the Electron renderer, treat MCP as misconfigured. Fix `browserUrl`/proxy setup or inspect the actual Electron window; do not navigate Chrome to `127.0.0.1:1420` as a workaround.
-- If proxy env vars are present, local CDP traffic must bypass them with `NO_PROXY=127.0.0.1,localhost` or equivalent MCP-server env.
+- Reuse existing repo-owned dev processes when possible; stop stale repo-scoped Electron/Vite processes before relaunching.
+- For desktop UI debugging, prefer Playwright `connectOverCDP` to Electron CDP at `127.0.0.1:9222` and inspect targeted state instead of dumping large snapshots.
+- Chrome MCP is valid only when connected to Electron via `--browserUrl http://127.0.0.1:9222`; `about:blank` or a normal Chrome tab means it is misconfigured.
+- Do not use standalone Chrome or Playwright's own browser at `127.0.0.1:1420` for desktop verification; those paths lack Electron preload, IPC, native windows, menus, dialogs, and drag-and-drop.
+- If proxy env vars are present, bypass them for local CDP with `NO_PROXY=127.0.0.1,localhost` or equivalent.
 
 ## Coding Style
 
@@ -67,6 +67,7 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 
 - Before PRs, run at least `npm run lint` and `npm run build`.
 - For desktop UI or interaction changes, also verify the changed screen in the actual Electron app.
+- Playwright desktop verification must use Electron CDP (`connectOverCDP` to `127.0.0.1:9222`); opening `127.0.0.1:1420` in Playwright's own browser is only renderer smoke testing.
 - For UI interaction bugs, test the real user event path early; add targeted logs around `pointerdown`, `click`, or menu selection when needed.
 - Final verification must say which path was used: Electron CDP, actual Electron window, or blocked. A standalone Chrome load of `127.0.0.1:1420` never counts as desktop UI verification.
 
