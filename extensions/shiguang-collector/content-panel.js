@@ -26,6 +26,7 @@
   let preferences = {};
   let defaults = { importConcurrency: 10 };
   let folderTree = [];
+  let defaultFolderId = null;
   let batchImages = [];
   let selectedUrls = new Set();
   let batchStatus = new Map();
@@ -61,9 +62,14 @@
     try {
       const response = await sendRuntimeMessage({ action: "getFolders" });
       folderTree = response?.success ? response.folders || [] : [];
+      const responseDefaultFolderId = response?.success
+        ? parseOptionalInt(response.default_folder_id)
+        : null;
+      defaultFolderId = responseDefaultFolderId || findDefaultFolderId(folderTree);
     } catch (error) {
       console.warn("Failed to load collector folders:", error);
       folderTree = [];
+      defaultFolderId = null;
     }
   }
 
@@ -81,10 +87,26 @@
     throw new Error(response?.error || "偏好保存失败");
   }
 
+  function findDefaultFolderId(folders) {
+    const namedFolders = [];
+    const visit = (items = []) => {
+      for (const folder of items) {
+        if (folder.name === "浏览器采集") {
+          namedFolders.push(folder);
+        }
+        visit(folder.children || []);
+      }
+    };
+
+    visit(folders);
+    const rootFolder = namedFolders.find((folder) => folder.parentId === null);
+    return rootFolder?.id || namedFolders[0]?.id || null;
+  }
+
   function flattenFolders(folders, depth = 0, trail = []) {
     const rows = [];
     for (const folder of folders || []) {
-      if (folder.isSystem && folder.name === "浏览器采集") {
+      if (defaultFolderId && folder.id === defaultFolderId) {
         rows.push(...flattenFolders(folder.children || [], depth, trail));
         continue;
       }
