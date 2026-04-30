@@ -11,6 +11,7 @@ import {
   FileRow,
   generateSyncId,
   makePlaceholders,
+  normalizeStoredPath,
   pageArgs,
   paginated,
   parseHexColor,
@@ -23,7 +24,9 @@ export function getFileById(db: Database.Database, fileId: number): FileRecord |
 }
 
 export function getFileByPath(db: Database.Database, filePath: string): FileRecord | null {
-  const row = db.prepare("SELECT * FROM files WHERE path = ?").get(filePath) as FileRow | undefined;
+  const row = db
+    .prepare("SELECT * FROM files WHERE normalized_path = ?")
+    .get(normalizeStoredPath(filePath)) as FileRow | undefined;
   return row ? attachTags(db, [row])[0] : null;
 }
 
@@ -397,11 +400,13 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
 
   db.prepare(
     `INSERT INTO files (
-      path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
+      path, normalized_path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
       rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b,
       color_distribution, thumb_hash, sync_id, content_hash, fs_modified_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(path) DO UPDATE SET
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(normalized_path) DO UPDATE SET
+      path = excluded.path,
+      normalized_path = excluded.normalized_path,
       name = excluded.name,
       ext = excluded.ext,
       size = excluded.size,
@@ -426,6 +431,7 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
       missing_at = NULL`,
   ).run(
     input.path,
+    normalizeStoredPath(input.path),
     input.name,
     input.ext.toLowerCase(),
     input.size,
@@ -449,7 +455,11 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
     input.modifiedAt,
     now,
   );
-  return (db.prepare("SELECT id FROM files WHERE path = ?").get(input.path) as { id: number }).id;
+  return (
+    db
+      .prepare("SELECT id FROM files WHERE normalized_path = ?")
+      .get(normalizeStoredPath(input.path)) as { id: number }
+  ).id;
 }
 
 export function updateFileColorData(
@@ -509,7 +519,12 @@ export function updateFileNameRecord(
   name: string,
   filePath: string,
 ): void {
-  db.prepare("UPDATE files SET name = ?, path = ? WHERE id = ?").run(name, filePath, fileId);
+  db.prepare("UPDATE files SET name = ?, path = ?, normalized_path = ? WHERE id = ?").run(
+    name,
+    filePath,
+    normalizeStoredPath(filePath),
+    fileId,
+  );
 }
 
 export function updateFilePathAndFolder(
@@ -519,9 +534,10 @@ export function updateFilePathAndFolder(
   folderId: number | null,
 ): void {
   db.prepare(
-    "UPDATE files SET path = ?, name = ?, folder_id = ?, modified_at = ?, fs_modified_at = ? WHERE id = ?",
+    "UPDATE files SET path = ?, normalized_path = ?, name = ?, folder_id = ?, modified_at = ?, fs_modified_at = ? WHERE id = ?",
   ).run(
     filePath,
+    normalizeStoredPath(filePath),
     path.basename(filePath),
     folderId,
     currentTimestamp(),
@@ -539,15 +555,15 @@ export function updateFileContentHash(
 }
 
 export function deleteFileByPath(db: Database.Database, filePath: string): void {
-  db.prepare("DELETE FROM files WHERE path = ?").run(filePath);
+  db.prepare("DELETE FROM files WHERE normalized_path = ?").run(normalizeStoredPath(filePath));
 }
 
 export function markFileMissingByPath(db: Database.Database, filePath: string): boolean {
   const result = db
     .prepare(
-      "UPDATE files SET missing_at = ? WHERE path = ? AND deleted_at IS NULL AND missing_at IS NULL",
+      "UPDATE files SET missing_at = ? WHERE normalized_path = ? AND deleted_at IS NULL AND missing_at IS NULL",
     )
-    .run(currentTimestamp(), filePath);
+    .run(currentTimestamp(), normalizeStoredPath(filePath));
   return result.changes > 0;
 }
 
@@ -571,7 +587,10 @@ export function permanentDeleteFileRecord(db: Database.Database, fileId: number)
 }
 
 export function filePathsInDir(db: Database.Database, dirPath: string): Set<string> {
-  const rows = db.prepare("SELECT path FROM files").all() as Array<{ path: string }>;
+  const dirPathKey = normalizeStoredPath(dirPath);
+  const rows = db
+    .prepare("SELECT path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
+    .all(dirPathKey, `${dirPathKey}/%`) as Array<{ path: string }>;
   return new Set(rows.filter((row) => pathHasPrefix(row.path, dirPath)).map((row) => row.path));
 }
 
@@ -583,8 +602,10 @@ export function isFileUnchanged(
   modifiedAt: string,
 ): boolean {
   const row = db
-    .prepare("SELECT ext, size, fs_modified_at FROM files WHERE path = ?")
-    .get(filePath) as { ext: string; size: number; fs_modified_at: string } | undefined;
+    .prepare("SELECT ext, size, fs_modified_at FROM files WHERE normalized_path = ?")
+    .get(normalizeStoredPath(filePath)) as
+    | { ext: string; size: number; fs_modified_at: string }
+    | undefined;
   return Boolean(
     row &&
     row.ext.toLowerCase() === ext.toLowerCase() &&
@@ -599,7 +620,7 @@ export function updateFileBasicInfo(db: Database.Database, input: UpsertFileInpu
      SET name = ?, ext = ?, size = ?, width = ?, height = ?, folder_id = ?,
          created_at = ?, modified_at = ?, fs_modified_at = ?, thumb_hash = ?, content_hash = ?,
          deleted_at = NULL, missing_at = NULL
-     WHERE path = ?`,
+     WHERE normalized_path = ?`,
   ).run(
     input.name,
     input.ext,
@@ -612,7 +633,7 @@ export function updateFileBasicInfo(db: Database.Database, input: UpsertFileInpu
     input.modifiedAt,
     input.thumbHash ?? "",
     input.contentHash ?? null,
-    input.path,
+    normalizeStoredPath(input.path),
   );
 }
 

@@ -130,7 +130,7 @@ describe("database migrations", () => {
     const dbPath = path.join(tempDir, "shiguang.db");
     const db = openDatabase(dbPath, "/library");
 
-    expect(db.pragma("user_version", { simple: true })).toBe(4);
+    expect(db.pragma("user_version", { simple: true })).toBe(5);
     expect(getIndexPaths(db)).toEqual(["/library"]);
     expect(
       db
@@ -148,7 +148,7 @@ describe("database migrations", () => {
       return;
     }
 
-    const { getIndexPaths, openDatabase } = await import("../database");
+    const { getIndexPaths, isFileUnchanged, openDatabase } = await import("../database");
     const tempDir = makeTempDir();
     const dbPath = path.join(tempDir, "shiguang.db");
     createLegacyDatabase(Database, dbPath);
@@ -162,26 +162,50 @@ describe("database migrations", () => {
     ).map((column) => column.name);
     const row = db
       .prepare(
-        "SELECT description, thumb_hash, missing_at, last_accessed_at FROM files WHERE id = 1",
+        "SELECT description, thumb_hash, missing_at, last_accessed_at, normalized_path, fs_modified_at FROM files WHERE id = 1",
       )
       .get() as {
       description: string;
       thumb_hash: string;
       missing_at: string | null;
       last_accessed_at: string | null;
+      normalized_path: string;
+      fs_modified_at: string;
     };
+    const migratedTimestamp = new Date(2026, 3, 20, 10, 0, 0).toISOString();
 
-    expect(db.pragma("user_version", { simple: true })).toBe(4);
+    expect(db.pragma("user_version", { simple: true })).toBe(5);
+    expect(fileColumns).toContain("normalized_path");
     expect(fileColumns).toContain("thumb_hash");
     expect(fileColumns).toContain("missing_at");
     expect(fileColumns).toContain("last_accessed_at");
+    expect(folderColumns).toContain("normalized_path");
     expect(folderColumns).toContain("deleted_at");
     expect(row).toEqual({
       description: "legacy description",
       thumb_hash: "",
       missing_at: null,
       last_accessed_at: null,
+      normalized_path: "/library/old-folder/image.png",
+      fs_modified_at: migratedTimestamp,
     });
+    expect(isFileUnchanged(db, "/library/old-folder/image.png", "png", 42, migratedTimestamp)).toBe(
+      true,
+    );
+    expect(() => {
+      db.prepare(
+        "INSERT INTO tags (name, color, parent_id, sort_order, sync_id, updated_at) VALUES (?, '#111111', NULL, 0, ?, ?)",
+      ).run("朋友", "tag_root_friend", "2026-04-30T00:00:00.000Z");
+      const parentId = db
+        .prepare(
+          "INSERT INTO tags (name, color, parent_id, sort_order, sync_id, updated_at) VALUES (?, '#222222', NULL, 1, ?, ?) RETURNING id",
+        )
+        .pluck()
+        .get("项目", "tag_root_project", "2026-04-30T00:00:00.000Z") as number;
+      db.prepare(
+        "INSERT INTO tags (name, color, parent_id, sort_order, sync_id, updated_at) VALUES (?, '#333333', ?, 0, ?, ?)",
+      ).run("朋友", parentId, "tag_child_friend", "2026-04-30T00:00:00.000Z");
+    }).not.toThrow();
     expect(getIndexPaths(db)).toEqual(["/library"]);
     expect(
       readdirSync(tempDir).some((name) => /^shiguang\.backup-v0-\d+-\d+\.db$/.test(name)),

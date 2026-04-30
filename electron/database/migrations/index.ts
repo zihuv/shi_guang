@@ -8,6 +8,7 @@ import {
   createSchemaTriggersAndIndexes,
   CURRENT_SCHEMA_VERSION,
 } from "./schema";
+import { migrateV4ToV5 } from "./v4-to-v5";
 
 export function migrateDatabase(db: Database.Database, dbPath: string): void {
   const userVersion = Number(db.pragma("user_version", { simple: true }) ?? 0);
@@ -37,6 +38,9 @@ function runVersionMigrations(db: Database.Database, userVersion: number): void 
   if (userVersion === 0) {
     migrateLegacySchemaToCurrent(db);
   }
+  if (userVersion < 5) {
+    migrateV4ToV5(db);
+  }
 }
 
 function backupDatabaseBeforeMigration(
@@ -50,7 +54,7 @@ function backupDatabaseBeforeMigration(
 
   db.pragma("wal_checkpoint(FULL)");
   const parsed = path.parse(dbPath);
-  const timestamp = `${currentTimestamp().replace(/[-: ]/g, "")}-${Date.now()}`;
+  const timestamp = `${currentTimestamp().replace(/\D/g, "")}-${Date.now()}`;
   const backupPath = path.join(
     parsed.dir,
     `${parsed.name}.backup-v${userVersion}-${timestamp}${parsed.ext}`,

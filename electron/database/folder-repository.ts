@@ -4,7 +4,13 @@ import path from "node:path";
 import { moveDirectoryWithFallback } from "../file-operations";
 import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import type { FolderRecord, FolderTreeNode } from "../types";
-import { currentTimestamp, FolderRow, generateSyncId, toFolder } from "./shared";
+import {
+  currentTimestamp,
+  FolderRow,
+  generateSyncId,
+  normalizeStoredPath,
+  toFolder,
+} from "./shared";
 import { getIndexPaths } from "./settings-repository";
 
 export function getAllFoldersIncludingDeleted(db: Database.Database): FolderRecord[] {
@@ -44,9 +50,9 @@ export function getFolderByPathIncludingDeleted(
 ): FolderRecord | null {
   const row = db
     .prepare(
-      "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders WHERE REPLACE(path, '\\\\', '/') = ?",
+      "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders WHERE normalized_path = ?",
     )
-    .get(folderPath.replace(/\\/g, "/")) as FolderRow | undefined;
+    .get(normalizeStoredPath(folderPath)) as FolderRow | undefined;
   return row ? toFolder(row) : null;
 }
 
@@ -64,9 +70,10 @@ export function createFolderRecord(
   sortOrder = 0,
 ): number {
   db.prepare(
-    "INSERT INTO folders (path, name, parent_id, created_at, is_system, sort_order, sync_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO folders (path, normalized_path, name, parent_id, created_at, is_system, sort_order, sync_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     folderPath,
+    normalizeStoredPath(folderPath),
     name,
     parentId,
     currentTimestamp(),
@@ -179,21 +186,43 @@ export async function renameFolder(db: Database.Database, id: number, name: stri
     await moveDirectoryWithFallback(oldPath, newPath);
   }
   db.transaction(() => {
-    db.prepare("UPDATE folders SET name = ?, path = ? WHERE id = ?").run(name, newPath, id);
-    for (const subfolder of getAllFolders(db)) {
+    db.prepare("UPDATE folders SET name = ?, path = ?, normalized_path = ? WHERE id = ?").run(
+      name,
+      newPath,
+      normalizeStoredPath(newPath),
+      id,
+    );
+    const oldPathKey = normalizeStoredPath(oldPath);
+    const subfolders = db
+      .prepare(
+        "SELECT id, path FROM folders WHERE id != ? AND (normalized_path = ? OR normalized_path LIKE ?)",
+      )
+      .all(id, oldPathKey, `${oldPathKey}/%`) as Array<{ id: number; path: string }>;
+    for (const subfolder of subfolders) {
       if (subfolder.id === id || !pathHasPrefix(subfolder.path, oldPath)) continue;
       const replaced = replacePathPrefix(subfolder.path, oldPath, newPath);
       if (replaced)
-        db.prepare("UPDATE folders SET path = ? WHERE id = ?").run(replaced, subfolder.id);
+        db.prepare("UPDATE folders SET path = ?, normalized_path = ? WHERE id = ?").run(
+          replaced,
+          normalizeStoredPath(replaced),
+          subfolder.id,
+        );
     }
-    const files = db.prepare("SELECT id, path FROM files").all() as Array<{
+    const files = db
+      .prepare("SELECT id, path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
+      .all(oldPathKey, `${oldPathKey}/%`) as Array<{
       id: number;
       path: string;
     }>;
     for (const file of files) {
       if (!pathHasPrefix(file.path, oldPath)) continue;
       const replaced = replacePathPrefix(file.path, oldPath, newPath);
-      if (replaced) db.prepare("UPDATE files SET path = ? WHERE id = ?").run(replaced, file.id);
+      if (replaced)
+        db.prepare("UPDATE files SET path = ?, normalized_path = ? WHERE id = ?").run(
+          replaced,
+          normalizeStoredPath(replaced),
+          file.id,
+        );
     }
   })();
 }
@@ -216,26 +245,40 @@ export async function moveFolderRecord(
   await moveDirectoryWithFallback(folder.path, newPath);
 
   db.transaction(() => {
-    db.prepare("UPDATE folders SET parent_id = ?, sort_order = ?, path = ? WHERE id = ?").run(
-      newParentId,
-      sortOrder,
-      newPath,
-      folderId,
-    );
-    for (const subfolder of getAllFolders(db)) {
+    db.prepare(
+      "UPDATE folders SET parent_id = ?, sort_order = ?, path = ?, normalized_path = ? WHERE id = ?",
+    ).run(newParentId, sortOrder, newPath, normalizeStoredPath(newPath), folderId);
+    const oldPathKey = normalizeStoredPath(folder.path);
+    const subfolders = db
+      .prepare(
+        "SELECT id, path FROM folders WHERE id != ? AND (normalized_path = ? OR normalized_path LIKE ?)",
+      )
+      .all(folderId, oldPathKey, `${oldPathKey}/%`) as Array<{ id: number; path: string }>;
+    for (const subfolder of subfolders) {
       if (subfolder.id === folderId || !pathHasPrefix(subfolder.path, folder.path)) continue;
       const replaced = replacePathPrefix(subfolder.path, folder.path, newPath);
       if (replaced)
-        db.prepare("UPDATE folders SET path = ? WHERE id = ?").run(replaced, subfolder.id);
+        db.prepare("UPDATE folders SET path = ?, normalized_path = ? WHERE id = ?").run(
+          replaced,
+          normalizeStoredPath(replaced),
+          subfolder.id,
+        );
     }
-    const files = db.prepare("SELECT id, path FROM files").all() as Array<{
+    const files = db
+      .prepare("SELECT id, path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
+      .all(oldPathKey, `${oldPathKey}/%`) as Array<{
       id: number;
       path: string;
     }>;
     for (const file of files) {
       if (!pathHasPrefix(file.path, folder.path)) continue;
       const replaced = replacePathPrefix(file.path, folder.path, newPath);
-      if (replaced) db.prepare("UPDATE files SET path = ? WHERE id = ?").run(replaced, file.id);
+      if (replaced)
+        db.prepare("UPDATE files SET path = ?, normalized_path = ? WHERE id = ?").run(
+          replaced,
+          normalizeStoredPath(replaced),
+          file.id,
+        );
     }
   })();
 }
@@ -259,8 +302,8 @@ export function softDeleteFolderSubtree(
   deletedAt: string,
 ): void {
   db.prepare(
-    "UPDATE folders SET deleted_at = ? WHERE REPLACE(path, '\\\\', '/') = ? OR REPLACE(path, '\\\\', '/') LIKE ?",
-  ).run(deletedAt, folderPath.replace(/\\/g, "/"), `${folderPath.replace(/\\/g, "/")}/%`);
+    "UPDATE folders SET deleted_at = ? WHERE normalized_path = ? OR normalized_path LIKE ?",
+  ).run(deletedAt, normalizeStoredPath(folderPath), `${normalizeStoredPath(folderPath)}/%`);
 }
 
 export function restoreFolderSubtreeRecords(
@@ -272,46 +315,54 @@ export function restoreFolderSubtreeRecords(
     rootParentId: number | null;
   },
 ): void {
-  const normalizedOriginal = input.originalPath.replace(/\\/g, "/");
-  const normalizedRestored = input.restoredPath.replace(/\\/g, "/");
+  const originalPathKey = normalizeStoredPath(input.originalPath);
   const now = currentTimestamp();
   const transaction = db.transaction(() => {
-    const folders = db.prepare("SELECT id, path FROM folders").all() as Array<{
+    const folders = db
+      .prepare("SELECT id, path FROM folders WHERE normalized_path = ? OR normalized_path LIKE ?")
+      .all(originalPathKey, `${originalPathKey}/%`) as Array<{
       id: number;
       path: string;
     }>;
     for (const folder of folders) {
-      if (!pathHasPrefix(folder.path, normalizedOriginal)) {
+      if (!pathHasPrefix(folder.path, input.originalPath)) {
         continue;
       }
       const nextPath =
-        replacePathPrefix(folder.path, normalizedOriginal, normalizedRestored) ?? folder.path;
+        replacePathPrefix(folder.path, input.originalPath, input.restoredPath) ?? folder.path;
       if (folder.id === input.folderId) {
         db.prepare(
-          "UPDATE folders SET path = ?, name = ?, parent_id = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
-        ).run(nextPath, path.basename(nextPath), input.rootParentId, now, folder.id);
+          "UPDATE folders SET path = ?, normalized_path = ?, name = ?, parent_id = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
+        ).run(
+          nextPath,
+          normalizeStoredPath(nextPath),
+          path.basename(nextPath),
+          input.rootParentId,
+          now,
+          folder.id,
+        );
         continue;
       }
       db.prepare(
-        "UPDATE folders SET path = ?, name = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
-      ).run(nextPath, path.basename(nextPath), now, folder.id);
+        "UPDATE folders SET path = ?, normalized_path = ?, name = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
+      ).run(nextPath, normalizeStoredPath(nextPath), path.basename(nextPath), now, folder.id);
     }
 
-    const files = db.prepare("SELECT id, path FROM files").all() as Array<{
+    const files = db
+      .prepare("SELECT id, path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
+      .all(originalPathKey, `${originalPathKey}/%`) as Array<{
       id: number;
       path: string;
     }>;
     for (const file of files) {
-      if (!pathHasPrefix(file.path, normalizedOriginal)) {
+      if (!pathHasPrefix(file.path, input.originalPath)) {
         continue;
       }
       const nextPath =
-        replacePathPrefix(file.path, normalizedOriginal, normalizedRestored) ?? file.path;
-      db.prepare("UPDATE files SET path = ?, name = ?, missing_at = NULL WHERE id = ?").run(
-        nextPath,
-        path.basename(nextPath),
-        file.id,
-      );
+        replacePathPrefix(file.path, input.originalPath, input.restoredPath) ?? file.path;
+      db.prepare(
+        "UPDATE files SET path = ?, normalized_path = ?, name = ?, missing_at = NULL WHERE id = ?",
+      ).run(nextPath, normalizeStoredPath(nextPath), path.basename(nextPath), file.id);
     }
   });
   transaction();

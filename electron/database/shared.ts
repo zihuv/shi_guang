@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
+import path from "node:path";
 import type { FileRecord, FolderRecord, PaginatedFiles, TagRecord } from "../types";
 
 export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
@@ -7,8 +8,12 @@ export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
 let syncCounter = 0;
 
 export function currentTimestamp(date = new Date()): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return date.toISOString();
+}
+
+export function normalizeStoredPath(filePath: string): string {
+  const normalized = path.resolve(filePath).replace(/\\/g, "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 export function generateSyncId(prefix: string): string {

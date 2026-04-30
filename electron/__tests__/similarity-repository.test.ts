@@ -35,6 +35,10 @@ function embeddingBuffer(values: number[]): Buffer {
   return buffer;
 }
 
+function normalizeTestPath(filePath: string): string {
+  return path.resolve(filePath).replace(/\\/g, "/");
+}
+
 afterEach(() => {
   for (const tempDir of tempDirs.splice(0)) {
     rmSync(tempDir, { recursive: true, force: true });
@@ -61,16 +65,17 @@ describe("duplicate and similar detection", () => {
     const db = openDatabase(path.join(tempDir, "shiguang.db"), tempDir);
     const insertFile = db.prepare(
       `INSERT INTO files (
-        path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
+        path, normalized_path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
         rating, description, source_url, dominant_color, color_distribution, thumb_hash, sync_id,
         content_hash, fs_modified_at, updated_at
-      ) VALUES (?, ?, 'png', ?, 100, 100, NULL, ?, ?, ?, 0, '', '', '', '[]', '', ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, 'png', ?, 100, 100, NULL, ?, ?, ?, 0, '', '', '', '[]', '', ?, ?, ?, ?)`,
     );
     const timestamp = "2026-04-25 10:00:00";
     const ids = [1, 2, 3, 4, 5];
 
     insertFile.run(
       path.join(tempDir, "exact-a.png"),
+      normalizeTestPath(path.join(tempDir, "exact-a.png")),
       "exact-a.png",
       10,
       timestamp,
@@ -83,6 +88,7 @@ describe("duplicate and similar detection", () => {
     );
     insertFile.run(
       path.join(tempDir, "exact-b.png"),
+      normalizeTestPath(path.join(tempDir, "exact-b.png")),
       "exact-b.png",
       11,
       timestamp,
@@ -95,6 +101,7 @@ describe("duplicate and similar detection", () => {
     );
     insertFile.run(
       path.join(tempDir, "similar-a.png"),
+      normalizeTestPath(path.join(tempDir, "similar-a.png")),
       "similar-a.png",
       12,
       timestamp,
@@ -107,6 +114,7 @@ describe("duplicate and similar detection", () => {
     );
     insertFile.run(
       path.join(tempDir, "similar-b.png"),
+      normalizeTestPath(path.join(tempDir, "similar-b.png")),
       "similar-b.png",
       13,
       timestamp,
@@ -119,6 +127,7 @@ describe("duplicate and similar detection", () => {
     );
     insertFile.run(
       path.join(tempDir, "different.png"),
+      normalizeTestPath(path.join(tempDir, "different.png")),
       "different.png",
       14,
       timestamp,

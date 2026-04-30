@@ -13,6 +13,10 @@ function makeTempDir(): string {
   return tempDir;
 }
 
+function normalizeTestPath(filePath: string): string {
+  return path.resolve(filePath).replace(/\\/g, "/");
+}
+
 async function loadDatabaseConstructor(): Promise<DatabaseConstructor | null> {
   const databaseModule = (await import("better-sqlite3")) as unknown as {
     default?: DatabaseConstructor;
@@ -71,12 +75,12 @@ describe("trash repository", () => {
     const folderId = db
       .prepare(
         `INSERT INTO folders
-          (path, name, parent_id, created_at, is_system, sort_order, deleted_at, sync_id, updated_at)
-         VALUES (?, 'parent', NULL, ?, 0, 0, ?, 'folder_parent', ?)
+          (path, normalized_path, name, parent_id, created_at, is_system, sort_order, deleted_at, sync_id, updated_at)
+         VALUES (?, ?, 'parent', NULL, ?, 0, 0, ?, 'folder_parent', ?)
          RETURNING id`,
       )
       .pluck()
-      .get(folderPath, timestamp, timestamp, timestamp) as number;
+      .get(folderPath, normalizeTestPath(folderPath), timestamp, timestamp, timestamp) as number;
     createFolderTrashEntry(db, {
       folderId,
       tempPath: tempFolderPath,
@@ -87,13 +91,14 @@ describe("trash repository", () => {
 
     db.prepare(
       `INSERT INTO files (
-        path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
+        path, normalized_path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
         rating, description, source_url, dominant_color, color_distribution, thumb_hash,
         deleted_at, missing_at, sync_id, content_hash, fs_modified_at, updated_at
-      ) VALUES (?, 'image.png', 'png', 42, 100, 100, ?, ?, ?, ?, 0, '', '', '', '[]', '',
+      ) VALUES (?, ?, 'image.png', 'png', 42, 100, 100, ?, ?, ?, ?, 0, '', '', '', '[]', '',
         ?, ?, 'file_child_image', NULL, ?, ?)`,
     ).run(
       childPath,
+      normalizeTestPath(childPath),
       folderId,
       timestamp,
       timestamp,

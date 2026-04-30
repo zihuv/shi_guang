@@ -1,12 +1,13 @@
 import Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export function createSchemaTables(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS folders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT NOT NULL UNIQUE,
+      normalized_path TEXT NOT NULL,
       name TEXT NOT NULL,
       parent_id INTEGER,
       created_at TEXT NOT NULL,
@@ -21,6 +22,7 @@ export function createSchemaTables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT NOT NULL UNIQUE,
+      normalized_path TEXT NOT NULL,
       name TEXT NOT NULL,
       ext TEXT NOT NULL,
       size INTEGER NOT NULL,
@@ -50,7 +52,7 @@ export function createSchemaTables(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
       color TEXT NOT NULL,
       parent_id INTEGER,
       sort_order INTEGER DEFAULT 0,
@@ -109,7 +111,7 @@ export function createSchemaTriggersAndIndexes(db: Database.Database): void {
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
     BEGIN
-      UPDATE files SET updated_at = datetime('now', 'localtime') WHERE id = OLD.id;
+      UPDATE files SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = OLD.id;
     END;
 
     CREATE TRIGGER IF NOT EXISTS update_folders_updated_at
@@ -117,7 +119,7 @@ export function createSchemaTriggersAndIndexes(db: Database.Database): void {
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
     BEGIN
-      UPDATE folders SET updated_at = datetime('now', 'localtime') WHERE id = OLD.id;
+      UPDATE folders SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = OLD.id;
     END;
 
     CREATE TRIGGER IF NOT EXISTS update_tags_updated_at
@@ -125,31 +127,38 @@ export function createSchemaTriggersAndIndexes(db: Database.Database): void {
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
     BEGIN
-      UPDATE tags SET updated_at = datetime('now', 'localtime') WHERE id = OLD.id;
+      UPDATE tags SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = OLD.id;
     END;
 
     CREATE TRIGGER IF NOT EXISTS update_file_tags_file_updated_at_insert
     AFTER INSERT ON file_tags
     FOR EACH ROW
     BEGIN
-      UPDATE files SET updated_at = datetime('now', 'localtime') WHERE id = NEW.file_id;
+      UPDATE files SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = NEW.file_id;
     END;
 
     CREATE TRIGGER IF NOT EXISTS update_file_tags_file_updated_at_delete
     AFTER DELETE ON file_tags
     FOR EACH ROW
     BEGIN
-      UPDATE files SET updated_at = datetime('now', 'localtime') WHERE id = OLD.file_id;
+      UPDATE files SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = OLD.file_id;
     END;
 
     CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);
     CREATE INDEX IF NOT EXISTS idx_files_ext ON files(ext);
     CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_files_normalized_path ON files(normalized_path);
     CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
     DROP INDEX IF EXISTS idx_files_active_order;
     DROP INDEX IF EXISTS idx_files_folder_active_order;
     CREATE INDEX IF NOT EXISTS idx_files_active_order ON files(deleted_at, missing_at, imported_at DESC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_files_folder_active_order ON files(folder_id, deleted_at, missing_at, imported_at DESC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_files_active_imported ON files(imported_at DESC, id ASC) WHERE deleted_at IS NULL AND missing_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_files_active_modified ON files(modified_at DESC, imported_at DESC, id ASC) WHERE deleted_at IS NULL AND missing_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_files_active_created ON files(created_at DESC, imported_at DESC, id ASC) WHERE deleted_at IS NULL AND missing_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_files_active_size ON files(size DESC, imported_at DESC, id ASC) WHERE deleted_at IS NULL AND missing_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_files_active_last_accessed ON files(last_accessed_at DESC, imported_at DESC, id ASC) WHERE deleted_at IS NULL AND missing_at IS NULL AND last_accessed_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_files_active_folder_imported ON files(folder_id, imported_at DESC, id ASC) WHERE deleted_at IS NULL AND missing_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_files_dominant_rgb ON files(dominant_r, dominant_g, dominant_b);
     CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_files_missing_at ON files(missing_at);
@@ -157,6 +166,7 @@ export function createSchemaTriggersAndIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash);
     CREATE INDEX IF NOT EXISTS idx_files_sync_id ON files(sync_id);
     CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_normalized_path ON folders(normalized_path);
     CREATE INDEX IF NOT EXISTS idx_folders_parent_sort_order ON folders(parent_id, sort_order, name);
     CREATE INDEX IF NOT EXISTS idx_folders_deleted_at ON folders(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_folders_sync_id ON folders(sync_id);
@@ -164,6 +174,8 @@ export function createSchemaTriggersAndIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tags_parent_id ON tags(parent_id);
     CREATE INDEX IF NOT EXISTS idx_tags_parent_sort_order ON tags(parent_id, sort_order, name);
     CREATE INDEX IF NOT EXISTS idx_tags_sync_id ON tags(sync_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_root_name_unique ON tags(name) WHERE parent_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_child_name_unique ON tags(parent_id, name) WHERE parent_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id_file_id ON file_tags(tag_id, file_id);
     CREATE INDEX IF NOT EXISTS idx_file_visual_embeddings_model_status ON file_visual_embeddings(model_id, status);
   `);

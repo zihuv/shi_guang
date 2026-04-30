@@ -5,8 +5,10 @@ import { setIndexPath } from "./database/settings-repository";
 export function openDatabase(dbPath: string, indexPath: string): Database.Database {
   const db = new Database(dbPath);
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 5000");
   migrateDatabase(db, dbPath);
   ensureRuntimeSettings(db, indexPath);
+  db.pragma("optimize");
   return db;
 }
 

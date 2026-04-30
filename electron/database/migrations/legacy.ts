@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { currentTimestamp, generateSyncId } from "../shared";
+import { currentTimestamp, generateSyncId, normalizeStoredPath } from "../shared";
 import { createSchemaTables, createSchemaTriggersAndIndexes } from "./schema";
 
 export function migrateLegacySchemaToCurrent(db: Database.Database): void {
@@ -53,16 +53,30 @@ function ensureTimestampValues(db: Database.Database, tableName: string): void {
   ).run(currentTimestamp());
 }
 
+function ensureNormalizedPathValues(db: Database.Database, tableName: "files" | "folders"): void {
+  const rows = db.prepare(`SELECT id, path FROM ${tableName}`).all() as Array<{
+    id: number;
+    path: string;
+  }>;
+  const update = db.prepare(`UPDATE ${tableName} SET normalized_path = ? WHERE id = ?`);
+  for (const row of rows) {
+    update.run(normalizeStoredPath(row.path), row.id);
+  }
+}
+
 function ensureLegacyColumns(db: Database.Database): void {
   if (hasTable(db, "folders")) {
     addColumnIfMissing(db, "folders", "deleted_at", "TEXT DEFAULT NULL");
+    addColumnIfMissing(db, "folders", "normalized_path", "TEXT");
     addColumnIfMissing(db, "folders", "sync_id", "TEXT");
     addColumnIfMissing(db, "folders", "updated_at", "TEXT NOT NULL DEFAULT ''");
+    ensureNormalizedPathValues(db, "folders");
     ensureGeneratedSyncIds(db, "folders", "folder");
     ensureTimestampValues(db, "folders");
   }
 
   if (hasTable(db, "files")) {
+    addColumnIfMissing(db, "files", "normalized_path", "TEXT");
     addColumnIfMissing(db, "files", "last_accessed_at", "TEXT DEFAULT NULL");
     addColumnIfMissing(db, "files", "dominant_r", "INTEGER");
     addColumnIfMissing(db, "files", "dominant_g", "INTEGER");
@@ -78,6 +92,7 @@ function ensureLegacyColumns(db: Database.Database): void {
     db.prepare(
       "UPDATE files SET fs_modified_at = modified_at WHERE fs_modified_at IS NULL OR fs_modified_at = ''",
     ).run();
+    ensureNormalizedPathValues(db, "files");
     ensureGeneratedSyncIds(db, "files", "file");
     ensureTimestampValues(db, "files");
   }
