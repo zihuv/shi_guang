@@ -97,7 +97,7 @@ export function FolderItem({
   const hasChildren = folder.children && folder.children.length > 0;
   const isBeingDragged = activeId === folder.id;
   const isExternalDragTarget = dragOverFolderId === folder.id;
-  const folderRowPaddingLeft = depth * 12 + 8;
+  const folderRowPaddingLeft = depth * 14 + 6;
   const isBrowserCollectionFolder = folder.name === BROWSER_COLLECTION_FOLDER_NAME;
   const browserCollectionIcon = getBrowserCollectionIconOption(browserCollectionIconId);
   const BrowserCollectionIcon = browserCollectionIcon.Icon;
@@ -375,7 +375,7 @@ export function FolderItem({
             data-folder-id={folder.id}
             className={cn(
               appTreeRowClass,
-              "h-8 gap-1.5 pr-2 text-gray-700 outline-none dark:text-gray-300",
+              "h-8 gap-1 px-1.5 pr-2 text-gray-700 outline-none dark:text-gray-300",
               isBeingDragged ? "opacity-50" : "cursor-pointer",
               isSelected
                 ? "bg-black/[0.055] text-gray-900 ring-1 ring-inset ring-black/[0.045] dark:bg-white/[0.075] dark:text-gray-100 dark:ring-white/[0.06]"
@@ -399,7 +399,7 @@ export function FolderItem({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-5 w-5 flex-shrink-0 p-0"
+                className="h-5 w-3.5 flex-shrink-0 p-0"
                 onClick={(event) => {
                   event.stopPropagation();
                   toggleFolder(folder.id);
@@ -412,7 +412,7 @@ export function FolderItem({
                 />
               </Button>
             ) : (
-              <span className="h-5 w-5 flex-shrink-0" />
+              <span className="h-5 w-3.5 flex-shrink-0" />
             )}
 
             {isBrowserCollectionFolder ? (
@@ -542,7 +542,7 @@ export function FolderItem({
       </ContextMenu>
 
       {hasChildren && isExpanded && (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           {folder.children.map((child) => (
             <FolderItem
               key={child.id}

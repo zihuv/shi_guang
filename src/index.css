@@ -4,6 +4,7 @@
 :root {
   font-family:
     "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  color-scheme: light;
   line-height: 1.5;
   font-weight: 400;
   color: #1f2937;
@@ -20,6 +21,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   color: #e5e7eb;
   background-color: #1d1d1c;
   --app-canvas: #1d1d1c;
@@ -111,6 +113,7 @@ body {
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-track {

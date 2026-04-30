@@ -46,7 +46,7 @@ export default function SidePanel({ width }: SidePanelProps) {
   const navItemClass = (active: boolean) =>
     cn(
       appTreeRowClass,
-      "cursor-pointer",
+      "cursor-pointer gap-1 px-1.5",
       active
         ? "bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-200"
         : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-border",
@@ -67,62 +67,67 @@ export default function SidePanel({ width }: SidePanelProps) {
 
   return (
     <aside className={`${appPanelClass} flex-shrink-0`} style={{ width }}>
-      <div className="px-2.5 pb-1 pt-2.5">
-        <div className="mb-2 px-2.5">
-          <span className={appSectionLabelClass}>快捷视图</span>
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <div className="px-2 pb-1 pt-2.5">
+          <span className={cn(appSectionLabelClass, "mb-2 block")}>快捷视图</span>
+
+          <div className="flex flex-col gap-1">
+            {SMART_COLLECTION_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const count = getSmartCollectionCount(item.id);
+              const isActive =
+                currentView === "library" &&
+                ((item.id === "all" &&
+                  selectedFolderId === null &&
+                  activeSmartCollection === "all") ||
+                  activeSmartCollection === item.id);
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={navItemClass(isActive)}
+                  onClick={() => void selectSmartCollectionFromSidebar(item.id)}
+                >
+                  <span className="h-5 w-3.5 flex-shrink-0" aria-hidden="true" />
+                  <Icon className="h-[17px] w-[17px] flex-shrink-0" />
+                  <span className="flex-1 truncate text-left">{item.label}</span>
+                  {typeof count === "number" && (
+                    <span className={`${appPanelMetaClass} tabular-nums`}>{count}</span>
+                  )}
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              className={navItemClass(currentView === "tags")}
+              onClick={openTags}
+            >
+              <span className="h-5 w-3.5 flex-shrink-0" aria-hidden="true" />
+              <Bookmark className="h-[17px] w-[17px] flex-shrink-0" />
+              <span className="flex-1 truncate text-left">标签管理</span>
+              {tagCount > 0 && (
+                <span className={`${appPanelMetaClass} tabular-nums`}>{tagCount}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={navItemClass(currentView === "trash")}
+              onClick={openTrash}
+            >
+              <span className="h-5 w-3.5 flex-shrink-0" aria-hidden="true" />
+              <Trash2 className="h-[17px] w-[17px] flex-shrink-0" />
+              <span className="flex-1 truncate text-left">回收站</span>
+              {trashCount > 0 && (
+                <span className={`${appPanelMetaClass} tabular-nums`}>{trashCount}</span>
+              )}
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          {SMART_COLLECTION_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const count = getSmartCollectionCount(item.id);
-            const isActive =
-              currentView === "library" &&
-              ((item.id === "all" &&
-                selectedFolderId === null &&
-                activeSmartCollection === "all") ||
-                activeSmartCollection === item.id);
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={navItemClass(isActive)}
-                onClick={() => void selectSmartCollectionFromSidebar(item.id)}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" />
-                <span className="flex-1 truncate text-left">{item.label}</span>
-                {typeof count === "number" && (
-                  <span className={`${appPanelMetaClass} tabular-nums`}>{count}</span>
-                )}
-              </button>
-            );
-          })}
-
-          <button type="button" className={navItemClass(currentView === "tags")} onClick={openTags}>
-            <Bookmark className="h-4 w-4 flex-shrink-0" />
-            <span className="flex-1 truncate text-left">标签管理</span>
-            {tagCount > 0 && (
-              <span className={`${appPanelMetaClass} tabular-nums`}>{tagCount}</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className={navItemClass(currentView === "trash")}
-            onClick={openTrash}
-          >
-            <Trash2 className="h-4 w-4 flex-shrink-0" />
-            <span className="flex-1 truncate text-left">回收站</span>
-            {trashCount > 0 && (
-              <span className={`${appPanelMetaClass} tabular-nums`}>{trashCount}</span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="pt-1">
           <FolderTree showAllFilesRow={false} showHeader />
         </div>
       </div>
