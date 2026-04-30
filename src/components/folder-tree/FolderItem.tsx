@@ -27,13 +27,22 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/ContextMenu";
+import {
+  BROWSER_COLLECTION_FOLDER_NAME,
+  BROWSER_COLLECTION_ICON_OPTIONS,
+  getBrowserCollectionIconOption,
+  isBrowserCollectionIconId,
+} from "@/lib/browserCollectionIcons";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { DragPosition, RegisterTreeItem } from "./types";
 import {
   INTERNAL_FILE_DRAG_MIME,
@@ -81,12 +90,17 @@ export function FolderItem({
   const currentView = useNavigationStore((state) => state.currentView);
   const importFiles = useImportStore((state) => state.importFiles);
   const { setAddingSubfolder, setEditingFolder, setDeleteConfirm } = useFolderStore();
+  const browserCollectionIconId = useSettingsStore((state) => state.browserCollectionIconId);
+  const setBrowserCollectionIconId = useSettingsStore((state) => state.setBrowserCollectionIconId);
   const isExpanded = expandedFolderIds.includes(folder.id);
   const isSelected = currentView === "library" && selectedFolderId === folder.id;
   const hasChildren = folder.children && folder.children.length > 0;
   const isBeingDragged = activeId === folder.id;
   const isExternalDragTarget = dragOverFolderId === folder.id;
   const folderRowPaddingLeft = depth * 12 + 8;
+  const isBrowserCollectionFolder = folder.name === BROWSER_COLLECTION_FOLDER_NAME;
+  const browserCollectionIcon = getBrowserCollectionIconOption(browserCollectionIconId);
+  const BrowserCollectionIcon = browserCollectionIcon.Icon;
 
   const draggableRef = useRef<HTMLDivElement>(null);
 
@@ -401,14 +415,23 @@ export function FolderItem({
               <span className="h-5 w-5 flex-shrink-0" />
             )}
 
-            <FolderIcon
-              className={cn(
-                "h-[17px] w-[17px] flex-shrink-0",
-                isSelected
-                  ? "text-amber-500 dark:text-amber-300"
-                  : "text-amber-500/90 dark:text-amber-400/90",
-              )}
-            />
+            {isBrowserCollectionFolder ? (
+              <BrowserCollectionIcon
+                className={cn(
+                  "h-[17px] w-[17px] flex-shrink-0",
+                  browserCollectionIcon.iconClassName,
+                )}
+              />
+            ) : (
+              <FolderIcon
+                className={cn(
+                  "h-[17px] w-[17px] flex-shrink-0",
+                  isSelected
+                    ? "text-amber-500 dark:text-amber-300"
+                    : "text-amber-500/90 dark:text-amber-400/90",
+                )}
+              />
+            )}
 
             <span className="min-w-0 flex-1 truncate text-left font-medium">{folder.name}</span>
 
@@ -440,6 +463,42 @@ export function FolderItem({
             <Pencil className="mr-2 h-4 w-4" />
             重命名
           </ContextMenuItem>
+          {isBrowserCollectionFolder && (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <BrowserCollectionIcon
+                  className={cn("mr-2 h-4 w-4", browserCollectionIcon.iconClassName)}
+                />
+                更换图标
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-48">
+                <ContextMenuRadioGroup
+                  className="grid grid-cols-5 gap-1"
+                  value={browserCollectionIconId}
+                  onValueChange={(value) => {
+                    if (!isBrowserCollectionIconId(value)) {
+                      return;
+                    }
+                    void setBrowserCollectionIconId(value);
+                  }}
+                >
+                  {BROWSER_COLLECTION_ICON_OPTIONS.map((option) => {
+                    const Icon = option.Icon;
+                    return (
+                      <ContextMenuRadioItem
+                        key={option.id}
+                        value={option.id}
+                        aria-label={option.label}
+                        className="flex size-8 items-center justify-center rounded-md p-0 data-[state=checked]:bg-black/[0.07] dark:data-[state=checked]:bg-white/[0.1] [&>span:first-child]:hidden"
+                      >
+                        <Icon className={cn("h-4 w-4", option.iconClassName)} />
+                      </ContextMenuRadioItem>
+                    );
+                  })}
+                </ContextMenuRadioGroup>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
           <ContextMenuItem disabled={!canMoveUp} onSelect={() => moveFolderByStep(-1)}>
             上移
           </ContextMenuItem>

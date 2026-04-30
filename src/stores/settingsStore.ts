@@ -5,6 +5,11 @@ import {
   type ShortcutActionId,
   type ShortcutConfig,
 } from "@/lib/shortcuts";
+import {
+  DEFAULT_BROWSER_COLLECTION_ICON_ID,
+  isBrowserCollectionIconId,
+  type BrowserCollectionIconId,
+} from "@/lib/browserCollectionIcons";
 import { useFolderStore } from "@/stores/folderStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import {
@@ -102,6 +107,7 @@ const AI_CONFIG_SETTING_KEY = "aiConfig";
 const VISUAL_SEARCH_SETTING_KEY = "visualSearch";
 const AI_AUTO_ANALYZE_ON_IMPORT_SETTING_KEY = "aiAutoAnalyzeOnImport";
 const AUTO_CHECK_UPDATES_SETTING_KEY = "autoCheckUpdates";
+const BROWSER_COLLECTION_ICON_SETTING_KEY = "browserCollectionIcon";
 
 let libraryViewPreferencesPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let panelLayoutPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -217,6 +223,7 @@ interface Settings {
   detailPanelWidth: number;
   isSidebarCollapsed: boolean;
   isDetailPanelCollapsed: boolean;
+  browserCollectionIconId: BrowserCollectionIconId;
 }
 
 interface SettingsStore extends Settings {
@@ -249,6 +256,7 @@ interface SettingsStore extends Settings {
   setDetailPanelWidth: (width: number) => void;
   setSidebarCollapsed: (isCollapsed: boolean) => void;
   setDetailPanelCollapsed: (isCollapsed: boolean) => void;
+  setBrowserCollectionIconId: (iconId: BrowserCollectionIconId) => Promise<void>;
   loadSettings: () => Promise<void>;
   rebuildIndex: () => Promise<void>;
   refreshVisualSearchStatus: () => Promise<void>;
@@ -275,6 +283,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   detailPanelWidth: DEFAULT_DETAIL_PANEL_WIDTH,
   isSidebarCollapsed: false,
   isDetailPanelCollapsed: false,
+  browserCollectionIconId: DEFAULT_BROWSER_COLLECTION_ICON_ID,
 
   setTheme: async (theme) => {
     await setSetting("theme", theme);
@@ -413,6 +422,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     schedulePanelLayoutPersist(get);
   },
 
+  setBrowserCollectionIconId: async (iconId) => {
+    try {
+      await setSetting(BROWSER_COLLECTION_ICON_SETTING_KEY, iconId);
+      set({ browserCollectionIconId: iconId });
+    } catch (error) {
+      console.error("Failed to persist browser collection icon:", error);
+    }
+  },
+
   switchIndexPath: async (path) => {
     const nextPath = path.trim();
     if (!nextPath || get().indexPaths[0] === nextPath) {
@@ -440,6 +458,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     let detailPanelWidth = DEFAULT_DETAIL_PANEL_WIDTH;
     let isSidebarCollapsed = false;
     let isDetailPanelCollapsed = false;
+    let browserCollectionIconId: BrowserCollectionIconId = DEFAULT_BROWSER_COLLECTION_ICON_ID;
 
     // Get theme
     try {
@@ -589,6 +608,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       console.error("Failed to load panel layout:", e);
     }
 
+    try {
+      const browserCollectionIconValue = await getSetting(BROWSER_COLLECTION_ICON_SETTING_KEY);
+      if (isBrowserCollectionIconId(browserCollectionIconValue)) {
+        browserCollectionIconId = browserCollectionIconValue;
+      }
+    } catch (e) {
+      console.error("Failed to load browser collection icon:", e);
+    }
+
     set({
       theme,
       indexPaths: indexPaths || [],
@@ -607,6 +635,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       detailPanelWidth,
       isSidebarCollapsed,
       isDetailPanelCollapsed,
+      browserCollectionIconId,
     });
 
     void get().refreshVisualSearchStatus();
