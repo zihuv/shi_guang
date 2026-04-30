@@ -1,5 +1,6 @@
 import { app, Menu, session } from "electron";
 import log from "electron-log/main";
+import { configureEnvironmentUserDataPath } from "./app/environment";
 import { setDockIcon } from "./app/app-icon";
 import { buildApplicationMenu } from "./app/application-menu";
 import {
@@ -29,6 +30,7 @@ import { createWindowManager } from "./app/window-manager";
 
 registerFileProtocolPrivileges();
 
+configureEnvironmentUserDataPath();
 log.initialize();
 app.setAppUserModelId("com.zihuv.shiguang");
 

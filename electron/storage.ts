@@ -14,6 +14,7 @@ import {
   THUMBNAIL_MAX_EDGE,
   THUMBNAIL_WEBP_QUALITY,
 } from "./thumbnail";
+import { getDefaultLibraryDirName } from "./app/environment";
 
 const LIBRARY_STATE_FILE = "library-state.json";
 const thumbnailBuildTasks = new Map<string, Promise<string | null>>();
@@ -55,7 +56,7 @@ function getPsdParser(): PsdParser {
 }
 
 export function getDefaultIndexPath(): string {
-  return path.join(app.getPath("pictures"), "shiguang");
+  return path.join(app.getPath("pictures"), getDefaultLibraryDirName());
 }
 
 export async function ensureStorageDirs(indexPath: string): Promise<void> {
