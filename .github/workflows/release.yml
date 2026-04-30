@@ -29,10 +29,10 @@ jobs:
       release_id: ${{ steps.release.outputs.release_id }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Create or update draft release
         id: release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_VERSION: ${{ steps.prepare_release.outputs.version }}
           RELEASE_BODY: ${{ steps.prepare_release.outputs.body }}
@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Create browser extension archive
         run: |
@@ -154,10 +154,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "npm"
@@ -197,7 +197,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Publish draft release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
