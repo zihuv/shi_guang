@@ -26,9 +26,8 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 
 - Keep dev services on `127.0.0.1`; never switch them back to `localhost`.
 - Reuse existing repo-owned dev processes when possible; stop stale repo-scoped Electron/Vite processes before relaunching.
-- For desktop UI debugging, prefer Playwright `connectOverCDP` to Electron CDP at `127.0.0.1:9222` and inspect targeted state instead of dumping large snapshots.
-- Chrome MCP is valid only when connected to Electron via `--browserUrl http://127.0.0.1:9222`; `about:blank` or a normal Chrome tab means it is misconfigured.
-- Do not use standalone Chrome or Playwright's own browser at `127.0.0.1:1420` for desktop verification; those paths lack Electron preload, IPC, native windows, menus, dialogs, and drag-and-drop.
+- Chrome MCP is valid only when connected to Electron via `--browserUrl http://127.0.0.1:9223`; `about:blank` or a normal Chrome tab means it is misconfigured.
+- Do not use standalone Chrome at `127.0.0.1:1420` for desktop verification; that path lacks Electron preload, IPC, native windows, menus, dialogs, and drag-and-drop.
 - If proxy env vars are present, bypass them for local CDP with `NO_PROXY=127.0.0.1,localhost` or equivalent.
 
 ## Coding Style
@@ -67,7 +66,6 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 
 - Before PRs, run at least `npm run lint` and `npm run build`.
 - For desktop UI or interaction changes, also verify the changed screen in the actual Electron app.
-- Playwright desktop verification must use Electron CDP (`connectOverCDP` to `127.0.0.1:9222`); opening `127.0.0.1:1420` in Playwright's own browser is only renderer smoke testing.
 - For UI interaction bugs, test the real user event path early; add targeted logs around `pointerdown`, `click`, or menu selection when needed.
 - Final verification must say which path was used: Electron CDP, actual Electron window, or blocked. A standalone Chrome load of `127.0.0.1:1420` never counts as desktop UI verification.
 
