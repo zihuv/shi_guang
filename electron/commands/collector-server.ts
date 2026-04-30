@@ -5,12 +5,12 @@ import fssync from "node:fs";
 import path from "node:path";
 import {
   BROWSER_COLLECTION_FOLDER_NAME,
-  BROWSER_COLLECTION_FOLDER_SORT_ORDER,
   createFolderRecord,
   getAllFolders,
   getFolderById,
   getFolderByPath,
   getFolderTree,
+  getPrependFolderSortOrder,
   getIndexPaths,
 } from "../database";
 import { detectExtensionFromBytes } from "../media";
@@ -36,17 +36,19 @@ type CollectorImportFromUrlPayload = CollectorFolderTargetPayload & {
 };
 
 export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
-  const existing = getAllFolders(state.db).find(
-    (folder) => folder.isSystem && folder.name === BROWSER_COLLECTION_FOLDER_NAME,
+  const matchingFolders = getAllFolders(state.db).filter(
+    (folder) => folder.name === BROWSER_COLLECTION_FOLDER_NAME,
   );
+  if (matchingFolders.some((folder) => folder.isSystem)) {
+    state.db
+      .prepare("UPDATE folders SET is_system = 0 WHERE name = ? AND is_system = 1")
+      .run(BROWSER_COLLECTION_FOLDER_NAME);
+  }
+
+  const existing =
+    matchingFolders.find((folder) => folder.parent_id === null) ?? matchingFolders[0];
   if (existing) {
-    if (existing.sortOrder !== BROWSER_COLLECTION_FOLDER_SORT_ORDER) {
-      state.db
-        .prepare("UPDATE folders SET sort_order = ? WHERE id = ?")
-        .run(BROWSER_COLLECTION_FOLDER_SORT_ORDER, existing.id);
-      return { ...existing, sortOrder: BROWSER_COLLECTION_FOLDER_SORT_ORDER };
-    }
-    return existing;
+    return { ...existing, isSystem: false };
   }
 
   const folderPath = path.join(
@@ -56,14 +58,12 @@ export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
   fssync.mkdirSync(folderPath, { recursive: true });
   const pathExisting = getFolderByPath(state.db, folderPath);
   if (pathExisting) {
-    state.db
-      .prepare("UPDATE folders SET is_system = 1, parent_id = NULL, sort_order = ? WHERE id = ?")
-      .run(BROWSER_COLLECTION_FOLDER_SORT_ORDER, pathExisting.id);
+    if (pathExisting.isSystem) {
+      state.db.prepare("UPDATE folders SET is_system = 0 WHERE id = ?").run(pathExisting.id);
+    }
     return {
       ...pathExisting,
-      isSystem: true,
-      parent_id: null,
-      sortOrder: BROWSER_COLLECTION_FOLDER_SORT_ORDER,
+      isSystem: false,
     };
   }
 
@@ -72,8 +72,8 @@ export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
     folderPath,
     BROWSER_COLLECTION_FOLDER_NAME,
     null,
-    true,
-    BROWSER_COLLECTION_FOLDER_SORT_ORDER,
+    false,
+    getPrependFolderSortOrder(state.db, null),
   );
   return getFolderById(state.db, id) as FolderRecord;
 }

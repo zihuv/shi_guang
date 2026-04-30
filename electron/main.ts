@@ -33,7 +33,7 @@ log.initialize();
 app.setAppUserModelId("com.zihuv.shiguang");
 
 if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+  app.commandLine.appendSwitch("remote-debugging-port", "9223");
 }
 
 let appState: AppState | null = null;

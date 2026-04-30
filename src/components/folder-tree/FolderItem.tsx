@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Folder as FolderIcon,
   FolderOpen,
-  Globe,
   Move,
   Pencil,
   Plus,
@@ -43,7 +42,6 @@ import {
   findSiblings,
   flattenFolders,
   isDescendant,
-  isPersistedFolder,
 } from "./utils";
 
 interface FolderItemProps {
@@ -86,10 +84,8 @@ export function FolderItem({
   const isExpanded = expandedFolderIds.includes(folder.id);
   const isSelected = currentView === "library" && selectedFolderId === folder.id;
   const hasChildren = folder.children && folder.children.length > 0;
-  const isSystemFolder = folder.name === "浏览器采集" || folder.isSystem;
   const isBeingDragged = activeId === folder.id;
   const isExternalDragTarget = dragOverFolderId === folder.id;
-  const canDrag = !isSystemFolder;
   const folderRowPaddingLeft = depth * 12 + 8;
 
   const draggableRef = useRef<HTMLDivElement>(null);
@@ -102,7 +98,6 @@ export function FolderItem({
   const availableTargets = flattenFolders(folders).filter((target) => {
     if (target.id === folder.id) return false;
     if (isDescendant(folders, folder.id, target.id)) return false;
-    if (target.name === "浏览器采集" || target.isSystem) return false;
     return true;
   });
 
@@ -116,14 +111,14 @@ export function FolderItem({
   ];
 
   const parentId = findFolderParentId(folders, folder.id, null);
-  const siblingFolders = findSiblings(folders, parentId).filter(isPersistedFolder);
+  const siblingFolders = findSiblings(folders, parentId);
   const siblingIndex = siblingFolders.findIndex((item) => item.id === folder.id);
   const canMoveUp = siblingIndex > 0;
   const canMoveDown = siblingIndex >= 0 && siblingIndex < siblingFolders.length - 1;
 
   useEffect(() => {
     const element = draggableRef.current;
-    if (!element || !canDrag) return;
+    if (!element) return;
 
     return combine(
       draggable({
@@ -192,15 +187,7 @@ export function FolderItem({
         onDrop: () => {},
       }),
     );
-  }, [
-    canDrag,
-    folder.id,
-    folder.name,
-    folders,
-    hasChildren,
-    onDragPositionChange,
-    uniqueContextId,
-  ]);
+  }, [folder.id, folder.name, folders, hasChildren, onDragPositionChange, uniqueContextId]);
 
   const handleAddSubfolder = () => {
     setAddingSubfolder(folder);
@@ -223,7 +210,6 @@ export function FolderItem({
   };
 
   const moveFolderByStep = async (step: -1 | 1) => {
-    if (isSystemFolder) return;
     const nextIndex = siblingIndex + step;
     if (siblingIndex < 0 || nextIndex < 0 || nextIndex >= siblingFolders.length) return;
 
@@ -234,8 +220,6 @@ export function FolderItem({
   };
 
   const moveFolderToParent = async (newParentId: number | null) => {
-    if (isSystemFolder) return;
-
     const plan = buildFolderMovePlan(folders, folder.id, newParentId);
     if (!plan) return;
 
@@ -358,7 +342,7 @@ export function FolderItem({
 
   return (
     <div className="folder-item-wrapper" data-folder-id={folder.id}>
-      {showInsertLineBefore && canDrag && (
+      {showInsertLineBefore && (
         <div
           className="relative my-0.5 h-0.5 rounded-full bg-blue-500"
           style={{ marginLeft: `${folderRowPaddingLeft}px` }}
@@ -378,7 +362,7 @@ export function FolderItem({
             className={cn(
               appTreeRowClass,
               "h-8 gap-1.5 pr-2 text-gray-700 outline-none dark:text-gray-300",
-              isBeingDragged ? "opacity-50" : canDrag ? "cursor-pointer" : "cursor-default",
+              isBeingDragged ? "opacity-50" : "cursor-pointer",
               isSelected
                 ? "bg-black/[0.055] text-gray-900 ring-1 ring-inset ring-black/[0.045] dark:bg-white/[0.075] dark:text-gray-100 dark:ring-white/[0.06]"
                 : isExternalDragTarget
@@ -417,18 +401,14 @@ export function FolderItem({
               <span className="h-5 w-5 flex-shrink-0" />
             )}
 
-            {folder.name === "浏览器采集" || folder.isSystem ? (
-              <Globe className="h-[17px] w-[17px] flex-shrink-0 text-primary-500 dark:text-primary-400" />
-            ) : (
-              <FolderIcon
-                className={cn(
-                  "h-[17px] w-[17px] flex-shrink-0",
-                  isSelected
-                    ? "text-amber-500 dark:text-amber-300"
-                    : "text-amber-500/90 dark:text-amber-400/90",
-                )}
-              />
-            )}
+            <FolderIcon
+              className={cn(
+                "h-[17px] w-[17px] flex-shrink-0",
+                isSelected
+                  ? "text-amber-500 dark:text-amber-300"
+                  : "text-amber-500/90 dark:text-amber-400/90",
+              )}
+            />
 
             <span className="min-w-0 flex-1 truncate text-left font-medium">{folder.name}</span>
 
@@ -460,16 +440,12 @@ export function FolderItem({
             <Pencil className="mr-2 h-4 w-4" />
             重命名
           </ContextMenuItem>
-          {!isSystemFolder && (
-            <ContextMenuItem disabled={!canMoveUp} onSelect={() => moveFolderByStep(-1)}>
-              上移
-            </ContextMenuItem>
-          )}
-          {!isSystemFolder && (
-            <ContextMenuItem disabled={!canMoveDown} onSelect={() => moveFolderByStep(1)}>
-              下移
-            </ContextMenuItem>
-          )}
+          <ContextMenuItem disabled={!canMoveUp} onSelect={() => moveFolderByStep(-1)}>
+            上移
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!canMoveDown} onSelect={() => moveFolderByStep(1)}>
+            下移
+          </ContextMenuItem>
           <ContextMenuSub>
             <ContextMenuSubTrigger>
               <Move className="mr-2 h-4 w-4" />
@@ -525,7 +501,7 @@ export function FolderItem({
         </div>
       )}
 
-      {showInsertLineAfter && canDrag && (
+      {showInsertLineAfter && (
         <div
           className="relative my-0.5 h-0.5 rounded-full bg-blue-500"
           style={{ marginLeft: `${folderRowPaddingLeft}px` }}

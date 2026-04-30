@@ -78,6 +78,24 @@ export function createFolderRecord(
   return Number(db.prepare("SELECT last_insert_rowid() AS id").pluck().get());
 }
 
+export function getPrependFolderSortOrder(db: Database.Database, parentId: number | null): number {
+  const row = (
+    parentId === null
+      ? db
+          .prepare(
+            "SELECT MIN(sort_order) AS sort_order FROM folders WHERE parent_id IS NULL AND deleted_at IS NULL",
+          )
+          .get()
+      : db
+          .prepare(
+            "SELECT MIN(sort_order) AS sort_order FROM folders WHERE parent_id = ? AND deleted_at IS NULL",
+          )
+          .get(parentId)
+  ) as { sort_order: number | null } | undefined;
+
+  return typeof row?.sort_order === "number" ? row.sort_order - 1 : 0;
+}
+
 export function getOrCreateFolder(
   db: Database.Database,
   folderPath: string,

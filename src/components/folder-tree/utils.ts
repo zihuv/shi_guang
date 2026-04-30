@@ -15,9 +15,6 @@ export const INTERNAL_FILE_DRAG_MIME = "application/x-shiguang-file-ids";
 
 export type FlattenedFolderNode = FolderNode & { sortOrder: number };
 
-export const isPersistedFolder = (folder: FolderNode): boolean =>
-  !folder.isSystem && folder.name !== "浏览器采集";
-
 export const findFolderParentId = (
   folders: FolderNode[],
   folderId: number,
@@ -51,7 +48,7 @@ export const findSiblings = (folders: FolderNode[], parentId: number | null): Fo
 };
 
 export const getPersistedFolderIds = (folders: FolderNode[]): number[] =>
-  folders.filter(isPersistedFolder).map((folder) => folder.id);
+  folders.map((folder) => folder.id);
 
 export const getAllFolderIds = (folders: FolderNode[]): number[] => {
   const ids: number[] = [];
@@ -96,12 +93,10 @@ export function buildFolderMovePlan(
   }
 
   const currentParentId = findFolderParentId(folders, folderId, null);
-  const sourceSiblings = findSiblings(folders, currentParentId)
-    .filter(isPersistedFolder)
-    .filter((item) => item.id !== folderId);
-  const targetSiblings = findSiblings(folders, newParentId)
-    .filter(isPersistedFolder)
-    .filter((item) => item.id !== folderId);
+  const sourceSiblings = findSiblings(folders, currentParentId).filter(
+    (item) => item.id !== folderId,
+  );
+  const targetSiblings = findSiblings(folders, newParentId).filter((item) => item.id !== folderId);
 
   const nextTargetSiblings = [...targetSiblings];
   const safeInsertIndex =

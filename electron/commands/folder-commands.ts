@@ -11,6 +11,7 @@ import {
   getFolderById,
   getFolderByPath,
   getFolderTree,
+  getPrependFolderSortOrder,
   getIndexPaths,
   moveFolderRecord,
   permanentDeleteFileRecord,
@@ -42,8 +43,8 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
   return {
     get_folder_tree: () => getFolderTree(state.db),
     init_default_folder: () =>
-      getAllFolders(state.db).find((folder) => !folder.isSystem && folder.parent_id === null) ??
-      getAllFolders(state.db).find((folder) => !folder.isSystem) ??
+      getAllFolders(state.db).find((folder) => folder.parent_id === null) ??
+      getAllFolders(state.db)[0] ??
       null,
     create_folder: async (args) => {
       const parentId = optionalNumberArg(args, "parentId", "parent_id");
@@ -63,7 +64,8 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
           folderPath,
           folderName,
           parentId,
-          Boolean(args.isSystem ?? args.is_system),
+          false,
+          getPrependFolderSortOrder(state.db, parentId),
         ),
       );
     },
@@ -71,7 +73,6 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
       const id = numberArg(args, "id");
       const folder = getFolderById(state.db, id);
       if (!folder) return null;
-      if (folder.isSystem) throw new Error("Cannot delete system folder");
       const affectedFiles = getFilesUnderFolderPath(state.db, folder.path);
       const useTrash = getDeleteMode(state.db);
 
@@ -148,9 +149,13 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
       return total;
     },
     init_browser_collection_folder: () => ensureBrowserCollectionFolder(state),
-    get_browser_collection_folder: () =>
-      getAllFolders(state.db).find(
-        (folder) => folder.isSystem && folder.name === BROWSER_COLLECTION_FOLDER_NAME,
-      ) ?? null,
+    get_browser_collection_folder: () => {
+      const matchingFolders = getAllFolders(state.db).filter(
+        (folder) => folder.name === BROWSER_COLLECTION_FOLDER_NAME,
+      );
+      return (
+        matchingFolders.find((folder) => folder.parent_id === null) ?? matchingFolders[0] ?? null
+      );
+    },
   };
 }

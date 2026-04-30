@@ -3,7 +3,6 @@ import crypto from "node:crypto";
 import type { FileRecord, FolderRecord, PaginatedFiles, TagRecord } from "../types";
 
 export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
-export const BROWSER_COLLECTION_FOLDER_SORT_ORDER = -1;
 
 let syncCounter = 0;
 
