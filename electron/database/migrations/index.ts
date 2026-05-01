@@ -10,6 +10,69 @@ import {
 } from "./schema";
 import { migrateV4ToV5 } from "./v4-to-v5";
 
+const CURRENT_SCHEMA_REQUIRED_COLUMNS: Record<string, string[]> = {
+  folders: [
+    "id",
+    "path",
+    "normalized_path",
+    "name",
+    "parent_id",
+    "created_at",
+    "is_system",
+    "sort_order",
+    "deleted_at",
+    "sync_id",
+    "updated_at",
+  ],
+  files: [
+    "id",
+    "path",
+    "normalized_path",
+    "name",
+    "ext",
+    "size",
+    "width",
+    "height",
+    "folder_id",
+    "created_at",
+    "modified_at",
+    "imported_at",
+    "last_accessed_at",
+    "rating",
+    "description",
+    "source_url",
+    "dominant_color",
+    "dominant_r",
+    "dominant_g",
+    "dominant_b",
+    "color_distribution",
+    "thumb_hash",
+    "deleted_at",
+    "missing_at",
+    "sync_id",
+    "content_hash",
+    "fs_modified_at",
+    "updated_at",
+  ],
+  tags: ["id", "name", "color", "parent_id", "sort_order", "sync_id", "updated_at"],
+  file_tags: ["file_id", "tag_id"],
+  settings: ["key", "value"],
+  index_paths: ["id", "path"],
+  folder_trash_entries: ["folder_id", "temp_path", "deleted_at", "file_count", "subfolder_count"],
+  file_visual_embeddings: [
+    "file_id",
+    "model_id",
+    "dimensions",
+    "embedding",
+    "source_size",
+    "source_modified_at",
+    "source_content_hash",
+    "indexed_at",
+    "status",
+    "last_error",
+  ],
+};
+
 export function migrateDatabase(db: Database.Database, dbPath: string): void {
   const userVersion = Number(db.pragma("user_version", { simple: true }) ?? 0);
   const hasSchema = hasTable(db, "files") || hasTable(db, "folders") || hasTable(db, "tags");
@@ -24,6 +87,7 @@ export function migrateDatabase(db: Database.Database, dbPath: string): void {
   }
 
   if (userVersion >= CURRENT_SCHEMA_VERSION) {
+    ensureCurrentSchema(db, dbPath, userVersion);
     return;
   }
 
@@ -41,6 +105,33 @@ function runVersionMigrations(db: Database.Database, userVersion: number): void 
   if (userVersion < 5) {
     migrateV4ToV5(db);
   }
+}
+
+function ensureCurrentSchema(db: Database.Database, dbPath: string, userVersion: number): void {
+  if (hasCurrentSchemaColumns(db)) {
+    return;
+  }
+
+  backupDatabaseBeforeMigration(db, dbPath, userVersion);
+  db.transaction(() => {
+    migrateLegacySchemaToCurrent(db);
+    migrateV4ToV5(db);
+    setSchemaVersion(db, CURRENT_SCHEMA_VERSION);
+  })();
+
+  if (!hasCurrentSchemaColumns(db)) {
+    throw new Error("Database schema repair did not restore the current schema");
+  }
+}
+
+function hasCurrentSchemaColumns(db: Database.Database): boolean {
+  return Object.entries(CURRENT_SCHEMA_REQUIRED_COLUMNS).every(([tableName, columnNames]) => {
+    if (!hasTable(db, tableName)) {
+      return false;
+    }
+    const existingColumns = getColumnNames(db, tableName);
+    return columnNames.every((columnName) => existingColumns.has(columnName));
+  });
 }
 
 function backupDatabaseBeforeMigration(
@@ -72,5 +163,13 @@ function hasTable(db: Database.Database, tableName: string): boolean {
       .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
       .pluck()
       .get(tableName),
+  );
+}
+
+function getColumnNames(db: Database.Database, tableName: string): Set<string> {
+  return new Set(
+    (db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
   );
 }

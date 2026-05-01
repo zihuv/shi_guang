@@ -112,6 +112,12 @@ function createLegacyDatabase(Database: DatabaseConstructor, dbPath: string): vo
   db.close();
 }
 
+function markDatabaseVersion(Database: DatabaseConstructor, dbPath: string, version: number): void {
+  const db = new Database(dbPath);
+  db.pragma(`user_version = ${version}`);
+  db.close();
+}
+
 afterEach(() => {
   for (const tempDir of tempDirs.splice(0)) {
     rmSync(tempDir, { recursive: true, force: true });
@@ -209,6 +215,62 @@ describe("database migrations", () => {
     expect(getIndexPaths(db)).toEqual(["/library"]);
     expect(
       readdirSync(tempDir).some((name) => /^shiguang\.backup-v0-\d+-\d+\.db$/.test(name)),
+    ).toBe(true);
+
+    db.close();
+  });
+
+  it("repairs current-version databases with incomplete schema columns", async () => {
+    const Database = await loadDatabaseConstructor();
+    if (!Database) {
+      return;
+    }
+
+    const { isFileUnchanged, openDatabase } = await import("../database");
+    const tempDir = makeTempDir();
+    const dbPath = path.join(tempDir, "shiguang.db");
+    createLegacyDatabase(Database, dbPath);
+    markDatabaseVersion(Database, dbPath, 5);
+
+    const db = openDatabase(dbPath, "/library");
+    const fileColumns = (
+      db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    const folderColumns = (
+      db.prepare("PRAGMA table_info(folders)").all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    const row = db
+      .prepare(
+        "SELECT normalized_path, thumb_hash, missing_at, last_accessed_at, fs_modified_at FROM files WHERE id = 1",
+      )
+      .get() as {
+      normalized_path: string;
+      thumb_hash: string;
+      missing_at: string | null;
+      last_accessed_at: string | null;
+      fs_modified_at: string;
+    };
+    const migratedTimestamp = new Date(2026, 3, 20, 10, 0, 0).toISOString();
+
+    expect(db.pragma("user_version", { simple: true })).toBe(5);
+    expect(fileColumns).toContain("normalized_path");
+    expect(fileColumns).toContain("thumb_hash");
+    expect(fileColumns).toContain("missing_at");
+    expect(fileColumns).toContain("last_accessed_at");
+    expect(folderColumns).toContain("normalized_path");
+    expect(folderColumns).toContain("deleted_at");
+    expect(row).toEqual({
+      normalized_path: "/library/old-folder/image.png",
+      thumb_hash: "",
+      missing_at: null,
+      last_accessed_at: null,
+      fs_modified_at: migratedTimestamp,
+    });
+    expect(isFileUnchanged(db, "/library/old-folder/image.png", "png", 42, migratedTimestamp)).toBe(
+      true,
+    );
+    expect(
+      readdirSync(tempDir).some((name) => /^shiguang\.backup-v5-\d+-\d+\.db$/.test(name)),
     ).toBe(true);
 
     db.close();
