@@ -154,10 +154,7 @@ export function getFilesInFolder(
 
 const FILE_TYPE_EXTENSIONS: Record<string, readonly string[]> = FILE_FORMAT_GROUPS;
 type FuzzyFileCandidate = Pick<FileRow, "id" | "name">;
-const FUZZY_FILE_KEYS = [
-  (file: FuzzyFileCandidate) => file.name,
-  (file: FuzzyFileCandidate) => path.parse(file.name).name,
-];
+const FUZZY_FILE_KEYS = [(file: FuzzyFileCandidate) => path.parse(file.name).name];
 
 function buildFilterWhere(db: Database.Database, filter: Record<string, unknown>): SQL {
   const conditions: SQL[] = [isNull(filesTable.deletedAt), isNull(filesTable.missingAt)];

@@ -1,4 +1,5 @@
 import { matchSorter, type KeyOption, type MatchSorterOptions } from "match-sorter";
+import PinyinMatch from "pinyin-match";
 
 type FuzzyKey<T> = KeyOption<T>;
 
@@ -8,6 +9,16 @@ export interface FuzzySearchOptions<T> {
 
 function normalizeQuery(query: string) {
   return query.trim();
+}
+
+function isPinyinQuery(query: string): boolean {
+  return /^[a-zA-Z]+$/.test(query);
+}
+
+function resolveKeyValue<T>(item: T, key: FuzzyKey<T>): string {
+  if (typeof key === "function") return String(key(item));
+  if (typeof key === "string") return String((item as Record<string, unknown>)[key]);
+  return String(item);
 }
 
 export function fuzzySearchItems<T>(
@@ -20,9 +31,29 @@ export function fuzzySearchItems<T>(
     return [...items];
   }
 
-  return matchSorter(items, normalizedQuery, {
+  const sorterResults = matchSorter(items, normalizedQuery, {
     keys: options.keys as MatchSorterOptions<T>["keys"],
   });
+
+  if (!isPinyinQuery(normalizedQuery)) {
+    return sorterResults;
+  }
+
+  const keys = options.keys ?? [];
+  const sorterSet = new Set(sorterResults);
+
+  const pinyinMatches = items.filter((item) => {
+    if (sorterSet.has(item)) return false;
+    if (keys.length === 0) {
+      return PinyinMatch.match(String(item), normalizedQuery) !== false;
+    }
+    return keys.some((key) => {
+      const value = resolveKeyValue(item, key);
+      return PinyinMatch.match(value, normalizedQuery) !== false;
+    });
+  });
+
+  return [...sorterResults, ...pinyinMatches];
 }
 
 export function fuzzyMatches<T>(item: T, query: string, options: FuzzySearchOptions<T> = {}) {
