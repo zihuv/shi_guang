@@ -1,19 +1,23 @@
 import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
+import { getDrizzleDb } from "./client";
+import { indexPaths, settings } from "./schema";
 
 export function getIndexPaths(db: Database.Database): string[] {
-  return (
-    db.prepare("SELECT path FROM index_paths ORDER BY id ASC LIMIT 1").all() as Array<{
-      path: string;
-    }>
-  ).map((row) => row.path);
+  return getDrizzleDb(db)
+    .select({ path: indexPaths.path })
+    .from(indexPaths)
+    .orderBy(indexPaths.id)
+    .limit(1)
+    .all()
+    .map((row) => row.path);
 }
 
 export function setIndexPath(db: Database.Database, indexPath: string): void {
-  const transaction = db.transaction(() => {
-    db.prepare("DELETE FROM index_paths").run();
-    db.prepare("INSERT INTO index_paths (path) VALUES (?)").run(indexPath);
+  getDrizzleDb(db).transaction((tx) => {
+    tx.delete(indexPaths).run();
+    tx.insert(indexPaths).values({ path: indexPath }).run();
   });
-  transaction();
 }
 
 export function addIndexPath(db: Database.Database, indexPath: string): void {
@@ -21,20 +25,29 @@ export function addIndexPath(db: Database.Database, indexPath: string): void {
   if (current && current !== indexPath) {
     throw new Error("Only one index path is supported");
   }
-  db.prepare("INSERT OR IGNORE INTO index_paths (path) VALUES (?)").run(indexPath);
+  getDrizzleDb(db).insert(indexPaths).values({ path: indexPath }).onConflictDoNothing().run();
 }
 
 export function removeIndexPath(db: Database.Database, indexPath: string): void {
-  db.prepare("DELETE FROM index_paths WHERE path = ?").run(indexPath);
+  getDrizzleDb(db).delete(indexPaths).where(eq(indexPaths.path, indexPath)).run();
 }
 
 export function getSetting(db: Database.Database, key: string): string | null {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
+  const row = getDrizzleDb(db)
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, key))
+    .get();
   return row?.value ?? null;
 }
 
 export function setSetting(db: Database.Database, key: string, value: string): void {
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+  getDrizzleDb(db)
+    .insert(settings)
+    .values({ key, value })
+    .onConflictDoUpdate({
+      target: settings.key,
+      set: { value },
+    })
+    .run();
 }

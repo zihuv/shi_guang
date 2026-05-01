@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { migrateDatabase } from "./database/migrations";
-import { setIndexPath } from "./database/settings-repository";
+import { getSetting, setIndexPath, setSetting } from "./database/settings-repository";
 
 export function openDatabase(dbPath: string, indexPath: string): Database.Database {
   const db = new Database(dbPath);
@@ -13,7 +13,9 @@ export function openDatabase(dbPath: string, indexPath: string): Database.Databa
 }
 
 function ensureRuntimeSettings(db: Database.Database, indexPath: string): void {
-  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('use_trash', 'true')").run();
+  if (getSetting(db, "use_trash") === null) {
+    setSetting(db, "use_trash", "true");
+  }
   setIndexPath(db, indexPath);
 }
 

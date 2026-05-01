@@ -1,7 +1,10 @@
 import Database from "better-sqlite3";
+import { sql } from "drizzle-orm";
 import type { FileRecord, PaginatedFiles } from "../types";
 import { attachTags, currentTimestamp, makePlaceholders, pageArgs } from "./shared";
 import { queryFilteredRows } from "./file-repository";
+import { getDrizzleDb } from "./client";
+import { fileVisualEmbeddings, files } from "./schema";
 import { canVisualSearchImage } from "../../src/shared/file-formats";
 
 export type VisualIndexCandidate = {
@@ -85,31 +88,36 @@ export function upsertFileVisualEmbedding(
     sourceContentHash: string;
   },
 ): void {
-  db.prepare(
-    `INSERT INTO file_visual_embeddings (
-      file_id, model_id, dimensions, embedding, source_size, source_modified_at, source_content_hash,
-      indexed_at, status, last_error
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ready', '')
-    ON CONFLICT(file_id) DO UPDATE SET
-      model_id = excluded.model_id,
-      dimensions = excluded.dimensions,
-      embedding = excluded.embedding,
-      source_size = excluded.source_size,
-      source_modified_at = excluded.source_modified_at,
-      source_content_hash = excluded.source_content_hash,
-      indexed_at = excluded.indexed_at,
-      status = 'ready',
-      last_error = ''`,
-  ).run(
-    args.fileId,
-    args.modelId,
-    args.dimensions,
-    args.embedding,
-    args.sourceSize,
-    args.sourceModifiedAt,
-    args.sourceContentHash,
-    currentTimestamp(),
-  );
+  const indexedAt = currentTimestamp();
+  getDrizzleDb(db)
+    .insert(fileVisualEmbeddings)
+    .values({
+      fileId: args.fileId,
+      modelId: args.modelId,
+      dimensions: args.dimensions,
+      embedding: args.embedding,
+      sourceSize: args.sourceSize,
+      sourceModifiedAt: args.sourceModifiedAt,
+      sourceContentHash: args.sourceContentHash,
+      indexedAt,
+      status: "ready",
+      lastError: "",
+    })
+    .onConflictDoUpdate({
+      target: fileVisualEmbeddings.fileId,
+      set: {
+        modelId: args.modelId,
+        dimensions: args.dimensions,
+        embedding: args.embedding,
+        sourceSize: args.sourceSize,
+        sourceModifiedAt: args.sourceModifiedAt,
+        sourceContentHash: args.sourceContentHash,
+        indexedAt,
+        status: "ready",
+        lastError: "",
+      },
+    })
+    .run();
 }
 
 export function markFileVisualEmbeddingError(
@@ -123,55 +131,61 @@ export function markFileVisualEmbeddingError(
     error: string;
   },
 ): void {
-  db.prepare(
-    `INSERT INTO file_visual_embeddings (
-      file_id, model_id, dimensions, embedding, source_size, source_modified_at, source_content_hash,
-      indexed_at, status, last_error
-    ) VALUES (?, ?, 0, NULL, ?, ?, ?, ?, 'error', ?)
-    ON CONFLICT(file_id) DO UPDATE SET
-      model_id = excluded.model_id,
-      dimensions = 0,
-      embedding = NULL,
-      source_size = excluded.source_size,
-      source_modified_at = excluded.source_modified_at,
-      source_content_hash = excluded.source_content_hash,
-      indexed_at = excluded.indexed_at,
-      status = 'error',
-      last_error = excluded.last_error`,
-  ).run(
-    args.fileId,
-    args.modelId,
-    args.sourceSize,
-    args.sourceModifiedAt,
-    args.sourceContentHash,
-    currentTimestamp(),
-    args.error,
-  );
+  const indexedAt = currentTimestamp();
+  getDrizzleDb(db)
+    .insert(fileVisualEmbeddings)
+    .values({
+      fileId: args.fileId,
+      modelId: args.modelId,
+      dimensions: 0,
+      embedding: null,
+      sourceSize: args.sourceSize,
+      sourceModifiedAt: args.sourceModifiedAt,
+      sourceContentHash: args.sourceContentHash,
+      indexedAt,
+      status: "error",
+      lastError: args.error,
+    })
+    .onConflictDoUpdate({
+      target: fileVisualEmbeddings.fileId,
+      set: {
+        modelId: args.modelId,
+        dimensions: 0,
+        embedding: null,
+        sourceSize: args.sourceSize,
+        sourceModifiedAt: args.sourceModifiedAt,
+        sourceContentHash: args.sourceContentHash,
+        indexedAt,
+        status: "error",
+        lastError: args.error,
+      },
+    })
+    .run();
 }
 
 export function clearFileVisualEmbeddings(db: Database.Database): number {
-  return db.prepare("DELETE FROM file_visual_embeddings").run().changes;
+  return getDrizzleDb(db).delete(fileVisualEmbeddings).run().changes;
 }
 
 export function getVisualIndexCandidate(
   db: Database.Database,
   fileId: number,
 ): VisualIndexCandidate | null {
-  const row = db
-    .prepare(
-      "SELECT id, path, name, ext, size, fs_modified_at, content_hash FROM files WHERE id = ? AND deleted_at IS NULL AND missing_at IS NULL",
+  const row = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      path: files.path,
+      name: files.name,
+      ext: files.ext,
+      size: files.size,
+      fsModifiedAt: files.fsModifiedAt,
+      contentHash: files.contentHash,
+    })
+    .from(files)
+    .where(
+      sql`${files.id} = ${fileId} AND ${files.deletedAt} IS NULL AND ${files.missingAt} IS NULL`,
     )
-    .get(fileId) as
-    | {
-        id: number;
-        path: string;
-        name: string;
-        ext: string;
-        size: number;
-        fs_modified_at: string;
-        content_hash: string | null;
-      }
-    | undefined;
+    .get();
   if (!row || !isVisualSearchSupportedExtension(row.ext)) {
     return null;
   }
@@ -183,8 +197,8 @@ export function getVisualIndexCandidate(
       ext: row.ext,
     },
     sourceSize: row.size,
-    sourceModifiedAt: row.fs_modified_at,
-    contentHash: row.content_hash ?? null,
+    sourceModifiedAt: row.fsModifiedAt,
+    contentHash: row.contentHash ?? null,
   };
 }
 

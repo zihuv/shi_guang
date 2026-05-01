@@ -5,6 +5,8 @@ import fssync from "node:fs";
 import path from "node:path";
 import {
   BROWSER_COLLECTION_FOLDER_NAME,
+  clearSystemFolderFlagById,
+  clearSystemFolderFlagByName,
   createFolderRecord,
   getAllFolders,
   getFolderById,
@@ -40,9 +42,7 @@ export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
     (folder) => folder.name === BROWSER_COLLECTION_FOLDER_NAME,
   );
   if (matchingFolders.some((folder) => folder.isSystem)) {
-    state.db
-      .prepare("UPDATE folders SET is_system = 0 WHERE name = ? AND is_system = 1")
-      .run(BROWSER_COLLECTION_FOLDER_NAME);
+    clearSystemFolderFlagByName(state.db, BROWSER_COLLECTION_FOLDER_NAME);
   }
 
   const existing =
@@ -59,7 +59,7 @@ export function ensureBrowserCollectionFolder(state: AppState): FolderRecord {
   const pathExisting = getFolderByPath(state.db, folderPath);
   if (pathExisting) {
     if (pathExisting.isSystem) {
-      state.db.prepare("UPDATE folders SET is_system = 0 WHERE id = ?").run(pathExisting.id);
+      clearSystemFolderFlagById(state.db, pathExisting.id);
     }
     return {
       ...pathExisting,

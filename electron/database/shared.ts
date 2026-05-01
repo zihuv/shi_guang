@@ -1,7 +1,10 @@
 import Database from "better-sqlite3";
+import { sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import path from "node:path";
 import type { FileRecord, FolderRecord, PaginatedFiles, TagRecord } from "../types";
+import { getDrizzleDb } from "./client";
+import { fileTags, tags } from "./schema";
 
 export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
 
@@ -121,22 +124,24 @@ export function getTagsForFiles(
     return map;
   }
 
-  const rows = db
-    .prepare(
-      `SELECT ft.file_id, t.id, t.name, t.color, t.parent_id, t.sort_order
-       FROM tags t
-       INNER JOIN file_tags ft ON t.id = ft.tag_id
-       WHERE ft.file_id IN (${makePlaceholders(fileIds.length)})
-       ORDER BY ft.file_id ASC, ft.rowid ASC`,
-    )
-    .all(...fileIds) as Array<{
+  const rows = getDrizzleDb(db).all<{
     file_id: number;
     id: number;
     name: string;
     color: string;
     parent_id: number | null;
     sort_order: number;
-  }>;
+  }>(sql`
+    SELECT ${fileTags.fileId} AS file_id, ${tags.id} AS id, ${tags.name} AS name, ${tags.color} AS color,
+      ${tags.parentId} AS parent_id, ${tags.sortOrder} AS sort_order
+    FROM ${tags}
+    INNER JOIN ${fileTags} ON ${tags.id} = ${fileTags.tagId}
+    WHERE ${fileTags.fileId} IN (${sql.join(
+      fileIds.map((fileId) => sql`${fileId}`),
+      sql`, `,
+    )})
+    ORDER BY ${fileTags.fileId} ASC, file_tags.rowid ASC
+  `);
 
   for (const row of rows) {
     const tags = map.get(row.file_id) ?? [];

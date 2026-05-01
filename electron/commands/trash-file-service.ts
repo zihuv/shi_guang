@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from "electron";
+import { eq, sql } from "drizzle-orm";
 import fssync from "node:fs";
 import path from "node:path";
 import {
@@ -14,6 +15,7 @@ import {
   getFolderTrashEntry,
   getIndexPaths,
   getOrCreateFolder,
+  normalizeStoredPath,
   permanentDeleteFileRecord,
   resolveAvailableTargetPath,
   restoreFileRecord,
@@ -21,6 +23,8 @@ import {
   softDeleteFile,
   updateFilePathAndFolder,
 } from "../database";
+import { getDrizzleDb } from "../database/client";
+import { files, folderTrashEntries, folders } from "../database/schema";
 import {
   copyFileWithCloneFallback,
   ensureDir,
@@ -50,23 +54,28 @@ export function getFilesUnderFolderPath(
   modifiedAt: string;
   contentHash: string | null;
 }> {
-  const rows = db
-    .prepare("SELECT id, path, size, modified_at, content_hash FROM files")
-    .all() as Array<{
-    id: number;
-    path: string;
-    size: number;
-    modified_at: string;
-    content_hash: string | null;
-  }>;
+  const folderPathKey = normalizeStoredPath(folderPath);
+  const rows = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      path: files.path,
+      size: files.size,
+      modifiedAt: files.modifiedAt,
+      contentHash: files.contentHash,
+    })
+    .from(files)
+    .where(
+      sql`${files.normalizedPath} = ${folderPathKey} OR ${files.normalizedPath} LIKE ${`${folderPathKey}/%`}`,
+    )
+    .all();
   return rows
     .filter((row) => pathHasPrefix(row.path, folderPath))
     .map((row) => ({
       id: row.id,
       path: row.path,
       size: row.size,
-      modifiedAt: row.modified_at,
-      contentHash: row.content_hash ?? null,
+      modifiedAt: row.modifiedAt,
+      contentHash: row.contentHash ?? null,
     }));
 }
 
@@ -88,21 +97,19 @@ function findTrashedFolderForPath(
   tempPath: string;
   sourcePath: string;
 } | null {
-  const rows = state.db
-    .prepare(
-      `SELECT f.id, f.path, te.temp_path
-     FROM folders f
-     INNER JOIN folder_trash_entries te ON te.folder_id = f.id
-     WHERE f.deleted_at IS NOT NULL`,
-    )
-    .all() as Array<{ id: number; path: string; temp_path: string }>;
+  const rows = getDrizzleDb(state.db)
+    .select({ id: folders.id, path: folders.path, tempPath: folderTrashEntries.tempPath })
+    .from(folders)
+    .innerJoin(folderTrashEntries, eq(folderTrashEntries.folderId, folders.id))
+    .where(sql`${folders.deletedAt} IS NOT NULL`)
+    .all();
   for (const row of rows) {
-    const sourcePath = replacePathPrefix(filePath, row.path, row.temp_path);
+    const sourcePath = replacePathPrefix(filePath, row.path, row.tempPath);
     if (sourcePath) {
       return {
         folderId: row.id,
         originalPath: row.path,
-        tempPath: row.temp_path,
+        tempPath: row.tempPath,
         sourcePath,
       };
     }

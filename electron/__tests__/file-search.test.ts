@@ -24,10 +24,10 @@ describe("file fuzzy search", () => {
       return;
     }
 
-    const { createSchemaTables } = await import("../database/migrations/schema");
+    const { migrateDatabase } = await import("../database/migrations");
     const { createFolderRecord, filterFiles, upsertFile } = await import("../database");
     const db = new Database(":memory:");
-    createSchemaTables(db);
+    migrateDatabase(db, ":memory:");
 
     const folderId = createFolderRecord(db, "/library/design", "设计", null, false, 0);
     upsertFile(db, {

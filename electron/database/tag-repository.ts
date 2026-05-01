@@ -1,27 +1,28 @@
 import Database from "better-sqlite3";
+import { eq, sql } from "drizzle-orm";
 import type { TagRecord } from "../types";
+import { getDrizzleDb } from "./client";
+import { fileTags, tags } from "./schema";
 import { currentTimestamp, generateSyncId } from "./shared";
 
 export function getAllTags(db: Database.Database): TagRecord[] {
-  return (
-    db
-      .prepare(
-        `SELECT t.id, t.name, t.color, COUNT(f.id) AS count, t.parent_id, t.sort_order
-     FROM tags t
-     LEFT JOIN file_tags ft ON t.id = ft.tag_id
-     LEFT JOIN files f ON f.id = ft.file_id AND f.deleted_at IS NULL AND f.missing_at IS NULL
-     GROUP BY t.id
-     ORDER BY COALESCE(t.parent_id, t.id), t.sort_order ASC, t.name ASC`,
-      )
-      .all() as Array<{
-      id: number;
-      name: string;
-      color: string;
-      count: number;
-      parent_id: number | null;
-      sort_order: number;
-    }>
-  ).map((row) => ({
+  const rows = getDrizzleDb(db).all<{
+    id: number;
+    name: string;
+    color: string;
+    count: number;
+    parent_id: number | null;
+    sort_order: number;
+  }>(sql`
+    SELECT t.id, t.name, t.color, COUNT(f.id) AS count, t.parent_id, t.sort_order
+    FROM tags t
+    LEFT JOIN file_tags ft ON t.id = ft.tag_id
+    LEFT JOIN files f ON f.id = ft.file_id AND f.deleted_at IS NULL AND f.missing_at IS NULL
+    GROUP BY t.id
+    ORDER BY COALESCE(t.parent_id, t.id), t.sort_order ASC, t.name ASC
+  `);
+
+  return rows.map((row) => ({
     id: row.id,
     name: row.name,
     color: row.color,
@@ -37,26 +38,36 @@ export function createTag(
   color: string,
   parentId: number | null,
 ): number {
-  db.prepare(
-    "INSERT INTO tags (name, color, parent_id, sync_id, updated_at) VALUES (?, ?, ?, ?, ?)",
-  ).run(name, color, parentId, generateSyncId("tag"), currentTimestamp());
-  return Number(db.prepare("SELECT last_insert_rowid() AS id").pluck().get());
+  return getDrizzleDb(db)
+    .insert(tags)
+    .values({
+      name,
+      color,
+      parentId,
+      syncId: generateSyncId("tag"),
+      updatedAt: currentTimestamp(),
+    })
+    .returning({ id: tags.id })
+    .get().id;
 }
 
 export function updateTag(db: Database.Database, id: number, name: string, color: string): void {
-  db.prepare("UPDATE tags SET name = ?, color = ? WHERE id = ?").run(name, color, id);
+  getDrizzleDb(db).update(tags).set({ name, color }).where(eq(tags.id, id)).run();
 }
 
 export function deleteTag(db: Database.Database, id: number): void {
-  db.prepare("DELETE FROM tags WHERE id = ?").run(id);
+  getDrizzleDb(db).delete(tags).where(eq(tags.id, id)).run();
 }
 
 export function addTagToFile(db: Database.Database, fileId: number, tagId: number): void {
-  db.prepare("INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?, ?)").run(fileId, tagId);
+  getDrizzleDb(db).insert(fileTags).values({ fileId, tagId }).onConflictDoNothing().run();
 }
 
 export function removeTagFromFile(db: Database.Database, fileId: number, tagId: number): void {
-  db.prepare("DELETE FROM file_tags WHERE file_id = ? AND tag_id = ?").run(fileId, tagId);
+  getDrizzleDb(db)
+    .delete(fileTags)
+    .where(sql`${fileTags.fileId} = ${fileId} AND ${fileTags.tagId} = ${tagId}`)
+    .run();
 }
 
 export function reorderTags(
@@ -64,16 +75,11 @@ export function reorderTags(
   tagIds: number[],
   parentId: number | null,
 ): void {
-  const transaction = db.transaction(() => {
+  getDrizzleDb(db).transaction((tx) => {
     tagIds.forEach((tagId, index) => {
-      db.prepare("UPDATE tags SET sort_order = ?, parent_id = ? WHERE id = ?").run(
-        index,
-        parentId,
-        tagId,
-      );
+      tx.update(tags).set({ sortOrder: index, parentId }).where(eq(tags.id, tagId)).run();
     });
   });
-  transaction();
 }
 
 export function moveTag(
@@ -82,9 +88,9 @@ export function moveTag(
   newParentId: number | null,
   sortOrder: number,
 ): void {
-  db.prepare("UPDATE tags SET parent_id = ?, sort_order = ? WHERE id = ?").run(
-    newParentId,
-    sortOrder,
-    tagId,
-  );
+  getDrizzleDb(db)
+    .update(tags)
+    .set({ parentId: newParentId, sortOrder })
+    .where(eq(tags.id, tagId))
+    .run();
 }

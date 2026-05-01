@@ -24,10 +24,10 @@ describe("folder repository", () => {
       return;
     }
 
-    const { createSchemaTables } = await import("../database/migrations/schema");
+    const { migrateDatabase } = await import("../database/migrations");
     const { createFolderRecord, getPrependFolderSortOrder } = await import("../database");
     const db = new Database(":memory:");
-    createSchemaTables(db);
+    migrateDatabase(db, ":memory:");
 
     createFolderRecord(db, "/library/browser", "浏览器采集", null, false, -1);
     createFolderRecord(db, "/library/tests", "测试", null, false, 0);

@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { isPathAllowedForRead } from "../storage";
 import { getDeletedFolderHoldingDir } from "../trash-paths";
 import type { AppState } from "../types";
+import { getIndexPaths } from "../database";
 import { getMimeTypeForExtension } from "../../src/shared/file-formats";
 
 const tokenToPath = new Map<string, string>();
@@ -157,14 +158,9 @@ export function registerFileProtocol(getAppState: () => AppState | null): void {
     const filePath = tokenToPath.get(token);
     if (
       !filePath ||
-      !isPathAllowedForRead(
-        filePath,
-        state.db
-          .prepare("SELECT path FROM index_paths")
-          .all()
-          .map((row) => (row as { path: string }).path),
-        [getDeletedFolderHoldingDir(state.appDataDir)],
-      )
+      !isPathAllowedForRead(filePath, getIndexPaths(state.db), [
+        getDeletedFolderHoldingDir(state.appDataDir),
+      ])
     ) {
       return new Response("Not found", { status: 404 });
     }

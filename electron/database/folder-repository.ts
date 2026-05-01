@@ -1,26 +1,33 @@
 import Database from "better-sqlite3";
+import { eq, sql } from "drizzle-orm";
 import fssync from "node:fs";
 import path from "node:path";
 import { moveDirectoryWithFallback } from "../file-operations";
 import { pathHasPrefix, replacePathPrefix } from "../path-utils";
 import type { FolderRecord, FolderTreeNode } from "../types";
-import {
-  currentTimestamp,
-  FolderRow,
-  generateSyncId,
-  normalizeStoredPath,
-  toFolder,
-} from "./shared";
+import { currentTimestamp, generateSyncId, normalizeStoredPath, toFolder } from "./shared";
+import { getDrizzleDb } from "./client";
+import { files, folders } from "./schema";
 import { getIndexPaths } from "./settings-repository";
 
+const folderRecordColumns = {
+  id: folders.id,
+  path: folders.path,
+  name: folders.name,
+  parent_id: folders.parentId,
+  created_at: folders.createdAt,
+  is_system: sql<number>`COALESCE(${folders.isSystem}, 0)`,
+  sort_order: sql<number>`COALESCE(${folders.sortOrder}, 0)`,
+  deleted_at: folders.deletedAt,
+};
+
 export function getAllFoldersIncludingDeleted(db: Database.Database): FolderRecord[] {
-  return (
-    db
-      .prepare(
-        "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders ORDER BY sort_order ASC, created_at ASC",
-      )
-      .all() as FolderRow[]
-  ).map(toFolder);
+  return getDrizzleDb(db)
+    .select(folderRecordColumns)
+    .from(folders)
+    .orderBy(folders.sortOrder, folders.createdAt)
+    .all()
+    .map(toFolder);
 }
 
 export function getAllFolders(db: Database.Database): FolderRecord[] {
@@ -31,11 +38,11 @@ export function getFolderByIdIncludingDeleted(
   db: Database.Database,
   id: number,
 ): FolderRecord | null {
-  const row = db
-    .prepare(
-      "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders WHERE id = ?",
-    )
-    .get(id) as FolderRow | undefined;
+  const row = getDrizzleDb(db)
+    .select(folderRecordColumns)
+    .from(folders)
+    .where(eq(folders.id, id))
+    .get();
   return row ? toFolder(row) : null;
 }
 
@@ -48,11 +55,11 @@ export function getFolderByPathIncludingDeleted(
   db: Database.Database,
   folderPath: string,
 ): FolderRecord | null {
-  const row = db
-    .prepare(
-      "SELECT id, path, name, parent_id, created_at, is_system, sort_order, deleted_at FROM folders WHERE normalized_path = ?",
-    )
-    .get(normalizeStoredPath(folderPath)) as FolderRow | undefined;
+  const row = getDrizzleDb(db)
+    .select(folderRecordColumns)
+    .from(folders)
+    .where(eq(folders.normalizedPath, normalizeStoredPath(folderPath)))
+    .get();
   return row ? toFolder(row) : null;
 }
 
@@ -69,36 +76,34 @@ export function createFolderRecord(
   isSystem = false,
   sortOrder = 0,
 ): number {
-  db.prepare(
-    "INSERT INTO folders (path, normalized_path, name, parent_id, created_at, is_system, sort_order, sync_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(
-    folderPath,
-    normalizeStoredPath(folderPath),
-    name,
-    parentId,
-    currentTimestamp(),
-    isSystem ? 1 : 0,
-    sortOrder,
-    generateSyncId("folder"),
-    currentTimestamp(),
-  );
-  return Number(db.prepare("SELECT last_insert_rowid() AS id").pluck().get());
+  const timestamp = currentTimestamp();
+  return getDrizzleDb(db)
+    .insert(folders)
+    .values({
+      path: folderPath,
+      normalizedPath: normalizeStoredPath(folderPath),
+      name,
+      parentId,
+      createdAt: timestamp,
+      isSystem: isSystem ? 1 : 0,
+      sortOrder,
+      syncId: generateSyncId("folder"),
+      updatedAt: timestamp,
+    })
+    .returning({ id: folders.id })
+    .get().id;
 }
 
 export function getPrependFolderSortOrder(db: Database.Database, parentId: number | null): number {
-  const row = (
-    parentId === null
-      ? db
-          .prepare(
-            "SELECT MIN(sort_order) AS sort_order FROM folders WHERE parent_id IS NULL AND deleted_at IS NULL",
-          )
-          .get()
-      : db
-          .prepare(
-            "SELECT MIN(sort_order) AS sort_order FROM folders WHERE parent_id = ? AND deleted_at IS NULL",
-          )
-          .get(parentId)
-  ) as { sort_order: number | null } | undefined;
+  const row = getDrizzleDb(db)
+    .select({ sort_order: sql<number | null>`MIN(${folders.sortOrder})` })
+    .from(folders)
+    .where(
+      parentId === null
+        ? sql`${folders.parentId} IS NULL AND ${folders.deletedAt} IS NULL`
+        : sql`${folders.parentId} = ${parentId} AND ${folders.deletedAt} IS NULL`,
+    )
+    .get();
 
   return typeof row?.sort_order === "number" ? row.sort_order - 1 : 0;
 }
@@ -135,13 +140,16 @@ export function getOrCreateFolder(
 export function getFolderTree(db: Database.Database): FolderTreeNode[] {
   const folders = getAllFolders(db);
   const counts = new Map<number, number>(
-    (
-      db
-        .prepare(
-          "SELECT folder_id, COUNT(*) AS count FROM files WHERE folder_id IS NOT NULL AND deleted_at IS NULL AND missing_at IS NULL GROUP BY folder_id",
-        )
-        .all() as Array<{ folder_id: number; count: number }>
-    ).map((row) => [row.folder_id, row.count]),
+    getDrizzleDb(db)
+      .all<{ folder_id: number; count: number }>(sql`
+        SELECT ${files.folderId} AS folder_id, COUNT(*) AS count
+        FROM ${files}
+        WHERE ${files.folderId} IS NOT NULL
+          AND ${files.deletedAt} IS NULL
+          AND ${files.missingAt} IS NULL
+        GROUP BY ${files.folderId}
+      `)
+      .map((row) => [row.folder_id, row.count]),
   );
   const children = new Map<number | null, FolderRecord[]>();
   for (const folder of folders) {
@@ -185,46 +193,45 @@ export async function renameFolder(db: Database.Database, id: number, name: stri
   if (fssync.existsSync(oldPath)) {
     await moveDirectoryWithFallback(oldPath, newPath);
   }
-  db.transaction(() => {
-    db.prepare("UPDATE folders SET name = ?, path = ?, normalized_path = ? WHERE id = ?").run(
-      name,
-      newPath,
-      normalizeStoredPath(newPath),
-      id,
-    );
+  getDrizzleDb(db).transaction((tx) => {
+    tx.update(folders)
+      .set({ name, path: newPath, normalizedPath: normalizeStoredPath(newPath) })
+      .where(eq(folders.id, id))
+      .run();
     const oldPathKey = normalizeStoredPath(oldPath);
-    const subfolders = db
-      .prepare(
-        "SELECT id, path FROM folders WHERE id != ? AND (normalized_path = ? OR normalized_path LIKE ?)",
+    const subfolders = tx
+      .select({ id: folders.id, path: folders.path })
+      .from(folders)
+      .where(
+        sql`${folders.id} != ${id} AND (${folders.normalizedPath} = ${oldPathKey} OR ${folders.normalizedPath} LIKE ${`${oldPathKey}/%`})`,
       )
-      .all(id, oldPathKey, `${oldPathKey}/%`) as Array<{ id: number; path: string }>;
+      .all();
     for (const subfolder of subfolders) {
       if (subfolder.id === id || !pathHasPrefix(subfolder.path, oldPath)) continue;
       const replaced = replacePathPrefix(subfolder.path, oldPath, newPath);
       if (replaced)
-        db.prepare("UPDATE folders SET path = ?, normalized_path = ? WHERE id = ?").run(
-          replaced,
-          normalizeStoredPath(replaced),
-          subfolder.id,
-        );
+        tx.update(folders)
+          .set({ path: replaced, normalizedPath: normalizeStoredPath(replaced) })
+          .where(eq(folders.id, subfolder.id))
+          .run();
     }
-    const files = db
-      .prepare("SELECT id, path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
-      .all(oldPathKey, `${oldPathKey}/%`) as Array<{
-      id: number;
-      path: string;
-    }>;
-    for (const file of files) {
+    const fileRows = tx
+      .select({ id: files.id, path: files.path })
+      .from(files)
+      .where(
+        sql`${files.normalizedPath} = ${oldPathKey} OR ${files.normalizedPath} LIKE ${`${oldPathKey}/%`}`,
+      )
+      .all();
+    for (const file of fileRows) {
       if (!pathHasPrefix(file.path, oldPath)) continue;
       const replaced = replacePathPrefix(file.path, oldPath, newPath);
       if (replaced)
-        db.prepare("UPDATE files SET path = ?, normalized_path = ? WHERE id = ?").run(
-          replaced,
-          normalizeStoredPath(replaced),
-          file.id,
-        );
+        tx.update(files)
+          .set({ path: replaced, normalizedPath: normalizeStoredPath(replaced) })
+          .where(eq(files.id, file.id))
+          .run();
     }
-  })();
+  });
 }
 
 export async function moveFolderRecord(
@@ -244,56 +251,74 @@ export async function moveFolderRecord(
   if (fssync.existsSync(newPath)) throw new Error(`Destination path already exists: ${newPath}`);
   await moveDirectoryWithFallback(folder.path, newPath);
 
-  db.transaction(() => {
-    db.prepare(
-      "UPDATE folders SET parent_id = ?, sort_order = ?, path = ?, normalized_path = ? WHERE id = ?",
-    ).run(newParentId, sortOrder, newPath, normalizeStoredPath(newPath), folderId);
+  getDrizzleDb(db).transaction((tx) => {
+    tx.update(folders)
+      .set({
+        parentId: newParentId,
+        sortOrder,
+        path: newPath,
+        normalizedPath: normalizeStoredPath(newPath),
+      })
+      .where(eq(folders.id, folderId))
+      .run();
     const oldPathKey = normalizeStoredPath(folder.path);
-    const subfolders = db
-      .prepare(
-        "SELECT id, path FROM folders WHERE id != ? AND (normalized_path = ? OR normalized_path LIKE ?)",
+    const subfolders = tx
+      .select({ id: folders.id, path: folders.path })
+      .from(folders)
+      .where(
+        sql`${folders.id} != ${folderId} AND (${folders.normalizedPath} = ${oldPathKey} OR ${folders.normalizedPath} LIKE ${`${oldPathKey}/%`})`,
       )
-      .all(folderId, oldPathKey, `${oldPathKey}/%`) as Array<{ id: number; path: string }>;
+      .all();
     for (const subfolder of subfolders) {
       if (subfolder.id === folderId || !pathHasPrefix(subfolder.path, folder.path)) continue;
       const replaced = replacePathPrefix(subfolder.path, folder.path, newPath);
       if (replaced)
-        db.prepare("UPDATE folders SET path = ?, normalized_path = ? WHERE id = ?").run(
-          replaced,
-          normalizeStoredPath(replaced),
-          subfolder.id,
-        );
+        tx.update(folders)
+          .set({ path: replaced, normalizedPath: normalizeStoredPath(replaced) })
+          .where(eq(folders.id, subfolder.id))
+          .run();
     }
-    const files = db
-      .prepare("SELECT id, path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
-      .all(oldPathKey, `${oldPathKey}/%`) as Array<{
-      id: number;
-      path: string;
-    }>;
-    for (const file of files) {
+    const fileRows = tx
+      .select({ id: files.id, path: files.path })
+      .from(files)
+      .where(
+        sql`${files.normalizedPath} = ${oldPathKey} OR ${files.normalizedPath} LIKE ${`${oldPathKey}/%`}`,
+      )
+      .all();
+    for (const file of fileRows) {
       if (!pathHasPrefix(file.path, folder.path)) continue;
       const replaced = replacePathPrefix(file.path, folder.path, newPath);
       if (replaced)
-        db.prepare("UPDATE files SET path = ?, normalized_path = ? WHERE id = ?").run(
-          replaced,
-          normalizeStoredPath(replaced),
-          file.id,
-        );
+        tx.update(files)
+          .set({ path: replaced, normalizedPath: normalizeStoredPath(replaced) })
+          .where(eq(files.id, file.id))
+          .run();
     }
-  })();
+  });
 }
 
 export function reorderFolders(db: Database.Database, folderIds: number[]): void {
-  const transaction = db.transaction(() => {
+  getDrizzleDb(db).transaction((tx) => {
     folderIds.forEach((folderId, index) => {
-      db.prepare("UPDATE folders SET sort_order = ? WHERE id = ?").run(index, folderId);
+      tx.update(folders).set({ sortOrder: index }).where(eq(folders.id, folderId)).run();
     });
   });
-  transaction();
 }
 
 export function deleteFolderRecord(db: Database.Database, folderId: number): void {
-  db.prepare("DELETE FROM folders WHERE id = ?").run(folderId);
+  getDrizzleDb(db).delete(folders).where(eq(folders.id, folderId)).run();
+}
+
+export function clearSystemFolderFlagByName(db: Database.Database, name: string): void {
+  getDrizzleDb(db)
+    .update(folders)
+    .set({ isSystem: 0 })
+    .where(sql`${folders.name} = ${name} AND ${folders.isSystem} = 1`)
+    .run();
+}
+
+export function clearSystemFolderFlagById(db: Database.Database, folderId: number): void {
+  getDrizzleDb(db).update(folders).set({ isSystem: 0 }).where(eq(folders.id, folderId)).run();
 }
 
 export function softDeleteFolderSubtree(
@@ -301,9 +326,14 @@ export function softDeleteFolderSubtree(
   folderPath: string,
   deletedAt: string,
 ): void {
-  db.prepare(
-    "UPDATE folders SET deleted_at = ? WHERE normalized_path = ? OR normalized_path LIKE ?",
-  ).run(deletedAt, normalizeStoredPath(folderPath), `${normalizeStoredPath(folderPath)}/%`);
+  const folderPathKey = normalizeStoredPath(folderPath);
+  getDrizzleDb(db)
+    .update(folders)
+    .set({ deletedAt })
+    .where(
+      sql`${folders.normalizedPath} = ${folderPathKey} OR ${folders.normalizedPath} LIKE ${`${folderPathKey}/%`}`,
+    )
+    .run();
 }
 
 export function restoreFolderSubtreeRecords(
@@ -317,62 +347,76 @@ export function restoreFolderSubtreeRecords(
 ): void {
   const originalPathKey = normalizeStoredPath(input.originalPath);
   const now = currentTimestamp();
-  const transaction = db.transaction(() => {
-    const folders = db
-      .prepare("SELECT id, path FROM folders WHERE normalized_path = ? OR normalized_path LIKE ?")
-      .all(originalPathKey, `${originalPathKey}/%`) as Array<{
-      id: number;
-      path: string;
-    }>;
-    for (const folder of folders) {
+  getDrizzleDb(db).transaction((tx) => {
+    const folderRows = tx
+      .select({ id: folders.id, path: folders.path })
+      .from(folders)
+      .where(
+        sql`${folders.normalizedPath} = ${originalPathKey} OR ${folders.normalizedPath} LIKE ${`${originalPathKey}/%`}`,
+      )
+      .all();
+    for (const folder of folderRows) {
       if (!pathHasPrefix(folder.path, input.originalPath)) {
         continue;
       }
       const nextPath =
         replacePathPrefix(folder.path, input.originalPath, input.restoredPath) ?? folder.path;
       if (folder.id === input.folderId) {
-        db.prepare(
-          "UPDATE folders SET path = ?, normalized_path = ?, name = ?, parent_id = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
-        ).run(
-          nextPath,
-          normalizeStoredPath(nextPath),
-          path.basename(nextPath),
-          input.rootParentId,
-          now,
-          folder.id,
-        );
+        tx.update(folders)
+          .set({
+            path: nextPath,
+            normalizedPath: normalizeStoredPath(nextPath),
+            name: path.basename(nextPath),
+            parentId: input.rootParentId,
+            deletedAt: null,
+            updatedAt: now,
+          })
+          .where(eq(folders.id, folder.id))
+          .run();
         continue;
       }
-      db.prepare(
-        "UPDATE folders SET path = ?, normalized_path = ?, name = ?, deleted_at = NULL, updated_at = ? WHERE id = ?",
-      ).run(nextPath, normalizeStoredPath(nextPath), path.basename(nextPath), now, folder.id);
+      tx.update(folders)
+        .set({
+          path: nextPath,
+          normalizedPath: normalizeStoredPath(nextPath),
+          name: path.basename(nextPath),
+          deletedAt: null,
+          updatedAt: now,
+        })
+        .where(eq(folders.id, folder.id))
+        .run();
     }
 
-    const files = db
-      .prepare("SELECT id, path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
-      .all(originalPathKey, `${originalPathKey}/%`) as Array<{
-      id: number;
-      path: string;
-    }>;
-    for (const file of files) {
+    const fileRows = tx
+      .select({ id: files.id, path: files.path })
+      .from(files)
+      .where(
+        sql`${files.normalizedPath} = ${originalPathKey} OR ${files.normalizedPath} LIKE ${`${originalPathKey}/%`}`,
+      )
+      .all();
+    for (const file of fileRows) {
       if (!pathHasPrefix(file.path, input.originalPath)) {
         continue;
       }
       const nextPath =
         replacePathPrefix(file.path, input.originalPath, input.restoredPath) ?? file.path;
-      db.prepare(
-        "UPDATE files SET path = ?, normalized_path = ?, name = ?, missing_at = NULL WHERE id = ?",
-      ).run(nextPath, normalizeStoredPath(nextPath), path.basename(nextPath), file.id);
+      tx.update(files)
+        .set({
+          path: nextPath,
+          normalizedPath: normalizeStoredPath(nextPath),
+          name: path.basename(nextPath),
+          missingAt: null,
+        })
+        .where(eq(files.id, file.id))
+        .run();
     }
   });
-  transaction();
 }
 
 export function clearFilesFolderId(db: Database.Database, folderIds: number[]): void {
-  const transaction = db.transaction(() => {
+  getDrizzleDb(db).transaction((tx) => {
     for (const folderId of folderIds) {
-      db.prepare("UPDATE files SET folder_id = NULL WHERE folder_id = ?").run(folderId);
+      tx.update(files).set({ folderId: null }).where(eq(files.folderId, folderId)).run();
     }
   });
-  transaction();
 }

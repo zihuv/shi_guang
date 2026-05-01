@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { eq, sql } from "drizzle-orm";
 import fssync from "node:fs";
 import path from "node:path";
 import { pathHasPrefix } from "../path-utils";
@@ -17,18 +18,50 @@ import {
   paginated,
   parseHexColor,
 } from "./shared";
+import { getDrizzleDb } from "./client";
+import { files as filesTable } from "./schema";
 import { getDuplicateOrSimilarFileIds } from "./similarity-repository";
 
+function toFileRow(row: typeof filesTable.$inferSelect): FileRow {
+  return {
+    id: row.id,
+    path: row.path,
+    name: row.name,
+    ext: row.ext,
+    size: row.size,
+    width: row.width,
+    height: row.height,
+    folder_id: row.folderId,
+    created_at: row.createdAt,
+    modified_at: row.modifiedAt,
+    imported_at: row.importedAt,
+    last_accessed_at: row.lastAccessedAt,
+    rating: row.rating,
+    description: row.description,
+    source_url: row.sourceUrl,
+    dominant_color: row.dominantColor,
+    color_distribution: row.colorDistribution,
+    thumb_hash: row.thumbHash,
+    content_hash: row.contentHash,
+    deleted_at: row.deletedAt,
+    missing_at: row.missingAt,
+  };
+}
+
 export function getFileById(db: Database.Database, fileId: number): FileRecord | null {
-  const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId) as FileRow | undefined;
-  return row ? attachTags(db, [row])[0] : null;
+  const row = getDrizzleDb(db).select().from(filesTable).where(eq(filesTable.id, fileId)).get();
+  const fileRow = row ? toFileRow(row) : undefined;
+  return fileRow ? attachTags(db, [fileRow])[0] : null;
 }
 
 export function getFileByPath(db: Database.Database, filePath: string): FileRecord | null {
-  const row = db
-    .prepare("SELECT * FROM files WHERE normalized_path = ?")
-    .get(normalizeStoredPath(filePath)) as FileRow | undefined;
-  return row ? attachTags(db, [row])[0] : null;
+  const row = getDrizzleDb(db)
+    .select()
+    .from(filesTable)
+    .where(eq(filesTable.normalizedPath, normalizeStoredPath(filePath)))
+    .get();
+  const fileRow = row ? toFileRow(row) : undefined;
+  return fileRow ? attachTags(db, [fileRow])[0] : null;
 }
 
 export function findMoveCandidateByContentHash(
@@ -63,20 +96,18 @@ export function getAllFiles(db: Database.Database, args: Record<string, unknown>
     args.sortBy as string | undefined,
     args.sortDirection as string | undefined,
   );
-  const rows = db
-    .prepare(
-      `SELECT * FROM files WHERE deleted_at IS NULL AND missing_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
-    )
-    .all(pageSize, offset) as FileRow[];
-  const total = (
-    db
-      .prepare(
-        "SELECT COUNT(*) AS count FROM files WHERE deleted_at IS NULL AND missing_at IS NULL",
-      )
-      .get() as {
-      count: number;
-    }
-  ).count;
+  const rows = getDrizzleDb(db).all<FileRow>(sql`
+    SELECT *
+    FROM ${filesTable}
+    WHERE ${filesTable.deletedAt} IS NULL AND ${filesTable.missingAt} IS NULL
+    ORDER BY ${sql.raw(orderSql)}
+    LIMIT ${pageSize} OFFSET ${offset}
+  `);
+  const total = getDrizzleDb(db).get<{ count: number }>(sql`
+    SELECT COUNT(*) AS count
+    FROM ${filesTable}
+    WHERE ${filesTable.deletedAt} IS NULL AND ${filesTable.missingAt} IS NULL
+  `).count;
   return paginated(db, rows, total, page, pageSize);
 }
 
@@ -106,21 +137,26 @@ export function getFilesInFolder(
     args.sortBy as string | undefined,
     args.sortDirection as string | undefined,
   );
-  const where = folderId == null ? "folder_id IS NULL" : "folder_id = ?";
-  const queryArgs = folderId == null ? [pageSize, offset] : [folderId, pageSize, offset];
-  const countArgs = folderId == null ? [] : [folderId];
-  const rows = db
-    .prepare(
-      `SELECT * FROM files WHERE ${where} AND deleted_at IS NULL AND missing_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
-    )
-    .all(...queryArgs) as FileRow[];
-  const total = (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS count FROM files WHERE ${where} AND deleted_at IS NULL AND missing_at IS NULL`,
-      )
-      .get(...countArgs) as { count: number }
-  ).count;
+  const folderWhere =
+    folderId == null
+      ? sql`${filesTable.folderId} IS NULL`
+      : sql`${filesTable.folderId} = ${folderId}`;
+  const rows = getDrizzleDb(db).all<FileRow>(sql`
+    SELECT *
+    FROM ${filesTable}
+    WHERE ${folderWhere}
+      AND ${filesTable.deletedAt} IS NULL
+      AND ${filesTable.missingAt} IS NULL
+    ORDER BY ${sql.raw(orderSql)}
+    LIMIT ${pageSize} OFFSET ${offset}
+  `);
+  const total = getDrizzleDb(db).get<{ count: number }>(sql`
+    SELECT COUNT(*) AS count
+    FROM ${filesTable}
+    WHERE ${folderWhere}
+      AND ${filesTable.deletedAt} IS NULL
+      AND ${filesTable.missingAt} IS NULL
+  `).count;
   return paginated(db, rows, total, page, pageSize);
 }
 
@@ -390,29 +426,31 @@ export function filterFiles(db: Database.Database, args: Record<string, unknown>
 }
 
 export function getSmartCollectionStats(db: Database.Database): SmartCollectionStats {
-  const row = db
-    .prepare(
-      `SELECT
-         (SELECT COUNT(*) FROM files f WHERE f.deleted_at IS NULL AND f.missing_at IS NULL) AS all_count,
-         (
-           SELECT COUNT(*)
-           FROM files f
-           WHERE f.deleted_at IS NULL AND f.missing_at IS NULL AND f.folder_id IS NULL
-         ) AS unclassified_count,
-         (
-           SELECT COUNT(*)
-           FROM files f
-           WHERE
-             f.deleted_at IS NULL
-             AND f.missing_at IS NULL
-             AND NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id)
-         ) AS untagged_count`,
-    )
-    .get() as {
+  const row = getDrizzleDb(db).get<{
     all_count: number;
     unclassified_count: number;
     untagged_count: number;
-  };
+  }>(sql`
+    SELECT
+      (
+        SELECT COUNT(*)
+        FROM files f
+        WHERE f.deleted_at IS NULL AND f.missing_at IS NULL
+      ) AS all_count,
+      (
+        SELECT COUNT(*)
+        FROM files f
+        WHERE f.deleted_at IS NULL AND f.missing_at IS NULL AND f.folder_id IS NULL
+      ) AS unclassified_count,
+      (
+        SELECT COUNT(*)
+        FROM files f
+        WHERE
+          f.deleted_at IS NULL
+          AND f.missing_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id)
+      ) AS untagged_count
+  `);
 
   return {
     allCount: row.all_count,
@@ -426,11 +464,11 @@ export function touchFileLastAccessed(
   fileId: number,
   timestamp = currentTimestamp(),
 ): void {
-  db.prepare("UPDATE files SET last_accessed_at = ?, updated_at = ? WHERE id = ?").run(
-    timestamp,
-    timestamp,
-    fileId,
-  );
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({ lastAccessedAt: timestamp, updatedAt: timestamp })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export interface UpsertFileInput {
@@ -465,76 +503,87 @@ export function upsertFile(db: Database.Database, input: UpsertFileInput): numbe
   const rgb = parseHexColor(dominantColor);
   const now = currentTimestamp();
   const syncId = existing
-    ? (db.prepare("SELECT sync_id FROM files WHERE id = ?").pluck().get(existing.id) as string)
+    ? getDrizzleDb(db)
+        .select({ syncId: filesTable.syncId })
+        .from(filesTable)
+        .where(eq(filesTable.id, existing.id))
+        .get()?.syncId
     : generateSyncId("file");
   const existingContentHash = existing
-    ? (db.prepare("SELECT content_hash FROM files WHERE id = ?").pluck().get(existing.id) as
-        | string
-        | null)
+    ? (getDrizzleDb(db)
+        .select({ contentHash: filesTable.contentHash })
+        .from(filesTable)
+        .where(eq(filesTable.id, existing.id))
+        .get()?.contentHash ?? null)
     : null;
 
-  db.prepare(
-    `INSERT INTO files (
-      path, normalized_path, name, ext, size, width, height, folder_id, created_at, modified_at, imported_at,
-      rating, description, source_url, dominant_color, dominant_r, dominant_g, dominant_b,
-      color_distribution, thumb_hash, sync_id, content_hash, fs_modified_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(normalized_path) DO UPDATE SET
-      path = excluded.path,
-      normalized_path = excluded.normalized_path,
-      name = excluded.name,
-      ext = excluded.ext,
-      size = excluded.size,
-      width = excluded.width,
-      height = excluded.height,
-      folder_id = excluded.folder_id,
-      created_at = excluded.created_at,
-      modified_at = excluded.modified_at,
-      imported_at = excluded.imported_at,
-      rating = excluded.rating,
-      description = excluded.description,
-      source_url = excluded.source_url,
-      dominant_color = excluded.dominant_color,
-      dominant_r = excluded.dominant_r,
-      dominant_g = excluded.dominant_g,
-      dominant_b = excluded.dominant_b,
-      color_distribution = excluded.color_distribution,
-      thumb_hash = excluded.thumb_hash,
-      content_hash = excluded.content_hash,
-      fs_modified_at = excluded.fs_modified_at,
-      deleted_at = NULL,
-      missing_at = NULL`,
-  ).run(
-    input.path,
-    normalizeStoredPath(input.path),
-    input.name,
-    input.ext.toLowerCase(),
-    input.size,
-    input.width,
-    input.height,
-    input.folderId,
-    input.createdAt,
-    input.modifiedAt,
-    importedAt,
-    rating,
-    description,
-    sourceUrl,
-    dominantColor,
-    rgb?.[0] ?? null,
-    rgb?.[1] ?? null,
-    rgb?.[2] ?? null,
-    colorDistribution,
-    thumbHash,
-    syncId,
-    input.contentHash ?? existingContentHash,
-    input.modifiedAt,
-    now,
-  );
-  return (
-    db
-      .prepare("SELECT id FROM files WHERE normalized_path = ?")
-      .get(normalizeStoredPath(input.path)) as { id: number }
-  ).id;
+  getDrizzleDb(db)
+    .insert(filesTable)
+    .values({
+      path: input.path,
+      normalizedPath: normalizeStoredPath(input.path),
+      name: input.name,
+      ext: input.ext.toLowerCase(),
+      size: input.size,
+      width: input.width,
+      height: input.height,
+      folderId: input.folderId,
+      createdAt: input.createdAt,
+      modifiedAt: input.modifiedAt,
+      importedAt,
+      rating,
+      description,
+      sourceUrl,
+      dominantColor,
+      dominantR: rgb?.[0] ?? null,
+      dominantG: rgb?.[1] ?? null,
+      dominantB: rgb?.[2] ?? null,
+      colorDistribution,
+      thumbHash,
+      syncId: syncId ?? generateSyncId("file"),
+      contentHash: input.contentHash ?? existingContentHash,
+      fsModifiedAt: input.modifiedAt,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: filesTable.normalizedPath,
+      set: {
+        path: sql`excluded.path`,
+        normalizedPath: sql`excluded.normalized_path`,
+        name: sql`excluded.name`,
+        ext: sql`excluded.ext`,
+        size: sql`excluded.size`,
+        width: sql`excluded.width`,
+        height: sql`excluded.height`,
+        folderId: sql`excluded.folder_id`,
+        createdAt: sql`excluded.created_at`,
+        modifiedAt: sql`excluded.modified_at`,
+        importedAt: sql`excluded.imported_at`,
+        rating: sql`excluded.rating`,
+        description: sql`excluded.description`,
+        sourceUrl: sql`excluded.source_url`,
+        dominantColor: sql`excluded.dominant_color`,
+        dominantR: sql`excluded.dominant_r`,
+        dominantG: sql`excluded.dominant_g`,
+        dominantB: sql`excluded.dominant_b`,
+        colorDistribution: sql`excluded.color_distribution`,
+        thumbHash: sql`excluded.thumb_hash`,
+        contentHash: sql`excluded.content_hash`,
+        fsModifiedAt: sql`excluded.fs_modified_at`,
+        deletedAt: null,
+        missingAt: null,
+      },
+    })
+    .run();
+  const inserted = getDrizzleDb(db)
+    .select({ id: filesTable.id })
+    .from(filesTable)
+    .where(eq(filesTable.normalizedPath, normalizeStoredPath(input.path)))
+    .get();
+  if (!inserted) {
+    throw new Error("Failed to read upserted file");
+  }
+  return inserted.id;
 }
 
 export function updateFileColorData(
@@ -544,16 +593,17 @@ export function updateFileColorData(
   colorDistribution: string,
 ): void {
   const rgb = parseHexColor(dominantColor);
-  db.prepare(
-    "UPDATE files SET dominant_color = ?, dominant_r = ?, dominant_g = ?, dominant_b = ?, color_distribution = ? WHERE id = ?",
-  ).run(
-    dominantColor,
-    rgb?.[0] ?? null,
-    rgb?.[1] ?? null,
-    rgb?.[2] ?? null,
-    colorDistribution,
-    fileId,
-  );
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({
+      dominantColor,
+      dominantR: rgb?.[0] ?? null,
+      dominantG: rgb?.[1] ?? null,
+      dominantB: rgb?.[2] ?? null,
+      colorDistribution,
+    })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export function updateFileThumbHash(
@@ -561,7 +611,7 @@ export function updateFileThumbHash(
   fileId: number,
   thumbHash: string,
 ): void {
-  db.prepare("UPDATE files SET thumb_hash = ? WHERE id = ?").run(thumbHash, fileId);
+  getDrizzleDb(db).update(filesTable).set({ thumbHash }).where(eq(filesTable.id, fileId)).run();
 }
 
 export function updateFileMetadata(
@@ -571,12 +621,11 @@ export function updateFileMetadata(
   description: string,
   sourceUrl: string,
 ): void {
-  db.prepare("UPDATE files SET rating = ?, description = ?, source_url = ? WHERE id = ?").run(
-    rating,
-    description,
-    sourceUrl,
-    fileId,
-  );
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({ rating, description, sourceUrl })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export function updateFileDimensions(
@@ -585,7 +634,7 @@ export function updateFileDimensions(
   width: number,
   height: number,
 ): void {
-  db.prepare("UPDATE files SET width = ?, height = ? WHERE id = ?").run(width, height, fileId);
+  getDrizzleDb(db).update(filesTable).set({ width, height }).where(eq(filesTable.id, fileId)).run();
 }
 
 export function updateFileNameRecord(
@@ -594,12 +643,11 @@ export function updateFileNameRecord(
   name: string,
   filePath: string,
 ): void {
-  db.prepare("UPDATE files SET name = ?, path = ?, normalized_path = ? WHERE id = ?").run(
-    name,
-    filePath,
-    normalizeStoredPath(filePath),
-    fileId,
-  );
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({ name, path: filePath, normalizedPath: normalizeStoredPath(filePath) })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export function updateFilePathAndFolder(
@@ -608,17 +656,19 @@ export function updateFilePathAndFolder(
   filePath: string,
   folderId: number | null,
 ): void {
-  db.prepare(
-    "UPDATE files SET path = ?, normalized_path = ?, name = ?, folder_id = ?, modified_at = ?, fs_modified_at = ? WHERE id = ?",
-  ).run(
-    filePath,
-    normalizeStoredPath(filePath),
-    path.basename(filePath),
-    folderId,
-    currentTimestamp(),
-    currentTimestamp(),
-    fileId,
-  );
+  const timestamp = currentTimestamp();
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({
+      path: filePath,
+      normalizedPath: normalizeStoredPath(filePath),
+      name: path.basename(filePath),
+      folderId,
+      modifiedAt: timestamp,
+      fsModifiedAt: timestamp,
+    })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export function updateFileContentHash(
@@ -626,46 +676,64 @@ export function updateFileContentHash(
   fileId: number,
   contentHash: string | null,
 ): void {
-  db.prepare("UPDATE files SET content_hash = ? WHERE id = ?").run(contentHash, fileId);
+  getDrizzleDb(db).update(filesTable).set({ contentHash }).where(eq(filesTable.id, fileId)).run();
 }
 
 export function deleteFileByPath(db: Database.Database, filePath: string): void {
-  db.prepare("DELETE FROM files WHERE normalized_path = ?").run(normalizeStoredPath(filePath));
+  getDrizzleDb(db)
+    .delete(filesTable)
+    .where(eq(filesTable.normalizedPath, normalizeStoredPath(filePath)))
+    .run();
 }
 
 export function markFileMissingByPath(db: Database.Database, filePath: string): boolean {
-  const result = db
-    .prepare(
-      "UPDATE files SET missing_at = ? WHERE normalized_path = ? AND deleted_at IS NULL AND missing_at IS NULL",
+  const result = getDrizzleDb(db)
+    .update(filesTable)
+    .set({ missingAt: currentTimestamp() })
+    .where(
+      sql`${filesTable.normalizedPath} = ${normalizeStoredPath(filePath)} AND ${filesTable.deletedAt} IS NULL AND ${filesTable.missingAt} IS NULL`,
     )
-    .run(currentTimestamp(), normalizeStoredPath(filePath));
+    .run();
   return result.changes > 0;
 }
 
+export function markFileMissing(db: Database.Database, fileId: number, missingAt: string): void {
+  getDrizzleDb(db).update(filesTable).set({ missingAt }).where(eq(filesTable.id, fileId)).run();
+}
+
 export function markFilePresent(db: Database.Database, fileId: number): void {
-  db.prepare("UPDATE files SET deleted_at = NULL, missing_at = NULL WHERE id = ?").run(fileId);
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({ deletedAt: null, missingAt: null })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export function softDeleteFile(db: Database.Database, fileId: number): void {
-  db.prepare("UPDATE files SET deleted_at = ?, missing_at = NULL WHERE id = ?").run(
-    currentTimestamp(),
-    fileId,
-  );
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({ deletedAt: currentTimestamp(), missingAt: null })
+    .where(eq(filesTable.id, fileId))
+    .run();
 }
 
 export function restoreFileRecord(db: Database.Database, fileId: number): void {
-  db.prepare("UPDATE files SET deleted_at = NULL, missing_at = NULL WHERE id = ?").run(fileId);
+  markFilePresent(db, fileId);
 }
 
 export function permanentDeleteFileRecord(db: Database.Database, fileId: number): void {
-  db.prepare("DELETE FROM files WHERE id = ?").run(fileId);
+  getDrizzleDb(db).delete(filesTable).where(eq(filesTable.id, fileId)).run();
 }
 
 export function filePathsInDir(db: Database.Database, dirPath: string): Set<string> {
   const dirPathKey = normalizeStoredPath(dirPath);
-  const rows = db
-    .prepare("SELECT path FROM files WHERE normalized_path = ? OR normalized_path LIKE ?")
-    .all(dirPathKey, `${dirPathKey}/%`) as Array<{ path: string }>;
+  const rows = getDrizzleDb(db)
+    .select({ path: filesTable.path })
+    .from(filesTable)
+    .where(
+      sql`${filesTable.normalizedPath} = ${dirPathKey} OR ${filesTable.normalizedPath} LIKE ${`${dirPathKey}/%`}`,
+    )
+    .all();
   return new Set(rows.filter((row) => pathHasPrefix(row.path, dirPath)).map((row) => row.path));
 }
 
@@ -676,40 +744,39 @@ export function isFileUnchanged(
   size: number,
   modifiedAt: string,
 ): boolean {
-  const row = db
-    .prepare("SELECT ext, size, fs_modified_at FROM files WHERE normalized_path = ?")
-    .get(normalizeStoredPath(filePath)) as
-    | { ext: string; size: number; fs_modified_at: string }
-    | undefined;
+  const row = getDrizzleDb(db)
+    .select({ ext: filesTable.ext, size: filesTable.size, fsModifiedAt: filesTable.fsModifiedAt })
+    .from(filesTable)
+    .where(eq(filesTable.normalizedPath, normalizeStoredPath(filePath)))
+    .get();
   return Boolean(
     row &&
     row.ext.toLowerCase() === ext.toLowerCase() &&
     row.size === size &&
-    row.fs_modified_at === modifiedAt,
+    row.fsModifiedAt === modifiedAt,
   );
 }
 
 export function updateFileBasicInfo(db: Database.Database, input: UpsertFileInput): void {
-  db.prepare(
-    `UPDATE files
-     SET name = ?, ext = ?, size = ?, width = ?, height = ?, folder_id = ?,
-         created_at = ?, modified_at = ?, fs_modified_at = ?, thumb_hash = ?, content_hash = ?,
-         deleted_at = NULL, missing_at = NULL
-     WHERE normalized_path = ?`,
-  ).run(
-    input.name,
-    input.ext,
-    input.size,
-    input.width,
-    input.height,
-    input.folderId,
-    input.createdAt,
-    input.modifiedAt,
-    input.modifiedAt,
-    input.thumbHash ?? "",
-    input.contentHash ?? null,
-    normalizeStoredPath(input.path),
-  );
+  getDrizzleDb(db)
+    .update(filesTable)
+    .set({
+      name: input.name,
+      ext: input.ext,
+      size: input.size,
+      width: input.width,
+      height: input.height,
+      folderId: input.folderId,
+      createdAt: input.createdAt,
+      modifiedAt: input.modifiedAt,
+      fsModifiedAt: input.modifiedAt,
+      thumbHash: input.thumbHash ?? "",
+      contentHash: input.contentHash ?? null,
+      deletedAt: null,
+      missingAt: null,
+    })
+    .where(eq(filesTable.normalizedPath, normalizeStoredPath(input.path)))
+    .run();
 }
 
 export async function resolveAvailableTargetPath(

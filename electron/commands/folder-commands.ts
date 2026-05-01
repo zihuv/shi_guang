@@ -13,6 +13,7 @@ import {
   getFolderTree,
   getPrependFolderSortOrder,
   getIndexPaths,
+  markFileMissing,
   moveFolderRecord,
   permanentDeleteFileRecord,
   renameFolder,
@@ -120,7 +121,7 @@ export function createFolderCommands(state: AppState): Record<string, CommandHan
         });
         softDeleteFolderSubtree(state.db, folder.path, deletedAt);
         for (const file of affectedFiles) {
-          state.db.prepare("UPDATE files SET missing_at = ? WHERE id = ?").run(deletedAt, file.id);
+          markFileMissing(state.db, file.id, deletedAt);
         }
       })();
       return {
