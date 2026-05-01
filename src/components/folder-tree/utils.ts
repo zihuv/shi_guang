@@ -1,6 +1,7 @@
 import type { SmartCollectionId } from "@/stores/fileTypes";
 import type { FolderNode } from "@/stores/folderStore";
 import { shouldResetQueryStateForSmartCollectionEntry } from "@/components/folder-tree/navigationState";
+import { filterFuzzyTree } from "@/shared/fuzzySearch";
 import { useFolderStore } from "@/stores/folderStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
@@ -75,6 +76,21 @@ export const isDescendant = (folders: FolderNode[], parentId: number, childId: n
 
   return checkDescendant(parent.children, childId);
 };
+
+export function filterFolderTree(folders: FolderNode[], query: string): FolderNode[] {
+  if (!query.trim()) {
+    return folders;
+  }
+
+  return filterFuzzyTree(folders, query, {
+    keys: [(folder) => folder.name],
+    getChildren: (folder) => folder.children,
+    setChildren: (folder, children) => ({
+      ...folder,
+      children,
+    }),
+  });
+}
 
 export function buildFolderMovePlan(
   folders: FolderNode[],

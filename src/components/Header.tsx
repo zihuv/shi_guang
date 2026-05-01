@@ -47,6 +47,8 @@ interface HeaderProps {
 export default function Header({ onOpenSettings }: HeaderProps) {
   const searchQuery = useLibraryQueryStore((state) => state.searchQuery);
   const setSearchQuery = useLibraryQueryStore((state) => state.setSearchQuery);
+  const aiSearchEnabled = useLibraryQueryStore((state) => state.aiSearchEnabled);
+  const setAiSearchEnabled = useLibraryQueryStore((state) => state.setAiSearchEnabled);
   const imageQueryFile = useLibraryQueryStore((state) => state.imageQueryFile);
   const searchSimilarToFile = useLibraryQueryStore((state) => state.searchSimilarToFile);
   const clearImageQuery = useLibraryQueryStore((state) => state.clearImageQuery);
@@ -54,8 +56,16 @@ export default function Header({ onOpenSettings }: HeaderProps) {
   const importTask = useImportStore((state) => state.importTask);
   const aiMetadataTask = useAiBatchAnalyzeStore((state) => state.aiMetadataTask);
   const cancelBatchAnalyze = useAiBatchAnalyzeStore((state) => state.cancelBatchAnalyze);
-  const { theme, setTheme, indexPaths, recentIndexPaths, switchIndexPath, rebuildIndex } =
-    useSettingsStore();
+  const {
+    theme,
+    setTheme,
+    indexPaths,
+    recentIndexPaths,
+    switchIndexPath,
+    rebuildIndex,
+    visualSearch,
+    visualModelValidation,
+  } = useSettingsStore();
   const currentIndexPath = indexPaths[0] ?? null;
   const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useState(false);
   const [isImageSearchDragOver, setIsImageSearchDragOver] = useState(false);
@@ -92,6 +102,18 @@ export default function Header({ onOpenSettings }: HeaderProps) {
     [recentIndexPaths],
   );
   const imageQueryLabel = imageQueryFile ? getNameWithoutExt(imageQueryFile.name) : "";
+  const canUseAiSearch = Boolean(visualSearch.modelPath.trim() && visualModelValidation?.valid);
+  const aiSearchTitle = canUseAiSearch
+    ? aiSearchEnabled
+      ? "关闭 AI 搜索"
+      : "开启 AI 搜索"
+    : "配置本地视觉模型后可用";
+
+  useEffect(() => {
+    if (!canUseAiSearch && aiSearchEnabled) {
+      setAiSearchEnabled(false);
+    }
+  }, [aiSearchEnabled, canUseAiSearch, setAiSearchEnabled]);
 
   useEffect(() => {
     if (!isLibraryMenuOpen) {
@@ -473,7 +495,7 @@ export default function Header({ onOpenSettings }: HeaderProps) {
             <input
               ref={searchInputRef}
               type="text"
-              placeholder={imageQueryFile ? "" : "搜索图片，支持中文自然语言..."}
+              placeholder={imageQueryFile ? "" : aiSearchEnabled ? "AI 搜索图片..." : "搜索文件名"}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
@@ -482,6 +504,26 @@ export default function Header({ onOpenSettings }: HeaderProps) {
               autoCorrect="off"
               autoCapitalize="off"
             />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={aiSearchEnabled}
+              aria-label="AI 搜索"
+              disabled={!canUseAiSearch}
+              title={aiSearchTitle}
+              onClick={(event) => {
+                event.stopPropagation();
+                setAiSearchEnabled(!aiSearchEnabled);
+              }}
+              className={cn(
+                "inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                aiSearchEnabled
+                  ? "bg-primary-600 text-white hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-400"
+                  : "text-gray-400 hover:bg-black/[0.05] hover:text-gray-700 dark:text-gray-500 dark:hover:bg-white/[0.07] dark:hover:text-gray-200",
+              )}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 

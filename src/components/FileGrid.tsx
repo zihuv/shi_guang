@@ -13,7 +13,6 @@ import {
 import { useTrashStore } from "@/stores/trashStore";
 import { getActiveFilterCount } from "@/features/filters/schema";
 import {
-  FileGridPagination,
   FileGridSelectionBar,
   FileGridToolbar,
   type ToolbarMenu,
@@ -41,10 +40,7 @@ import { useFileGridViewportMetrics } from "@/components/file-grid/useFileGridVi
 export default function FileGrid() {
   const files = useLibraryQueryStore((state) => state.files);
   const isLoading = useLibraryQueryStore((state) => state.isLoading);
-  const pagination = useLibraryQueryStore((state) => state.pagination);
   const runCurrentQuery = useLibraryQueryStore((state) => state.runCurrentQuery);
-  const setPage = useLibraryQueryStore((state) => state.setPage);
-  const setPageSize = useLibraryQueryStore((state) => state.setPageSize);
   const setPaginationMode = useLibraryQueryStore((state) => state.setPaginationMode);
   const resetPage = useLibraryQueryStore((state) => state.resetPage);
   const selectedFile = useSelectionStore((state) => state.selectedFile);
@@ -114,7 +110,6 @@ export default function FileGrid() {
   );
   const currentViewModeLabel = getCurrentViewModeLabel(viewMode);
   const visibleInfoFieldLabels = getVisibleInfoFieldLabels(libraryVisibleFields);
-  const showPaginationControls = viewMode === "list";
   useFileGridToolbarDismiss({
     openToolbarMenu,
     isFilterPanelOpen,
@@ -132,8 +127,8 @@ export default function FileGrid() {
   });
 
   useEffect(() => {
-    setPaginationMode(showPaginationControls ? "paged" : "flow");
-  }, [setPaginationMode, showPaginationControls]);
+    setPaginationMode("flow");
+  }, [setPaginationMode]);
 
   useEffect(() => {
     if (!sortDidMountRef.current) {
@@ -321,11 +316,6 @@ export default function FileGrid() {
         layoutMenuRef={layoutMenuRef}
         libraryVisibleFields={libraryVisibleFields}
         openToolbarMenu={openToolbarMenu}
-        paginationLabel={
-          showPaginationControls && pagination.totalPages > 1
-            ? `(第 ${pagination.page}/${pagination.totalPages} 页)`
-            : undefined
-        }
         resetCurrentViewScale={resetCurrentViewScale}
         setOpenToolbarMenu={setOpenToolbarMenu}
         setSortBy={setSortBy}
@@ -388,16 +378,6 @@ export default function FileGrid() {
           selectedFiles={selectedFiles}
           selectionBox={selectionBox}
           viewMode={viewMode}
-        />
-      )}
-
-      {showPaginationControls && (
-        <FileGridPagination
-          page={pagination.page}
-          pageSize={pagination.pageSize}
-          totalPages={pagination.totalPages}
-          setPage={setPage}
-          setPageSize={setPageSize}
         />
       )}
 

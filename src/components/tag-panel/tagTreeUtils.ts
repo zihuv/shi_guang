@@ -1,4 +1,5 @@
 import { type Tag } from "@/stores/tagStore";
+import { filterFuzzyTree } from "@/shared/fuzzySearch";
 
 export const TAG_COLORS = [
   "#ef4444",
@@ -63,23 +64,16 @@ export const isDescendant = (tags: Tag[], parentId: number, childId: number): bo
 };
 
 export function filterTagTree(tags: Tag[], query: string): Tag[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) {
+  if (!query.trim()) {
     return tags;
   }
 
-  return tags.flatMap((tag) => {
-    const filteredChildren = filterTagTree(tag.children, normalizedQuery);
-    const matches = tag.name.toLocaleLowerCase().includes(normalizedQuery);
-    if (!matches && filteredChildren.length === 0) {
-      return [];
-    }
-
-    return [
-      {
-        ...tag,
-        children: filteredChildren,
-      },
-    ];
+  return filterFuzzyTree(tags, query, {
+    keys: [(tag) => tag.name],
+    getChildren: (tag) => tag.children,
+    setChildren: (tag, children) => ({
+      ...tag,
+      children,
+    }),
   });
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { shouldResetQueryStateForSmartCollectionEntry } from "@/components/folder-tree/navigationState";
 import {
   buildFolderMovePlan,
+  filterFolderTree,
   getPersistedFolderIds,
   type FlattenedFolderNode,
 } from "@/components/folder-tree/utils";
@@ -61,5 +62,20 @@ describe("folder tree navigation utils", () => {
       targetSiblingIds: [3, 1, 2],
       sortOrder: 0,
     });
+  });
+
+  it("uses fuzzy matching for folder names", () => {
+    const folders = [
+      makeFolder(1, "Music Player", [makeFolder(2, "Design Pattern")]),
+      makeFolder(3, "Media Browser"),
+    ];
+
+    expect(filterFolderTree(folders, "mpy").map((item) => item.name)).toEqual(["Music Player"]);
+    expect(filterFolderTree(folders, "dpn")).toEqual([
+      {
+        ...folders[0],
+        children: [folders[0].children[0]],
+      },
+    ]);
   });
 });

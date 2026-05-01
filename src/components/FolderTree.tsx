@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Files, Plus } from "lucide-react";
+import { Files, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   buildVisibleTreeItems,
@@ -15,6 +15,7 @@ import { useLibraryQueryStore } from "@/stores/libraryQueryStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { useTrashStore } from "@/stores/trashStore";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { FolderDialogs } from "@/components/folder-tree/FolderDialogs";
 import { FolderItem } from "@/components/folder-tree/FolderItem";
 import { createTreeItemRegistry, type DragPosition } from "@/components/folder-tree/types";
@@ -22,6 +23,7 @@ import {
   buildFolderMovePlan,
   findFolderParentId,
   findSiblings,
+  filterFolderTree,
   findFolderById,
   getAllFolderIds,
   getPersistedFolderIds,
@@ -116,6 +118,8 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
   const currentView = useNavigationStore((state) => state.currentView);
 
   const [isAdding, setIsAdding] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [activeId, setActiveId] = useState<number | null>(null);
   const [dragPosition, setDragPosition] = useState<DragPosition>({ type: "none" });
 
@@ -126,22 +130,38 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
     dragPositionRef.current = dragPosition;
   }, [dragPosition]);
 
+  const filteredFolders = useMemo(
+    () => filterFolderTree(folders, searchQuery),
+    [folders, searchQuery],
+  );
+  const effectiveExpandedFolderIds = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return expandedFolderIds;
+    }
+
+    return getAllFolderIds(filteredFolders.filter((folder) => folder.children.length > 0));
+  }, [expandedFolderIds, filteredFolders, searchQuery]);
+
   const visibleFolderItems = useMemo(
     () => [
-      {
-        id: null,
-        parentId: null,
-        depth: 0,
-        hasChildren: false,
-        isExpanded: false,
-      },
-      ...buildVisibleTreeItems(folders, {
-        expandedIds: expandedFolderIds,
+      ...(searchQuery.trim()
+        ? []
+        : [
+            {
+              id: null,
+              parentId: null,
+              depth: 0,
+              hasChildren: false,
+              isExpanded: false,
+            },
+          ]),
+      ...buildVisibleTreeItems(filteredFolders, {
+        expandedIds: effectiveExpandedFolderIds,
         getId: (folder) => folder.id,
         getChildren: (folder) => folder.children,
       }),
     ],
-    [expandedFolderIds, folders],
+    [effectiveExpandedFolderIds, filteredFolders, searchQuery],
   );
 
   const {
@@ -441,18 +461,55 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
       {showHeader && (
         <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
           <h2 className={cn(appSectionLabelClass, "mb-0")}>文件夹</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(appIconButtonClass, "size-7 rounded-lg")}
-            onClick={() => setIsAdding(true)}
-            title="在当前素材库根目录创建文件夹"
-            aria-label="创建文件夹"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                appIconButtonClass,
+                "size-7 rounded-lg",
+                isSearchOpen &&
+                  "bg-black/[0.045] text-gray-700 dark:bg-white/[0.06] dark:text-gray-200",
+              )}
+              onClick={() => {
+                if (isSearchOpen) {
+                  setSearchQuery("");
+                }
+                setIsSearchOpen(!isSearchOpen);
+              }}
+              title={isSearchOpen ? "关闭文件夹搜索" : "搜索文件夹"}
+              aria-label={isSearchOpen ? "关闭文件夹搜索" : "搜索文件夹"}
+            >
+              {isSearchOpen ? <X className="h-3.5 w-3.5" /> : <Search className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(appIconButtonClass, "size-7 rounded-lg")}
+              onClick={() => setIsAdding(true)}
+              title="在当前素材库根目录创建文件夹"
+              aria-label="创建文件夹"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
+
+      {isSearchOpen ? (
+        <div className="px-2 pb-1">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="搜索文件夹"
+              className="h-8 rounded-lg pl-8"
+              autoFocus
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div
         id="folder-tree-container"
@@ -481,7 +538,7 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            {showAllFilesRow && (
+            {showAllFilesRow && !searchQuery.trim() && (
               <div
                 ref={(element) => registerKeyboardItem(null, element)}
                 className={cn(
@@ -503,7 +560,7 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
               </div>
             )}
 
-            {folders.map((folder) => (
+            {filteredFolders.map((folder) => (
               <FolderItem
                 key={folder.id}
                 folder={folder}
@@ -521,6 +578,11 @@ export default function FolderTree({ showHeader = true, showAllFilesRow = true }
             {folders.length === 0 && (
               <div className="py-4 text-center text-[12px] text-gray-400 dark:text-gray-500">
                 暂无文件夹
+              </div>
+            )}
+            {folders.length > 0 && filteredFolders.length === 0 && (
+              <div className="py-4 text-center text-[12px] text-gray-400 dark:text-gray-500">
+                没有匹配结果
               </div>
             )}
           </div>

@@ -50,4 +50,11 @@ describe("tagTreeUtils", () => {
 
     expect(filterTagTree(tags, "   ")).toBe(tags);
   });
+
+  it("uses fuzzy matching for tag names", () => {
+    const englishTags = [tag(10, "Music Player"), tag(11, "Design Pattern")];
+
+    expect(filterTagTree(englishTags, "mpy").map((item) => item.name)).toEqual(["Music Player"]);
+    expect(filterTagTree(englishTags, "dpn").map((item) => item.name)).toEqual(["Design Pattern"]);
+  });
 });

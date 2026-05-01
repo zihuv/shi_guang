@@ -82,10 +82,6 @@ export function createFileCommands(
       const imageQueryFileId = Number(filter.image_query_file_id ?? filter.imageQueryFileId);
       if (Number.isInteger(imageQueryFileId) && imageQueryFileId > 0) {
         const config = loadVisualSearchConfig(state);
-        if (!config.enabled) {
-          throw new Error("请先在设置中启用本地自然语言搜索。");
-        }
-
         const validation = await loadVisualModelValidation(state, config);
         if (!validation.valid || !validation.modelId) {
           throw new Error(validation.message);
@@ -109,10 +105,6 @@ export function createFileCommands(
       const config = loadVisualSearchConfig(state);
       if (!config.modelPath.trim()) {
         return searchFilesByNameFallback(state, args, naturalLanguageQuery);
-      }
-
-      if (!config.enabled) {
-        throw new Error("请先在设置中启用本地自然语言搜索。");
       }
 
       const validation = await loadVisualModelValidation(state, config);

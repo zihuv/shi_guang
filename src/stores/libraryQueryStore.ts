@@ -64,6 +64,7 @@ interface LibraryQueryStore {
   files: FileItem[];
   selectedFolderId: number | null;
   searchQuery: string;
+  aiSearchEnabled: boolean;
   imageQueryFile: ImageQueryFile | null;
   isLoading: boolean;
   pagination: LibraryPagination;
@@ -73,6 +74,7 @@ interface LibraryQueryStore {
   setPaginationMode: (mode: LibraryPaginationMode) => void;
   resetPage: () => void;
   setSearchQuery: (query: string) => void;
+  setAiSearchEnabled: (enabled: boolean) => void;
   searchSimilarToFile: (file: ImageQueryFile) => Promise<void>;
   clearImageQuery: () => void;
   clearTransientQuery: () => void;
@@ -291,6 +293,7 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   files: [],
   selectedFolderId: null,
   searchQuery: "",
+  aiSearchEnabled: false,
   imageQueryFile: null,
   isLoading: false,
   pagination: {
@@ -342,6 +345,18 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
     searchDebounceTimer = setTimeout(() => {
       void get().runCurrentQuery();
     }, 250);
+  },
+
+  setAiSearchEnabled: (enabled) => {
+    set({ aiSearchEnabled: enabled });
+    get().resetPage();
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+
+    void get().runCurrentQuery();
   },
 
   searchSimilarToFile: async (file) => {
@@ -467,11 +482,11 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
   },
 
   searchFiles: async (query) => {
-    await get().filterFiles({ naturalLanguageQuery: query });
+    await get().filterFiles({ query });
   },
 
   runCurrentQuery: async (folderIdOverride) => {
-    const { searchQuery, selectedFolderId, imageQueryFile } = get();
+    const { searchQuery, selectedFolderId, imageQueryFile, aiSearchEnabled } = get();
     const criteria = useFilterStore.getState().criteria;
     const { activeSmartCollection, randomSeed } = useNavigationStore.getState();
     const hasSmartCollectionQuery =
@@ -481,10 +496,15 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
       selectedFolderId,
       folderIdOverride,
     });
+    const trimmedSearchQuery = searchQuery.trim();
+    const textQuery = imageQueryFile || !trimmedSearchQuery ? undefined : trimmedSearchQuery;
+    const fuzzyQuery = aiSearchEnabled ? undefined : textQuery;
+    const naturalLanguageQuery = aiSearchEnabled ? textQuery : undefined;
 
     if (hasStructuredFilters(criteria) || hasSmartCollectionQuery) {
       await get().filterFiles({
-        naturalLanguageQuery: imageQueryFile ? undefined : searchQuery || undefined,
+        query: fuzzyQuery,
+        naturalLanguageQuery,
         imageQueryFileId: imageQueryFile?.id,
         folderId,
         smartView: activeSmartCollection,
@@ -495,7 +515,8 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
     if (imageQueryFile || searchQuery.trim()) {
       await get().filterFiles({
-        naturalLanguageQuery: imageQueryFile ? undefined : searchQuery,
+        query: fuzzyQuery,
+        naturalLanguageQuery,
         imageQueryFileId: imageQueryFile?.id,
         folderId,
         smartView: activeSmartCollection,

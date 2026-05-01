@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathHasPrefix } from "../path-utils";
 import type { FileRecord, PaginatedFiles, SmartCollectionStats } from "../types";
 import { FILE_FORMAT_GROUPS } from "../../src/shared/file-formats";
+import { fuzzySearchItems } from "../../src/shared/fuzzySearch";
 import {
   attachTags,
   buildOrderSql,
@@ -80,29 +81,16 @@ export function getAllFiles(db: Database.Database, args: Record<string, unknown>
 }
 
 export function searchFiles(db: Database.Database, args: Record<string, unknown>): PaginatedFiles {
-  const { page, pageSize, offset } = pageArgs(
-    args.page as number | undefined,
-    args.pageSize as number | undefined,
-  );
   const query = String(args.query ?? "");
-  const orderSql = buildOrderSql(
-    args.sortBy as string | undefined,
-    args.sortDirection as string | undefined,
-  );
-  const pattern = `%${query}%`;
-  const rows = db
-    .prepare(
-      `SELECT * FROM files WHERE name LIKE ? AND deleted_at IS NULL AND missing_at IS NULL ORDER BY ${orderSql} LIMIT ? OFFSET ?`,
-    )
-    .all(pattern, pageSize, offset) as FileRow[];
-  const total = (
-    db
-      .prepare(
-        "SELECT COUNT(*) AS count FROM files WHERE name LIKE ? AND deleted_at IS NULL AND missing_at IS NULL",
-      )
-      .get(pattern) as { count: number }
-  ).count;
-  return paginated(db, rows, total, page, pageSize);
+  return filterFiles(db, {
+    filter: {
+      query,
+      sort_by: args.sortBy,
+      sort_direction: args.sortDirection,
+    },
+    page: args.page,
+    pageSize: args.pageSize,
+  });
 }
 
 export function getFilesInFolder(
@@ -137,6 +125,11 @@ export function getFilesInFolder(
 }
 
 const FILE_TYPE_EXTENSIONS: Record<string, readonly string[]> = FILE_FORMAT_GROUPS;
+type FuzzyFileCandidate = Pick<FileRow, "id" | "name">;
+const FUZZY_FILE_KEYS = [
+  (file: FuzzyFileCandidate) => file.name,
+  (file: FuzzyFileCandidate) => path.parse(file.name).name,
+];
 
 function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): string {
   const conditions = ["f.deleted_at IS NULL AND f.missing_at IS NULL"];
@@ -300,17 +293,99 @@ export function queryFilteredRows(
   return { rows, total, page, pageSize };
 }
 
-export function filterFiles(db: Database.Database, args: Record<string, unknown>): PaginatedFiles {
-  const filter = (args.filter ?? {}) as Record<string, unknown>;
-  const naturalLanguageQuery = String(filter.natural_language_query ?? "").trim();
-  if (naturalLanguageQuery) {
-    throw new Error("本地自然语言搜图迁移到 Electron 后暂未启用，请先使用文件名、标签或颜色筛选。");
+function getFilesByOrderedIds(db: Database.Database, fileIds: number[]): FileRow[] {
+  if (fileIds.length === 0) {
+    return [];
   }
 
-  const { rows, total, page, pageSize } = queryFilteredRows(db, filter, {
-    page: args.page as number | undefined,
-    pageSize: args.pageSize as number | undefined,
+  const order = new Map(fileIds.map((id, index) => [id, index]));
+  const rows: FileRow[] = [];
+  const chunkSize = 500;
+
+  for (let index = 0; index < fileIds.length; index += chunkSize) {
+    const chunk = fileIds.slice(index, index + chunkSize);
+    rows.push(
+      ...(db
+        .prepare(`SELECT * FROM files WHERE id IN (${makePlaceholders(chunk.length)})`)
+        .all(...chunk) as FileRow[]),
+    );
+  }
+
+  rows.sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0));
+  return rows;
+}
+
+function queryFuzzyFilteredRows(
+  db: Database.Database,
+  filter: Record<string, unknown>,
+  args: { page?: number; pageSize?: number },
+): { rows: FileRow[]; total: number; page: number; pageSize: number } {
+  const query = String(filter.query ?? "").trim();
+  const scopedFilter: Record<string, unknown> = { ...filter, query: null };
+  const { page, pageSize, offset } = pageArgs(args.page, args.pageSize);
+  const smartView = String(scopedFilter.smart_view ?? "").trim();
+
+  const rowsForMatchedCandidates = (matchedCandidates: FuzzyFileCandidate[]) => {
+    const pageIds = matchedCandidates.slice(offset, offset + pageSize).map((file) => file.id);
+    return getFilesByOrderedIds(db, pageIds);
+  };
+
+  if (smartView === "similar") {
+    const candidates = queryDuplicateOrSimilarRows(db, scopedFilter, {
+      page: 1,
+      pageSize: Number.MAX_SAFE_INTEGER,
+    }).rows.map((file) => ({ id: file.id, name: file.name }));
+    const matchedRows = fuzzySearchItems(candidates, query, {
+      keys: FUZZY_FILE_KEYS,
+    });
+    return {
+      rows: rowsForMatchedCandidates(matchedRows),
+      total: matchedRows.length,
+      page,
+      pageSize,
+    };
+  }
+
+  const params: unknown[] = [];
+  const where = appendFilterWhere(scopedFilter, params);
+  const orderParams: unknown[] = [];
+  let orderSql = buildOrderSql(
+    scopedFilter.sort_by as string | undefined,
+    scopedFilter.sort_direction as string | undefined,
+    "f.",
+  );
+
+  if (smartView === "recent") {
+    orderSql = "f.last_accessed_at DESC, f.imported_at DESC, f.id ASC";
+  } else if (smartView === "random") {
+    const rawSeed = Number(scopedFilter.smart_seed);
+    const seed = Number.isInteger(rawSeed) ? Math.abs(rawSeed) + 1 : 1;
+    orderSql = "ABS(((f.id * ?) + ?) % 2147483647) ASC, f.id ASC";
+    orderParams.push(seed, seed * 97 + 13);
+  }
+
+  const candidates = db
+    .prepare(`SELECT DISTINCT f.id, f.name FROM files f${where} ORDER BY ${orderSql}`)
+    .all(...params, ...orderParams) as FuzzyFileCandidate[];
+  const matchedRows = fuzzySearchItems(candidates, query, {
+    keys: FUZZY_FILE_KEYS,
   });
+
+  return { rows: rowsForMatchedCandidates(matchedRows), total: matchedRows.length, page, pageSize };
+}
+
+export function filterFiles(db: Database.Database, args: Record<string, unknown>): PaginatedFiles {
+  const filter = (args.filter ?? {}) as Record<string, unknown>;
+  const query = String(filter.query ?? "").trim();
+  const { rows, total, page, pageSize } = query
+    ? queryFuzzyFilteredRows(db, filter, {
+        page: args.page as number | undefined,
+        pageSize: args.pageSize as number | undefined,
+      })
+    : queryFilteredRows(db, filter, {
+        page: args.page as number | undefined,
+        pageSize: args.pageSize as number | undefined,
+      });
   return paginated(db, rows, total, page, pageSize);
 }
 
