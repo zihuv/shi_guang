@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
-import { sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { FileRecord, PaginatedFiles } from "../types";
-import { attachTags, currentTimestamp, makePlaceholders, pageArgs } from "./shared";
+import { attachTags, currentTimestamp, pageArgs } from "./shared";
 import { queryFilteredRows } from "./file-repository";
 import { getDrizzleDb } from "./client";
 import { fileVisualEmbeddings, files } from "./schema";
@@ -38,42 +38,64 @@ function isVisualSearchSupportedExtension(ext: string): boolean {
   return canVisualSearchImage(ext);
 }
 
-function currentVisualSourceMatchSql(fileAlias = "f", embeddingAlias = "fve"): string {
-  return `(
+function currentVisualSourceMatchSql() {
+  return sql`(
     (
-      NULLIF(${embeddingAlias}.source_content_hash, '') IS NOT NULL
-      AND NULLIF(${fileAlias}.content_hash, '') IS NOT NULL
-      AND ${embeddingAlias}.source_content_hash = ${fileAlias}.content_hash
+      NULLIF(${fileVisualEmbeddings.sourceContentHash}, '') IS NOT NULL
+      AND NULLIF(${files.contentHash}, '') IS NOT NULL
+      AND ${fileVisualEmbeddings.sourceContentHash} = ${files.contentHash}
     )
     OR (
       (
-        NULLIF(${embeddingAlias}.source_content_hash, '') IS NULL
-        OR NULLIF(${fileAlias}.content_hash, '') IS NULL
+        NULLIF(${fileVisualEmbeddings.sourceContentHash}, '') IS NULL
+        OR NULLIF(${files.contentHash}, '') IS NULL
       )
-      AND ${embeddingAlias}.source_size = ${fileAlias}.size
-      AND ${embeddingAlias}.source_modified_at = ${fileAlias}.fs_modified_at
+      AND ${fileVisualEmbeddings.sourceSize} = ${files.size}
+      AND ${fileVisualEmbeddings.sourceModifiedAt} = ${files.fsModifiedAt}
     )
   )`;
 }
 
-function outdatedVisualSourceMatchSql(fileAlias = "f", embeddingAlias = "fve"): string {
-  return `(
+function outdatedVisualSourceMatchSql() {
+  return sql`(
     (
-      NULLIF(${embeddingAlias}.source_content_hash, '') IS NOT NULL
-      AND NULLIF(${fileAlias}.content_hash, '') IS NOT NULL
-      AND ${embeddingAlias}.source_content_hash != ${fileAlias}.content_hash
+      NULLIF(${fileVisualEmbeddings.sourceContentHash}, '') IS NOT NULL
+      AND NULLIF(${files.contentHash}, '') IS NOT NULL
+      AND ${fileVisualEmbeddings.sourceContentHash} != ${files.contentHash}
     )
     OR (
       (
-        NULLIF(${embeddingAlias}.source_content_hash, '') IS NULL
-        OR NULLIF(${fileAlias}.content_hash, '') IS NULL
+        NULLIF(${fileVisualEmbeddings.sourceContentHash}, '') IS NULL
+        OR NULLIF(${files.contentHash}, '') IS NULL
       )
       AND (
-        ${embeddingAlias}.source_size != ${fileAlias}.size
-        OR ${embeddingAlias}.source_modified_at != ${fileAlias}.fs_modified_at
+        ${fileVisualEmbeddings.sourceSize} != ${files.size}
+        OR ${fileVisualEmbeddings.sourceModifiedAt} != ${files.fsModifiedAt}
       )
     )
   )`;
+}
+
+function toVisualIndexCandidate(row: {
+  id: number;
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
+  fsModifiedAt: string;
+  contentHash: string | null;
+}): VisualIndexCandidate {
+  return {
+    file: {
+      id: row.id,
+      path: row.path,
+      name: row.name,
+      ext: row.ext,
+    },
+    sourceSize: row.size,
+    sourceModifiedAt: row.fsModifiedAt,
+    contentHash: row.contentHash ?? null,
+  };
 }
 
 export function upsertFileVisualEmbedding(
@@ -182,9 +204,7 @@ export function getVisualIndexCandidate(
       contentHash: files.contentHash,
     })
     .from(files)
-    .where(
-      sql`${files.id} = ${fileId} AND ${files.deletedAt} IS NULL AND ${files.missingAt} IS NULL`,
-    )
+    .where(and(eq(files.id, fileId), isNull(files.deletedAt), isNull(files.missingAt)))
     .get();
   if (!row || !isVisualSearchSupportedExtension(row.ext)) {
     return null;
@@ -203,128 +223,101 @@ export function getVisualIndexCandidate(
 }
 
 export function getVisualIndexCandidates(db: Database.Database): VisualIndexCandidate[] {
-  const rows = db
-    .prepare(
-      "SELECT id, path, name, ext, size, fs_modified_at, content_hash FROM files WHERE deleted_at IS NULL AND missing_at IS NULL ORDER BY imported_at DESC, id ASC",
-    )
-    .all() as Array<{
-    id: number;
-    path: string;
-    name: string;
-    ext: string;
-    size: number;
-    fs_modified_at: string;
-    content_hash: string | null;
-  }>;
-
+  const rows = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      path: files.path,
+      name: files.name,
+      ext: files.ext,
+      size: files.size,
+      fsModifiedAt: files.fsModifiedAt,
+      contentHash: files.contentHash,
+    })
+    .from(files)
+    .where(and(isNull(files.deletedAt), isNull(files.missingAt)))
+    .orderBy(desc(files.importedAt), files.id)
+    .all();
   return rows
     .filter((row) => isVisualSearchSupportedExtension(row.ext))
-    .map((row) => ({
-      file: {
-        id: row.id,
-        path: row.path,
-        name: row.name,
-        ext: row.ext,
-      },
-      sourceSize: row.size,
-      sourceModifiedAt: row.fs_modified_at,
-      contentHash: row.content_hash ?? null,
-    }));
+    .map(toVisualIndexCandidate);
 }
 
 export function getUnindexedVisualIndexCandidates(
   db: Database.Database,
   modelId: string,
 ): VisualIndexCandidate[] {
-  const rows = db
-    .prepare(
-      `SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at, f.content_hash
-     FROM files f
-     LEFT JOIN file_visual_embeddings fve
-       ON fve.file_id = f.id
-      AND fve.model_id = ?
-     WHERE f.deleted_at IS NULL AND f.missing_at IS NULL
-       AND (
-         fve.file_id IS NULL
-         OR fve.status != 'ready'
-         OR fve.embedding IS NULL
-         OR ${outdatedVisualSourceMatchSql()}
-       )
-     ORDER BY f.imported_at DESC, f.id ASC`,
+  const rows = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      path: files.path,
+      name: files.name,
+      ext: files.ext,
+      size: files.size,
+      fsModifiedAt: files.fsModifiedAt,
+      contentHash: files.contentHash,
+    })
+    .from(files)
+    .leftJoin(
+      fileVisualEmbeddings,
+      and(eq(fileVisualEmbeddings.fileId, files.id), eq(fileVisualEmbeddings.modelId, modelId)),
     )
-    .all(modelId) as Array<{
-    id: number;
-    path: string;
-    name: string;
-    ext: string;
-    size: number;
-    fs_modified_at: string;
-    content_hash: string | null;
-  }>;
-
+    .where(
+      and(
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        or(
+          isNull(fileVisualEmbeddings.fileId),
+          ne(fileVisualEmbeddings.status, "ready"),
+          isNull(fileVisualEmbeddings.embedding),
+          outdatedVisualSourceMatchSql(),
+        ),
+      ),
+    )
+    .orderBy(desc(files.importedAt), files.id)
+    .all();
   return rows
     .filter((row) => isVisualSearchSupportedExtension(row.ext))
-    .map((row) => ({
-      file: {
-        id: row.id,
-        path: row.path,
-        name: row.name,
-        ext: row.ext,
-      },
-      sourceSize: row.size,
-      sourceModifiedAt: row.fs_modified_at,
-      contentHash: row.content_hash ?? null,
-    }));
+    .map(toVisualIndexCandidate);
 }
 
 export function getPendingVisualIndexCandidates(
   db: Database.Database,
   modelId: string,
 ): VisualIndexCandidate[] {
-  const rows = db
-    .prepare(
-      `SELECT f.id, f.path, f.name, f.ext, f.size, f.fs_modified_at, f.content_hash
-     FROM files f
-     LEFT JOIN file_visual_embeddings fve
-       ON fve.file_id = f.id
-      AND fve.model_id = ?
-     WHERE f.deleted_at IS NULL AND f.missing_at IS NULL
-       AND (
-         fve.file_id IS NULL
-         OR (
-           fve.status != 'error'
-           AND (
-             fve.status != 'ready'
-             OR fve.embedding IS NULL
-           )
-         )
-         OR ${outdatedVisualSourceMatchSql()}
-       )
-     ORDER BY f.imported_at DESC, f.id ASC`,
+  const rows = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      path: files.path,
+      name: files.name,
+      ext: files.ext,
+      size: files.size,
+      fsModifiedAt: files.fsModifiedAt,
+      contentHash: files.contentHash,
+    })
+    .from(files)
+    .leftJoin(
+      fileVisualEmbeddings,
+      and(eq(fileVisualEmbeddings.fileId, files.id), eq(fileVisualEmbeddings.modelId, modelId)),
     )
-    .all(modelId) as Array<{
-    id: number;
-    path: string;
-    name: string;
-    ext: string;
-    size: number;
-    fs_modified_at: string;
-    content_hash: string | null;
-  }>;
-
+    .where(
+      and(
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        or(
+          isNull(fileVisualEmbeddings.fileId),
+          and(
+            ne(fileVisualEmbeddings.status, "error"),
+            or(ne(fileVisualEmbeddings.status, "ready"), isNull(fileVisualEmbeddings.embedding)),
+          ),
+          outdatedVisualSourceMatchSql(),
+        ),
+      ),
+    )
+    .orderBy(desc(files.importedAt), files.id)
+    .all();
   return rows
     .filter((row) => isVisualSearchSupportedExtension(row.ext))
-    .map((row) => ({
-      file: {
-        id: row.id,
-        path: row.path,
-        name: row.name,
-        ext: row.ext,
-      },
-      sourceSize: row.size,
-      sourceModifiedAt: row.fs_modified_at,
-      contentHash: row.content_hash ?? null,
-    }));
+    .map(toVisualIndexCandidate);
 }
 
 export function isFileVisualEmbeddingReady(
@@ -332,44 +325,43 @@ export function isFileVisualEmbeddingReady(
   fileId: number,
   modelId: string,
 ): boolean {
-  const row = db
-    .prepare(
-      `SELECT 1
-       FROM file_visual_embeddings fve
-       JOIN files f ON f.id = fve.file_id
-       WHERE f.id = ?
-         AND f.deleted_at IS NULL
-         AND f.missing_at IS NULL
-         AND fve.model_id = ?
-         AND fve.status = 'ready'
-         AND fve.embedding IS NOT NULL
-         AND ${currentVisualSourceMatchSql()}
-       LIMIT 1`,
+  const row = getDrizzleDb(db)
+    .select({ one: sql`1` })
+    .from(fileVisualEmbeddings)
+    .innerJoin(files, eq(files.id, fileVisualEmbeddings.fileId))
+    .where(
+      and(
+        eq(files.id, fileId),
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        eq(fileVisualEmbeddings.modelId, modelId),
+        eq(fileVisualEmbeddings.status, "ready"),
+        isNotNull(fileVisualEmbeddings.embedding),
+        currentVisualSourceMatchSql(),
+      ),
     )
-    .get(fileId, modelId) as { 1: number } | undefined;
+    .limit(1)
+    .get();
 
   return Boolean(row);
 }
 
 export function getVisualIndexCounts(db: Database.Database, modelId: string): VisualIndexCounts {
-  const rows = db
-    .prepare(
-      `SELECT f.ext, fve.status, CASE WHEN fve.embedding IS NOT NULL THEN 1 ELSE 0 END AS has_embedding,
-            CASE WHEN ${currentVisualSourceMatchSql()} THEN 1 ELSE 0 END AS is_current,
-            CASE WHEN ${outdatedVisualSourceMatchSql()} THEN 1 ELSE 0 END AS is_outdated
-     FROM files f
-     LEFT JOIN file_visual_embeddings fve
-       ON fve.file_id = f.id
-      AND fve.model_id = ?
-     WHERE f.deleted_at IS NULL AND f.missing_at IS NULL`,
+  const rows = getDrizzleDb(db)
+    .select({
+      ext: files.ext,
+      status: fileVisualEmbeddings.status,
+      has_embedding: sql<number>`CASE WHEN ${fileVisualEmbeddings.embedding} IS NOT NULL THEN 1 ELSE 0 END`,
+      is_current: sql<number>`CASE WHEN ${currentVisualSourceMatchSql()} THEN 1 ELSE 0 END`,
+      is_outdated: sql<number>`CASE WHEN ${outdatedVisualSourceMatchSql()} THEN 1 ELSE 0 END`,
+    })
+    .from(files)
+    .leftJoin(
+      fileVisualEmbeddings,
+      and(eq(fileVisualEmbeddings.fileId, files.id), eq(fileVisualEmbeddings.modelId, modelId)),
     )
-    .all(modelId) as Array<{
-    ext: string;
-    status: string | null;
-    has_embedding: number;
-    is_current: number;
-    is_outdated: number;
-  }>;
+    .where(and(isNull(files.deletedAt), isNull(files.missingAt)))
+    .all();
 
   let totalImages = 0;
   let ready = 0;
@@ -454,28 +446,33 @@ export function searchFilesByVisualEmbedding(
     };
   }
 
-  const placeholders = makePlaceholders(candidateRows.length);
-  const embeddingRows = db
-    .prepare(
-      `SELECT fve.file_id, fve.dimensions, fve.embedding
-     FROM file_visual_embeddings fve
-     JOIN files f ON f.id = fve.file_id
-     WHERE fve.model_id = ?
-       AND fve.status = 'ready'
-       AND fve.embedding IS NOT NULL
-       AND f.deleted_at IS NULL AND f.missing_at IS NULL
-       AND ${currentVisualSourceMatchSql()}
-       AND fve.file_id IN (${placeholders})`,
+  const embeddingRows = getDrizzleDb(db)
+    .select({
+      file_id: fileVisualEmbeddings.fileId,
+      dimensions: fileVisualEmbeddings.dimensions,
+      embedding: fileVisualEmbeddings.embedding,
+    })
+    .from(fileVisualEmbeddings)
+    .innerJoin(files, eq(files.id, fileVisualEmbeddings.fileId))
+    .where(
+      and(
+        eq(fileVisualEmbeddings.modelId, modelId),
+        eq(fileVisualEmbeddings.status, "ready"),
+        isNotNull(fileVisualEmbeddings.embedding),
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        currentVisualSourceMatchSql(),
+        inArray(
+          fileVisualEmbeddings.fileId,
+          candidateRows.map((row) => row.id),
+        ),
+      ),
     )
-    .all(modelId, ...candidateRows.map((row) => row.id)) as Array<{
-    file_id: number;
-    dimensions: number;
-    embedding: Buffer;
-  }>;
+    .all();
 
   const embeddingMap = new Map<number, Float32Array>();
   for (const row of embeddingRows) {
-    const embedding = decodeEmbeddingBlob(row.embedding, row.dimensions);
+    const embedding = row.embedding ? decodeEmbeddingBlob(row.embedding, row.dimensions) : null;
     if (embedding && embedding.length === queryEmbedding.length) {
       embeddingMap.set(row.file_id, embedding);
     }
@@ -532,37 +529,35 @@ export function getFileVisualEmbeddingQuery(
   fileId: number,
   modelId?: string,
 ): FileVisualEmbeddingQuery | null {
-  const modelFilter = modelId ? "AND fve.model_id = ?" : "";
-  const params = modelId ? [fileId, modelId] : [fileId];
-  const row = db
-    .prepare(
-      `SELECT f.id, f.name, fve.model_id, fve.dimensions, fve.embedding
-       FROM file_visual_embeddings fve
-       JOIN files f ON f.id = fve.file_id
-       WHERE f.id = ?
-         AND f.deleted_at IS NULL
-         AND f.missing_at IS NULL
-         AND fve.status = 'ready'
-         AND fve.embedding IS NOT NULL
-         ${modelFilter}
-         AND ${currentVisualSourceMatchSql()}
-       LIMIT 1`,
+  const row = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      name: files.name,
+      model_id: fileVisualEmbeddings.modelId,
+      dimensions: fileVisualEmbeddings.dimensions,
+      embedding: fileVisualEmbeddings.embedding,
+    })
+    .from(fileVisualEmbeddings)
+    .innerJoin(files, eq(files.id, fileVisualEmbeddings.fileId))
+    .where(
+      and(
+        eq(files.id, fileId),
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        eq(fileVisualEmbeddings.status, "ready"),
+        isNotNull(fileVisualEmbeddings.embedding),
+        modelId ? eq(fileVisualEmbeddings.modelId, modelId) : undefined,
+        currentVisualSourceMatchSql(),
+      ),
     )
-    .get(...params) as
-    | {
-        id: number;
-        name: string;
-        model_id: string;
-        dimensions: number;
-        embedding: Buffer;
-      }
-    | undefined;
+    .limit(1)
+    .get();
 
   if (!row) {
     return null;
   }
 
-  const embedding = decodeEmbeddingBlob(row.embedding, row.dimensions);
+  const embedding = row.embedding ? decodeEmbeddingBlob(row.embedding, row.dimensions) : null;
   if (!embedding) {
     return null;
   }

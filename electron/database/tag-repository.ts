@@ -1,26 +1,29 @@
 import Database from "better-sqlite3";
-import { eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import type { TagRecord } from "../types";
 import { getDrizzleDb } from "./client";
-import { fileTags, tags } from "./schema";
+import { fileTags, files, tags } from "./schema";
 import { currentTimestamp, generateSyncId } from "./shared";
 
 export function getAllTags(db: Database.Database): TagRecord[] {
-  const rows = getDrizzleDb(db).all<{
-    id: number;
-    name: string;
-    color: string;
-    count: number;
-    parent_id: number | null;
-    sort_order: number;
-  }>(sql`
-    SELECT t.id, t.name, t.color, COUNT(f.id) AS count, t.parent_id, t.sort_order
-    FROM tags t
-    LEFT JOIN file_tags ft ON t.id = ft.tag_id
-    LEFT JOIN files f ON f.id = ft.file_id AND f.deleted_at IS NULL AND f.missing_at IS NULL
-    GROUP BY t.id
-    ORDER BY COALESCE(t.parent_id, t.id), t.sort_order ASC, t.name ASC
-  `);
+  const rows = getDrizzleDb(db)
+    .select({
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+      count: count(files.id),
+      parent_id: tags.parentId,
+      sort_order: tags.sortOrder,
+    })
+    .from(tags)
+    .leftJoin(fileTags, eq(tags.id, fileTags.tagId))
+    .leftJoin(
+      files,
+      and(eq(files.id, fileTags.fileId), isNull(files.deletedAt), isNull(files.missingAt)),
+    )
+    .groupBy(tags.id)
+    .orderBy(sql`COALESCE(${tags.parentId}, ${tags.id})`, asc(tags.sortOrder), asc(tags.name))
+    .all();
 
   return rows.map((row) => ({
     id: row.id,
@@ -28,7 +31,7 @@ export function getAllTags(db: Database.Database): TagRecord[] {
     color: row.color,
     count: row.count,
     parentId: row.parent_id,
-    sortOrder: row.sort_order,
+    sortOrder: row.sort_order ?? 0,
   }));
 }
 
@@ -66,7 +69,7 @@ export function addTagToFile(db: Database.Database, fileId: number, tagId: numbe
 export function removeTagFromFile(db: Database.Database, fileId: number, tagId: number): void {
   getDrizzleDb(db)
     .delete(fileTags)
-    .where(sql`${fileTags.fileId} = ${fileId} AND ${fileTags.tagId} = ${tagId}`)
+    .where(and(eq(fileTags.fileId, fileId), eq(fileTags.tagId, tagId)))
     .run();
 }
 

@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
-import { sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import path from "node:path";
 import type { FileRecord, FolderRecord, PaginatedFiles, TagRecord } from "../types";
 import { getDrizzleDb } from "./client";
-import { fileTags, tags } from "./schema";
+import { fileTags, files, tags } from "./schema";
 
 export const BROWSER_COLLECTION_FOLDER_NAME = "浏览器采集";
 
@@ -71,6 +71,32 @@ export type FolderRow = {
   deleted_at?: string | null;
 };
 
+export function toFileRow(row: typeof files.$inferSelect): FileRow {
+  return {
+    id: row.id,
+    path: row.path,
+    name: row.name,
+    ext: row.ext,
+    size: row.size,
+    width: row.width,
+    height: row.height,
+    folder_id: row.folderId,
+    created_at: row.createdAt,
+    modified_at: row.modifiedAt,
+    imported_at: row.importedAt,
+    last_accessed_at: row.lastAccessedAt,
+    rating: row.rating,
+    description: row.description,
+    source_url: row.sourceUrl,
+    dominant_color: row.dominantColor,
+    color_distribution: row.colorDistribution,
+    thumb_hash: row.thumbHash,
+    content_hash: row.contentHash,
+    deleted_at: row.deletedAt,
+    missing_at: row.missingAt,
+  };
+}
+
 export function toFile(row: FileRow, tags: TagRecord[] = []): FileRecord {
   return {
     id: row.id,
@@ -111,10 +137,6 @@ export function toFolder(row: FolderRow): FolderRecord {
   };
 }
 
-export function makePlaceholders(count: number): string {
-  return Array.from({ length: count }, () => "?").join(", ");
-}
-
 export function getTagsForFiles(
   db: Database.Database,
   fileIds: number[],
@@ -124,24 +146,20 @@ export function getTagsForFiles(
     return map;
   }
 
-  const rows = getDrizzleDb(db).all<{
-    file_id: number;
-    id: number;
-    name: string;
-    color: string;
-    parent_id: number | null;
-    sort_order: number;
-  }>(sql`
-    SELECT ${fileTags.fileId} AS file_id, ${tags.id} AS id, ${tags.name} AS name, ${tags.color} AS color,
-      ${tags.parentId} AS parent_id, ${tags.sortOrder} AS sort_order
-    FROM ${tags}
-    INNER JOIN ${fileTags} ON ${tags.id} = ${fileTags.tagId}
-    WHERE ${fileTags.fileId} IN (${sql.join(
-      fileIds.map((fileId) => sql`${fileId}`),
-      sql`, `,
-    )})
-    ORDER BY ${fileTags.fileId} ASC, file_tags.rowid ASC
-  `);
+  const rows = getDrizzleDb(db)
+    .select({
+      file_id: fileTags.fileId,
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+      parent_id: tags.parentId,
+      sort_order: tags.sortOrder,
+    })
+    .from(tags)
+    .innerJoin(fileTags, eq(tags.id, fileTags.tagId))
+    .where(inArray(fileTags.fileId, fileIds))
+    .orderBy(asc(fileTags.fileId), sql`file_tags.rowid ASC`)
+    .all();
 
   for (const row of rows) {
     const tags = map.get(row.file_id) ?? [];
@@ -151,7 +169,7 @@ export function getTagsForFiles(
       color: row.color,
       count: 1,
       parentId: row.parent_id,
-      sortOrder: row.sort_order,
+      sortOrder: row.sort_order ?? 0,
     });
     map.set(row.file_id, tags);
   }

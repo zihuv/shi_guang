@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
-import { eq, sql } from "drizzle-orm";
+import { count, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { FileRecord, TrashFolderRecord, TrashItemRecord } from "../types";
 import { pathHasPrefix, replacePathPrefix } from "../path-utils";
-import { attachTags, FileRow } from "./shared";
+import { attachTags, toFileRow } from "./shared";
 import { getDrizzleDb } from "./client";
 import { files, folderTrashEntries, folders } from "./schema";
 import { getSetting, setSetting } from "./settings-repository";
@@ -97,7 +97,7 @@ export function getTrashFolders(db: Database.Database): TrashFolderRecord[] {
     })
     .from(folders)
     .innerJoin(folderTrashEntries, eq(folderTrashEntries.folderId, folders.id))
-    .where(sql`${folders.deletedAt} IS NOT NULL`)
+    .where(isNotNull(folders.deletedAt))
     .orderBy(sql`${folderTrashEntries.deletedAt} DESC`, folders.id)
     .all()
     .map((row) => ({
@@ -115,7 +115,7 @@ function getTrashedFolderPaths(db: Database.Database): TrashedFolderPathRecord[]
     .select({ path: folders.path, temp_path: folderTrashEntries.tempPath })
     .from(folders)
     .innerJoin(folderTrashEntries, eq(folderTrashEntries.folderId, folders.id))
-    .where(sql`${folders.deletedAt} IS NOT NULL`)
+    .where(isNotNull(folders.deletedAt))
     .all();
   return rows
     .map((row) => ({
@@ -139,9 +139,13 @@ export function resolveTrashPreviewPath(
 }
 
 export function getTrashFiles(db: Database.Database): FileRecord[] {
-  const rows = getDrizzleDb(db).all<FileRow>(
-    sql`SELECT * FROM ${files} WHERE ${files.deletedAt} IS NOT NULL ORDER BY ${files.deletedAt} DESC, ${files.id} ASC`,
-  );
+  const rows = getDrizzleDb(db)
+    .select()
+    .from(files)
+    .where(isNotNull(files.deletedAt))
+    .orderBy(desc(files.deletedAt), files.id)
+    .all()
+    .map(toFileRow);
   const trashedFolders = getTrashedFolderPaths(db);
   return attachTags(db, rows).map((file) => ({
     ...file,
@@ -161,12 +165,11 @@ export function getTrashItems(db: Database.Database): TrashItemRecord[] {
 }
 
 export function getTrashCount(db: Database.Database): number {
-  const fileCount = getDrizzleDb(db).get<{ count: number }>(
-    sql`SELECT COUNT(*) AS count FROM ${files} WHERE ${files.deletedAt} IS NOT NULL`,
-  ).count;
-  const folderCount = getDrizzleDb(db).get<{ count: number }>(
-    sql`SELECT COUNT(*) AS count FROM ${folderTrashEntries}`,
-  ).count;
+  const fileCount =
+    getDrizzleDb(db).select({ count: count() }).from(files).where(isNotNull(files.deletedAt)).get()
+      ?.count ?? 0;
+  const folderCount =
+    getDrizzleDb(db).select({ count: count() }).from(folderTrashEntries).get()?.count ?? 0;
   return fileCount + folderCount;
 }
 

@@ -1,5 +1,21 @@
 import Database from "better-sqlite3";
-import { eq, sql } from "drizzle-orm";
+import {
+  and,
+  countDistinct,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lte,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import fssync from "node:fs";
 import path from "node:path";
 import { pathHasPrefix } from "../path-utils";
@@ -12,41 +28,15 @@ import {
   currentTimestamp,
   FileRow,
   generateSyncId,
-  makePlaceholders,
   normalizeStoredPath,
   pageArgs,
   paginated,
   parseHexColor,
+  toFileRow,
 } from "./shared";
 import { getDrizzleDb } from "./client";
-import { files as filesTable } from "./schema";
+import { fileTags, files as filesTable } from "./schema";
 import { getDuplicateOrSimilarFileIds } from "./similarity-repository";
-
-function toFileRow(row: typeof filesTable.$inferSelect): FileRow {
-  return {
-    id: row.id,
-    path: row.path,
-    name: row.name,
-    ext: row.ext,
-    size: row.size,
-    width: row.width,
-    height: row.height,
-    folder_id: row.folderId,
-    created_at: row.createdAt,
-    modified_at: row.modifiedAt,
-    imported_at: row.importedAt,
-    last_accessed_at: row.lastAccessedAt,
-    rating: row.rating,
-    description: row.description,
-    source_url: row.sourceUrl,
-    dominant_color: row.dominantColor,
-    color_distribution: row.colorDistribution,
-    thumb_hash: row.thumbHash,
-    content_hash: row.contentHash,
-    deleted_at: row.deletedAt,
-    missing_at: row.missingAt,
-  };
-}
 
 export function getFileById(db: Database.Database, fileId: number): FileRecord | null {
   const row = getDrizzleDb(db).select().from(filesTable).where(eq(filesTable.id, fileId)).get();
@@ -71,16 +61,14 @@ export function findMoveCandidateByContentHash(
   if (!contentHash) {
     return null;
   }
-  const row = db
-    .prepare(
-      `SELECT *
-       FROM files
-       WHERE content_hash = ?
-         AND deleted_at IS NULL
-       ORDER BY missing_at IS NULL DESC, imported_at DESC, id ASC
-       LIMIT 8`,
-    )
-    .all(contentHash) as FileRow[];
+  const row = getDrizzleDb(db)
+    .select()
+    .from(filesTable)
+    .where(and(eq(filesTable.contentHash, contentHash), isNull(filesTable.deletedAt)))
+    .orderBy(desc(sql`${filesTable.missingAt} IS NULL`), desc(filesTable.importedAt), filesTable.id)
+    .limit(8)
+    .all()
+    .map(toFileRow);
   const missing = row.find((item) => item.missing_at);
   const active = row.find((item) => !item.missing_at && !fssync.existsSync(item.path));
   const candidate = missing ?? active;
@@ -96,18 +84,22 @@ export function getAllFiles(db: Database.Database, args: Record<string, unknown>
     args.sortBy as string | undefined,
     args.sortDirection as string | undefined,
   );
-  const rows = getDrizzleDb(db).all<FileRow>(sql`
-    SELECT *
-    FROM ${filesTable}
-    WHERE ${filesTable.deletedAt} IS NULL AND ${filesTable.missingAt} IS NULL
-    ORDER BY ${sql.raw(orderSql)}
-    LIMIT ${pageSize} OFFSET ${offset}
-  `);
-  const total = getDrizzleDb(db).get<{ count: number }>(sql`
-    SELECT COUNT(*) AS count
-    FROM ${filesTable}
-    WHERE ${filesTable.deletedAt} IS NULL AND ${filesTable.missingAt} IS NULL
-  `).count;
+  const activeWhere = and(isNull(filesTable.deletedAt), isNull(filesTable.missingAt));
+  const rows = getDrizzleDb(db)
+    .select()
+    .from(filesTable)
+    .where(activeWhere)
+    .orderBy(sql.raw(orderSql))
+    .limit(pageSize)
+    .offset(offset)
+    .all()
+    .map(toFileRow);
+  const total =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(activeWhere)
+      .get()?.count ?? 0;
   return paginated(db, rows, total, page, pageSize);
 }
 
@@ -137,26 +129,26 @@ export function getFilesInFolder(
     args.sortBy as string | undefined,
     args.sortDirection as string | undefined,
   );
-  const folderWhere =
-    folderId == null
-      ? sql`${filesTable.folderId} IS NULL`
-      : sql`${filesTable.folderId} = ${folderId}`;
-  const rows = getDrizzleDb(db).all<FileRow>(sql`
-    SELECT *
-    FROM ${filesTable}
-    WHERE ${folderWhere}
-      AND ${filesTable.deletedAt} IS NULL
-      AND ${filesTable.missingAt} IS NULL
-    ORDER BY ${sql.raw(orderSql)}
-    LIMIT ${pageSize} OFFSET ${offset}
-  `);
-  const total = getDrizzleDb(db).get<{ count: number }>(sql`
-    SELECT COUNT(*) AS count
-    FROM ${filesTable}
-    WHERE ${folderWhere}
-      AND ${filesTable.deletedAt} IS NULL
-      AND ${filesTable.missingAt} IS NULL
-  `).count;
+  const where = and(
+    folderId == null ? isNull(filesTable.folderId) : eq(filesTable.folderId, Number(folderId)),
+    isNull(filesTable.deletedAt),
+    isNull(filesTable.missingAt),
+  );
+  const rows = getDrizzleDb(db)
+    .select()
+    .from(filesTable)
+    .where(where)
+    .orderBy(sql.raw(orderSql))
+    .limit(pageSize)
+    .offset(offset)
+    .all()
+    .map(toFileRow);
+  const total =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(where)
+      .get()?.count ?? 0;
   return paginated(db, rows, total, page, pageSize);
 }
 
@@ -167,57 +159,56 @@ const FUZZY_FILE_KEYS = [
   (file: FuzzyFileCandidate) => path.parse(file.name).name,
 ];
 
-function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): string {
-  const conditions = ["f.deleted_at IS NULL AND f.missing_at IS NULL"];
+function buildFilterWhere(db: Database.Database, filter: Record<string, unknown>): SQL {
+  const conditions: SQL[] = [isNull(filesTable.deletedAt), isNull(filesTable.missingAt)];
   const query = String(filter.query ?? "").trim();
   if (query) {
-    conditions.push("f.name LIKE ?");
-    params.push(`%${query}%`);
+    conditions.push(like(filesTable.name, `%${query}%`));
   }
 
   if (typeof filter.folder_id === "number") {
-    conditions.push("f.folder_id = ?");
-    params.push(filter.folder_id);
+    conditions.push(eq(filesTable.folderId, filter.folder_id));
   }
 
   const smartView = String(filter.smart_view ?? "").trim();
   if (smartView === "unclassified") {
-    conditions.push("f.folder_id IS NULL");
+    conditions.push(isNull(filesTable.folderId));
   } else if (smartView === "untagged") {
-    conditions.push("NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id)");
+    conditions.push(
+      notExists(
+        getDrizzleDb(db)
+          .select({ one: sql`1` })
+          .from(fileTags)
+          .where(eq(fileTags.fileId, filesTable.id)),
+      ),
+    );
   } else if (smartView === "recent") {
-    conditions.push("f.last_accessed_at IS NOT NULL");
+    conditions.push(isNotNull(filesTable.lastAccessedAt));
   }
 
   const fileTypes = Array.isArray(filter.file_types) ? filter.file_types.map(String) : [];
   const extGroups = fileTypes.flatMap((type) => FILE_TYPE_EXTENSIONS[type] ?? []);
   if (extGroups.length) {
-    conditions.push(`LOWER(f.ext) IN (${makePlaceholders(extGroups.length)})`);
-    params.push(...extGroups);
+    conditions.push(inArray(sql`LOWER(${filesTable.ext})`, extGroups));
   }
 
-  for (const [key, operator] of [
-    ["date_start", ">="],
-    ["date_end", "<="],
-  ] as const) {
-    const value = String(filter[key] ?? "").trim();
-    if (value) {
-      conditions.push(`f.imported_at ${operator} ?`);
-      params.push(value);
-    }
+  const dateStart = String(filter.date_start ?? "").trim();
+  if (dateStart) {
+    conditions.push(gte(filesTable.importedAt, dateStart));
+  }
+  const dateEnd = String(filter.date_end ?? "").trim();
+  if (dateEnd) {
+    conditions.push(lte(filesTable.importedAt, dateEnd));
   }
 
   if (typeof filter.size_min === "number") {
-    conditions.push("f.size >= ?");
-    params.push(filter.size_min);
+    conditions.push(gte(filesTable.size, filter.size_min));
   }
   if (typeof filter.size_max === "number") {
-    conditions.push("f.size <= ?");
-    params.push(filter.size_max);
+    conditions.push(lte(filesTable.size, filter.size_max));
   }
   if (typeof filter.min_rating === "number" && filter.min_rating > 0) {
-    conditions.push("f.rating >= ?");
-    params.push(filter.min_rating);
+    conditions.push(gte(filesTable.rating, filter.min_rating));
   }
 
   const tagIds = Array.isArray(filter.tag_ids)
@@ -225,9 +216,13 @@ function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): 
     : [];
   if (tagIds.length) {
     conditions.push(
-      `EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id AND ft.tag_id IN (${makePlaceholders(tagIds.length)}))`,
+      exists(
+        getDrizzleDb(db)
+          .select({ one: sql`1` })
+          .from(fileTags)
+          .where(and(eq(fileTags.fileId, filesTable.id), inArray(fileTags.tagId, tagIds))),
+      ),
     );
-    params.push(...tagIds);
   }
 
   const targetColor = String(filter.dominant_color ?? "").trim();
@@ -236,15 +231,19 @@ function appendFilterWhere(filter: Record<string, unknown>, params: unknown[]): 
     if (parsed) {
       const [r, g, b] = parsed;
       conditions.push(
-        "f.dominant_r IS NOT NULL AND f.dominant_g IS NOT NULL AND f.dominant_b IS NOT NULL AND (((f.dominant_r - ?) * (f.dominant_r - ?)) + ((f.dominant_g - ?) * (f.dominant_g - ?)) + ((f.dominant_b - ?) * (f.dominant_b - ?))) <= ?",
+        and(
+          isNotNull(filesTable.dominantR),
+          isNotNull(filesTable.dominantG),
+          isNotNull(filesTable.dominantB),
+          sql`(((${filesTable.dominantR} - ${r}) * (${filesTable.dominantR} - ${r})) + ((${filesTable.dominantG} - ${g}) * (${filesTable.dominantG} - ${g})) + ((${filesTable.dominantB} - ${b}) * (${filesTable.dominantB} - ${b}))) <= ${85 * 85}`,
+        )!,
       );
-      params.push(r, r, g, g, b, b, 85 * 85);
     } else {
-      conditions.push("1 = 0");
+      conditions.push(sql`1 = 0`);
     }
   }
 
-  return ` WHERE ${conditions.join(" AND ")}`;
+  return and(...conditions)!;
 }
 
 function queryDuplicateOrSimilarRows(
@@ -259,32 +258,27 @@ function queryDuplicateOrSimilarRows(
     return { rows: [], total: 0, page, pageSize };
   }
 
-  const params: unknown[] = [];
   const scopedFilter = { ...filter, smart_view: null };
-  const where = appendFilterWhere(scopedFilter, params);
-  const idListSql = orderedIds.join(", ");
+  const where = and(buildFilterWhere(db, scopedFilter), inArray(filesTable.id, orderedIds));
   const orderSql = `CASE f.id ${orderedIds
     .map((id, index) => `WHEN ${id} THEN ${index}`)
     .join(" ")} ELSE ${orderedIds.length} END`;
 
-  const rows = db
-    .prepare(
-      `SELECT DISTINCT f.*
-       FROM files f${where}
-         AND f.id IN (${idListSql})
-       ORDER BY ${orderSql}
-       LIMIT ? OFFSET ?`,
-    )
-    .all(...params, pageSize, offset) as FileRow[];
-  const total = (
-    db
-      .prepare(
-        `SELECT COUNT(DISTINCT f.id) AS count
-         FROM files f${where}
-           AND f.id IN (${idListSql})`,
-      )
-      .get(...params) as { count: number }
-  ).count;
+  const rows = getDrizzleDb(db)
+    .select()
+    .from(filesTable)
+    .where(where)
+    .orderBy(sql.raw(orderSql.replace(/f\./g, "")))
+    .limit(pageSize)
+    .offset(offset)
+    .all()
+    .map(toFileRow);
+  const total =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(where)
+      .get()?.count ?? 0;
 
   return { rows, total, page, pageSize };
 }
@@ -299,33 +293,38 @@ export function queryFilteredRows(
   }
 
   const { page, pageSize, offset } = pageArgs(args.page, args.pageSize);
-  const params: unknown[] = [];
-  const where = appendFilterWhere(filter, params);
+  const where = buildFilterWhere(db, filter);
   const smartView = String(filter.smart_view ?? "").trim();
-  const orderParams: unknown[] = [];
-  let orderSql = buildOrderSql(
-    filter.sort_by as string | undefined,
-    filter.sort_direction as string | undefined,
-    "f.",
+  let orderByExpression = sql.raw(
+    buildOrderSql(
+      filter.sort_by as string | undefined,
+      filter.sort_direction as string | undefined,
+    ),
   );
 
   if (smartView === "recent") {
-    orderSql = "f.last_accessed_at DESC, f.imported_at DESC, f.id ASC";
+    orderByExpression = sql`${filesTable.lastAccessedAt} DESC, ${filesTable.importedAt} DESC, ${filesTable.id} ASC`;
   } else if (smartView === "random") {
     const rawSeed = Number(filter.smart_seed);
     const seed = Number.isInteger(rawSeed) ? Math.abs(rawSeed) + 1 : 1;
-    orderSql = "ABS(((f.id * ?) + ?) % 2147483647) ASC, f.id ASC";
-    orderParams.push(seed, seed * 97 + 13);
+    orderByExpression = sql`ABS(((${filesTable.id} * ${seed}) + ${seed * 97 + 13}) % 2147483647) ASC, ${filesTable.id} ASC`;
   }
 
-  const rows = db
-    .prepare(`SELECT DISTINCT f.* FROM files f${where} ORDER BY ${orderSql} LIMIT ? OFFSET ?`)
-    .all(...params, ...orderParams, pageSize, offset) as FileRow[];
-  const total = (
-    db.prepare(`SELECT COUNT(DISTINCT f.id) AS count FROM files f${where}`).get(...params) as {
-      count: number;
-    }
-  ).count;
+  const rows = getDrizzleDb(db)
+    .select()
+    .from(filesTable)
+    .where(where)
+    .orderBy(orderByExpression)
+    .limit(pageSize)
+    .offset(offset)
+    .all()
+    .map(toFileRow);
+  const total =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(where)
+      .get()?.count ?? 0;
   return { rows, total, page, pageSize };
 }
 
@@ -341,9 +340,12 @@ function getFilesByOrderedIds(db: Database.Database, fileIds: number[]): FileRow
   for (let index = 0; index < fileIds.length; index += chunkSize) {
     const chunk = fileIds.slice(index, index + chunkSize);
     rows.push(
-      ...(db
-        .prepare(`SELECT * FROM files WHERE id IN (${makePlaceholders(chunk.length)})`)
-        .all(...chunk) as FileRow[]),
+      ...getDrizzleDb(db)
+        .select()
+        .from(filesTable)
+        .where(inArray(filesTable.id, chunk))
+        .all()
+        .map(toFileRow),
     );
   }
 
@@ -382,27 +384,28 @@ function queryFuzzyFilteredRows(
     };
   }
 
-  const params: unknown[] = [];
-  const where = appendFilterWhere(scopedFilter, params);
-  const orderParams: unknown[] = [];
-  let orderSql = buildOrderSql(
-    scopedFilter.sort_by as string | undefined,
-    scopedFilter.sort_direction as string | undefined,
-    "f.",
+  const where = buildFilterWhere(db, scopedFilter);
+  let orderByExpression = sql.raw(
+    buildOrderSql(
+      scopedFilter.sort_by as string | undefined,
+      scopedFilter.sort_direction as string | undefined,
+    ),
   );
 
   if (smartView === "recent") {
-    orderSql = "f.last_accessed_at DESC, f.imported_at DESC, f.id ASC";
+    orderByExpression = sql`${filesTable.lastAccessedAt} DESC, ${filesTable.importedAt} DESC, ${filesTable.id} ASC`;
   } else if (smartView === "random") {
     const rawSeed = Number(scopedFilter.smart_seed);
     const seed = Number.isInteger(rawSeed) ? Math.abs(rawSeed) + 1 : 1;
-    orderSql = "ABS(((f.id * ?) + ?) % 2147483647) ASC, f.id ASC";
-    orderParams.push(seed, seed * 97 + 13);
+    orderByExpression = sql`ABS(((${filesTable.id} * ${seed}) + ${seed * 97 + 13}) % 2147483647) ASC, ${filesTable.id} ASC`;
   }
 
-  const candidates = db
-    .prepare(`SELECT DISTINCT f.id, f.name FROM files f${where} ORDER BY ${orderSql}`)
-    .all(...params, ...orderParams) as FuzzyFileCandidate[];
+  const candidates = getDrizzleDb(db)
+    .select({ id: filesTable.id, name: filesTable.name })
+    .from(filesTable)
+    .where(where)
+    .orderBy(orderByExpression)
+    .all() as FuzzyFileCandidate[];
   const matchedRows = fuzzySearchItems(candidates, query, {
     keys: FUZZY_FILE_KEYS,
   });
@@ -426,36 +429,40 @@ export function filterFiles(db: Database.Database, args: Record<string, unknown>
 }
 
 export function getSmartCollectionStats(db: Database.Database): SmartCollectionStats {
-  const row = getDrizzleDb(db).get<{
-    all_count: number;
-    unclassified_count: number;
-    untagged_count: number;
-  }>(sql`
-    SELECT
-      (
-        SELECT COUNT(*)
-        FROM files f
-        WHERE f.deleted_at IS NULL AND f.missing_at IS NULL
-      ) AS all_count,
-      (
-        SELECT COUNT(*)
-        FROM files f
-        WHERE f.deleted_at IS NULL AND f.missing_at IS NULL AND f.folder_id IS NULL
-      ) AS unclassified_count,
-      (
-        SELECT COUNT(*)
-        FROM files f
-        WHERE
-          f.deleted_at IS NULL
-          AND f.missing_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id)
-      ) AS untagged_count
-  `);
+  const activeWhere = and(isNull(filesTable.deletedAt), isNull(filesTable.missingAt));
+  const allCount =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(activeWhere)
+      .get()?.count ?? 0;
+  const unclassifiedCount =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(and(activeWhere, isNull(filesTable.folderId)))
+      .get()?.count ?? 0;
+  const untaggedCount =
+    getDrizzleDb(db)
+      .select({ count: countDistinct(filesTable.id) })
+      .from(filesTable)
+      .where(
+        and(
+          activeWhere,
+          notExists(
+            getDrizzleDb(db)
+              .select({ one: sql`1` })
+              .from(fileTags)
+              .where(eq(fileTags.fileId, filesTable.id)),
+          ),
+        ),
+      )
+      .get()?.count ?? 0;
 
   return {
-    allCount: row.all_count,
-    unclassifiedCount: row.unclassified_count,
-    untaggedCount: row.untagged_count,
+    allCount,
+    unclassifiedCount,
+    untaggedCount,
   };
 }
 
@@ -691,7 +698,11 @@ export function markFileMissingByPath(db: Database.Database, filePath: string): 
     .update(filesTable)
     .set({ missingAt: currentTimestamp() })
     .where(
-      sql`${filesTable.normalizedPath} = ${normalizeStoredPath(filePath)} AND ${filesTable.deletedAt} IS NULL AND ${filesTable.missingAt} IS NULL`,
+      and(
+        eq(filesTable.normalizedPath, normalizeStoredPath(filePath)),
+        isNull(filesTable.deletedAt),
+        isNull(filesTable.missingAt),
+      ),
     )
     .run();
   return result.changes > 0;
@@ -731,7 +742,10 @@ export function filePathsInDir(db: Database.Database, dirPath: string): Set<stri
     .select({ path: filesTable.path })
     .from(filesTable)
     .where(
-      sql`${filesTable.normalizedPath} = ${dirPathKey} OR ${filesTable.normalizedPath} LIKE ${`${dirPathKey}/%`}`,
+      or(
+        eq(filesTable.normalizedPath, dirPathKey),
+        like(filesTable.normalizedPath, `${dirPathKey}/%`),
+      ),
     )
     .all();
   return new Set(rows.filter((row) => pathHasPrefix(row.path, dirPath)).map((row) => row.path));

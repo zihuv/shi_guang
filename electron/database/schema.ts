@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   blob,
   foreignKey,
@@ -89,24 +89,24 @@ export const files = sqliteTable(
     ),
     index("idx_files_active_imported")
       .on(sql`${table.importedAt} DESC`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.missingAt} IS NULL`),
+      .where(and(isNull(table.deletedAt), isNull(table.missingAt))!),
     index("idx_files_active_modified")
       .on(sql`${table.modifiedAt} DESC`, sql`${table.importedAt} DESC`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.missingAt} IS NULL`),
+      .where(and(isNull(table.deletedAt), isNull(table.missingAt))!),
     index("idx_files_active_created")
       .on(sql`${table.createdAt} DESC`, sql`${table.importedAt} DESC`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.missingAt} IS NULL`),
+      .where(and(isNull(table.deletedAt), isNull(table.missingAt))!),
     index("idx_files_active_size")
       .on(sql`${table.size} DESC`, sql`${table.importedAt} DESC`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.missingAt} IS NULL`),
+      .where(and(isNull(table.deletedAt), isNull(table.missingAt))!),
     index("idx_files_active_last_accessed")
       .on(sql`${table.lastAccessedAt} DESC`, sql`${table.importedAt} DESC`, table.id)
       .where(
-        sql`${table.deletedAt} IS NULL AND ${table.missingAt} IS NULL AND ${table.lastAccessedAt} IS NOT NULL`,
+        and(isNull(table.deletedAt), isNull(table.missingAt), isNotNull(table.lastAccessedAt))!,
       ),
     index("idx_files_active_folder_imported")
       .on(table.folderId, sql`${table.importedAt} DESC`, table.id)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.missingAt} IS NULL`),
+      .where(and(isNull(table.deletedAt), isNull(table.missingAt))!),
     index("idx_files_dominant_rgb").on(table.dominantR, table.dominantG, table.dominantB),
     index("idx_files_deleted_at").on(table.deletedAt),
     index("idx_files_missing_at").on(table.missingAt),
@@ -129,12 +129,10 @@ export const tags = sqliteTable(
   (table) => [
     index("idx_tags_parent_id").on(table.parentId),
     index("idx_tags_parent_sort_order").on(table.parentId, table.sortOrder, table.name),
-    uniqueIndex("idx_tags_root_name_unique")
-      .on(table.name)
-      .where(sql`${table.parentId} IS NULL`),
+    uniqueIndex("idx_tags_root_name_unique").on(table.name).where(isNull(table.parentId)),
     uniqueIndex("idx_tags_child_name_unique")
       .on(table.parentId, table.name)
-      .where(sql`${table.parentId} IS NOT NULL`),
+      .where(isNotNull(table.parentId)),
     foreignKey({
       columns: [table.parentId],
       foreignColumns: [table.id],

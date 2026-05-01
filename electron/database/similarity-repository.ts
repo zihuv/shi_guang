@@ -1,4 +1,7 @@
 import Database from "better-sqlite3";
+import { and, asc, desc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { getDrizzleDb } from "./client";
+import { files, fileVisualEmbeddings } from "./schema";
 
 const SIMILAR_IMAGE_THRESHOLD = 0.94;
 
@@ -21,20 +24,20 @@ type SimilarImageGroup = {
   latestImportedAt: string;
 };
 
-function currentVisualSourceMatchSql(fileAlias = "f", embeddingAlias = "fve"): string {
-  return `(
+function currentVisualSourceMatchSql() {
+  return sql`(
     (
-      NULLIF(${embeddingAlias}.source_content_hash, '') IS NOT NULL
-      AND NULLIF(${fileAlias}.content_hash, '') IS NOT NULL
-      AND ${embeddingAlias}.source_content_hash = ${fileAlias}.content_hash
+      NULLIF(${fileVisualEmbeddings.sourceContentHash}, '') IS NOT NULL
+      AND NULLIF(${files.contentHash}, '') IS NOT NULL
+      AND ${fileVisualEmbeddings.sourceContentHash} = ${files.contentHash}
     )
     OR (
       (
-        NULLIF(${embeddingAlias}.source_content_hash, '') IS NULL
-        OR NULLIF(${fileAlias}.content_hash, '') IS NULL
+        NULLIF(${fileVisualEmbeddings.sourceContentHash}, '') IS NULL
+        OR NULLIF(${files.contentHash}, '') IS NULL
       )
-      AND ${embeddingAlias}.source_size = ${fileAlias}.size
-      AND ${embeddingAlias}.source_modified_at = ${fileAlias}.fs_modified_at
+      AND ${fileVisualEmbeddings.sourceSize} = ${files.size}
+      AND ${fileVisualEmbeddings.sourceModifiedAt} = ${files.fsModifiedAt}
     )
   )`;
 }
@@ -85,28 +88,29 @@ class DisjointSet {
 }
 
 function getExactDuplicateGroups(db: Database.Database): ExactDuplicateGroup[] {
-  const rows = db
-    .prepare(
-      `SELECT id, content_hash, imported_at
-       FROM files
-       WHERE deleted_at IS NULL
-         AND missing_at IS NULL
-         AND NULLIF(content_hash, '') IS NOT NULL
-         AND content_hash IN (
-           SELECT content_hash
-           FROM files
-           WHERE deleted_at IS NULL
-             AND missing_at IS NULL
-             AND NULLIF(content_hash, '') IS NOT NULL
-           GROUP BY content_hash
-           HAVING COUNT(*) > 1
-         )
-       ORDER BY content_hash ASC, imported_at DESC, id ASC`,
+  const rows = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      content_hash: files.contentHash,
+      imported_at: files.importedAt,
+    })
+    .from(files)
+    .where(
+      and(
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        isNotNull(files.contentHash),
+        ne(files.contentHash, ""),
+      ),
     )
-    .all() as Array<{ id: number; content_hash: string; imported_at: string }>;
+    .orderBy(asc(files.contentHash), desc(files.importedAt), asc(files.id))
+    .all();
 
   const groups = new Map<string, ExactDuplicateGroup>();
   for (const row of rows) {
+    if (!row.content_hash) {
+      continue;
+    }
     const group = groups.get(row.content_hash) ?? {
       ids: [],
       latestImportedAt: row.imported_at,
@@ -118,38 +122,47 @@ function getExactDuplicateGroups(db: Database.Database): ExactDuplicateGroup[] {
     groups.set(row.content_hash, group);
   }
 
-  return Array.from(groups.values()).sort((left, right) => {
-    if (right.latestImportedAt !== left.latestImportedAt) {
-      return right.latestImportedAt.localeCompare(left.latestImportedAt);
-    }
-    return left.ids[0] - right.ids[0];
-  });
+  return Array.from(groups.values())
+    .filter((group) => group.ids.length > 1)
+    .sort((left, right) => {
+      if (right.latestImportedAt !== left.latestImportedAt) {
+        return right.latestImportedAt.localeCompare(left.latestImportedAt);
+      }
+      return left.ids[0] - right.ids[0];
+    });
 }
 
 function getVisualEmbeddingCandidates(db: Database.Database): VisualEmbeddingCandidate[] {
-  const rows = db
-    .prepare(
-      `SELECT f.id, f.imported_at, fve.model_id, fve.dimensions, fve.embedding
-       FROM file_visual_embeddings fve
-       JOIN files f ON f.id = fve.file_id
-       WHERE f.deleted_at IS NULL
-         AND f.missing_at IS NULL
-         AND fve.status = 'ready'
-         AND fve.embedding IS NOT NULL
-         AND ${currentVisualSourceMatchSql()}
-       ORDER BY fve.model_id ASC, fve.dimensions ASC, f.imported_at DESC, f.id ASC`,
+  const rows = getDrizzleDb(db)
+    .select({
+      id: files.id,
+      imported_at: files.importedAt,
+      model_id: fileVisualEmbeddings.modelId,
+      dimensions: fileVisualEmbeddings.dimensions,
+      embedding: fileVisualEmbeddings.embedding,
+    })
+    .from(fileVisualEmbeddings)
+    .innerJoin(files, eq(files.id, fileVisualEmbeddings.fileId))
+    .where(
+      and(
+        isNull(files.deletedAt),
+        isNull(files.missingAt),
+        eq(fileVisualEmbeddings.status, "ready"),
+        isNotNull(fileVisualEmbeddings.embedding),
+        currentVisualSourceMatchSql(),
+      ),
     )
-    .all() as Array<{
-    id: number;
-    imported_at: string;
-    model_id: string;
-    dimensions: number;
-    embedding: Buffer;
-  }>;
+    .orderBy(
+      asc(fileVisualEmbeddings.modelId),
+      asc(fileVisualEmbeddings.dimensions),
+      desc(files.importedAt),
+      asc(files.id),
+    )
+    .all();
 
   return rows
     .map((row) => {
-      const embedding = decodeEmbeddingBlob(row.embedding, row.dimensions);
+      const embedding = row.embedding ? decodeEmbeddingBlob(row.embedding, row.dimensions) : null;
       if (!embedding) {
         return null;
       }

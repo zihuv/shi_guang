@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { eq, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
 import fssync from "node:fs";
 import path from "node:path";
 import { moveDirectoryWithFallback } from "../file-operations";
@@ -100,8 +100,8 @@ export function getPrependFolderSortOrder(db: Database.Database, parentId: numbe
     .from(folders)
     .where(
       parentId === null
-        ? sql`${folders.parentId} IS NULL AND ${folders.deletedAt} IS NULL`
-        : sql`${folders.parentId} = ${parentId} AND ${folders.deletedAt} IS NULL`,
+        ? and(isNull(folders.parentId), isNull(folders.deletedAt))
+        : and(eq(folders.parentId, parentId), isNull(folders.deletedAt)),
     )
     .get();
 
@@ -141,15 +141,12 @@ export function getFolderTree(db: Database.Database): FolderTreeNode[] {
   const folders = getAllFolders(db);
   const counts = new Map<number, number>(
     getDrizzleDb(db)
-      .all<{ folder_id: number; count: number }>(sql`
-        SELECT ${files.folderId} AS folder_id, COUNT(*) AS count
-        FROM ${files}
-        WHERE ${files.folderId} IS NOT NULL
-          AND ${files.deletedAt} IS NULL
-          AND ${files.missingAt} IS NULL
-        GROUP BY ${files.folderId}
-      `)
-      .map((row) => [row.folder_id, row.count]),
+      .select({ folder_id: files.folderId, count: count() })
+      .from(files)
+      .where(and(isNotNull(files.folderId), isNull(files.deletedAt), isNull(files.missingAt)))
+      .groupBy(files.folderId)
+      .all()
+      .flatMap((row) => (row.folder_id === null ? [] : [[row.folder_id, row.count] as const])),
   );
   const children = new Map<number | null, FolderRecord[]>();
   for (const folder of folders) {
@@ -203,7 +200,13 @@ export async function renameFolder(db: Database.Database, id: number, name: stri
       .select({ id: folders.id, path: folders.path })
       .from(folders)
       .where(
-        sql`${folders.id} != ${id} AND (${folders.normalizedPath} = ${oldPathKey} OR ${folders.normalizedPath} LIKE ${`${oldPathKey}/%`})`,
+        and(
+          ne(folders.id, id),
+          or(
+            eq(folders.normalizedPath, oldPathKey),
+            like(folders.normalizedPath, `${oldPathKey}/%`),
+          ),
+        ),
       )
       .all();
     for (const subfolder of subfolders) {
@@ -219,7 +222,7 @@ export async function renameFolder(db: Database.Database, id: number, name: stri
       .select({ id: files.id, path: files.path })
       .from(files)
       .where(
-        sql`${files.normalizedPath} = ${oldPathKey} OR ${files.normalizedPath} LIKE ${`${oldPathKey}/%`}`,
+        or(eq(files.normalizedPath, oldPathKey), like(files.normalizedPath, `${oldPathKey}/%`)),
       )
       .all();
     for (const file of fileRows) {
@@ -266,7 +269,13 @@ export async function moveFolderRecord(
       .select({ id: folders.id, path: folders.path })
       .from(folders)
       .where(
-        sql`${folders.id} != ${folderId} AND (${folders.normalizedPath} = ${oldPathKey} OR ${folders.normalizedPath} LIKE ${`${oldPathKey}/%`})`,
+        and(
+          ne(folders.id, folderId),
+          or(
+            eq(folders.normalizedPath, oldPathKey),
+            like(folders.normalizedPath, `${oldPathKey}/%`),
+          ),
+        ),
       )
       .all();
     for (const subfolder of subfolders) {
@@ -282,7 +291,7 @@ export async function moveFolderRecord(
       .select({ id: files.id, path: files.path })
       .from(files)
       .where(
-        sql`${files.normalizedPath} = ${oldPathKey} OR ${files.normalizedPath} LIKE ${`${oldPathKey}/%`}`,
+        or(eq(files.normalizedPath, oldPathKey), like(files.normalizedPath, `${oldPathKey}/%`)),
       )
       .all();
     for (const file of fileRows) {
@@ -313,7 +322,7 @@ export function clearSystemFolderFlagByName(db: Database.Database, name: string)
   getDrizzleDb(db)
     .update(folders)
     .set({ isSystem: 0 })
-    .where(sql`${folders.name} = ${name} AND ${folders.isSystem} = 1`)
+    .where(and(eq(folders.name, name), eq(folders.isSystem, 1)))
     .run();
 }
 
@@ -331,7 +340,10 @@ export function softDeleteFolderSubtree(
     .update(folders)
     .set({ deletedAt })
     .where(
-      sql`${folders.normalizedPath} = ${folderPathKey} OR ${folders.normalizedPath} LIKE ${`${folderPathKey}/%`}`,
+      or(
+        eq(folders.normalizedPath, folderPathKey),
+        like(folders.normalizedPath, `${folderPathKey}/%`),
+      ),
     )
     .run();
 }
@@ -352,7 +364,10 @@ export function restoreFolderSubtreeRecords(
       .select({ id: folders.id, path: folders.path })
       .from(folders)
       .where(
-        sql`${folders.normalizedPath} = ${originalPathKey} OR ${folders.normalizedPath} LIKE ${`${originalPathKey}/%`}`,
+        or(
+          eq(folders.normalizedPath, originalPathKey),
+          like(folders.normalizedPath, `${originalPathKey}/%`),
+        ),
       )
       .all();
     for (const folder of folderRows) {
@@ -391,7 +406,10 @@ export function restoreFolderSubtreeRecords(
       .select({ id: files.id, path: files.path })
       .from(files)
       .where(
-        sql`${files.normalizedPath} = ${originalPathKey} OR ${files.normalizedPath} LIKE ${`${originalPathKey}/%`}`,
+        or(
+          eq(files.normalizedPath, originalPathKey),
+          like(files.normalizedPath, `${originalPathKey}/%`),
+        ),
       )
       .all();
     for (const file of fileRows) {

@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from "electron";
-import { eq, sql } from "drizzle-orm";
+import { eq, isNotNull, like, or } from "drizzle-orm";
 import fssync from "node:fs";
 import path from "node:path";
 import {
@@ -65,7 +65,7 @@ export function getFilesUnderFolderPath(
     })
     .from(files)
     .where(
-      sql`${files.normalizedPath} = ${folderPathKey} OR ${files.normalizedPath} LIKE ${`${folderPathKey}/%`}`,
+      or(eq(files.normalizedPath, folderPathKey), like(files.normalizedPath, `${folderPathKey}/%`)),
     )
     .all();
   return rows
@@ -101,7 +101,7 @@ function findTrashedFolderForPath(
     .select({ id: folders.id, path: folders.path, tempPath: folderTrashEntries.tempPath })
     .from(folders)
     .innerJoin(folderTrashEntries, eq(folderTrashEntries.folderId, folders.id))
-    .where(sql`${folders.deletedAt} IS NOT NULL`)
+    .where(isNotNull(folders.deletedAt))
     .all();
   for (const row of rows) {
     const sourcePath = replacePathPrefix(filePath, row.path, row.tempPath);
