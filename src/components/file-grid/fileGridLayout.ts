@@ -7,7 +7,7 @@ export const TILE_CARD_MAX_WIDTH = 420;
 export const SINGLE_TILE_CARD_MAX_WIDTH = 680;
 export const SINGLE_TILE_CARD_SCALE_MULTIPLIER = 4;
 export const GRID_GAP = 14;
-export const GRID_PREVIEW_HEIGHT_RATIO = 0.6;
+export const GRID_PREVIEW_HEIGHT_RATIO = 0.43;
 export const LIST_BASE_ROW_HEIGHT = 56;
 export const LIST_BASE_THUMBNAIL_SIZE = 40;
 export const GRID_VIEWPORT_OVERSCAN_PX = 400;
@@ -16,14 +16,14 @@ export const SELECTION_DRAG_THRESHOLD = 10;
 export const VIEW_SCALE_KEYBOARD_STEP = 0.1;
 export const VIEW_SCALE_WHEEL_SENSITIVITY = 0.0012;
 
-const GRID_METADATA_HEIGHT = 68;
-const GRID_METADATA_HEIGHT_WITH_TAGS = 86;
-const GRID_METADATA_HEIGHT_COMPACT = 42;
-const GRID_METADATA_HEIGHT_COMPACT_WITH_TAGS = 58;
-const ADAPTIVE_CARD_FOOTER_HEIGHT = 64;
-const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 82;
-const ADAPTIVE_CARD_FOOTER_HEIGHT_COMPACT = 38;
-const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT_COMPACT = 56;
+const GRID_METADATA_HEIGHT = 36;
+const GRID_METADATA_HEIGHT_WITH_TAGS = 72;
+const GRID_METADATA_HEIGHT_COMPACT = 24;
+const GRID_METADATA_HEIGHT_COMPACT_WITH_TAGS = 50;
+const ADAPTIVE_CARD_FOOTER_HEIGHT = 36;
+const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT = 68;
+const ADAPTIVE_CARD_FOOTER_HEIGHT_COMPACT = 24;
+const ADAPTIVE_CARD_FOOTER_WITH_TAGS_HEIGHT_COMPACT = 48;
 
 export type SelectionBox = {
   startX: number;
@@ -116,8 +116,13 @@ export function isDialogTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest("[role='dialog'], [role='menu']"));
 }
 
-export function getGridMetadataHeight(scale: number, visibleFields: LibraryVisibleField[]) {
-  const showsTags = visibleFields.includes("tags");
+export function getGridMetadataHeight(
+  scale: number,
+  visibleFields: LibraryVisibleField[],
+  hasTags?: boolean,
+) {
+  const showsTagsSetting = visibleFields.includes("tags");
+  const showsTags = showsTagsSetting && hasTags !== false;
   const showsName = visibleFields.includes("name");
   const baseHeight = showsName
     ? showsTags
@@ -126,7 +131,7 @@ export function getGridMetadataHeight(scale: number, visibleFields: LibraryVisib
     : showsTags
       ? GRID_METADATA_HEIGHT_COMPACT_WITH_TAGS
       : GRID_METADATA_HEIGHT_COMPACT;
-  const minHeight = showsName ? (showsTags ? 78 : 60) : showsTags ? 52 : 36;
+  const minHeight = showsName ? (showsTags ? 64 : 32) : showsTags ? 44 : 20;
   return Math.max(minHeight, Math.round(baseHeight * (0.88 + scale * 0.1)));
 }
 
@@ -405,10 +410,11 @@ export function buildAdaptiveColumns(items: AdaptiveLayoutItem[], columns: numbe
 
 function getAdaptiveImageHeight(file: FileItem, width: number) {
   if (!file.width || !file.height || file.width <= 0 || file.height <= 0) {
-    return width;
+    return Math.round(width * 0.65);
   }
 
-  return Math.max(80, Math.round((file.height / file.width) * width));
+  const maxHeight = Math.round(width * 1.3);
+  return Math.max(48, Math.min(maxHeight, Math.round((file.height / file.width) * width)));
 }
 
 export function getAdaptiveFooterHeight(file: FileItem, visibleFields: LibraryVisibleField[]) {

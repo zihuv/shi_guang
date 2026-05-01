@@ -47,7 +47,13 @@ export function useFileGridLayouts({
     Math.min(TILE_CARD_MAX_WIDTH, Math.round(TILE_CARD_BASE_WIDTH * tileViewScale)),
   );
   const gridMinWidth = tileTargetWidth;
-  const gridMetadataHeight = getGridMetadataHeight(gridViewScale, libraryVisibleFields);
+  const anyFileHasTags =
+    libraryVisibleFields.includes("tags") && files.some((f) => f.tags.length > 0);
+  const gridMetadataHeight = getGridMetadataHeight(
+    gridViewScale,
+    libraryVisibleFields,
+    anyFileHasTags,
+  );
   const listRowHeight = Math.max(42, Math.round(LIST_BASE_ROW_HEIGHT * listViewScale));
   const listThumbnailSize = Math.max(28, Math.round(LIST_BASE_THUMBNAIL_SIZE * listViewScale));
   const adaptiveTargetWidth = tileTargetWidth;
@@ -185,7 +191,6 @@ export function useFileGridLayouts({
     adaptiveVisibleItems,
     gridColumns,
     gridItemWidth,
-    gridMetadataHeight,
     gridRowCount,
     gridRowHeight,
     gridRowSpan,

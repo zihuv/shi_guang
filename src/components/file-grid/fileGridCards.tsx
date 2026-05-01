@@ -32,7 +32,7 @@ const INFO_TOKEN_FIELDS: LibraryVisibleField[] = ["ext", "size", "dimensions"];
 const FILE_CARD_BASE_CLASS =
   "file-card group relative flex cursor-pointer flex-col transition-colors duration-75";
 const FILE_CARD_PREVIEW_CLASS =
-  "relative overflow-hidden rounded-[16px] bg-black/[0.04] transition-colors duration-75 dark:bg-white/[0.045]";
+  "relative overflow-hidden rounded-[16px] transition-colors duration-75";
 const FILE_CARD_NAME_CLASS =
   "app-text-clamp-2 break-all text-[12px] font-medium leading-[1.35] text-gray-800 dark:text-gray-100";
 const FILE_CARD_META_CLASS = "truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400";
@@ -123,7 +123,6 @@ function PreviewImage({
 export function FileCard({
   file,
   visibleFields,
-  footerHeight,
   previewWidth,
   generation,
   isSelected,
@@ -131,7 +130,7 @@ export function FileCard({
   scrollRootRef,
   onClick,
   onDoubleClick,
-}: FileCardBaseProps & { footerHeight: number; previewWidth: number; generation: number }) {
+}: FileCardBaseProps & { previewWidth: number; generation: number }) {
   const { ref: visibilityRef, isVisible } = useVisibility(scrollRootRef);
   const isVideo = isVideoFile(file.ext);
   const thumbnailRefreshVersion = useThumbnailRefreshVersion(file.id);
@@ -186,11 +185,10 @@ export function FileCard({
                 ? "ring-[2.5px] ring-primary-500/80 shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:ring-primary-500/85 dark:shadow-[0_14px_30px_rgba(0,0,0,0.24)]"
                 : isSelected
                   ? "ring-[2.5px] ring-primary-400/75 shadow-[0_8px_22px_rgba(59,130,246,0.1)] dark:ring-primary-500/80 dark:shadow-[0_12px_26px_rgba(0,0,0,0.22)]"
-                  : "hover:bg-black/[0.055] dark:hover:bg-white/[0.06]",
+                  : "",
             )}
             style={{ paddingBottom: `${GRID_PREVIEW_HEIGHT_RATIO * 100}%` }}
           >
-            <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
             {showLoadingPreview && !thumbHashPlaceholderSrc ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
@@ -219,18 +217,15 @@ export function FileCard({
             ) : null}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
-          <div
-            className="flex min-h-0 flex-1 flex-col px-0.5 pb-0.5 pt-2"
-            style={{ minHeight: `${footerHeight}px` }}
-          >
+          <div className={cn("flex min-h-0 flex-col px-0.5 pb-0.5 pt-1", showTags && "flex-1")}>
             {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
             {metaTokens.length > 0 && (
-              <p className={cn(FILE_CARD_META_CLASS, showName && "mt-1")}>
+              <p className={cn(FILE_CARD_META_CLASS, showName && "mt-0.5")}>
                 {metaTokens.join(" · ")}
               </p>
             )}
             {showTags && (
-              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1.5">
+              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-0.5">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
@@ -273,8 +268,14 @@ export function AdaptiveFileCard({
   const thumbnailRefreshVersion = useThumbnailRefreshVersion(file.id);
   const previewHeight =
     !file.width || !file.height || file.width <= 0 || file.height <= 0
-      ? previewWidth
-      : Math.max(80, Math.round((file.height / file.width) * previewWidth));
+      ? Math.round(previewWidth * 0.65)
+      : Math.max(
+          48,
+          Math.min(
+            Math.round(previewWidth * 1.3),
+            Math.round((file.height / file.width) * previewWidth),
+          ),
+        );
   const thumbnailMaxEdge = isVideo
     ? resolveCardThumbnailMaxEdge(previewWidth, previewHeight)
     : undefined;
@@ -303,10 +304,11 @@ export function AdaptiveFileCard({
   const metaTokens = getFileInfoTokens(file, visibleFields);
   const showTags = shouldShowTags(file, visibleFields);
   const { dragHandleProps: externalDragProps } = useExternalFileDrag(file.id);
-  const aspectRatio =
+  const rawRatio =
     !file.width || !file.height || file.width === 0
-      ? "100%"
-      : `${(file.height / file.width) * 100}%`;
+      ? 65
+      : Math.min(130, (file.height / file.width) * 100);
+  const aspectRatio = `${rawRatio}%`;
 
   return (
     <FileContextMenu file={file}>
@@ -332,11 +334,10 @@ export function AdaptiveFileCard({
                 ? "ring-[2.5px] ring-primary-500/80 shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:ring-primary-500/85 dark:shadow-[0_14px_30px_rgba(0,0,0,0.24)]"
                 : isSelected
                   ? "ring-[2.5px] ring-primary-400/75 shadow-[0_8px_22px_rgba(59,130,246,0.1)] dark:ring-primary-500/80 dark:shadow-[0_12px_26px_rgba(0,0,0,0.22)]"
-                  : "hover:bg-black/[0.055] dark:hover:bg-white/[0.06]",
+                  : "",
             )}
             style={{ paddingBottom: aspectRatio }}
           >
-            <ThumbHashPlaceholder src={thumbHashPlaceholderSrc} className="opacity-70" />
             {showLoadingPreview && !thumbHashPlaceholderSrc ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg
@@ -366,17 +367,17 @@ export function AdaptiveFileCard({
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col px-0.5 pb-0.5 pt-2"
+            className="flex min-h-0 flex-col px-0.5 pb-0.5 pt-1"
             style={{ minHeight: `${footerHeight}px` }}
           >
             {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
             {metaTokens.length > 0 && (
-              <p className={cn(FILE_CARD_META_CLASS, showName && "mt-1")}>
+              <p className={cn(FILE_CARD_META_CLASS, showName && "mt-0.5")}>
                 {metaTokens.join(" · ")}
               </p>
             )}
             {showTags && (
-              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-1.5">
+              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-0.5">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}

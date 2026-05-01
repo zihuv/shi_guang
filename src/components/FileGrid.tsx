@@ -145,7 +145,6 @@ export default function FileGrid() {
     adaptiveVisibleItems,
     gridColumns,
     gridItemWidth,
-    gridMetadataHeight,
     gridRowCount,
     gridRowHeight,
     gridRowSpan,
@@ -358,7 +357,6 @@ export default function FileGrid() {
           filteredFiles={filteredFiles}
           gridColumns={gridColumns}
           gridItemWidth={gridItemWidth}
-          gridMetadataHeight={gridMetadataHeight}
           gridRowCount={gridRowCount}
           gridRowHeight={gridRowHeight}
           gridRowSpan={gridRowSpan}

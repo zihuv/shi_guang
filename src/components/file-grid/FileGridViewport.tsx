@@ -31,7 +31,6 @@ interface FileGridViewportProps {
   filteredFiles: FileItem[];
   gridColumns: number;
   gridItemWidth: number;
-  gridMetadataHeight: number;
   gridRowCount: number;
   gridRowHeight: number;
   gridRowSpan: number;
@@ -59,7 +58,6 @@ export function FileGridViewport({
   filteredFiles,
   gridColumns,
   gridItemWidth,
-  gridMetadataHeight,
   gridRowCount,
   gridRowHeight,
   gridRowSpan,
@@ -151,7 +149,6 @@ export function FileGridViewport({
                     <FileCard
                       key={`grid-${file.id}`}
                       file={file}
-                      footerHeight={gridMetadataHeight}
                       previewWidth={gridItemWidth}
                       generation={previewLoadGeneration}
                       visibleFields={libraryVisibleFields}
