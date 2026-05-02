@@ -12,10 +12,7 @@ import { cn } from "@/lib/utils";
 import { useExternalFileDrag } from "@/hooks/useExternalFileDrag";
 import FileTypeIcon from "@/components/FileTypeIcon";
 import FileContextMenu from "@/components/FileContextMenu";
-import {
-  getAdaptiveFooterHeight,
-  GRID_PREVIEW_HEIGHT_RATIO,
-} from "@/components/file-grid/fileGridLayout";
+import { GRID_PREVIEW_HEIGHT_RATIO } from "@/components/file-grid/fileGridLayout";
 import { formatSize, isVideoFile } from "@/utils";
 import {
   resolveCardThumbnailMaxEdge,
@@ -225,11 +222,11 @@ export function FileCard({
               </p>
             )}
             {showTags && (
-              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-0.5">
+              <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap pt-0.5">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
-                    className="min-w-0 max-w-[88px] truncate rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                    className="min-w-0 max-w-[88px] truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
                     style={{ backgroundColor: tag.color }}
                   >
                     {tag.name}
@@ -299,7 +296,6 @@ export function AdaptiveFileCard({
   const showLoadingPreview = imageSrc === null && !imageError;
   const imagePreviewSrc = !imageError && imageSrc ? imageSrc : "";
   const showImagePreview = Boolean(imagePreviewSrc);
-  const footerHeight = getAdaptiveFooterHeight(file, visibleFields);
   const showName = visibleFields.includes("name");
   const metaTokens = getFileInfoTokens(file, visibleFields);
   const showTags = shouldShowTags(file, visibleFields);
@@ -366,10 +362,7 @@ export function AdaptiveFileCard({
             ) : null}
             {isVideo && <VideoPlayBadge className="absolute inset-0" />}
           </div>
-          <div
-            className="flex min-h-0 flex-col px-0.5 pb-0.5 pt-1"
-            style={{ minHeight: `${footerHeight}px` }}
-          >
+          <div className="flex min-h-0 flex-col px-0.5 pb-0.5 pt-1">
             {showName && <p className={FILE_CARD_NAME_CLASS}>{getNameWithoutExt(file.name)}</p>}
             {metaTokens.length > 0 && (
               <p className={cn(FILE_CARD_META_CLASS, showName && "mt-0.5")}>
@@ -377,11 +370,11 @@ export function AdaptiveFileCard({
               </p>
             )}
             {showTags && (
-              <div className="mt-auto flex items-center gap-1 overflow-hidden whitespace-nowrap pt-0.5">
+              <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap pt-0.5">
                 {file.tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
                   <span
                     key={tag.id}
-                    className="min-w-0 max-w-[88px] truncate rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                    className="min-w-0 max-w-[88px] truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
                     style={{ backgroundColor: tag.color }}
                   >
                     {tag.name}
