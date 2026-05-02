@@ -191,6 +191,8 @@ export function createWindowManager(options: WindowManagerOptions) {
       window.webContents.send("window-fullscreen-changed", { isFullscreen: false });
     });
 
+    window.webContents.setVisualZoomLevelLimits(1, 1);
+
     if (process.env.ELECTRON_RENDERER_URL) {
       await window.loadURL(process.env.ELECTRON_RENDERER_URL);
     } else {
