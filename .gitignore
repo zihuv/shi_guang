@@ -10,6 +10,7 @@ dist
 build
 out
 release
+*.tsbuildinfo
 
 # Tauri
 src-tauri/target

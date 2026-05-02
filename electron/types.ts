@@ -115,6 +115,7 @@ export interface ImportTaskItem {
   source_url?: string;
   tagIds?: number[];
   tag_ids?: number[];
+  folderId?: number | null;
 }
 
 export interface ImportTaskItemResult {

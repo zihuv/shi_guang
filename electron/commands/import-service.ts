@@ -1,11 +1,21 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { BrowserWindow } from "electron";
+import { getFolderById, getOrCreateFolder, getIndexPaths } from "../database";
 import type { AppState, FileRecord, ImportTaskItem, ImportTaskSnapshot } from "../types";
 import { emit, taskId } from "./common";
-import { importBytes, importClipboardFile, importFilePath } from "./import-core";
+import {
+  collectFilesFromDirectoryWithRel,
+  importBytes,
+  importClipboardFile,
+  importFilePath,
+} from "./import-core";
 import { runPostImportPipeline } from "./post-import-pipeline";
 
 export {
   buildFileInputFromPath,
+  collectFilesFromDirectory,
+  collectFilesFromDirectoryWithRel,
   getTargetDir,
   importBytes,
   importClipboardFile,
@@ -44,8 +54,9 @@ function isFilePathImportItem(item: ImportTaskItem): boolean {
 async function importTaskItem(
   state: AppState,
   item: ImportTaskItem,
-  folderId: number | null,
+  fallbackFolderId: number | null,
 ): Promise<FileRecord> {
+  const folderId = item.folderId ?? fallbackFolderId;
   if (item.kind === "base64_image") {
     return importBytes(state, {
       bytes: Buffer.from(String(item.base64Data ?? item.base64_data ?? ""), "base64"),
@@ -189,23 +200,58 @@ async function runImportTask(
   }
 }
 
-export function startImportTask(
+export async function startImportTask(
   state: AppState,
   window: BrowserWindow | null,
   items: ImportTaskItem[],
   folderId: number | null,
-): ImportTaskSnapshot {
+): Promise<ImportTaskSnapshot> {
+  const indexPath = getIndexPaths(state.db)[0] ?? state.indexPath;
+  const parentPath =
+    folderId !== null ? (getFolderById(state.db, folderId)?.path ?? indexPath) : indexPath;
+  const expanded: ImportTaskItem[] = [];
+  for (const item of items) {
+    if (item.kind === "file_path" || !item.kind) {
+      const p = String(item.path ?? "");
+      if (p) {
+        try {
+          const stats = await fs.stat(p);
+          if (stats.isDirectory()) {
+            const dirName = path.basename(p);
+            const destDir = path.join(parentPath, dirName);
+            const files = await collectFilesFromDirectoryWithRel(p);
+            for (const f of files) {
+              const targetFolderId =
+                f.relDir === "."
+                  ? getOrCreateFolder(state.db, destDir, [indexPath])
+                  : getOrCreateFolder(state.db, path.join(destDir, f.relDir), [indexPath]);
+              expanded.push({
+                kind: "file_path",
+                path: f.abs,
+                folderId: targetFolderId ?? folderId,
+              });
+            }
+            continue;
+          }
+        } catch {
+          // stat failed, pass through as-is
+        }
+      }
+    }
+    expanded.push(item);
+  }
+
   const id = `import-${taskId()}`;
   const snapshot: ImportTaskSnapshot = {
     id,
     status: "queued",
-    total: items.length,
+    total: expanded.length,
     processed: 0,
     successCount: 0,
     failureCount: 0,
     results: [],
   };
-  state.importTasks.set(id, { snapshot, items, folderId, cancelled: false });
+  state.importTasks.set(id, { snapshot, items: expanded, folderId, cancelled: false });
   void runImportTask(state, window, id);
   return snapshot;
 }

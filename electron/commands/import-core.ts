@@ -30,6 +30,47 @@ import { taskId } from "./common";
 const recentImports = new Map<string, number>();
 const pendingImportTargetPaths = new Set<string>();
 
+export async function collectFilesFromDirectory(dirPath: string): Promise<string[]> {
+  const results: string[] = [];
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      const sub = await collectFilesFromDirectory(fullPath);
+      results.push(...sub);
+    } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).replace(/^\./, "").toLowerCase();
+      if (ext && isScanSupportedExtension(ext)) {
+        results.push(fullPath);
+      }
+    }
+  }
+  return results;
+}
+
+export async function collectFilesFromDirectoryWithRel(
+  dirPath: string,
+  basePath?: string,
+): Promise<Array<{ abs: string; relDir: string }>> {
+  const base = basePath ?? dirPath;
+  const results: Array<{ abs: string; relDir: string }> = [];
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      const sub = await collectFilesFromDirectoryWithRel(fullPath, base);
+      results.push(...sub);
+    } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).replace(/^\./, "").toLowerCase();
+      if (ext && isScanSupportedExtension(ext)) {
+        const relDir = path.relative(base, path.dirname(fullPath));
+        results.push({ abs: fullPath, relDir });
+      }
+    }
+  }
+  return results;
+}
+
 export function timestampFromStats(stats: Stats, key: "birthtime" | "mtime"): string {
   const value = key === "birthtime" ? stats.birthtime : stats.mtime;
   return currentTimestamp(Number.isFinite(value.getTime()) ? value : new Date());

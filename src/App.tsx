@@ -148,7 +148,7 @@ function App() {
               />
             </svg>
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
-              拖放文件到此处导入
+              拖放文件或文件夹到此处导入
             </p>
           </div>
         </div>
