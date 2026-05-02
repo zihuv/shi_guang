@@ -495,32 +495,44 @@ async function runAiMetadataTask(
 
   entry.snapshot.status = "running";
   emit(window, "ai-metadata-task-updated", id);
+  const maxRetries = 3;
   for (const [index, fileId] of fileIds.entries()) {
     if (entry.cancelled) {
       entry.snapshot.status = "cancelled";
       emit(window, "ai-metadata-task-updated", id);
       return;
     }
-    try {
-      const file = await analyzeFileMetadata(state, fileId);
-      entry.snapshot.successCount += 1;
-      entry.snapshot.results.push({
-        index,
-        fileId,
-        status: "completed",
-        attempts: 1,
-        error: null,
-        file,
-      });
-      emit(window, "file-updated", { fileId });
-    } catch (error) {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      try {
+        const file = await analyzeFileMetadata(state, fileId);
+        entry.snapshot.successCount += 1;
+        entry.snapshot.results.push({
+          index,
+          fileId,
+          status: "completed",
+          attempts: attempt,
+          error: null,
+          file,
+        });
+        emit(window, "file-updated", { fileId });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+    }
+    if (lastError) {
       entry.snapshot.failureCount += 1;
       entry.snapshot.results.push({
         index,
         fileId,
         status: "failed",
-        attempts: 1,
-        error: error instanceof Error ? error.message : String(error),
+        attempts: maxRetries,
+        error: lastError instanceof Error ? lastError.message : String(lastError),
         file: null,
       });
     }
