@@ -62,6 +62,7 @@ export function getDefaultIndexPath(): string {
 export async function ensureStorageDirs(indexPath: string): Promise<void> {
   await fs.mkdir(getDbDir(indexPath), { recursive: true });
   await fs.mkdir(getThumbnailRoot(indexPath), { recursive: true });
+  await fs.mkdir(getLogDir(indexPath), { recursive: true });
 }
 
 export function getDbDir(indexPath: string): string {
@@ -74,6 +75,10 @@ export function getDbPath(indexPath: string): string {
 
 export function getThumbnailRoot(indexPath: string): string {
   return path.join(indexPath, ".shiguang", "thumbs");
+}
+
+export function getLogDir(indexPath: string): string {
+  return path.join(indexPath, ".shiguang", "log");
 }
 
 function emptyLibraryState(): LibraryState {

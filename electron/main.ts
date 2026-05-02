@@ -1,5 +1,6 @@
 import { app, Menu, session } from "electron";
 import log from "electron-log/main";
+import path from "node:path";
 import { configureEnvironmentUserDataPath } from "./app/environment";
 import { setDockIcon } from "./app/app-icon";
 import { buildApplicationMenu } from "./app/application-menu";
@@ -19,7 +20,7 @@ import {
   registerFileProtocolPrivileges,
 } from "./app/file-protocol";
 import { resolveStartupIndexPath } from "./app/startup-library";
-import { getDbPath } from "./storage";
+import { getDbPath, getLogDir } from "./storage";
 import type { AppState } from "./types";
 import {
   AUTO_CHECK_UPDATES_SETTING_KEY,
@@ -32,6 +33,7 @@ registerFileProtocolPrivileges();
 
 configureEnvironmentUserDataPath();
 log.initialize();
+log.transports.file.level = false;
 app.setAppUserModelId("com.zihuv.shiguang");
 
 if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
@@ -61,6 +63,10 @@ async function bootstrap(): Promise<void> {
     app.quit();
     return;
   }
+
+  log.transports.file.resolvePathFn = (variables) =>
+    path.join(getLogDir(indexPath), variables.fileName ?? "main.log");
+  log.transports.file.level = "silly";
 
   const dbPath = getDbPath(indexPath);
   const db = openDatabase(dbPath, indexPath);
