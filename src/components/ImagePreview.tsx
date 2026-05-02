@@ -12,7 +12,6 @@ import {
   DEFAULT_IMAGE_TRANSFORM,
   getContainedImageLayout,
   getImageTransformValue,
-  getRotatedBoundingSize,
   rotateImageTransform,
   type ImageTransformState,
 } from "@/components/image-preview/imageTransform";
@@ -452,19 +451,16 @@ export default function ImagePreview() {
   };
 
   const handleRotateLeft = useCallback(() => {
-    handleFitToView();
     setImageTransform((current) => rotateImageTransform(current, -90));
-  }, [handleFitToView]);
+  }, []);
 
   const handleRotateRight = useCallback(() => {
-    handleFitToView();
     setImageTransform((current) => rotateImageTransform(current, 90));
-  }, [handleFitToView]);
+  }, []);
 
   const handleReverseCenter = useCallback(() => {
-    handleFitToView();
     setImageTransform((current) => rotateImageTransform(current, 180));
-  }, [handleFitToView]);
+  }, []);
 
   const hydrateCurrentFileDimensions = useCallback(
     (width: number, height: number) => {
@@ -577,7 +573,7 @@ export default function ImagePreview() {
   });
   const scaledImageBounds =
     scaledImageWidth !== null && scaledImageHeight !== null
-      ? getRotatedBoundingSize(scaledImageWidth, scaledImageHeight, imageTransform.rotation)
+      ? { width: scaledImageWidth, height: scaledImageHeight }
       : null;
   const imageTransformValue = getImageTransformValue(imageTransform);
 
@@ -655,12 +651,13 @@ export default function ImagePreview() {
               <img
                 src={imageSrc}
                 alt={currentFile.name}
-                className="block cursor-grab select-none transition-transform duration-150 active:cursor-grabbing"
+                className="block cursor-grab select-none active:cursor-grabbing"
                 onLoad={handleImageLoad}
                 draggable={false}
                 style={{
                   height: `${fitImageLayout.imageHeight}px`,
                   transform: imageTransformValue,
+                  transformOrigin: "center",
                   width: `${fitImageLayout.imageWidth}px`,
                 }}
               />
@@ -669,10 +666,10 @@ export default function ImagePreview() {
             <img
               src={imageSrc}
               alt={currentFile.name}
-              className="max-h-full max-w-full cursor-grab select-none object-contain transition-transform duration-150 active:cursor-grabbing"
+              className="max-h-full max-w-full cursor-grab select-none object-contain active:cursor-grabbing"
               onLoad={handleImageLoad}
               draggable={false}
-              style={{ transform: imageTransformValue }}
+              style={{ transform: imageTransformValue, transformOrigin: "center" }}
             />
           )}
         </div>
@@ -696,6 +693,7 @@ export default function ImagePreview() {
               width: `${scaledImageWidth}px`,
               height: `${scaledImageHeight}px`,
               transform: imageTransformValue,
+              transformOrigin: "center",
             }}
           />
         </div>

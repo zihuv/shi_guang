@@ -50,11 +50,10 @@ export function getContainedImageLayout({
   );
   const renderedImageWidth = Math.max(1, Math.round(imageWidth * scale));
   const renderedImageHeight = Math.max(1, Math.round(imageHeight * scale));
-  const bounds = getRotatedBoundingSize(renderedImageWidth, renderedImageHeight, rotation);
 
   return {
-    boundsHeight: bounds.height,
-    boundsWidth: bounds.width,
+    boundsHeight: renderedImageHeight,
+    boundsWidth: renderedImageWidth,
     imageHeight: renderedImageHeight,
     imageWidth: renderedImageWidth,
   };
