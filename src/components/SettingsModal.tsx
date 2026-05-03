@@ -8,7 +8,7 @@ import {
   type VisualModelDownloadRepoId,
 } from "@/services/desktop/files";
 import { getDesktopBridge, listenDesktop } from "@/services/desktop/core";
-import { checkForUpdates, getAppVersion } from "@/services/desktop/system";
+import { checkForUpdates, getAppVersion, openLogDirectory } from "@/services/desktop/system";
 import type { VisualModelDownloadSnapshot } from "@/shared/desktop-types";
 import {
   DEFAULT_SHORTCUTS,
@@ -366,6 +366,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   onSetTheme={(nextTheme) => void setTheme(nextTheme)}
                   onSetAutoCheckUpdates={(enabled) => void setAutoCheckUpdates(enabled)}
                   onCheckUpdates={() => void handleCheckUpdates()}
+                  onOpenLogDir={() => void openLogDirectory()}
                 />
               ) : activeSection === "ai" ? (
                 <AiSettingsSection

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { SettingsRow, SettingsSectionBlock, StatusPill } from "./SettingsPrimitives";
-import { AlertTriangle, Moon, Plus, RefreshCw, Sun, Trash } from "lucide-react";
+import { AlertTriangle, FolderOpen, Moon, Plus, RefreshCw, Sun, Trash } from "lucide-react";
 
 interface GeneralSettingsSectionProps {
   currentIndexPath: string | null;
@@ -28,6 +28,7 @@ interface GeneralSettingsSectionProps {
   onSetTheme: (theme: "light" | "dark") => void;
   onSetAutoCheckUpdates: (enabled: boolean) => void;
   onCheckUpdates: () => void;
+  onOpenLogDir: () => void;
 }
 
 export function GeneralSettingsSection({
@@ -48,6 +49,7 @@ export function GeneralSettingsSection({
   onSetTheme,
   onSetAutoCheckUpdates,
   onCheckUpdates,
+  onOpenLogDir,
 }: GeneralSettingsSectionProps) {
   return (
     <div className="flex flex-col gap-7">
@@ -168,6 +170,13 @@ export function GeneralSettingsSection({
               深色
             </Button>
           </div>
+        </SettingsRow>
+
+        <SettingsRow title="日志">
+          <Button variant="outline" onClick={onOpenLogDir}>
+            <FolderOpen className="h-4 w-4" />
+            打开日志目录
+          </Button>
         </SettingsRow>
       </SettingsSectionBlock>
     </div>

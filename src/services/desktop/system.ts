@@ -54,3 +54,7 @@ export function showFolderInExplorer(folderId: number) {
 export function showCurrentLibraryInExplorer() {
   return invokeDesktop<void>("show_current_library_in_explorer");
 }
+
+export function openLogDirectory() {
+  return invokeDesktop<void>("open_log_directory");
+}

@@ -4,6 +4,7 @@ import path from "node:path";
 import { writeFilesToClipboard } from "../clipboard-file-references";
 import { getFileById, getFolderById, touchFileLastAccessed } from "../database";
 import { checkForUpdates } from "../app/updater";
+import { getLogDir } from "../logger";
 import type { AppState, FileRecord } from "../types";
 import { type CommandHandler, numberArg, numberArrayArg } from "./common";
 
@@ -72,6 +73,14 @@ export function createSystemCommands(state: AppState): Record<string, CommandHan
     },
     show_current_library_in_explorer: async () => {
       const result = await shell.openPath(state.indexPath);
+      if (result) throw new Error(result);
+    },
+    open_log_directory: async () => {
+      const logDir = getLogDir();
+      if (!fssync.existsSync(logDir)) {
+        fssync.mkdirSync(logDir, { recursive: true });
+      }
+      const result = await shell.openPath(logDir);
       if (result) throw new Error(result);
     },
   };
