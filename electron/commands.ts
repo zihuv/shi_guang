@@ -118,6 +118,20 @@ export function registerIpcHandlers(
     },
   );
 
+  ipcMain.on("shiguang:send", (event, command: string, args: Record<string, unknown> = {}) => {
+    const handler = commands[command];
+    if (!handler) {
+      log.warn(`Unknown send command: ${command}`);
+      return;
+    }
+    const result = handler(args, BrowserWindow.fromWebContents(event.sender));
+    if (result instanceof Promise) {
+      result.catch((error: unknown) => {
+        log.error(`[send] ${command} failed:`, error);
+      });
+    }
+  });
+
   ipcMain.handle("shiguang:dialog:open", async (_event, options: Electron.OpenDialogOptions) => {
     const window = getWindow();
     const result = window

@@ -8,7 +8,7 @@ import { getLogDir } from "../logger";
 import type { AppState, FileRecord } from "../types";
 import { type CommandHandler, numberArg, numberArrayArg } from "./common";
 
-function getDragIcon() {
+function getDragIcon(): Electron.NativeImage {
   const candidates = app.isPackaged
     ? [path.join(process.resourcesPath, "assets", "app-icon.png")]
     : [
@@ -23,13 +23,21 @@ function getDragIcon() {
 
   if (!dragIcon.isEmpty()) {
     return dragIcon.resize({
-      width: 48,
-      height: 48,
+      width: 128,
+      height: 128,
       quality: "best",
     });
   }
 
-  return sourceIconPath;
+  return nativeImage.createEmpty();
+}
+
+function getFileDragIcon(filePath: string): Electron.NativeImage {
+  const img = nativeImage.createFromPath(filePath);
+  if (!img.isEmpty()) {
+    return img.resize({ width: 128, height: 128, quality: "best" });
+  }
+  return getDragIcon();
 }
 
 export function createSystemCommands(state: AppState): Record<string, CommandHandler> {
@@ -49,7 +57,8 @@ export function createSystemCommands(state: AppState): Record<string, CommandHan
       if (!paths.length || !window) throw new Error("No files selected");
       window.webContents.startDrag({
         file: paths[0],
-        icon: getDragIcon(),
+        files: paths,
+        icon: getFileDragIcon(paths[0]),
       });
     },
     open_file: async (args) => {

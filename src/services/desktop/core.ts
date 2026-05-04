@@ -69,6 +69,13 @@ export async function listenDesktop<T>(
   return window.shiguang.on(channel, (payload) => callback({ payload: payload as T }));
 }
 
+export function sendDesktop(command: string, args?: Record<string, unknown>) {
+  if (!window.shiguang) {
+    throw new Error("Desktop bridge is not available");
+  }
+  window.shiguang.send(command, args ?? {});
+}
+
 export function getDesktopBridge() {
   if (!window.shiguang) {
     throw new Error("Desktop bridge is not available");

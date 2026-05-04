@@ -20,6 +20,8 @@ const eventChannels = new Set([
 contextBridge.exposeInMainWorld("shiguang", {
   invoke: (command: string, args?: Record<string, unknown>) =>
     ipcRenderer.invoke("shiguang:invoke", command, args ?? {}),
+  send: (command: string, args?: Record<string, unknown>) =>
+    ipcRenderer.send("shiguang:send", command, args ?? {}),
   on: (channel: string, callback: (payload: unknown) => void) => {
     if (!eventChannels.has(channel)) {
       throw new Error(`Unsupported event channel: ${channel}`);

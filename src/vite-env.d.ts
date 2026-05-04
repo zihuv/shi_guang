@@ -2,6 +2,7 @@
 
 interface ShiguangDesktopApi {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+  send(command: string, args?: Record<string, unknown>): void;
   on(channel: string, callback: (payload: unknown) => void): () => void;
   dialog: {
     open(options: {
