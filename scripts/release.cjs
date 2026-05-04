@@ -8,11 +8,7 @@ const CHANGELOG_FILE = "docs/CHANGELOG.md";
 const PACKAGE_JSON_FILE = "package.json";
 const PACKAGE_LOCK_FILE = "package-lock.json";
 const EXTENSION_MANIFEST_FILE = "extensions/shiguang-collector/manifest.json";
-const VERSION_FILES = [
-  PACKAGE_JSON_FILE,
-  PACKAGE_LOCK_FILE,
-  EXTENSION_MANIFEST_FILE,
-];
+const VERSION_FILES = [PACKAGE_JSON_FILE, PACKAGE_LOCK_FILE, EXTENSION_MANIFEST_FILE];
 
 function parseArgs(argv) {
   const flags = new Set();
@@ -65,9 +61,7 @@ function run(command, args, options = {}) {
 
   if (result.status !== 0) {
     const output = [result.stdout, result.stderr].filter(Boolean).join("");
-    const error = new Error(
-      output.trim() || `Command failed: ${command} ${args.join(" ")}`,
-    );
+    const error = new Error(output.trim() || `Command failed: ${command} ${args.join(" ")}`);
     error.status = result.status;
     throw error;
   }
@@ -78,8 +72,7 @@ function run(command, args, options = {}) {
 function createGitRunner(repoRoot) {
   const safeDirectory = repoRoot.replace(/\\/g, "/");
 
-  return (args, options) =>
-    run("git", ["-c", `safe.directory=${safeDirectory}`, ...args], options);
+  return (args, options) => run("git", ["-c", `safe.directory=${safeDirectory}`, ...args], options);
 }
 
 function ensureValidVersion(version) {
@@ -100,9 +93,7 @@ function ensureVersionsAligned(versionFiles) {
   const mismatches = versions.filter(({ version }) => version !== firstVersion);
 
   if (mismatches.length > 0) {
-    const detail = versions
-      .map(({ file, version }) => `${file}: ${version}`)
-      .join("\n");
+    const detail = versions.map(({ file, version }) => `${file}: ${version}`).join("\n");
 
     throw new Error(`Version files are out of sync.\n${detail}`);
   }
@@ -127,14 +118,20 @@ function readVersion(file) {
 
 function updateJsonVersion(file, version) {
   const filePath = path.resolve(file);
-  const parsed = readJson(filePath);
-  parsed.version = version;
+  const content = fs.readFileSync(filePath, "utf8");
 
-  if (file === PACKAGE_LOCK_FILE && parsed.packages?.[""]) {
-    parsed.packages[""].version = version;
+  const updated = content.replace(/("version"\s*:\s*")([^"]+)(")/, `$1${version}$3`);
+
+  if (file === PACKAGE_LOCK_FILE) {
+    const parsed = JSON.parse(content);
+    if (parsed.packages?.[""]) {
+      parsed.packages[""].version = version;
+      fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
+      return;
+    }
   }
 
-  fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
+  fs.writeFileSync(filePath, updated);
 }
 
 function updateVersions(version) {
@@ -168,19 +165,14 @@ function releaseDate() {
 function updateChangelog(version) {
   const changelogPath = path.resolve(CHANGELOG_FILE);
   const changelog = fs.readFileSync(changelogPath, "utf8");
-  fs.writeFileSync(
-    changelogPath,
-    moveUnreleasedToVersion(changelog, version, releaseDate()),
-  );
+  fs.writeFileSync(changelogPath, moveUnreleasedToVersion(changelog, version, releaseDate()));
 }
 
 function ensureCleanWorktree(runGit) {
   const status = runGit(["status", "--short"]);
 
   if (status) {
-    throw new Error(
-      `Working tree is not clean. Commit or stash these changes first:\n${status}`,
-    );
+    throw new Error(`Working tree is not clean. Commit or stash these changes first:\n${status}`);
   }
 }
 
