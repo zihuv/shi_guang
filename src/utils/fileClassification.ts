@@ -1,17 +1,10 @@
 import {
-  AUDIO_FILE_EXTENSIONS,
-  ARCHIVE_FILE_EXTENSIONS,
-  CODE_FILE_EXTENSIONS,
-  DIRECT_IMAGE_EXTENSIONS,
-  PLAIN_TEXT_FILE_EXTENSIONS,
-  PRESENTATION_FILE_EXTENSIONS,
-  SPREADSHEET_FILE_EXTENSIONS,
-  TEXT_PREVIEW_EXTENSIONS,
-  VIDEO_FILE_EXTENSIONS,
-  WORD_FILE_EXTENSIONS,
-  extensionListIncludes,
+  getFileFormatDefinition,
   getFileFormatCapabilities,
+  getFileKind as getSharedFileKind,
   getMimeTypeForExtension,
+  normalizeExtension,
+  type FileKind,
 } from "@/shared/file-formats";
 import { isThumbnailSupportedExt } from "@/lib/thumbnailPolicy";
 
@@ -22,21 +15,10 @@ const THUMBNAIL_VARIANT_MAX_EDGES = [THUMBNAIL_MAX_EDGE] as const;
 const DEFAULT_THUMBNAIL_DEVICE_PIXEL_RATIO_CAP = 1;
 
 export type FilePreviewMode = "image" | "video" | "thumbnail" | "text" | "none";
-export type FileKind =
-  | "image"
-  | "video"
-  | "pdf"
-  | "audio"
-  | "archive"
-  | "spreadsheet"
-  | "presentation"
-  | "word"
-  | "code"
-  | "text"
-  | "other";
+export type { FileKind };
 
 export function normalizeExt(ext: string): string {
-  return ext.replace(/^\./, "").toLowerCase();
+  return normalizeExtension(ext);
 }
 
 export function getFileMimeType(path: string): string {
@@ -104,15 +86,15 @@ export function detectMimeTypeFromContents(bytes: Uint8Array, path: string): str
 }
 
 export function isImageFile(ext: string): boolean {
-  return extensionListIncludes(DIRECT_IMAGE_EXTENSIONS, ext);
+  return !!getFileFormatDefinition(ext)?.directImage;
 }
 
 export function isVideoFile(ext: string): boolean {
-  return extensionListIncludes(VIDEO_FILE_EXTENSIONS, ext);
+  return getFileKind(ext) === "video";
 }
 
 export function isPdfFile(ext: string): boolean {
-  return normalizeExt(ext) === "pdf";
+  return getFileKind(ext) === "pdf";
 }
 
 export function isPsdFile(ext: string): boolean {
@@ -120,7 +102,7 @@ export function isPsdFile(ext: string): boolean {
 }
 
 export function isTextPreviewFile(ext: string): boolean {
-  return extensionListIncludes(TEXT_PREVIEW_EXTENSIONS, ext);
+  return getFileFormatCapabilities(ext).textPreviewable;
 }
 
 export function getFilePreviewMode(ext: string): FilePreviewMode {
@@ -176,37 +158,5 @@ export function resolveThumbnailRequestMaxEdge(
 }
 
 export function getFileKind(ext: string): FileKind {
-  const normalizedExt = normalizeExt(ext);
-
-  if (isImageFile(normalizedExt) || isPsdFile(normalizedExt)) {
-    return "image";
-  }
-  if (isVideoFile(normalizedExt)) {
-    return "video";
-  }
-  if (isPdfFile(normalizedExt)) {
-    return "pdf";
-  }
-  if (extensionListIncludes(AUDIO_FILE_EXTENSIONS, normalizedExt)) {
-    return "audio";
-  }
-  if (extensionListIncludes(ARCHIVE_FILE_EXTENSIONS, normalizedExt)) {
-    return "archive";
-  }
-  if (extensionListIncludes(SPREADSHEET_FILE_EXTENSIONS, normalizedExt)) {
-    return "spreadsheet";
-  }
-  if (extensionListIncludes(PRESENTATION_FILE_EXTENSIONS, normalizedExt)) {
-    return "presentation";
-  }
-  if (extensionListIncludes(WORD_FILE_EXTENSIONS, normalizedExt)) {
-    return "word";
-  }
-  if (extensionListIncludes(CODE_FILE_EXTENSIONS, normalizedExt)) {
-    return "code";
-  }
-  if (extensionListIncludes(PLAIN_TEXT_FILE_EXTENSIONS, normalizedExt)) {
-    return "text";
-  }
-  return "other";
+  return getSharedFileKind(ext);
 }

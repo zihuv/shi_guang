@@ -8,16 +8,10 @@ import { checkForUpdates } from "../app/updater";
 import { getLogDir } from "../logger";
 import { hasThumbnailCachePath } from "../storage";
 import {
-  extensionListIncludes,
-  AUDIO_FILE_EXTENSIONS,
-  ARCHIVE_FILE_EXTENSIONS,
-  CODE_FILE_EXTENSIONS,
-  DIRECT_IMAGE_EXTENSIONS,
-  PLAIN_TEXT_FILE_EXTENSIONS,
-  PRESENTATION_FILE_EXTENSIONS,
-  SPREADSHEET_FILE_EXTENSIONS,
-  VIDEO_FILE_EXTENSIONS,
-  WORD_FILE_EXTENSIONS,
+  getFileFormatDefinition,
+  getFileKind,
+  normalizeExtension,
+  type FileKind,
 } from "../../src/shared/file-formats";
 import type { AppState, FileRecord } from "../types";
 import { type CommandHandler, numberArg, numberArrayArg } from "./common";
@@ -26,20 +20,7 @@ const DRAG_ICON_MAX_EDGE = 128;
 const DRAG_DIRECT_IMAGE_BLOCKLIST = new Set(["heic", "heif"]);
 const genericDragIconCache = new Map<string, Promise<Electron.NativeImage>>();
 
-type DragFileKind =
-  | "image"
-  | "video"
-  | "pdf"
-  | "audio"
-  | "archive"
-  | "spreadsheet"
-  | "presentation"
-  | "word"
-  | "code"
-  | "text"
-  | "other";
-
-const dragIconColorMap: Record<DragFileKind, { accent: string; fill: string }> = {
+const dragIconColorMap: Record<FileKind, { accent: string; fill: string }> = {
   image: { accent: "#10b981", fill: "#ecfdf5" },
   video: { accent: "#3b82f6", fill: "#eff6ff" },
   pdf: { accent: "#ef4444", fill: "#fef2f2" },
@@ -68,32 +49,17 @@ function resizeDragIconToFit(icon: Electron.NativeImage): Electron.NativeImage {
   });
 }
 
-function getDragFileKind(ext: string): DragFileKind {
-  const normalizedExt = ext.trim().replace(/^\./, "").toLowerCase();
-  if (extensionListIncludes(DIRECT_IMAGE_EXTENSIONS, normalizedExt)) return "image";
-  if (extensionListIncludes(VIDEO_FILE_EXTENSIONS, normalizedExt)) return "video";
-  if (normalizedExt === "pdf") return "pdf";
-  if (extensionListIncludes(AUDIO_FILE_EXTENSIONS, normalizedExt)) return "audio";
-  if (extensionListIncludes(ARCHIVE_FILE_EXTENSIONS, normalizedExt)) return "archive";
-  if (extensionListIncludes(SPREADSHEET_FILE_EXTENSIONS, normalizedExt)) return "spreadsheet";
-  if (extensionListIncludes(PRESENTATION_FILE_EXTENSIONS, normalizedExt)) return "presentation";
-  if (extensionListIncludes(WORD_FILE_EXTENSIONS, normalizedExt)) return "word";
-  if (extensionListIncludes(CODE_FILE_EXTENSIONS, normalizedExt)) return "code";
-  if (extensionListIncludes(PLAIN_TEXT_FILE_EXTENSIONS, normalizedExt)) return "text";
-  return "other";
-}
-
 function canUseFilePathAsNativeImage(ext: string): boolean {
-  const normalizedExt = ext.trim().replace(/^\./, "").toLowerCase();
+  const normalizedExt = normalizeExtension(ext);
   return (
-    extensionListIncludes(DIRECT_IMAGE_EXTENSIONS, normalizedExt) &&
+    !!getFileFormatDefinition(normalizedExt)?.directImage &&
     !DRAG_DIRECT_IMAGE_BLOCKLIST.has(normalizedExt)
   );
 }
 
 async function createGenericFileDragIcon(ext: string): Promise<Electron.NativeImage> {
-  const kind = getDragFileKind(ext);
-  const normalizedExt = ext.trim().replace(/^\./, "").toLowerCase();
+  const kind = getFileKind(ext);
+  const normalizedExt = normalizeExtension(ext);
   const cacheKey = `${kind}:${normalizedExt || "file"}`;
   const cachedIcon = genericDragIconCache.get(cacheKey);
   if (cachedIcon) {
@@ -106,7 +72,7 @@ async function createGenericFileDragIcon(ext: string): Promise<Electron.NativeIm
 }
 
 async function renderGenericFileDragIcon(
-  kind: DragFileKind,
+  kind: FileKind,
   normalizedExt: string,
 ): Promise<Electron.NativeImage> {
   const color = dragIconColorMap[kind];

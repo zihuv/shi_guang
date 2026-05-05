@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CODE_FILE_EXTENSIONS,
+  DIRECT_IMAGE_EXTENSIONS,
+  FILE_FORMAT_DEFINITIONS,
+  IMAGE_FILE_EXTENSIONS,
+  PLAIN_TEXT_FILE_EXTENSIONS,
+  TEXT_PREVIEW_EXTENSIONS,
   canAnalyzeImageMetadata,
   canExtractImageMetadata,
   canVisualSearchImage,
@@ -85,6 +91,52 @@ describe("fileClassification", () => {
     expect(canExtractImageMetadata("jpg")).toBe(true);
     expect(canAnalyzeImageMetadata("psd")).toBe(false);
     expect(canVisualSearchImage("heif")).toBe(true);
+  });
+
+  it("keeps legacy extension lists derived from the shared registry", () => {
+    const extensions = FILE_FORMAT_DEFINITIONS.map((definition) => definition.extension);
+    expect(new Set(extensions).size).toBe(extensions.length);
+    expect(IMAGE_FILE_EXTENSIONS).toContain("psd");
+    expect(DIRECT_IMAGE_EXTENSIONS).not.toContain("psd");
+    expect(TEXT_PREVIEW_EXTENSIONS).toEqual([
+      "txt",
+      "log",
+      "md",
+      "csv",
+      "ini",
+      "conf",
+      "htm",
+      "html",
+    ]);
+    expect(CODE_FILE_EXTENSIONS).toEqual([
+      "js",
+      "jsx",
+      "ts",
+      "tsx",
+      "json",
+      "html",
+      "css",
+      "scss",
+      "less",
+      "md",
+      "mdx",
+      "rs",
+      "py",
+      "java",
+      "kt",
+      "go",
+      "c",
+      "cpp",
+      "h",
+      "hpp",
+      "sh",
+      "ps1",
+      "yaml",
+      "yml",
+      "toml",
+      "xml",
+    ]);
+    expect(PLAIN_TEXT_FILE_EXTENSIONS).toEqual(["txt", "log", "ini", "conf"]);
   });
 
   it("resolves file kind and mime type from extensions and signatures", () => {

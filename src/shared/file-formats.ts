@@ -1,81 +1,366 @@
-export const DIRECT_IMAGE_EXTENSIONS = [
-  "jpg",
-  "jpeg",
-  "jpe",
-  "jfif",
-  "png",
-  "gif",
-  "webp",
-  "avif",
-  "heic",
-  "heif",
-  "svg",
-  "bmp",
-  "ico",
-  "tif",
-  "tiff",
-] as const;
+export type FileFormatGroup = "image" | "video" | "audio" | "document" | "archive";
+export type FileKind =
+  | "image"
+  | "video"
+  | "pdf"
+  | "audio"
+  | "archive"
+  | "spreadsheet"
+  | "presentation"
+  | "word"
+  | "code"
+  | "text"
+  | "other";
+export type ThumbnailGenerationRuntime = "none" | "main" | "renderer";
 
-export const IMAGE_FILE_EXTENSIONS = [...DIRECT_IMAGE_EXTENSIONS, "psd"] as const;
+export interface FileFormatDefinition {
+  extension: string;
+  kind: FileKind;
+  group?: FileFormatGroup;
+  mimeType?: string;
+  directImage?: boolean;
+  wordFile?: boolean;
+  spreadsheetFile?: boolean;
+  presentationFile?: boolean;
+  codeFile?: boolean;
+  codeFileOrder?: number;
+  plainTextFile?: boolean;
+  plainTextFileOrder?: number;
+  textPreviewable?: boolean;
+  textPreviewOrder?: number;
+  backendDecodable?: boolean;
+  metadataExtractable?: boolean;
+  thumbnailRuntime?: ThumbnailGenerationRuntime;
+  aiAnalyzable?: boolean;
+  visualSearchable?: boolean;
+  directPreviewable?: boolean;
+  blockedUnsupported?: boolean;
+}
 
-export const VIDEO_FILE_EXTENSIONS = [
-  "mp4",
-  "avi",
-  "mov",
-  "mkv",
-  "wmv",
-  "flv",
-  "webm",
-  "m4v",
-  "3gp",
-  "3g2",
-  "ts",
-  "swf",
-  "rmvb",
-  "rm",
-  "vob",
-  "trp",
-  "sct",
-  "ogv",
-  "mxf",
-  "mpg",
-  "mpeg",
-  "m2ts",
-  "f4v",
-  "dv",
-  "dcr",
-  "asf",
-] as const;
+const imageFormat = (
+  extension: string,
+  mimeType: string | undefined,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind: "image",
+  group: "image",
+  mimeType,
+  directImage: true,
+  backendDecodable: true,
+  metadataExtractable: true,
+  thumbnailRuntime: "main",
+  aiAnalyzable: true,
+  visualSearchable: true,
+  directPreviewable: true,
+  ...options,
+});
 
-export const AUDIO_FILE_EXTENSIONS = [
-  "mp3",
-  "wav",
-  "flac",
-  "aac",
-  "ogg",
-  "m4a",
-  "ape",
-  "aiff",
-  "aif",
-  "amr",
-  "wma",
-] as const;
+const videoFormat = (
+  extension: string,
+  mimeType?: string,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind: "video",
+  group: "video",
+  mimeType,
+  thumbnailRuntime: "renderer",
+  ...options,
+});
 
-export const WORD_FILE_EXTENSIONS = ["doc", "docx", "rtf", "odt", "htm", "html", "mht"] as const;
+const audioFormat = (
+  extension: string,
+  mimeType?: string,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind: "audio",
+  group: "audio",
+  mimeType,
+  ...options,
+});
 
-export const SPREADSHEET_FILE_EXTENSIONS = ["xls", "xlsx", "csv", "ods"] as const;
+const documentFormat = (
+  extension: string,
+  kind: Extract<FileKind, "pdf" | "spreadsheet" | "presentation" | "word" | "text">,
+  mimeType?: string,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind,
+  group: "document",
+  mimeType,
+  ...options,
+});
 
-export const PRESENTATION_FILE_EXTENSIONS = ["ppt", "pptx", "odp", "pps", "ppsx"] as const;
+const archiveFormat = (
+  extension: string,
+  mimeType?: string,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind: "archive",
+  group: "archive",
+  mimeType,
+  ...options,
+});
 
-export const DOCUMENT_FILE_EXTENSIONS = [
-  "pdf",
-  "txt",
-  ...WORD_FILE_EXTENSIONS,
-  ...SPREADSHEET_FILE_EXTENSIONS,
-  ...PRESENTATION_FILE_EXTENSIONS,
-] as const;
+const codeFormat = (
+  extension: string,
+  mimeType?: string,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind: "code",
+  mimeType,
+  codeFile: true,
+  ...options,
+});
 
-export const ARCHIVE_FILE_EXTENSIONS = ["zip", "rar"] as const;
+const plainTextFormat = (
+  extension: string,
+  options: Partial<FileFormatDefinition> = {},
+): FileFormatDefinition => ({
+  extension,
+  kind: "text",
+  plainTextFile: true,
+  textPreviewable: true,
+  ...options,
+});
+
+const unsupportedFormat = (extension: string): FileFormatDefinition => ({
+  extension,
+  kind: "other",
+  blockedUnsupported: true,
+});
+
+export const FILE_FORMAT_DEFINITIONS: readonly FileFormatDefinition[] = [
+  imageFormat("jpg", "image/jpeg"),
+  imageFormat("jpeg", "image/jpeg"),
+  imageFormat("jpe", "image/jpeg"),
+  imageFormat("jfif", "image/jpeg"),
+  imageFormat("png", "image/png"),
+  imageFormat("gif", "image/gif"),
+  imageFormat("webp", "image/webp"),
+  imageFormat("avif", "image/avif"),
+  imageFormat("heic", "image/heic", { directPreviewable: false }),
+  imageFormat("heif", "image/heif", { directPreviewable: false }),
+  imageFormat("svg", "image/svg+xml", {
+    aiAnalyzable: false,
+    visualSearchable: false,
+  }),
+  imageFormat("bmp", "image/bmp"),
+  imageFormat("ico", "image/x-icon"),
+  imageFormat("tif", "image/tiff"),
+  imageFormat("tiff", "image/tiff"),
+  {
+    extension: "psd",
+    kind: "image",
+    group: "image",
+    thumbnailRuntime: "main",
+  },
+
+  videoFormat("mp4", "video/mp4"),
+  videoFormat("avi", "video/x-msvideo"),
+  videoFormat("mov", "video/quicktime"),
+  videoFormat("mkv", "video/x-matroska"),
+  videoFormat("wmv", "video/x-ms-wmv"),
+  videoFormat("flv", "video/x-flv"),
+  videoFormat("webm", "video/webm"),
+  videoFormat("m4v", "video/mp4"),
+  videoFormat("3gp", "video/3gpp"),
+  videoFormat("3g2", "video/3gpp2"),
+  videoFormat("ts", "video/mp2t", { codeFile: true, codeFileOrder: 2 }),
+  videoFormat("swf"),
+  videoFormat("rmvb"),
+  videoFormat("rm"),
+  videoFormat("vob"),
+  videoFormat("trp"),
+  videoFormat("sct"),
+  videoFormat("ogv", "video/ogg"),
+  videoFormat("mxf"),
+  videoFormat("mpg", "video/mpeg"),
+  videoFormat("mpeg", "video/mpeg"),
+  videoFormat("m2ts", "video/mp2t"),
+  videoFormat("f4v", "video/mp4"),
+  videoFormat("dv"),
+  videoFormat("dcr"),
+  videoFormat("asf", "video/x-ms-asf"),
+
+  audioFormat("mp3", "audio/mpeg"),
+  audioFormat("wav", "audio/wav"),
+  audioFormat("flac", "audio/flac"),
+  audioFormat("aac", "audio/aac"),
+  audioFormat("ogg", "audio/ogg"),
+  audioFormat("m4a", "audio/mp4"),
+  audioFormat("ape"),
+  audioFormat("aiff", "audio/aiff"),
+  audioFormat("aif", "audio/aiff"),
+  audioFormat("amr", "audio/amr"),
+  audioFormat("wma", "audio/x-ms-wma"),
+
+  documentFormat("pdf", "pdf", "application/pdf", { thumbnailRuntime: "main" }),
+  documentFormat("txt", "text", "text/plain; charset=utf-8", {
+    plainTextFile: true,
+    plainTextFileOrder: 0,
+    textPreviewable: true,
+    textPreviewOrder: 0,
+  }),
+  documentFormat("doc", "word", "application/msword", { wordFile: true }),
+  documentFormat(
+    "docx",
+    "word",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    { wordFile: true },
+  ),
+  documentFormat("rtf", "word", "application/rtf", { wordFile: true }),
+  documentFormat("odt", "word", "application/vnd.oasis.opendocument.text", { wordFile: true }),
+  documentFormat("htm", "word", "text/html; charset=utf-8", {
+    wordFile: true,
+    textPreviewable: true,
+    textPreviewOrder: 6,
+  }),
+  documentFormat("html", "word", "text/html; charset=utf-8", {
+    wordFile: true,
+    codeFile: true,
+    codeFileOrder: 5,
+    textPreviewable: true,
+    textPreviewOrder: 7,
+  }),
+  documentFormat("mht", "word", "message/rfc822", { wordFile: true }),
+  documentFormat("xls", "spreadsheet", "application/vnd.ms-excel", {
+    spreadsheetFile: true,
+  }),
+  documentFormat(
+    "xlsx",
+    "spreadsheet",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    { spreadsheetFile: true },
+  ),
+  documentFormat("csv", "spreadsheet", "text/csv; charset=utf-8", {
+    spreadsheetFile: true,
+    textPreviewable: true,
+    textPreviewOrder: 3,
+  }),
+  documentFormat("ods", "spreadsheet", "application/vnd.oasis.opendocument.spreadsheet", {
+    spreadsheetFile: true,
+  }),
+  documentFormat("ppt", "presentation", "application/vnd.ms-powerpoint", {
+    presentationFile: true,
+  }),
+  documentFormat(
+    "pptx",
+    "presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    { presentationFile: true },
+  ),
+  documentFormat("odp", "presentation", "application/vnd.oasis.opendocument.presentation", {
+    presentationFile: true,
+  }),
+  documentFormat("pps", "presentation", "application/vnd.ms-powerpoint", {
+    presentationFile: true,
+  }),
+  documentFormat(
+    "ppsx",
+    "presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+    { presentationFile: true },
+  ),
+
+  archiveFormat("zip", "application/zip"),
+  archiveFormat("rar", "application/vnd.rar"),
+
+  plainTextFormat("log", { plainTextFileOrder: 1, textPreviewOrder: 1 }),
+  codeFormat("js", undefined, { codeFileOrder: 0 }),
+  codeFormat("jsx", undefined, { codeFileOrder: 1 }),
+  codeFormat("tsx", undefined, { codeFileOrder: 3 }),
+  codeFormat("json", undefined, { codeFileOrder: 4 }),
+  codeFormat("css", undefined, { codeFileOrder: 6 }),
+  codeFormat("scss", undefined, { codeFileOrder: 7 }),
+  codeFormat("less", undefined, { codeFileOrder: 8 }),
+  codeFormat("md", "text/markdown; charset=utf-8", {
+    codeFileOrder: 9,
+    textPreviewable: true,
+    textPreviewOrder: 2,
+  }),
+  codeFormat("mdx", undefined, { codeFileOrder: 10 }),
+  codeFormat("rs", undefined, { codeFileOrder: 11 }),
+  codeFormat("py", undefined, { codeFileOrder: 12 }),
+  codeFormat("java", undefined, { codeFileOrder: 13 }),
+  codeFormat("kt", undefined, { codeFileOrder: 14 }),
+  codeFormat("go", undefined, { codeFileOrder: 15 }),
+  codeFormat("c", undefined, { codeFileOrder: 16 }),
+  codeFormat("cpp", undefined, { codeFileOrder: 17 }),
+  codeFormat("h", undefined, { codeFileOrder: 18 }),
+  codeFormat("hpp", undefined, { codeFileOrder: 19 }),
+  codeFormat("sh", undefined, { codeFileOrder: 20 }),
+  codeFormat("ps1", undefined, { codeFileOrder: 21 }),
+  codeFormat("yaml", undefined, { codeFileOrder: 22 }),
+  codeFormat("yml", undefined, { codeFileOrder: 23 }),
+  codeFormat("toml", undefined, { codeFileOrder: 24 }),
+  codeFormat("xml", undefined, { codeFileOrder: 25 }),
+  plainTextFormat("ini", { plainTextFileOrder: 2, textPreviewOrder: 4 }),
+  plainTextFormat("conf", { plainTextFileOrder: 3, textPreviewOrder: 5 }),
+
+  unsupportedFormat("ai"),
+  unsupportedFormat("eps"),
+  unsupportedFormat("raw"),
+  unsupportedFormat("3fr"),
+  unsupportedFormat("arw"),
+  unsupportedFormat("cr2"),
+  unsupportedFormat("cr3"),
+  unsupportedFormat("crw"),
+  unsupportedFormat("dng"),
+  unsupportedFormat("erf"),
+  unsupportedFormat("mrw"),
+  unsupportedFormat("nef"),
+  unsupportedFormat("nrw"),
+  unsupportedFormat("orf"),
+  unsupportedFormat("otf"),
+  unsupportedFormat("pef"),
+  unsupportedFormat("raf"),
+  unsupportedFormat("rw2"),
+  unsupportedFormat("sr2"),
+  unsupportedFormat("srw"),
+  unsupportedFormat("x3f"),
+];
+
+const FILE_FORMATS_BY_EXTENSION = new Map(
+  FILE_FORMAT_DEFINITIONS.map((definition) => [definition.extension, definition]),
+);
+
+const extensionsWhere = (
+  predicate: (definition: FileFormatDefinition) => boolean,
+  orderKey?: keyof Pick<
+    FileFormatDefinition,
+    "codeFileOrder" | "plainTextFileOrder" | "textPreviewOrder"
+  >,
+): string[] => {
+  const definitions = FILE_FORMAT_DEFINITIONS.filter(predicate);
+  if (orderKey) {
+    definitions.sort((left, right) => (left[orderKey] ?? 0) - (right[orderKey] ?? 0));
+  }
+  return definitions.map((definition) => definition.extension);
+};
+
+export const DIRECT_IMAGE_EXTENSIONS = extensionsWhere((definition) => !!definition.directImage);
+export const IMAGE_FILE_EXTENSIONS = extensionsWhere((definition) => definition.group === "image");
+export const VIDEO_FILE_EXTENSIONS = extensionsWhere((definition) => definition.group === "video");
+export const AUDIO_FILE_EXTENSIONS = extensionsWhere((definition) => definition.group === "audio");
+export const WORD_FILE_EXTENSIONS = extensionsWhere((definition) => !!definition.wordFile);
+export const SPREADSHEET_FILE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.spreadsheetFile,
+);
+export const PRESENTATION_FILE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.presentationFile,
+);
+export const DOCUMENT_FILE_EXTENSIONS = extensionsWhere(
+  (definition) => definition.group === "document",
+);
+export const ARCHIVE_FILE_EXTENSIONS = extensionsWhere(
+  (definition) => definition.group === "archive",
+);
 
 export const FILE_FORMAT_GROUPS = {
   image: IMAGE_FILE_EXTENSIONS,
@@ -94,165 +379,40 @@ export const LIBRARY_FILTER_FILE_TYPES = [
   "archive",
 ] as const;
 
-export const BACKEND_DECODABLE_IMAGE_EXTENSIONS = DIRECT_IMAGE_EXTENSIONS;
-
-export const AI_SUPPORTED_IMAGE_EXTENSIONS = [
-  "jpg",
-  "jpeg",
-  "jpe",
-  "jfif",
-  "png",
-  "webp",
-  "bmp",
-  "gif",
-  "tif",
-  "tiff",
-  "ico",
-  "avif",
-  "heic",
-  "heif",
-] as const;
-
-export const VISUAL_SEARCH_IMAGE_EXTENSIONS = AI_SUPPORTED_IMAGE_EXTENSIONS;
-
-export const BLOCKED_UNSUPPORTED_EXTENSIONS = [
-  "ai",
-  "eps",
-  "raw",
-  "3fr",
-  "arw",
-  "cr2",
-  "cr3",
-  "crw",
-  "dng",
-  "erf",
-  "mrw",
-  "nef",
-  "nrw",
-  "orf",
-  "otf",
-  "pef",
-  "raf",
-  "rw2",
-  "sr2",
-  "srw",
-  "x3f",
-] as const;
-
-export const TEXT_PREVIEW_EXTENSIONS = [
-  "txt",
-  "log",
-  "md",
-  "csv",
-  "ini",
-  "conf",
-  "htm",
-  "html",
-] as const;
-
-export const CODE_FILE_EXTENSIONS = [
-  "js",
-  "jsx",
-  "ts",
-  "tsx",
-  "json",
-  "html",
-  "css",
-  "scss",
-  "less",
-  "md",
-  "mdx",
-  "rs",
-  "py",
-  "java",
-  "kt",
-  "go",
-  "c",
-  "cpp",
-  "h",
-  "hpp",
-  "sh",
-  "ps1",
-  "yaml",
-  "yml",
-  "toml",
-  "xml",
-] as const;
-
-export const PLAIN_TEXT_FILE_EXTENSIONS = ["txt", "log", "ini", "conf"] as const;
-
-export const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  jpe: "image/jpeg",
-  jfif: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  webp: "image/webp",
-  avif: "image/avif",
-  heic: "image/heic",
-  heif: "image/heif",
-  svg: "image/svg+xml",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  tif: "image/tiff",
-  tiff: "image/tiff",
-  pdf: "application/pdf",
-  mp4: "video/mp4",
-  avi: "video/x-msvideo",
-  mov: "video/quicktime",
-  mkv: "video/x-matroska",
-  webm: "video/webm",
-  m4v: "video/mp4",
-  wmv: "video/x-ms-wmv",
-  flv: "video/x-flv",
-  "3gp": "video/3gpp",
-  "3g2": "video/3gpp2",
-  ts: "video/mp2t",
-  ogv: "video/ogg",
-  mpg: "video/mpeg",
-  mpeg: "video/mpeg",
-  m2ts: "video/mp2t",
-  f4v: "video/mp4",
-  asf: "video/x-ms-asf",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  flac: "audio/flac",
-  aac: "audio/aac",
-  ogg: "audio/ogg",
-  m4a: "audio/mp4",
-  aiff: "audio/aiff",
-  aif: "audio/aiff",
-  amr: "audio/amr",
-  wma: "audio/x-ms-wma",
-  zip: "application/zip",
-  rar: "application/vnd.rar",
-  txt: "text/plain; charset=utf-8",
-  csv: "text/csv; charset=utf-8",
-  htm: "text/html; charset=utf-8",
-  html: "text/html; charset=utf-8",
-  mht: "message/rfc822",
-  rtf: "application/rtf",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ppt: "application/vnd.ms-powerpoint",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  pps: "application/vnd.ms-powerpoint",
-  ppsx: "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
-  odt: "application/vnd.oasis.opendocument.text",
-  ods: "application/vnd.oasis.opendocument.spreadsheet",
-  odp: "application/vnd.oasis.opendocument.presentation",
-  md: "text/markdown; charset=utf-8",
-};
+export const BACKEND_DECODABLE_IMAGE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.backendDecodable,
+);
+export const AI_SUPPORTED_IMAGE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.aiAnalyzable,
+);
+export const VISUAL_SEARCH_IMAGE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.visualSearchable,
+);
+export const BLOCKED_UNSUPPORTED_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.blockedUnsupported,
+);
+export const TEXT_PREVIEW_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.textPreviewable,
+  "textPreviewOrder",
+);
+export const CODE_FILE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.codeFile,
+  "codeFileOrder",
+);
+export const PLAIN_TEXT_FILE_EXTENSIONS = extensionsWhere(
+  (definition) => !!definition.plainTextFile,
+  "plainTextFileOrder",
+);
+export const MIME_TYPES_BY_EXTENSION: Record<string, string> = Object.fromEntries(
+  FILE_FORMAT_DEFINITIONS.flatMap((definition) =>
+    definition.mimeType ? [[definition.extension, definition.mimeType]] : [],
+  ),
+);
 
 export const SCAN_SUPPORTED_EXTENSIONS = Object.values(FILE_FORMAT_GROUPS).flat();
 export const IMPORT_DIALOG_EXTENSIONS = SCAN_SUPPORTED_EXTENSIONS;
 
-export type FileFormatGroup = keyof typeof FILE_FORMAT_GROUPS;
 export type LibraryFilterFileType = (typeof LIBRARY_FILTER_FILE_TYPES)[number];
-export type ThumbnailGenerationRuntime = "none" | "main" | "renderer";
 
 export interface FileFormatCapabilities {
   group: FileFormatGroup | null;
@@ -277,52 +437,30 @@ export function extensionListIncludes(extensions: readonly string[], ext: string
   return extensions.includes(normalizeExtension(ext));
 }
 
-export function getMimeTypeForExtension(ext: string): string {
-  return MIME_TYPES_BY_EXTENSION[normalizeExtension(ext)] ?? "application/octet-stream";
+export function getFileFormatDefinition(ext: string): FileFormatDefinition | null {
+  return FILE_FORMATS_BY_EXTENSION.get(normalizeExtension(ext)) ?? null;
 }
 
-const DIRECT_IMAGE_EXTENSION_SET = extensionSet(DIRECT_IMAGE_EXTENSIONS);
-const VIDEO_EXTENSION_SET = extensionSet(VIDEO_FILE_EXTENSIONS);
-const BACKEND_DECODABLE_EXTENSION_SET = extensionSet(BACKEND_DECODABLE_IMAGE_EXTENSIONS);
-const AI_ANALYZABLE_EXTENSION_SET = extensionSet(AI_SUPPORTED_IMAGE_EXTENSIONS);
-const VISUAL_SEARCH_EXTENSION_SET = extensionSet(VISUAL_SEARCH_IMAGE_EXTENSIONS);
-const TEXT_PREVIEW_EXTENSION_SET = extensionSet(TEXT_PREVIEW_EXTENSIONS);
-const MAIN_PROCESS_THUMBNAIL_EXTENSION_SET = extensionSet([
-  ...DIRECT_IMAGE_EXTENSIONS,
-  "pdf",
-  "psd",
-] as const);
-const BROWSER_DIRECT_PREVIEW_BLOCKLIST = extensionSet(["heic", "heif"] as const);
+export function getMimeTypeForExtension(ext: string): string {
+  return getFileFormatDefinition(ext)?.mimeType ?? "application/octet-stream";
+}
 
-function getFormatGroup(ext: string): FileFormatGroup | null {
-  for (const [group, extensions] of Object.entries(FILE_FORMAT_GROUPS)) {
-    if (extensionListIncludes(extensions, ext)) {
-      return group as FileFormatGroup;
-    }
-  }
-  return null;
+export function getFileKind(ext: string): FileKind {
+  return getFileFormatDefinition(ext)?.kind ?? "other";
 }
 
 export function getFileFormatCapabilities(ext: string): FileFormatCapabilities {
-  const normalizedExt = normalizeExtension(ext);
-  const backendDecodable = BACKEND_DECODABLE_EXTENSION_SET.has(normalizedExt);
-  const thumbnailRuntime: ThumbnailGenerationRuntime = VIDEO_EXTENSION_SET.has(normalizedExt)
-    ? "renderer"
-    : MAIN_PROCESS_THUMBNAIL_EXTENSION_SET.has(normalizedExt)
-      ? "main"
-      : "none";
+  const definition = getFileFormatDefinition(ext);
 
   return {
-    group: getFormatGroup(normalizedExt),
-    backendDecodable,
-    metadataExtractable: backendDecodable,
-    thumbnailRuntime,
-    aiAnalyzable: AI_ANALYZABLE_EXTENSION_SET.has(normalizedExt),
-    visualSearchable: VISUAL_SEARCH_EXTENSION_SET.has(normalizedExt),
-    directPreviewable:
-      DIRECT_IMAGE_EXTENSION_SET.has(normalizedExt) &&
-      !BROWSER_DIRECT_PREVIEW_BLOCKLIST.has(normalizedExt),
-    textPreviewable: TEXT_PREVIEW_EXTENSION_SET.has(normalizedExt),
+    group: definition?.group ?? null,
+    backendDecodable: !!definition?.backendDecodable,
+    metadataExtractable: !!definition?.metadataExtractable,
+    thumbnailRuntime: definition?.thumbnailRuntime ?? "none",
+    aiAnalyzable: !!definition?.aiAnalyzable,
+    visualSearchable: !!definition?.visualSearchable,
+    directPreviewable: !!definition?.directPreviewable,
+    textPreviewable: !!definition?.textPreviewable,
   };
 }
 
