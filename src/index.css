@@ -151,6 +151,16 @@ body {
   background-color: #6b7280;
 }
 
+.app-main-scroll {
+  scrollbar-gutter: stable;
+}
+
+.app-main-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
 .app-sidebar-scroll:hover {
   --app-sidebar-scrollbar-thumb: #cbd5e1;
 }
@@ -160,8 +170,8 @@ body {
 }
 
 .app-sidebar-scroll::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   background: transparent;
 }
 

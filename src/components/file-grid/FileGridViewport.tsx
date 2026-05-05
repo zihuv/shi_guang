@@ -81,7 +81,7 @@ export function FileGridViewport({
   return (
     <div
       ref={scrollParentRef}
-      className="relative flex-1 overflow-x-hidden overflow-y-auto p-3 select-none focus:outline-none"
+      className="app-main-scroll relative flex-1 overflow-x-hidden overflow-y-auto p-3 select-none focus:outline-none"
       tabIndex={0}
       onMouseDown={handleSelectionStart}
       onWheel={handleViewportWheel}
