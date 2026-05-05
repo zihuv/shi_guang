@@ -9,6 +9,7 @@ import {
   canAnalyzeImageMetadata,
   canExtractImageMetadata,
   canVisualSearchImage,
+  getExtensionForContentType,
   getFileFormatCapabilities,
 } from "@/shared/file-formats";
 import {
@@ -158,6 +159,17 @@ describe("fileClassification", () => {
         "fallback.bin",
       ),
     ).toBe("image/webp");
+  });
+
+  it("resolves content types through the shared format registry", () => {
+    expect(getExtensionForContentType("image/jpeg")).toBe("jpg");
+    expect(getExtensionForContentType("image/apng")).toBe("png");
+    expect(getExtensionForContentType("text/html; charset=utf-8")).toBe("html");
+    expect(getExtensionForContentType("image/tiff")).toBe("tiff");
+    expect(getExtensionForContentType("application/vnd.rar")).toBe("rar");
+    expect(getExtensionForContentType("application/x-rar-compressed")).toBe("rar");
+    expect(getExtensionForContentType("audio/mp3")).toBe("mp3");
+    expect(getExtensionForContentType("application/octet-stream")).toBeNull();
   });
 
   it("caps thumbnail request sizes to the supported cache variant", () => {

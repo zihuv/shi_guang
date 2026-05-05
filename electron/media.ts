@@ -8,6 +8,7 @@ import {
   canAnalyzeImageMetadata,
   canExtractImageMetadata,
   extensionSet,
+  getExtensionForContentType,
 } from "../src/shared/file-formats";
 
 const PROBE_READ_LIMIT = 4096;
@@ -27,60 +28,6 @@ function hasSignature(bytes: Buffer, signature: number[], offset = 0): boolean {
     bytes.length >= offset + signature.length &&
     signature.every((value, index) => bytes[offset + index] === value)
   );
-}
-
-function normalizeContentType(contentType?: string | null): string {
-  return contentType?.split(";")[0]?.trim().toLowerCase() ?? "";
-}
-
-function extensionFromContentType(contentType?: string | null): string | null {
-  const normalized = normalizeContentType(contentType);
-  const map: Record<string, string> = {
-    "image/png": "png",
-    "image/apng": "png",
-    "image/jpeg": "jpg",
-    "image/jpg": "jpg",
-    "image/jfif": "jpg",
-    "image/pjpeg": "jpg",
-    "image/gif": "gif",
-    "image/webp": "webp",
-    "image/avif": "avif",
-    "image/heic": "heic",
-    "image/heif": "heif",
-    "image/svg+xml": "svg",
-    "image/bmp": "bmp",
-    "image/x-ms-bmp": "bmp",
-    "image/x-icon": "ico",
-    "image/vnd.microsoft.icon": "ico",
-    "image/tiff": "tiff",
-    "image/tif": "tiff",
-    "application/pdf": "pdf",
-    "video/mp4": "mp4",
-    "video/quicktime": "mov",
-    "video/webm": "webm",
-    "video/x-matroska": "mkv",
-    "video/x-msvideo": "avi",
-    "video/x-ms-wmv": "wmv",
-    "video/x-flv": "flv",
-    "video/3gpp": "3gp",
-    "video/3gpp2": "3g2",
-    "audio/mpeg": "mp3",
-    "audio/mp3": "mp3",
-    "audio/wav": "wav",
-    "audio/wave": "wav",
-    "audio/x-wav": "wav",
-    "audio/ogg": "ogg",
-    "audio/flac": "flac",
-    "audio/aac": "aac",
-    "audio/mp4": "m4a",
-    "application/zip": "zip",
-    "application/x-rar-compressed": "rar",
-    "text/plain": "txt",
-    "text/csv": "csv",
-    "text/html": "html",
-    "image/vnd.adobe.photoshop": "psd",
-  };
-  return map[normalized] ?? null;
 }
 
 function bmffBrands(bytes: Buffer): string {
@@ -159,7 +106,7 @@ export function detectExtensionFromBytes(
   if (textHead.startsWith("%pdf-")) return "pdf";
   if (textHead.startsWith("<svg") || textHead.startsWith("<?xml")) return "svg";
 
-  return extensionFromContentType(contentType);
+  return getExtensionForContentType(contentType);
 }
 
 export async function detectExtensionFromPath(filePath: string): Promise<string | null> {

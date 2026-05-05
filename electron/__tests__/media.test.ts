@@ -46,4 +46,15 @@ describe("media format support", () => {
     ]);
     expect(detectExtensionFromBytes(bytes)).toBe("3g2");
   });
+
+  it("falls back to the shared content type registry when signatures are inconclusive", () => {
+    const empty = Buffer.alloc(0);
+
+    expect(detectExtensionFromBytes(empty, "text/html; charset=utf-8")).toBe("html");
+    expect(detectExtensionFromBytes(empty, "image/apng")).toBe("png");
+    expect(detectExtensionFromBytes(empty, "image/jpg")).toBe("jpg");
+    expect(detectExtensionFromBytes(empty, "application/vnd.rar")).toBe("rar");
+    expect(detectExtensionFromBytes(empty, "application/x-rar-compressed")).toBe("rar");
+    expect(detectExtensionFromBytes(empty, "application/octet-stream")).toBeNull();
+  });
 });

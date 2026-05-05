@@ -409,6 +409,43 @@ export const MIME_TYPES_BY_EXTENSION: Record<string, string> = Object.fromEntrie
   ),
 );
 
+const CONTENT_TYPE_EXTENSION_ALIASES: Record<string, string> = {
+  "image/apng": "png",
+  "image/jpg": "jpg",
+  "image/jfif": "jpg",
+  "image/pjpeg": "jpg",
+  "image/x-ms-bmp": "bmp",
+  "image/vnd.microsoft.icon": "ico",
+  "image/tif": "tiff",
+  "audio/mp3": "mp3",
+  "audio/wave": "wav",
+  "audio/x-wav": "wav",
+  "application/x-rar-compressed": "rar",
+  "image/vnd.adobe.photoshop": "psd",
+};
+
+const PREFERRED_CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/tiff": "tiff",
+  "text/html": "html",
+};
+
+const EXTENSIONS_BY_CONTENT_TYPE = FILE_FORMAT_DEFINITIONS.reduce<Record<string, string>>(
+  (extensions, definition) => {
+    if (!definition.mimeType) {
+      return extensions;
+    }
+
+    const contentType = normalizeContentType(definition.mimeType);
+    if (contentType && !extensions[contentType]) {
+      extensions[contentType] = definition.extension;
+    }
+
+    return extensions;
+  },
+  {},
+);
+
 export const SCAN_SUPPORTED_EXTENSIONS = Object.values(FILE_FORMAT_GROUPS).flat();
 export const IMPORT_DIALOG_EXTENSIONS = SCAN_SUPPORTED_EXTENSIONS;
 
@@ -429,6 +466,10 @@ export function normalizeExtension(ext: string): string {
   return ext.trim().replace(/^\./, "").toLowerCase();
 }
 
+export function normalizeContentType(contentType?: string | null): string {
+  return contentType?.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
 export function extensionSet<T extends readonly string[]>(extensions: T): Set<string> {
   return new Set<string>(extensions);
 }
@@ -443,6 +484,20 @@ export function getFileFormatDefinition(ext: string): FileFormatDefinition | nul
 
 export function getMimeTypeForExtension(ext: string): string {
   return getFileFormatDefinition(ext)?.mimeType ?? "application/octet-stream";
+}
+
+export function getExtensionForContentType(contentType?: string | null): string | null {
+  const normalizedContentType = normalizeContentType(contentType);
+  if (!normalizedContentType) {
+    return null;
+  }
+
+  return (
+    CONTENT_TYPE_EXTENSION_ALIASES[normalizedContentType] ??
+    PREFERRED_CONTENT_TYPE_EXTENSIONS[normalizedContentType] ??
+    EXTENSIONS_BY_CONTENT_TYPE[normalizedContentType] ??
+    null
+  );
 }
 
 export function getFileKind(ext: string): FileKind {
