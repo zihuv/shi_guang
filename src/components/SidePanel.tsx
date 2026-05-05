@@ -67,7 +67,7 @@ export default function SidePanel({ width }: SidePanelProps) {
 
   return (
     <aside className={`${appPanelClass} flex-shrink-0`} style={{ width }}>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div className="app-sidebar-scroll min-h-0 flex-1 overflow-x-hidden">
         <div className="px-2 pb-1 pt-2.5">
           <span className={cn(appSectionLabelClass, "mb-2 block")}>快捷视图</span>
 
