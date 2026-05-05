@@ -454,14 +454,6 @@ export default function ImagePreview() {
     setImageTransform((current) => rotateImageTransform(current, -90));
   }, []);
 
-  const handleRotateRight = useCallback(() => {
-    setImageTransform((current) => rotateImageTransform(current, 90));
-  }, []);
-
-  const handleReverseCenter = useCallback(() => {
-    setImageTransform((current) => rotateImageTransform(current, 180));
-  }, []);
-
   const hydrateCurrentFileDimensions = useCallback(
     (width: number, height: number) => {
       if (!currentFile || width <= 0 || height <= 0) return;
@@ -736,8 +728,6 @@ export default function ImagePreview() {
         onZoomIn={handleZoomIn}
         onFitToView={handleFitToView}
         onRotateLeft={handleRotateLeft}
-        onRotateRight={handleRotateRight}
-        onReverseCenter={handleReverseCenter}
         onToggleFullscreen={toggleFullscreen}
         onGoPrev={goToPrev}
         onGoNext={goToNext}
@@ -772,8 +762,6 @@ export default function ImagePreview() {
       onZoomIn={handleZoomIn}
       onFitToView={handleFitToView}
       onRotateLeft={handleRotateLeft}
-      onRotateRight={handleRotateRight}
-      onReverseCenter={handleReverseCenter}
       onToggleFullscreen={toggleFullscreen}
       onClose={closePreviewWithFullscreenExit}
       onGoPrev={goToPrev}

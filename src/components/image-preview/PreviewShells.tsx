@@ -18,9 +18,7 @@ import {
   ChevronRight,
   Maximize2,
   Minimize2,
-  RefreshCcwDot,
   RotateCcw,
-  RotateCw,
   Scan,
   X,
   ZoomIn,
@@ -57,8 +55,6 @@ interface FullscreenPreviewShellProps extends PreviewViewportProps {
   onZoomIn: () => void;
   onFitToView: () => void;
   onRotateLeft: () => void;
-  onRotateRight: () => void;
-  onReverseCenter: () => void;
   onToggleFullscreen: () => void;
   onGoPrev: () => void;
   onGoNext: () => void;
@@ -81,8 +77,6 @@ interface StandardPreviewShellProps extends PreviewViewportProps {
   onZoomIn: () => void;
   onFitToView: () => void;
   onRotateLeft: () => void;
-  onRotateRight: () => void;
-  onReverseCenter: () => void;
   onToggleFullscreen: () => void;
   onClose: () => void;
   onGoPrev: () => void;
@@ -135,8 +129,6 @@ export function FullscreenPreviewShell({
   onZoomIn,
   onFitToView,
   onRotateLeft,
-  onRotateRight,
-  onReverseCenter,
   onToggleFullscreen,
   onGoPrev,
   onGoNext,
@@ -207,21 +199,14 @@ export function FullscreenPreviewShell({
                 </>
               )}
               {canTransformImage && (
-                <>
-                  <button onClick={onRotateLeft} className={OVERLAY_BUTTON_CLASS} title="左旋转">
-                    <RotateCcw className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={onReverseCenter}
-                    className={OVERLAY_BUTTON_CLASS}
-                    title="中心反转"
-                  >
-                    <RefreshCcwDot className="h-5 w-5" />
-                  </button>
-                  <button onClick={onRotateRight} className={OVERLAY_BUTTON_CLASS} title="右旋转">
-                    <RotateCw className="h-5 w-5" />
-                  </button>
-                </>
+                <button
+                  onClick={onRotateLeft}
+                  className={OVERLAY_BUTTON_CLASS}
+                  title="逆时针旋转"
+                  aria-label="逆时针旋转"
+                >
+                  <RotateCcw className="h-5 w-5" />
+                </button>
               )}
             </div>
 
@@ -308,8 +293,6 @@ export function StandardPreviewShell({
   onZoomIn,
   onFitToView,
   onRotateLeft,
-  onRotateRight,
-  onReverseCenter,
   onToggleFullscreen,
   onClose,
   onGoPrev,
@@ -384,29 +367,14 @@ export function StandardPreviewShell({
                 </button>
               )}
               {canTransformImage && (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={onRotateLeft}
-                    className={PREVIEW_TOOL_BUTTON_CLASS}
-                    title="左旋转"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={onReverseCenter}
-                    className={PREVIEW_TOOL_BUTTON_CLASS}
-                    title="中心反转"
-                  >
-                    <RefreshCcwDot className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={onRotateRight}
-                    className={PREVIEW_TOOL_BUTTON_CLASS}
-                    title="右旋转"
-                  >
-                    <RotateCw className="h-4 w-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={onRotateLeft}
+                  className={PREVIEW_TOOL_BUTTON_CLASS}
+                  title="逆时针旋转"
+                  aria-label="逆时针旋转"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
               )}
               <button
                 onClick={onToggleFullscreen}
