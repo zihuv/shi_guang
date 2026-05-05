@@ -107,7 +107,7 @@
     const rows = [];
     for (const folder of folders || []) {
       if (defaultFolderId && folder.id === defaultFolderId) {
-        rows.push(...flattenFolders(folder.children || [], depth, trail));
+        rows.push(...flattenFolders(folder.children || [], depth + 1, [...trail, folder.name]));
         continue;
       }
 
