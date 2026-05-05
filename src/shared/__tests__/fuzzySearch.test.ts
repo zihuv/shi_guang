@@ -57,6 +57,11 @@ describe("pinyinSearch", () => {
       const results = fuzzySearchItems(items, "shipin", { keys });
       expect(results.map((r) => r.name)).toContain("视频教程");
     });
+
+    it("matches v spelling for characters typed with input-method pinyin", () => {
+      const results = fuzzySearchItems([{ name: "女装参考" }], "nv", { keys });
+      expect(results.map((r) => r.name)).toContain("女装参考");
+    });
   });
 
   describe("first-letter abbreviation match", () => {
@@ -110,6 +115,40 @@ describe("pinyinSearch", () => {
       const mixedItems = [{ name: "网页" }, { name: "网页设计" }, { name: "旺业大厦" }];
       const results = fuzzySearchItems(mixedItems, "网页", { keys });
       expect(results[0]?.name).toBe("网页");
+    });
+  });
+
+  describe("pinyin result ranking", () => {
+    it("ranks earlier pinyin matches before later matches", () => {
+      const mixedItems = [{ name: "我的网页" }, { name: "网页设计" }];
+      const results = fuzzySearchItems(mixedItems, "wangye", { keys });
+      expect(results.map((r) => r.name)).toEqual(["网页设计", "我的网页"]);
+    });
+  });
+
+  describe("key value resolution", () => {
+    it("supports match-sorter object key options for pinyin fallback", () => {
+      const nestedItems = [{ meta: { title: "网页设计" } }];
+      const results = fuzzySearchItems(nestedItems, "wangye", {
+        keys: [{ key: "meta.title" }],
+      });
+      expect(results).toHaveLength(1);
+    });
+
+    it("supports array values from match-sorter keys for pinyin fallback", () => {
+      const taggedItems = [{ tags: ["网页", "设计"] }];
+      const results = fuzzySearchItems(taggedItems, "wangye", {
+        keys: ["tags"],
+      });
+      expect(results).toHaveLength(1);
+    });
+
+    it("ignores nullish key values instead of matching their stringified names", () => {
+      const sparseItems: { name?: string | null }[] = [{ name: undefined }, { name: null }];
+      const results = fuzzySearchItems(sparseItems, "undefined", {
+        keys: [(item) => item.name as string],
+      });
+      expect(results).toHaveLength(0);
     });
   });
 

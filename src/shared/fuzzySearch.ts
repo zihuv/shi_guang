@@ -1,7 +1,8 @@
-import { matchSorter, type KeyOption, type MatchSorterOptions } from "match-sorter";
+import { getItemValues, matchSorter, type KeyOption, type MatchSorterOptions } from "match-sorter";
 import PinyinMatch from "pinyin-match";
 
 type FuzzyKey<T> = KeyOption<T>;
+type PinyinMatchRange = [number, number];
 
 export interface FuzzySearchOptions<T> {
   keys?: FuzzyKey<T>[];
@@ -15,10 +16,32 @@ function isPinyinQuery(query: string): boolean {
   return /^[a-zA-Z]+$/.test(query);
 }
 
-function resolveKeyValue<T>(item: T, key: FuzzyKey<T>): string {
-  if (typeof key === "function") return String(key(item));
-  if (typeof key === "string") return String((item as Record<string, unknown>)[key]);
-  return String(item);
+function resolveKeyValues<T>(item: T, keys: readonly FuzzyKey<T>[]): string[] {
+  if (keys.length === 0) return [String(item)];
+  return keys.flatMap((key) => getItemValues(item, key));
+}
+
+function comparePinyinMatches(left: PinyinMatchRange, right: PinyinMatchRange): number {
+  const startDiff = left[0] - right[0];
+  if (startDiff !== 0) return startDiff;
+
+  const lengthDiff = left[1] - left[0] - (right[1] - right[0]);
+  if (lengthDiff !== 0) return lengthDiff;
+
+  return left[1] - right[1];
+}
+
+function findBestPinyinMatch<T>(
+  item: T,
+  normalizedQuery: string,
+  keys: readonly FuzzyKey<T>[],
+): PinyinMatchRange | null {
+  const matches = resolveKeyValues(item, keys)
+    .map((value) => PinyinMatch.match(value, normalizedQuery))
+    .filter((match): match is PinyinMatchRange => match !== false);
+
+  if (matches.length === 0) return null;
+  return matches.sort(comparePinyinMatches)[0] ?? null;
 }
 
 export function fuzzySearchItems<T>(
@@ -42,16 +65,20 @@ export function fuzzySearchItems<T>(
   const keys = options.keys ?? [];
   const sorterSet = new Set(sorterResults);
 
-  const pinyinMatches = items.filter((item) => {
-    if (sorterSet.has(item)) return false;
-    if (keys.length === 0) {
-      return PinyinMatch.match(String(item), normalizedQuery) !== false;
-    }
-    return keys.some((key) => {
-      const value = resolveKeyValue(item, key);
-      return PinyinMatch.match(value, normalizedQuery) !== false;
-    });
-  });
+  const pinyinMatches = items
+    .map((item, index) => ({
+      item,
+      index,
+      match: findBestPinyinMatch(item, normalizedQuery, keys),
+    }))
+    .filter(
+      (result): result is { item: T; index: number; match: PinyinMatchRange } =>
+        result.match !== null && !sorterSet.has(result.item),
+    )
+    .sort(
+      (left, right) => comparePinyinMatches(left.match, right.match) || left.index - right.index,
+    )
+    .map((result) => result.item);
 
   return [...sorterResults, ...pinyinMatches];
 }
