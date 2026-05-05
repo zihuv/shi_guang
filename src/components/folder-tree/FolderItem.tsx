@@ -542,7 +542,7 @@ export function FolderItem({
       </ContextMenu>
 
       {hasChildren && isExpanded && (
-        <div className="flex flex-col gap-1">
+        <div className="mt-1 flex flex-col gap-1">
           {folder.children.map((child) => (
             <FolderItem
               key={child.id}
