@@ -70,11 +70,9 @@ export function useAppPanelLayout({ showsDetailPanel }: { showsDetailPanel: bool
   const sidebarWidthPreference = useSettingsStore((state) => state.sidebarWidth);
   const detailPanelWidthPreference = useSettingsStore((state) => state.detailPanelWidth);
   const isSidebarCollapsed = useSettingsStore((state) => state.isSidebarCollapsed);
-  const isDetailPanelCollapsed = useSettingsStore((state) => state.isDetailPanelCollapsed);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const setDetailPanelWidth = useSettingsStore((state) => state.setDetailPanelWidth);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
-  const setDetailPanelCollapsed = useSettingsStore((state) => state.setDetailPanelCollapsed);
   const [contentWidth, setContentWidth] = useState(0);
   const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
   const contentContainerRef = useRef<HTMLDivElement>(null);
@@ -83,7 +81,7 @@ export function useAppPanelLayout({ showsDetailPanel }: { showsDetailPanel: bool
   const { sidebarWidth, detailPanelWidth } = constrainPanelWidths(
     contentWidth,
     isSidebarCollapsed ? 0 : sidebarWidthPreference,
-    showsDetailPanel && !isDetailPanelCollapsed ? detailPanelWidthPreference : 0,
+    showsDetailPanel ? detailPanelWidthPreference : 0,
   );
   const sidebarWidthRef = useRef(sidebarWidth);
   const detailPanelWidthRef = useRef(detailPanelWidth);
@@ -195,9 +193,7 @@ export function useAppPanelLayout({ showsDetailPanel }: { showsDetailPanel: bool
     contentContainerRef,
     detailPanelWidth,
     handleResizeStart,
-    isDetailPanelCollapsed,
     isSidebarCollapsed,
-    setDetailPanelCollapsed,
     setSidebarCollapsed,
     sidebarWidth,
   };

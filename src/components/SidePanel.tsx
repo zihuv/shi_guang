@@ -1,6 +1,22 @@
 import { useEffect } from "react";
-import { Bookmark, Clock3, FolderX, Library, ScanSearch, Shuffle, Tag, Trash2 } from "lucide-react";
-import { appPanelClass, appPanelMetaClass, appSectionLabelClass, appTreeRowClass } from "@/lib/ui";
+import {
+  Bookmark,
+  Clock3,
+  FolderX,
+  Library,
+  PanelLeftClose,
+  ScanSearch,
+  Shuffle,
+  Tag,
+  Trash2,
+} from "lucide-react";
+import {
+  appIconButtonClass,
+  appPanelClass,
+  appPanelMetaClass,
+  appSectionLabelClass,
+  appTreeRowClass,
+} from "@/lib/ui";
 import FolderTree from "@/components/FolderTree";
 import { selectSmartCollectionFromSidebar } from "@/components/folder-tree/utils";
 import { useFolderStore } from "@/stores/folderStore";
@@ -12,6 +28,7 @@ import type { SmartCollectionId } from "@/stores/fileTypes";
 import { cn } from "@/lib/utils";
 
 interface SidePanelProps {
+  onCollapse: () => void;
   width: number;
 }
 
@@ -28,7 +45,7 @@ const SMART_COLLECTION_ITEMS: Array<{
   { id: "similar", label: "重复/相似", icon: ScanSearch },
 ];
 
-export default function SidePanel({ width }: SidePanelProps) {
+export default function SidePanel({ onCollapse, width }: SidePanelProps) {
   const currentView = useNavigationStore((state) => state.currentView);
   const activeSmartCollection = useNavigationStore((state) => state.activeSmartCollection);
   const openTags = useNavigationStore((state) => state.openTags);
@@ -69,7 +86,18 @@ export default function SidePanel({ width }: SidePanelProps) {
     <aside className={`${appPanelClass} flex-shrink-0`} style={{ width }}>
       <div className="app-sidebar-scroll min-h-0 flex-1 overflow-x-hidden">
         <div className="px-2 pb-1 pt-2.5">
-          <span className={cn(appSectionLabelClass, "mb-2 block")}>快捷视图</span>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className={cn(appSectionLabelClass, "mb-0")}>快捷视图</span>
+            <button
+              type="button"
+              className={cn(appIconButtonClass, "size-7 flex-shrink-0 text-gray-400")}
+              title="收起左侧栏"
+              aria-label="收起左侧栏"
+              onClick={onCollapse}
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
           <div className="flex flex-col gap-1">
             {SMART_COLLECTION_ITEMS.map((item) => {

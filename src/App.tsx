@@ -16,7 +16,7 @@ import DragPreview from "@/components/DragPreview";
 import AppStartupScreen from "@/components/AppStartupScreen";
 import TagPanel from "@/components/TagPanel";
 import TrashPanel from "@/components/TrashPanel";
-import { PanelEdgeToggle, PanelResizeHandle } from "@/components/app-shell/PanelControls";
+import { PanelResizeHandle, PanelRestoreToggle } from "@/components/app-shell/PanelControls";
 import { useAppPanelLayout } from "@/hooks/useAppPanelLayout";
 import { useAppInitialization } from "@/hooks/useAppInitialization";
 import { useClipboardImport } from "@/hooks/useClipboardImport";
@@ -52,13 +52,11 @@ function App() {
     contentContainerRef,
     detailPanelWidth,
     handleResizeStart,
-    isDetailPanelCollapsed,
     isSidebarCollapsed,
-    setDetailPanelCollapsed,
     setSidebarCollapsed,
     sidebarWidth,
   } = useAppPanelLayout({ showsDetailPanel: showsLibraryView });
-  const showsDetailPanel = showsLibraryView && !isDetailPanelCollapsed;
+  const showsDetailPanel = showsLibraryView;
   const { handleDragEnter, handleDragLeave, handleDragOver, handleDrop, isDragging } =
     useExternalImportDrop({
       dragOverFolderId,
@@ -159,7 +157,7 @@ function App() {
       <div ref={contentContainerRef} className="relative flex flex-1 overflow-hidden">
         {!isSidebarCollapsed ? (
           <>
-            <SidePanel width={sidebarWidth} />
+            <SidePanel width={sidebarWidth} onCollapse={() => setSidebarCollapsed(true)} />
 
             <PanelResizeHandle
               ariaLabel="调整左侧面板宽度"
@@ -167,6 +165,14 @@ function App() {
               onMouseDown={handleResizeStart("sidebar")}
             />
           </>
+        ) : null}
+
+        {isSidebarCollapsed ? (
+          <PanelRestoreToggle
+            ariaLabel="展开左侧栏"
+            title="展开左侧栏"
+            onClick={() => setSidebarCollapsed(false)}
+          />
         ) : null}
 
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -192,26 +198,6 @@ function App() {
 
             <DetailPanel width={detailPanelWidth} />
           </>
-        ) : null}
-
-        <PanelEdgeToggle
-          ariaLabel={isSidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
-          isCollapsed={isSidebarCollapsed}
-          offset={sidebarWidth}
-          side="left"
-          title={isSidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
-          onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
-        />
-
-        {showsLibraryView ? (
-          <PanelEdgeToggle
-            ariaLabel={isDetailPanelCollapsed ? "展开右侧栏" : "收起右侧栏"}
-            isCollapsed={isDetailPanelCollapsed}
-            offset={detailPanelWidth}
-            side="right"
-            title={isDetailPanelCollapsed ? "展开右侧栏" : "收起右侧栏"}
-            onClick={() => setDetailPanelCollapsed(!isDetailPanelCollapsed)}
-          />
         ) : null}
       </div>
 
