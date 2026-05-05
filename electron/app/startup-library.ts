@@ -9,6 +9,8 @@ import {
   rememberRecentIndexPaths,
 } from "../storage";
 
+const INDEX_PATH_OVERRIDE_ENV = "SHIGUANG_INDEX_PATH";
+
 function isExistingDirectory(targetPath: string): boolean {
   try {
     return fssync.statSync(targetPath).isDirectory();
@@ -75,7 +77,26 @@ async function promptForLibraryPath(
   }
 }
 
+async function resolveIndexPathOverride(appDataDir: string): Promise<string | null> {
+  const override = process.env[INDEX_PATH_OVERRIDE_ENV]?.trim();
+  if (!override) {
+    return null;
+  }
+
+  const indexPath = path.resolve(override);
+  await fs.mkdir(indexPath, { recursive: true });
+  await ensureStorageDirs(indexPath);
+  await persistIndexPath(appDataDir, indexPath);
+  await rememberRecentIndexPaths(appDataDir, [indexPath]);
+  return indexPath;
+}
+
 export async function resolveStartupIndexPath(appDataDir: string): Promise<string | null> {
+  const override = await resolveIndexPathOverride(appDataDir);
+  if (override) {
+    return override;
+  }
+
   const persistedPath = await readCurrentIndexPath(appDataDir);
   if (persistedPath && isExistingDirectory(persistedPath)) {
     try {

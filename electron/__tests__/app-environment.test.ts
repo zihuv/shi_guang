@@ -30,6 +30,7 @@ const { configureEnvironmentUserDataPath, getDefaultLibraryDirName, getDevelopme
 const { getDefaultIndexPath } = await import("../storage");
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   mockApp.isPackaged = false;
   mockApp.getPath.mockClear();
   mockApp.setPath.mockClear();
@@ -52,6 +53,17 @@ describe("app environment paths", () => {
       "userData",
       "/Users/test/Library/Application Support/拾光 Dev",
     );
+  });
+
+  it("uses explicit user data overrides for isolated Electron tests", () => {
+    vi.stubEnv("SHIGUANG_USER_DATA_DIR", "/tmp/shiguang-smoke/user-data");
+
+    configureEnvironmentUserDataPath();
+
+    expect(fssync.mkdirSync).toHaveBeenCalledWith("/tmp/shiguang-smoke/user-data", {
+      recursive: true,
+    });
+    expect(mockApp.setPath).toHaveBeenCalledWith("userData", "/tmp/shiguang-smoke/user-data");
   });
 
   it("keeps packaged builds on production paths", () => {

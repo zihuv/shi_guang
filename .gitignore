@@ -43,6 +43,8 @@ Thumbs.db
 .parcel-cache
 .vite
 tmp
+test-results
+playwright-report
 .debug-models
 %SystemDrive%/
 *.db

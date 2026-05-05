@@ -23,6 +23,9 @@
     "review:claude": "bash scripts/claude-review.sh",
     "knip": "knip --include files,dependencies,unlisted,binaries,unresolved",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:electron": "npm run build && playwright test --config tests/electron/playwright.config.ts",
     "fmt": "oxfmt src electron extensions/shiguang-collector index.html electron.vite.config.ts drizzle.config.ts vite.config.ts tailwind.config.js postcss.config.js",
     "fmt:check": "oxfmt --check src electron extensions/shiguang-collector index.html electron.vite.config.ts drizzle.config.ts vite.config.ts tailwind.config.js postcss.config.js",
     "preview": "vite preview",
@@ -54,6 +57,7 @@
   "devDependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "^1.7.10",
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
+    "@playwright/test": "^1.59.1",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",

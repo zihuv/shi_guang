@@ -65,6 +65,10 @@ After `npm install`, run `npx electron-builder install-app-deps` if native Elect
 ## Testing
 
 - Before PRs, run at least `npm run lint` and `npm run build`.
+- When completing a feature or bug fix, add or update the most relevant automated tests in the same change. Prefer fast Vitest coverage for pure logic, stores, database repositories, migrations, file classification, search/filter/sort behavior, and IPC command helpers.
+- For changes that affect Electron startup, preload APIs, IPC wiring, import flows, native file access, or desktop-only behavior, add or update a focused Playwright Electron smoke test when practical.
+- Do not add broad or brittle end-to-end coverage for every UI detail. If a change is visual-only or copy-only, document the manual verification path instead.
+- Use `npm test` for the fast Vitest suite, and `npm run test:electron` for built-app Electron smoke tests.
 - For desktop UI or interaction changes, also verify the changed screen in the actual Electron app.
 - For UI interaction bugs, test the real user event path early; add targeted logs around `pointerdown`, `click`, or menu selection when needed.
 - Final verification must say which path was used: Electron CDP, actual Electron window, or blocked. A standalone Chrome load of `127.0.0.1:1420` never counts as desktop UI verification.
