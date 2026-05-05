@@ -225,7 +225,6 @@ function FolderDetailPanel({ folder, width }: { folder: FolderNode; width: numbe
 function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const deleteFile = useTrashStore((state) => state.deleteFile);
   const updateFileMetadata = useLibraryQueryStore((state) => state.updateFileMetadata);
-  const exportFile = useLibraryQueryStore((state) => state.exportFile);
   const updateFileName = useLibraryQueryStore((state) => state.updateFileName);
   const { folders } = useFolderStore();
 
@@ -233,7 +232,6 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
   const folder = file.folderId ? findFolderById(folders, file.folderId) : null;
   const folderDisplayPath = file.folderId ? getFolderDisplayPath(folders, file.folderId) : null;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showExportSuccess, setShowExportSuccess] = useState(false);
   const {
     description,
     editedName,
@@ -267,35 +265,11 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
     await deleteFile(file.id);
   };
 
-  const handleExport = async () => {
-    try {
-      await exportFile(file.id);
-      setShowExportSuccess(true);
-      setTimeout(() => setShowExportSuccess(false), 3000);
-    } catch (e) {
-      console.error("Export failed:", e);
-    }
-  };
-
   return (
     <div className={`${appPanelClass} flex-shrink-0`} style={{ width }}>
       <div className={appPanelHeaderClass}>
         <h3 className={appPanelTitleClass}>文件详情</h3>
         <div className="flex items-center gap-1">
-          <PanelIconButton
-            onClick={handleExport}
-            className="text-blue-500 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30"
-            title="导出文件"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-              />
-            </svg>
-          </PanelIconButton>
           {showDeleteConfirm ? (
             <>
               <PanelActionButton
@@ -329,12 +303,6 @@ function FileDetailPanel({ file, width }: { file: FileItem; width: number }) {
           )}
         </div>
       </div>
-
-      {showExportSuccess && (
-        <div className="bg-emerald-500/10 px-3.5 py-2 text-[12px] text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300">
-          导出成功
-        </div>
-      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 pb-5 pt-4 [&>*]:shrink-0">
         <DetailPreview

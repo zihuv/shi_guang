@@ -19,7 +19,7 @@ import {
   updateFileNameRecord,
   updateFileThumbHash,
 } from "../database";
-import { copyFileWithCloneFallback, ensureDir, moveFileWithFallback } from "../file-operations";
+import { ensureDir, moveFileWithFallback } from "../file-operations";
 import { buildThumbHash, extractColorDistributionFromInput } from "../media";
 import { getThumbnailCachePath } from "../storage";
 import type { AppState, ImportTaskItem } from "../types";
@@ -36,7 +36,6 @@ import {
   shouldGenerateFileThumbnail,
   startImportTask,
 } from "./import-service";
-import { appDocumentsDir } from "./trash-file-service";
 import { loadVisualModelValidation, loadVisualSearchConfig } from "./visual-ai-service";
 import { encodeVisualSearchTextInUtility } from "../visual-search/visual-index-utility-service.js";
 
@@ -155,19 +154,6 @@ export function createFileCommands(
       const colors = await extractColorDistributionFromInput(file.path);
       updateFileColorData(state.db, fileId, colors[0]?.color ?? "", JSON.stringify(colors));
       return colors[0]?.color ?? "";
-    },
-    export_file: async (args) => {
-      const file = getFileById(state.db, numberArg(args, "fileId", "file_id"));
-      if (!file) throw new Error("File not found");
-      const exportDir = path.join(appDocumentsDir(), "shiguang_exports");
-      await ensureDir(exportDir);
-      await fs.writeFile(
-        path.join(exportDir, `${path.basename(file.name, path.extname(file.name))}_metadata.json`),
-        JSON.stringify(file, null, 2),
-      );
-      if (fssync.existsSync(file.path))
-        await copyFileWithCloneFallback(file.path, path.join(exportDir, file.name));
-      return exportDir;
     },
     update_file_name: async (args) => {
       const fileId = numberArg(args, "fileId", "file_id");

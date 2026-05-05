@@ -148,10 +148,6 @@ export function extractColor(fileId: number) {
   return invokeDesktop<string>("extract_color", { fileId });
 }
 
-export function exportFile(fileId: number) {
-  return invokeDesktop<string>("export_file", { fileId });
-}
-
 export function updateFileName(args: { fileId: number; newName: string }) {
   return invokeDesktop<void>("update_file_name", args);
 }

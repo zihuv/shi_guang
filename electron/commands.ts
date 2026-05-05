@@ -23,7 +23,6 @@ const WRITE_COMMANDS = new Set([
   "update_file_name",
   "get_or_create_thumb_hash",
   "extract_color",
-  "export_file",
   "start_import_task",
   "cancel_import_task",
   "retry_import_task",

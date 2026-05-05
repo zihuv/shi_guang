@@ -10,7 +10,6 @@ import { loadFoldersFromAccess, selectFolderFromAccess } from "@/stores/folderSt
 import {
   analyzeFileMetadata as analyzeFileMetadataCommand,
   extractColor,
-  exportFile,
   filterFiles as filterFilesCommand,
   getAllFiles,
   getFile,
@@ -96,7 +95,6 @@ interface LibraryQueryStore {
   moveFiles: (fileIds: number[], targetFolderId: number | null) => Promise<void>;
   copyFiles: (fileIds: number[], targetFolderId: number | null) => Promise<void>;
   extractColor: (fileId: number) => Promise<string>;
-  exportFile: (fileId: number) => Promise<string>;
   updateFileName: (fileId: number, newName: string) => Promise<void>;
   analyzeFileMetadata: (fileId: number, imageDataUrl?: string) => Promise<FileItem>;
   touchFileLastAccessed: (fileId: number) => Promise<void>;
@@ -614,8 +612,6 @@ export const useLibraryQueryStore = create<LibraryQueryStore>((set, get) => ({
 
     return color;
   },
-
-  exportFile: async (fileId) => exportFile(fileId),
 
   updateFileName: async (fileId, newName) => {
     await updateFileName({ fileId, newName });
