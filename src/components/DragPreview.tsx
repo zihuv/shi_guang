@@ -18,7 +18,7 @@ export default function DragPreview({ fileId, files }: DragPreviewProps) {
       return;
     }
 
-    if (previewType !== "image" && previewType !== "thumbnail") {
+    if (previewType !== "image" && previewType !== "thumbnail" && previewType !== "video") {
       setImageSrc(null);
       return;
     }
@@ -26,7 +26,7 @@ export default function DragPreview({ fileId, files }: DragPreviewProps) {
     let active = true;
 
     const loader =
-      previewType === "thumbnail"
+      previewType === "thumbnail" || previewType === "video"
         ? getThumbnailImageSrc(file.path, file.ext)
         : getFileSrc(file.path);
 
@@ -54,9 +54,9 @@ export default function DragPreview({ fileId, files }: DragPreviewProps) {
   }, [imageSrc]);
 
   return (
-    <div className="h-24 w-24 overflow-hidden rounded-lg bg-white shadow-xl dark:bg-dark-surface">
+    <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg bg-white shadow-xl dark:bg-dark-surface">
       {imageSrc ? (
-        <img src={imageSrc} alt="" className="h-full w-full object-cover" />
+        <img src={imageSrc} alt="" className="max-h-full max-w-full object-contain" />
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-gray-50 to-gray-100 text-gray-400 dark:from-slate-900/70 dark:to-slate-800/90">
           <FileTypeIcon ext={file?.ext || ""} className="h-8 w-8" />
